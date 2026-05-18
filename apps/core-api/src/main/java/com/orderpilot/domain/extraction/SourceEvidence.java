@@ -1,0 +1,9 @@
+package com.orderpilot.domain.extraction;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID; import org.hibernate.annotations.JdbcTypeCode; import org.hibernate.type.SqlTypes;
+@Entity @Table(name="source_evidence")
+public class SourceEvidence {
+  @Id @GeneratedValue private UUID id; @Column(name="tenant_id",nullable=false) private UUID tenantId; @Column(name="extraction_run_id",nullable=false) private UUID extractionRunId; @Column(name="source_type",nullable=false) private String sourceType; @Column(name="source_id",nullable=false) private UUID sourceId; @Column(name="evidence_type",nullable=false) private String evidenceType; @Column(name="page_number") private Integer pageNumber; @Column(name="start_offset") private Integer startOffset; @Column(name="end_offset") private Integer endOffset; private String snippet; @JdbcTypeCode(SqlTypes.JSON) @Column(name="bounding_box_json",columnDefinition="jsonb") private String boundingBoxJson; @Column(name="created_at",nullable=false) private Instant createdAt;
+  protected SourceEvidence() {}
+  public SourceEvidence(UUID tenantId, UUID extractionRunId, String sourceType, UUID sourceId, String evidenceType, Integer startOffset, Integer endOffset, String snippet, Instant now){this.tenantId=tenantId; this.extractionRunId=extractionRunId; this.sourceType=sourceType; this.sourceId=sourceId; this.evidenceType=evidenceType; this.startOffset=startOffset; this.endOffset=endOffset; this.snippet=snippet; this.createdAt=now;}
+  public UUID getId(){return id;} public String getEvidenceType(){return evidenceType;} public String getSnippet(){return snippet;}
+}

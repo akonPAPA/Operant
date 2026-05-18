@@ -1,0 +1,9 @@
+package com.orderpilot.domain.extraction;
+import jakarta.persistence.*; import java.math.BigDecimal; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="extracted_document_text")
+public class ExtractedDocumentText {
+  @Id @GeneratedValue private UUID id; @Column(name="tenant_id",nullable=false) private UUID tenantId; @Column(name="extraction_run_id",nullable=false) private UUID extractionRunId; @Column(name="source_type",nullable=false) private String sourceType; @Column(name="source_id",nullable=false) private UUID sourceId; @Column(name="text_content",nullable=false) private String textContent; private String language; @Column(name="extraction_method",nullable=false) private String extractionMethod; @Column(name="page_count") private Integer pageCount; @Column(name="character_count",nullable=false) private int characterCount; @Column(name="quality_score") private BigDecimal qualityScore; @Column(name="created_at",nullable=false) private Instant createdAt;
+  protected ExtractedDocumentText() {}
+  public ExtractedDocumentText(UUID tenantId, UUID extractionRunId, String sourceType, UUID sourceId, String textContent, String language, String method, Integer pageCount, BigDecimal qualityScore, Instant now){this.tenantId=tenantId; this.extractionRunId=extractionRunId; this.sourceType=sourceType; this.sourceId=sourceId; this.textContent=textContent; this.language=language; this.extractionMethod=method; this.pageCount=pageCount; this.characterCount=textContent==null?0:textContent.length(); this.qualityScore=qualityScore; this.createdAt=now;}
+  public UUID getId(){return id;} public String getTextContent(){return textContent;} public String getExtractionMethod(){return extractionMethod;} public int getCharacterCount(){return characterCount;}
+}

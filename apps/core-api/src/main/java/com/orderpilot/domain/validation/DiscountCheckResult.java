@@ -1,0 +1,10 @@
+package com.orderpilot.domain.validation;
+
+import jakarta.persistence.*; import java.math.BigDecimal; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name = "discount_check_result")
+public class DiscountCheckResult {
+  @Id @GeneratedValue private UUID id; @Column(name="tenant_id",nullable=false) private UUID tenantId; @Column(name="validation_run_id",nullable=false) private UUID validationRunId; @Column(name="extracted_line_item_id") private UUID extractedLineItemId; @Column(name="customer_account_id") private UUID customerAccountId; @Column(name="product_id") private UUID productId; @Column(name="discount_rule_id") private UUID discountRuleId; @Column(name="requested_discount_percent") private BigDecimal requestedDiscountPercent; @Column(name="max_allowed_discount_percent") private BigDecimal maxAllowedDiscountPercent; @Column(name="requires_approval",nullable=false) private boolean requiresApproval; @Column(nullable=false) private String status; @Column(name="created_at",nullable=false) private Instant createdAt; @Column(name="updated_at",nullable=false) private Instant updatedAt;
+  protected DiscountCheckResult() {}
+  public DiscountCheckResult(UUID tenantId, UUID validationRunId, UUID lineId, UUID customerId, UUID productId, UUID ruleId, BigDecimal requested, BigDecimal maxAllowed, boolean requiresApproval, String status, Instant now){this.tenantId=tenantId;this.validationRunId=validationRunId;this.extractedLineItemId=lineId;this.customerAccountId=customerId;this.productId=productId;this.discountRuleId=ruleId;this.requestedDiscountPercent=requested;this.maxAllowedDiscountPercent=maxAllowed;this.requiresApproval=requiresApproval;this.status=status;this.createdAt=now;this.updatedAt=now;}
+  public UUID getId(){return id;} public UUID getExtractedLineItemId(){return extractedLineItemId;} public boolean isRequiresApproval(){return requiresApproval;} public String getStatus(){return status;} public BigDecimal getRequestedDiscountPercent(){return requestedDiscountPercent;} public BigDecimal getMaxAllowedDiscountPercent(){return maxAllowedDiscountPercent;}
+}

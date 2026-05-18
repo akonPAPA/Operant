@@ -1,0 +1,10 @@
+package com.orderpilot.domain.validation;
+
+import jakarta.persistence.*; import java.math.BigDecimal; import java.time.Instant; import java.util.UUID; import org.hibernate.annotations.JdbcTypeCode; import org.hibernate.type.SqlTypes;
+@Entity @Table(name = "customer_match_result")
+public class CustomerMatchResult {
+  @Id @GeneratedValue private UUID id; @Column(name="tenant_id",nullable=false) private UUID tenantId; @Column(name="validation_run_id",nullable=false) private UUID validationRunId; @Column(name="extraction_result_id",nullable=false) private UUID extractionResultId; @Column(name="matched_customer_account_id") private UUID matchedCustomerAccountId; @Column(name="raw_customer_hint") private String rawCustomerHint; @Column(name="match_type",nullable=false) private String matchType; @Column(nullable=false) private BigDecimal confidence; @Column(nullable=false) private String status; @JdbcTypeCode(SqlTypes.JSON) @Column(name="candidates_json",columnDefinition="jsonb") private String candidatesJson; @Column(name="created_at",nullable=false) private Instant createdAt; @Column(name="updated_at",nullable=false) private Instant updatedAt;
+  protected CustomerMatchResult() {}
+  public CustomerMatchResult(UUID tenantId, UUID validationRunId, UUID extractionResultId, UUID matchedCustomerAccountId, String rawCustomerHint, String matchType, BigDecimal confidence, String status, String candidatesJson, Instant now){this.tenantId=tenantId;this.validationRunId=validationRunId;this.extractionResultId=extractionResultId;this.matchedCustomerAccountId=matchedCustomerAccountId;this.rawCustomerHint=rawCustomerHint;this.matchType=matchType;this.confidence=confidence;this.status=status;this.candidatesJson=candidatesJson;this.createdAt=now;this.updatedAt=now;}
+  public UUID getId(){return id;} public UUID getMatchedCustomerAccountId(){return matchedCustomerAccountId;} public String getRawCustomerHint(){return rawCustomerHint;} public String getMatchType(){return matchType;} public BigDecimal getConfidence(){return confidence;} public String getStatus(){return status;} public String getCandidatesJson(){return candidatesJson;}
+}

@@ -1,0 +1,10 @@
+package com.orderpilot.domain.validation;
+
+import jakarta.persistence.*; import java.math.BigDecimal; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name = "price_check_result")
+public class PriceCheckResult {
+  @Id @GeneratedValue private UUID id; @Column(name="tenant_id",nullable=false) private UUID tenantId; @Column(name="validation_run_id",nullable=false) private UUID validationRunId; @Column(name="extracted_line_item_id",nullable=false) private UUID extractedLineItemId; @Column(name="product_id") private UUID productId; @Column(name="customer_account_id") private UUID customerAccountId; @Column(name="price_rule_id") private UUID priceRuleId; @Column(name="requested_quantity") private BigDecimal requestedQuantity; private String uom; @Column(name="unit_price") private BigDecimal unitPrice; private String currency; @Column(nullable=false) private String status; @Column(name="created_at",nullable=false) private Instant createdAt; @Column(name="updated_at",nullable=false) private Instant updatedAt;
+  protected PriceCheckResult() {}
+  public PriceCheckResult(UUID tenantId, UUID validationRunId, UUID lineId, UUID productId, UUID customerId, UUID priceRuleId, BigDecimal requestedQuantity, String uom, BigDecimal unitPrice, String currency, String status, Instant now){this.tenantId=tenantId;this.validationRunId=validationRunId;this.extractedLineItemId=lineId;this.productId=productId;this.customerAccountId=customerId;this.priceRuleId=priceRuleId;this.requestedQuantity=requestedQuantity;this.uom=uom;this.unitPrice=unitPrice;this.currency=currency;this.status=status;this.createdAt=now;this.updatedAt=now;}
+  public UUID getId(){return id;} public UUID getExtractedLineItemId(){return extractedLineItemId;} public UUID getProductId(){return productId;} public UUID getCustomerAccountId(){return customerAccountId;} public UUID getPriceRuleId(){return priceRuleId;} public BigDecimal getUnitPrice(){return unitPrice;} public String getCurrency(){return currency;} public String getStatus(){return status;}
+}
