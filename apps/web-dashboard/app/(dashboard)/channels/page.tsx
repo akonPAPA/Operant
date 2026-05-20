@@ -1,14 +1,14 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 
-const providers = ["1C", "Excel", "CSV", "Generic Database", "Generic REST API", "NetSuite", "Dynamics 365", "Epicor", "SAP", "Odoo", "QuickBooks", "Other ERP", "Other Accounting", "Other Inventory"];
+const providers = ["Email", "File Upload", "API", "Telegram", "WhatsApp", "Meta Messenger", "Viber", "WeChat"];
 
 export default function Page() {
   return (
-    <DashboardShell title="Settings / Integrations">
+    <DashboardShell title="Settings / Channels">
       <div className="demo-stack">
         <section className="panel trust-panel">
-          <h2>Business-system connector foundation</h2>
-          <p>Integration connections are tenant-scoped and default to READ_ONLY. Stage 12 records health checks and sync history through core-api services without production ERP writes.</p>
+          <h2>Universal channel intake</h2>
+          <p>Customer communication channels are tenant-scoped, read-only by default, and adapter-ready in Stage 12. Webhooks normalize inbound payloads but do not create quotes, orders, replies, or ERP writes.</p>
         </section>
         <section className="page-grid">
           {providers.map((provider) => (
@@ -17,9 +17,9 @@ export default function Page() {
               <dl className="metric-list">
                 <div><dt>Status</dt><dd>Adapter-ready stub</dd></div>
                 <div><dt>Mode</dt><dd>READ_ONLY</dd></div>
-                <div><dt>Connection kind</dt><dd>Configured in core-api</dd></div>
-                <div><dt>Last sync</dt><dd>Visible in Sync Events</dd></div>
+                <div><dt>Health</dt><dd>Manual test via API</dd></div>
               </dl>
+              <p className="risk-note">No external sending, bot command execution, or business-table mutation is enabled.</p>
             </article>
           ))}
         </section>
