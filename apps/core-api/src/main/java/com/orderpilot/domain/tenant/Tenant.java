@@ -32,4 +32,17 @@ public class Tenant {
 
   protected Tenant() {
   }
+
+  public Tenant(String slug, String legalName, String status, Instant now) {
+    this.slug = slug;
+    this.legalName = legalName;
+    this.status = status == null || status.isBlank() ? "ACTIVE" : status;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
+
+  public UUID getId() { return id; }
+  public String getSlug() { return slug; }
+  public String getLegalName() { return legalName; }
+  public String getStatus() { return status; }
 }

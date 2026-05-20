@@ -1,0 +1,62 @@
+### OrderPilot Core V1 Investor Demo Walkthrough
+### Replace the tenant UUID with the seeded demo tenant ID from test/dev setup.
+@baseUrl = http://localhost:8080
+@tenantId = 00000000-0000-0000-0000-000000000000
+@productId = 00000000-0000-0000-0000-000000000000
+@locationId = 00000000-0000-0000-0000-000000000000
+
+### 1. Telegram RFQ intake
+POST {{baseUrl}}/api/v1/bot/telegram/webhook
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+
+{
+  "update_id": 91001,
+  "message": {
+    "message_id": 7001,
+    "chat": { "id": 450001 },
+    "text": "Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty."
+  }
+}
+
+### Expected: RFQ_REQUEST, requiresHumanReview=true, createdRfqDraftId present.
+
+### 2. Unknown message handoff
+POST {{baseUrl}}/api/v1/bot/telegram/webhook
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+
+{
+  "update_id": 91002,
+  "message": {
+    "message_id": 7002,
+    "chat": { "id": 450001 },
+    "text": "Can you check the thing we discussed last time?"
+  }
+}
+
+### Expected: UNKNOWN, requiresHumanReview=true, no quote/order/master-data mutation.
+
+### 3. Run inventory reconciliation
+POST {{baseUrl}}/api/v1/reconciliation/inventory/run
+X-Tenant-Id: {{tenantId}}
+Content-Type: application/json
+
+{
+  "productId": "{{productId}}",
+  "locationId": "{{locationId}}"
+}
+
+### Expected: expectedStock=116, actualStock=100, mismatchQuantity=-16, severity=HIGH.
+
+### 4. Fetch reconciliation cases
+GET {{baseUrl}}/api/v1/reconciliation/cases?page=0&size=50
+X-Tenant-Id: {{tenantId}}
+
+### Expected: one OPEN high-severity reconciliation case for the demo product/location.
+
+### 5. Fetch commerce analytics summary
+GET {{baseUrl}}/api/v1/analytics/commerce/summary
+X-Tenant-Id: {{tenantId}}
+
+### Expected: totalBotRfqRequests=1, openReconciliationCases=1, highSeverityReconciliationCases=1, channelBreakdown.TELEGRAM=2.

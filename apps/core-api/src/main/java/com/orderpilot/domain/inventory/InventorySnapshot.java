@@ -45,4 +45,5 @@ public class InventorySnapshot {
   public BigDecimal getQuantityAvailable() { return quantityAvailable; }
   public BigDecimal getQuantityReserved() { return quantityReserved; }
   public Instant getCapturedAt() { return capturedAt; }
+  public String getSource() { return source; }
 }

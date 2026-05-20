@@ -9,6 +9,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
   List<Product> findByTenantIdAndDeletedAtIsNullOrderBySku(UUID tenantId);
   Optional<Product> findByIdAndTenantIdAndDeletedAtIsNull(UUID id, UUID tenantId);
   Optional<Product> findByTenantIdAndSkuAndDeletedAtIsNull(UUID tenantId, String sku);
+  List<Product> findByTenantIdAndNormalizedSkuAndDeletedAtIsNullAndStatus(UUID tenantId, String normalizedSku, String status);
   boolean existsByTenantIdAndSkuAndDeletedAtIsNull(UUID tenantId, String sku);
   List<Product> findTop25ByTenantIdAndDeletedAtIsNullAndSkuContainingIgnoreCaseOrTenantIdAndDeletedAtIsNullAndNameContainingIgnoreCase(UUID tenantIdA, String sku, UUID tenantIdB, String name);
 }

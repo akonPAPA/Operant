@@ -1,0 +1,7 @@
+package com.orderpilot.domain.bot;
+
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface BotHandoffRepository extends JpaRepository<BotHandoff, UUID> {
+}

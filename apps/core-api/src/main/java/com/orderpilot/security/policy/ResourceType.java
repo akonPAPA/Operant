@@ -1,0 +1,19 @@
+package com.orderpilot.security.policy;
+
+public enum ResourceType {
+  INBOUND_MESSAGE,
+  DOCUMENT,
+  QUOTE,
+  ORDER,
+  PRODUCT,
+  INVENTORY,
+  ANALYTICS,
+  AUDIT_LOG,
+  CONNECTOR_COMMAND,
+  COMPENSATION_PLAN,
+  CHANNEL,
+  BOT_FLOW,
+  USER,
+  ROLE,
+  TENANT_SETTING
+}

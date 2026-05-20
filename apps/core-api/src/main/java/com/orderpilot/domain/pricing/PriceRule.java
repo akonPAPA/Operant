@@ -5,9 +5,12 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "price_rule")
@@ -21,7 +24,9 @@ public class PriceRule {
   @Column(name = "min_quantity", nullable = false) private BigDecimal minQuantity;
   @Column(nullable = false) private String uom;
   @Column(name = "unit_price", nullable = false) private BigDecimal unitPrice;
-  @Column(nullable = false) private String currency;
+  @Size(min = 3, max = 3)
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(nullable = false, length = 3, columnDefinition = "char(3)") private String currency;
   @Column(name = "active_from", nullable = false) private Instant activeFrom;
   @Column(name = "active_to") private Instant activeTo;
   @Column(nullable = false) private int priority;

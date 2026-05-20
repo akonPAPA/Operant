@@ -1,0 +1,17 @@
+[project]
+name = "orderpilot-ai-worker"
+version = "0.1.0"
+description = "OrderPilot AI/OCR worker skeleton"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.8,<3.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

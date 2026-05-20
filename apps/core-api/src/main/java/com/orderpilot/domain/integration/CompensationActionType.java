@@ -1,0 +1,11 @@
+package com.orderpilot.domain.integration;
+
+public enum CompensationActionType {
+  NOOP,
+  CANCEL_EXTERNAL_DRAFT,
+  REVERSE_CONNECTOR_COMMAND,
+  CREATE_CORRECTIVE_COMMAND,
+  CREATE_MANUAL_REVIEW_TASK,
+  MARK_EXTERNAL_SYSTEM_UNCHANGED,
+  DOCUMENT_ONLY
+}

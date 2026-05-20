@@ -3,6 +3,7 @@ package com.orderpilot.common.errors;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
 import java.util.List;
+import com.orderpilot.security.policy.TenantPolicyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -29,6 +30,16 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(IllegalArgumentException.class)
   ResponseEntity<ApiErrorResponse> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
     return build(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(NotFoundException.class)
+  ResponseEntity<ApiErrorResponse> handleNotFound(NotFoundException ex, HttpServletRequest request) {
+    return build(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(TenantPolicyException.class)
+  ResponseEntity<ApiErrorResponse> handleTenantPolicy(TenantPolicyException ex, HttpServletRequest request) {
+    return build(HttpStatus.FORBIDDEN, "TENANT_POLICY_DENIED", ex.getMessage(), request, List.of());
   }
 
   @ExceptionHandler(Exception.class)

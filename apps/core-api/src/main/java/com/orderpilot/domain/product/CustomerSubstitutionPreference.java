@@ -23,4 +23,25 @@ public class CustomerSubstitutionPreference {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected CustomerSubstitutionPreference() {}
+  public CustomerSubstitutionPreference(UUID tenantId, UUID customerAccountId, UUID productId, String brand, boolean allowAftermarket, Boolean allowUsed, UUID blockedSubstituteProductId, String notes, Instant now) {
+    this.tenantId = tenantId;
+    this.customerAccountId = customerAccountId;
+    this.productId = productId;
+    this.brand = brand;
+    this.allowAftermarket = allowAftermarket;
+    this.allowUsed = allowUsed;
+    this.blockedSubstituteProductId = blockedSubstituteProductId;
+    this.notes = notes;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
+  public UUID getId() { return id; }
+  public UUID getTenantId() { return tenantId; }
+  public UUID getCustomerAccountId() { return customerAccountId; }
+  public UUID getProductId() { return productId; }
+  public String getBrand() { return brand; }
+  public boolean isAllowAftermarket() { return allowAftermarket; }
+  public Boolean getAllowUsed() { return allowUsed; }
+  public UUID getBlockedSubstituteProductId() { return blockedSubstituteProductId; }
+  public String getNotes() { return notes; }
 }

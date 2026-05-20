@@ -1,0 +1,13 @@
+package com.orderpilot.security.policy;
+
+public enum ActorRole {
+  OWNER_ADMIN,
+  OPERATOR,
+  SALES_QUOTE_MANAGER,
+  INVENTORY_MANAGER,
+  INTEGRATION_ADMIN,
+  AUDITOR,
+  BOT_MANAGER,
+  READ_ONLY_VIEWER,
+  SYSTEM_CONNECTOR_WORKER
+}

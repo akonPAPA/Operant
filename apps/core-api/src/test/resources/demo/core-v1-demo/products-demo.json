@@ -1,0 +1,55 @@
+{
+  "location": {
+    "code": "ALM-MAIN",
+    "name": "Almaty Main Warehouse",
+    "type": "WAREHOUSE",
+    "city": "Almaty",
+    "country": "KZ"
+  },
+  "products": [
+    {
+      "sku": "TOY-CAM-2018-BPAD-OE",
+      "name": "Original brake pads for Toyota Camry 2018",
+      "description": "OEM-grade front brake pad set for Toyota Camry 2018",
+      "category": "Brake System",
+      "brand": "Toyota Genuine",
+      "manufacturer": "Toyota",
+      "baseUom": "PCS",
+      "status": "ACTIVE",
+      "cost": 18000.00,
+      "currency": "KZT",
+      "aliases": [
+        {
+          "aliasType": "CUSTOMER_TEXT",
+          "rawAlias": "brake pads for Toyota Camry 2018",
+          "normalizedAlias": "BRAKE PADS TOYOTA CAMRY 2018",
+          "confidenceDefault": 0.9500
+        }
+      ]
+    },
+    {
+      "sku": "AFT-CAM-2018-BPAD-A",
+      "name": "Aftermarket compatible substitute A",
+      "description": "Aftermarket brake pad set compatible with Toyota Camry 2018",
+      "category": "Brake System",
+      "brand": "RoadMax",
+      "manufacturer": "RoadMax Parts",
+      "baseUom": "PCS",
+      "status": "ACTIVE",
+      "cost": 12500.00,
+      "currency": "KZT"
+    },
+    {
+      "sku": "AFT-CAM-2018-BPAD-B",
+      "name": "Aftermarket compatible substitute B",
+      "description": "Budget aftermarket brake pad set compatible with Toyota Camry 2018",
+      "category": "Brake System",
+      "brand": "SteppeLine",
+      "manufacturer": "SteppeLine Components",
+      "baseUom": "PCS",
+      "status": "ACTIVE",
+      "cost": 9800.00,
+      "currency": "KZT"
+    }
+  ]
+}

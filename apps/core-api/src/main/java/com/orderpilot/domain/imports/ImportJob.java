@@ -44,10 +44,24 @@ public class ImportJob {
     this.updatedAt = now;
   }
 
-  public void markValidated(int validRows, int invalidRows, Instant now) {
+  public void markValidating(Instant now) {
+    this.status = "VALIDATING";
+    this.errorSummary = null;
+    this.updatedAt = now;
+  }
+
+  public void markValidated(int totalRows, int validRows, int invalidRows, Instant now) {
+    this.totalRows = totalRows;
     this.validRows = validRows;
     this.invalidRows = invalidRows;
-    this.status = invalidRows == 0 ? "VALIDATED" : "FAILED";
+    this.status = "VALIDATED";
+    this.errorSummary = invalidRows == 0 ? null : invalidRows + " row(s) failed validation";
+    this.updatedAt = now;
+  }
+
+  public void markFailed(String reason, Instant now) {
+    this.status = "FAILED";
+    this.errorSummary = reason;
     this.updatedAt = now;
   }
 

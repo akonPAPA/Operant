@@ -26,13 +26,31 @@ public class ProductCompatibility {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected ProductCompatibility() {}
+  public ProductCompatibility(UUID tenantId, UUID productId, String compatibleType, String make, String model, Integer yearFrom, Integer yearTo, String configuration, String notes, String riskLevel, Instant now) {
+    this.tenantId = tenantId;
+    this.productId = productId;
+    this.compatibleType = compatibleType;
+    this.make = make;
+    this.model = model;
+    this.yearFrom = yearFrom;
+    this.yearTo = yearTo;
+    this.configuration = configuration;
+    this.notes = notes;
+    this.riskLevel = riskLevel == null || riskLevel.isBlank() ? "MEDIUM" : riskLevel;
+    this.active = true;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
   public UUID getProductId() { return productId; }
+  public String getCompatibleType() { return compatibleType; }
   public String getMake() { return make; }
   public String getModel() { return model; }
   public Integer getYearFrom() { return yearFrom; }
   public Integer getYearTo() { return yearTo; }
+  public String getConfiguration() { return configuration; }
+  public String getNotes() { return notes; }
   public String getRiskLevel() { return riskLevel; }
   public boolean isActive() { return active; }
 }

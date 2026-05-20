@@ -5,8 +5,11 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "customer_account")
@@ -19,7 +22,9 @@ public class CustomerAccount {
   @Column(name = "display_name", nullable = false) private String displayName;
   @Column(name = "segment_id") private UUID segmentId;
   @Column(nullable = false) private String status;
-  @Column(name = "default_currency", nullable = false) private String defaultCurrency;
+  @Size(min = 3, max = 3)
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(name = "default_currency", nullable = false, length = 3, columnDefinition = "char(3)") private String defaultCurrency;
   @Column(name = "default_location_id") private UUID defaultLocationId;
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;

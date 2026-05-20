@@ -1,0 +1,2 @@
+- `C:\Users\mukha\Documents\Obsidian Vault\OrderPilot-AI-Programm\AI-APP-MarkDown-Instruction\OrderPilot-MD\ORDERPILOT_CORE_V1_AI_DEV.md`
+- `C:\Users\mukha\Documents\Obsidian Vault\OrderPilot-AI-Programm\AI-APP-MarkDown-Instruction\OrderPilot-MD\OrderPilot_Obsidian_Founder_Roadmap_and_Dev_Blueprint.md`

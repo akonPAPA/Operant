@@ -1,0 +1,10 @@
+{
+  "productSku": "TOY-CAM-2018-BPAD-OE",
+  "locationCode": "ALM-MAIN",
+  "openingStock": 150,
+  "sale": 34,
+  "expectedStock": 116,
+  "actualStock": 100,
+  "mismatchQuantity": -16,
+  "expectedSeverity": "HIGH"
+}

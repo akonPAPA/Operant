@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-orderpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-orderpilot_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orderpilot_local_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - orderpilot_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  core-api:
+    build:
+      context: ../../apps/core-api
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-orderpilot}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-orderpilot_app}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-orderpilot_local_password}
+      SERVER_PORT: 8080
+    ports:
+      - "${CORE_API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web-dashboard:
+    build:
+      context: ../../apps/web-dashboard
+    environment:
+      CORE_API_BASE_URL: http://core-api:8080
+    ports:
+      - "${WEB_DASHBOARD_PORT:-3000}:3000"
+    depends_on:
+      - core-api
+
+  ai-worker:
+    build:
+      context: ../../apps/ai-worker
+    environment:
+      AI_WORKER_LOG_LEVEL: ${AI_WORKER_LOG_LEVEL:-INFO}
+    depends_on:
+      - redis
+
+volumes:
+  orderpilot_postgres:

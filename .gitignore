@@ -12,3 +12,16 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local runtime env files
+.env
+.env.local
+.env.*.local
+apps/*/.env
+apps/*/.env.local
+apps/*/.env.*.local
+
+# Frontend generated artifacts
+node_modules/
+.next/
+*.tsbuildinfo

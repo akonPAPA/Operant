@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.orderpilot.api.dto.Stage2Dtos.ProductRequest;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.product.ProductAliasRepository;
+import com.orderpilot.application.services.ProductCatalogMatchingService;
 import com.orderpilot.domain.product.ProductRepository;
 import java.time.Clock;
 import java.util.UUID;
@@ -16,8 +17,9 @@ import org.junit.jupiter.api.Test;
 class ProductCatalogServiceTest {
   private final ProductRepository productRepository = mock(ProductRepository.class);
   private final ProductAliasRepository aliasRepository = mock(ProductAliasRepository.class);
+  private final ProductCatalogMatchingService matchingService = mock(ProductCatalogMatchingService.class);
   private final AuditEventService auditEventService = mock(AuditEventService.class);
-  private final ProductCatalogService service = new ProductCatalogService(productRepository, aliasRepository, auditEventService, Clock.systemUTC());
+  private final ProductCatalogService service = new ProductCatalogService(productRepository, aliasRepository, matchingService, auditEventService, Clock.systemUTC());
 
   @AfterEach
   void clearTenant() {

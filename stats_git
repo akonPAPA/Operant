@@ -1,0 +1,67 @@
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/api/dto/Stage2Dtos.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/api/rest/ImportController.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/api/rest/ProductController.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/application/services/ImportJobService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/application/services/JsonSupport.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/application/services/ProductCatalogService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/common/errors/GlobalExceptionHandler.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/audit/AuditEventRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/customer/CustomerAccount.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/extraction/ExtractedLineItem.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/imports/ImportJob.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/imports/ValidationReport.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/intake/ChannelMessage.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/inventory/InventorySnapshot.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/location/Location.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/pricing/PriceRule.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/CustomerSubstitutionPreference.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/CustomerSubstitutionPreferenceRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/OEMReference.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/Product.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/ProductAliasRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/ProductCompatibility.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/ProductCompatibilityRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/ProductRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/ProductSubstitute.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/product/ProductSubstituteRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/tenant/Tenant.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftOrderRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftQuote.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftQuoteLine.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftQuoteRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/core-api/src/test/java/com/orderpilot/application/services/ProductCatalogServiceTest.java', LF will be replaced by CRLF the next time Git touches it
+ .gitignore                                         | 13 [32m+++++[m
+ .../java/com/orderpilot/api/dto/Stage2Dtos.java    |  7 [32m++[m[31m-[m
+ .../com/orderpilot/api/rest/ImportController.java  | 10 [32m++[m[31m--[m
+ .../com/orderpilot/api/rest/ProductController.java |  4 [32m+[m[31m-[m
+ .../application/services/ImportJobService.java     | 61 [32m++++++++++++++++++[m[31m----[m
+ .../application/services/JsonSupport.java          | 11 [32m+++[m[31m-[m
+ .../services/ProductCatalogService.java            | 16 [32m++++[m[31m--[m
+ .../common/errors/GlobalExceptionHandler.java      | 13 [32m++++[m[31m-[m
+ .../domain/audit/AuditEventRepository.java         |  4 [32m+[m[31m-[m
+ .../domain/customer/CustomerAccount.java           |  9 [32m+++[m[31m-[m
+ .../domain/extraction/ExtractedLineItem.java       |  4 [32m+[m[31m-[m
+ .../com/orderpilot/domain/imports/ImportJob.java   | 20 [32m+++++[m[31m--[m
+ .../domain/imports/ValidationReport.java           |  3 [32m+[m[31m-[m
+ .../orderpilot/domain/intake/ChannelMessage.java   | 13 [32m++++[m[31m-[m
+ .../domain/inventory/InventorySnapshot.java        |  1 [32m+[m
+ .../com/orderpilot/domain/location/Location.java   | 22 [32m+++++++[m[31m-[m
+ .../com/orderpilot/domain/pricing/PriceRule.java   |  7 [32m++[m[31m-[m
+ .../product/CustomerSubstitutionPreference.java    | 23 [32m+++++++[m[31m-[m
+ .../CustomerSubstitutionPreferenceRepository.java  |  6 [32m++[m[31m-[m
+ .../orderpilot/domain/product/OEMReference.java    | 10 [32m++++[m
+ .../com/orderpilot/domain/product/Product.java     | 12 [32m++++[m[31m-[m
+ .../domain/product/ProductAliasRepository.java     |  3 [32m++[m
+ .../domain/product/ProductCompatibility.java       | 18 [32m+++++++[m
+ .../product/ProductCompatibilityRepository.java    |  1 [32m+[m
+ .../domain/product/ProductRepository.java          |  3 [32m+[m[31m-[m
+ .../domain/product/ProductSubstitute.java          | 13 [32m+++++[m
+ .../product/ProductSubstituteRepository.java       |  1 [32m+[m
+ .../java/com/orderpilot/domain/tenant/Tenant.java  | 15 [32m+++++[m[31m-[m
+ .../domain/workspace/DraftOrderRepository.java     |  2 [32m+[m[31m-[m
+ .../orderpilot/domain/workspace/DraftQuote.java    | 10 [32m++[m[31m--[m
+ .../domain/workspace/DraftQuoteLine.java           | 12 [32m+++[m[31m--[m
+ .../domain/workspace/DraftQuoteRepository.java     |  3 [32m++[m
+ .../services/ProductCatalogServiceTest.java        |  6 [32m++[m[31m-[m
+ 33 files changed, 302 insertions(+), 54 deletions(-)

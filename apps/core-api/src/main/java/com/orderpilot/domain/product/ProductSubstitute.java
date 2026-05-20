@@ -23,6 +23,18 @@ public class ProductSubstitute {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected ProductSubstitute() {}
+  public ProductSubstitute(UUID tenantId, UUID sourceProductId, UUID substituteProductId, String substituteType, String riskLevel, boolean requiresApproval, String notes, Instant now) {
+    this.tenantId = tenantId;
+    this.sourceProductId = sourceProductId;
+    this.substituteProductId = substituteProductId;
+    this.substituteType = substituteType;
+    this.riskLevel = riskLevel == null || riskLevel.isBlank() ? "MEDIUM" : riskLevel;
+    this.requiresApproval = requiresApproval;
+    this.notes = notes;
+    this.active = true;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
   public UUID getSourceProductId() { return sourceProductId; }
@@ -30,5 +42,6 @@ public class ProductSubstitute {
   public String getSubstituteType() { return substituteType; }
   public String getRiskLevel() { return riskLevel; }
   public boolean isRequiresApproval() { return requiresApproval; }
+  public String getNotes() { return notes; }
   public boolean isActive() { return active; }
 }

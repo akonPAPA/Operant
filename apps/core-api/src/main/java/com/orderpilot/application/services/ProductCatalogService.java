@@ -1,6 +1,7 @@
 package com.orderpilot.application.services;
 
 import com.orderpilot.api.dto.Stage2Dtos.ProductAliasRequest;
+import com.orderpilot.api.dto.Stage2Dtos.ProductMatchResponse;
 import com.orderpilot.api.dto.Stage2Dtos.ProductRequest;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.product.Product;
@@ -9,7 +10,6 @@ import com.orderpilot.domain.product.ProductAliasRepository;
 import com.orderpilot.domain.product.ProductRepository;
 import java.time.Clock;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,12 +18,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductCatalogService {
   private final ProductRepository productRepository;
   private final ProductAliasRepository aliasRepository;
+  private final ProductCatalogMatchingService matchingService;
   private final AuditEventService auditEventService;
   private final Clock clock;
 
-  public ProductCatalogService(ProductRepository productRepository, ProductAliasRepository aliasRepository, AuditEventService auditEventService, Clock clock) {
+  public ProductCatalogService(ProductRepository productRepository, ProductAliasRepository aliasRepository, ProductCatalogMatchingService matchingService, AuditEventService auditEventService, Clock clock) {
     this.productRepository = productRepository;
     this.aliasRepository = aliasRepository;
+    this.matchingService = matchingService;
     this.auditEventService = auditEventService;
     this.clock = clock;
   }
@@ -44,6 +46,12 @@ public class ProductCatalogService {
     UUID tenantId = TenantContext.requireTenantId();
     String term = query == null ? "" : query;
     return productRepository.findTop25ByTenantIdAndDeletedAtIsNullAndSkuContainingIgnoreCaseOrTenantIdAndDeletedAtIsNullAndNameContainingIgnoreCase(tenantId, term, tenantId, term);
+  }
+
+  @Transactional(readOnly = true)
+  public ProductMatchResponse match(String code, UUID customerAccountId) {
+    var result = matchingService.match(TenantContext.requireTenantId(), code, null, customerAccountId);
+    return new ProductMatchResponse(result.matchType().name(), result.productId(), result.normalizedCode(), result.matchedSku(), result.productName(), result.confidence(), result.candidateProductIds(), result.requiresReview());
   }
 
   @Transactional
@@ -82,6 +90,6 @@ public class ProductCatalogService {
   }
 
   public String normalize(String value) {
-    return value == null ? "" : value.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+    return ProductCodeNormalizer.normalize(value);
   }
 }

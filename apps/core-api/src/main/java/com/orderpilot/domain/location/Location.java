@@ -23,4 +23,24 @@ public class Location {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected Location() {}
+
+  public Location(UUID tenantId, String code, String name, String type, String address, String city, String country, boolean active, Instant now) {
+    this.tenantId = tenantId;
+    this.code = code;
+    this.name = name;
+    this.type = type;
+    this.address = address;
+    this.city = city;
+    this.country = country;
+    this.active = active;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
+
+  public UUID getId() { return id; }
+  public UUID getTenantId() { return tenantId; }
+  public String getCode() { return code; }
+  public String getName() { return name; }
+  public String getType() { return type; }
+  public boolean isActive() { return active; }
 }

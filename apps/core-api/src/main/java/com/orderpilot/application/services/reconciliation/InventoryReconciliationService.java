@@ -1,0 +1,123 @@
+package com.orderpilot.application.services.reconciliation;
+
+import com.orderpilot.api.dto.Stage8Dtos.ReconciliationCaseResponse;
+import com.orderpilot.api.dto.Stage8Dtos.ReconciliationCasesResponse;
+import com.orderpilot.api.dto.Stage8Dtos.ReconciliationRunResponse;
+import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.common.errors.NotFoundException;
+import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.reconciliation.*;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class InventoryReconciliationService {
+  private final InventoryMovementRepository movementRepository;
+  private final ReconciliationCaseRepository caseRepository;
+  private final AuditEventService auditEventService;
+  private final Clock clock;
+
+  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, AuditEventService auditEventService, Clock clock) {
+    this.movementRepository = movementRepository;
+    this.caseRepository = caseRepository;
+    this.auditEventService = auditEventService;
+    this.clock = clock;
+  }
+
+  @Transactional
+  public ReconciliationRunResponse runInventoryReconciliation(UUID productId, UUID locationId) {
+    if (productId == null || locationId == null) throw new IllegalArgumentException("productId and locationId are required");
+    UUID tenantId = TenantContext.requireTenantId();
+    Instant now = clock.instant();
+    InventoryMovement actualCount = movementRepository.findFirstByTenantIdAndProductIdAndLocationIdAndMovementTypeOrderByOccurredAtDesc(tenantId, productId, locationId, InventoryMovementType.ACTUAL_STOCK_COUNT);
+    if (actualCount == null) throw new IllegalArgumentException("No actual stock count exists for product/location");
+    List<InventoryMovement> movements = movementRepository.findByTenantIdAndProductIdAndLocationIdAndOccurredAtLessThanEqualOrderByOccurredAtAsc(tenantId, productId, locationId, actualCount.getOccurredAt());
+    BigDecimal expected = expectedStock(movements);
+    BigDecimal actual = actualCount.getQuantity();
+    BigDecimal mismatch = actual.subtract(expected);
+    if (mismatch.compareTo(BigDecimal.ZERO) == 0) {
+      return new ReconciliationRunResponse(tenantId, productId, locationId, expected, actual, mismatch, "NONE", "MATCHED", null, false, now);
+    }
+
+    ReconciliationSeverity severity = severity(expected, mismatch);
+    String likelyCauses = likelyCauses(mismatch);
+    ReconciliationCase reconciliationCase = caseRepository.findFirstByTenantIdAndProductIdAndLocationIdAndStatusInOrderByUpdatedAtDesc(tenantId, productId, locationId, Set.of(ReconciliationStatus.OPEN, ReconciliationStatus.INVESTIGATING))
+        .orElse(null);
+    boolean created = reconciliationCase == null;
+    boolean materiallyChanged;
+    if (created) {
+      reconciliationCase = new ReconciliationCase(tenantId, productId, locationId, expected, actual, mismatch, severity, likelyCauses, now);
+      materiallyChanged = true;
+    } else {
+      materiallyChanged = reconciliationCase.update(expected, actual, mismatch, severity, likelyCauses, now);
+    }
+    reconciliationCase = caseRepository.save(reconciliationCase);
+    if (created || materiallyChanged) {
+      auditEventService.record(created ? "RECONCILIATION_CASE_CREATED" : "RECONCILIATION_CASE_UPDATED", "RECONCILIATION_CASE", reconciliationCase.getId().toString(), null, "{\"productId\":\"" + productId + "\",\"locationId\":\"" + locationId + "\",\"mismatchQuantity\":\"" + mismatch + "\"}");
+    }
+    return new ReconciliationRunResponse(tenantId, productId, locationId, expected, actual, mismatch, severity.name(), reconciliationCase.getStatus().name(), reconciliationCase.getId(), created || materiallyChanged, now);
+  }
+
+  @Transactional(readOnly = true)
+  public ReconciliationCasesResponse listCases(int page, int size) {
+    int boundedSize = Math.min(Math.max(size, 1), 100);
+    Pageable pageable = PageRequest.of(Math.max(page, 0), boundedSize);
+    Page<ReconciliationCase> cases = caseRepository.findByTenantIdOrderByUpdatedAtDesc(TenantContext.requireTenantId(), pageable);
+    return new ReconciliationCasesResponse(cases.getContent().stream().map(this::toResponse).toList(), cases.getNumber(), cases.getSize(), cases.getTotalElements(), cases.getTotalPages());
+  }
+
+  @Transactional(readOnly = true)
+  public ReconciliationCaseResponse getCase(UUID caseId) {
+    return toResponse(caseRepository.findByIdAndTenantId(caseId, TenantContext.requireTenantId()).orElseThrow(() -> new NotFoundException("Reconciliation case not found")));
+  }
+
+  @Transactional
+  public ReconciliationCaseResponse updateCaseStatus(UUID caseId, String status) {
+    ReconciliationStatus nextStatus = ReconciliationStatus.valueOf(status);
+    ReconciliationCase reconciliationCase = caseRepository.findByIdAndTenantId(caseId, TenantContext.requireTenantId()).orElseThrow(() -> new NotFoundException("Reconciliation case not found"));
+    reconciliationCase.setStatus(nextStatus, clock.instant());
+    reconciliationCase = caseRepository.save(reconciliationCase);
+    auditEventService.record("RECONCILIATION_CASE_STATUS_UPDATED", "RECONCILIATION_CASE", reconciliationCase.getId().toString(), null, "{\"status\":\"" + nextStatus + "\"}");
+    return toResponse(reconciliationCase);
+  }
+
+  private BigDecimal expectedStock(List<InventoryMovement> movements) {
+    BigDecimal expected = BigDecimal.ZERO;
+    for (InventoryMovement movement : movements) {
+      if (movement.getMovementType() == InventoryMovementType.ACTUAL_STOCK_COUNT) continue;
+      BigDecimal quantity = movement.getQuantity();
+      expected = switch (movement.getMovementType()) {
+        case OPENING_STOCK, PURCHASE_RECEIVED, RETURN_IN, TRANSFER_IN -> expected.add(quantity);
+        case SALE, RETURN_OUT, WRITE_OFF, TRANSFER_OUT -> expected.subtract(quantity);
+        case MANUAL_ADJUSTMENT -> expected.add(quantity);
+        case ACTUAL_STOCK_COUNT -> expected;
+      };
+    }
+    return expected;
+  }
+
+  private ReconciliationSeverity severity(BigDecimal expected, BigDecimal mismatch) {
+    BigDecimal absMismatch = mismatch.abs();
+    if (expected.add(mismatch).compareTo(BigDecimal.ZERO) < 0 || absMismatch.compareTo(new BigDecimal("10")) >= 0) return ReconciliationSeverity.HIGH;
+    if (absMismatch.compareTo(new BigDecimal("3")) >= 0) return ReconciliationSeverity.MEDIUM;
+    return ReconciliationSeverity.LOW;
+  }
+
+  private String likelyCauses(BigDecimal mismatch) {
+    if (mismatch.compareTo(BigDecimal.ZERO) < 0) return "[\"unposted sale\",\"write-off missing\",\"stock count below expected\"]";
+    return "[\"unposted purchase receipt\",\"return not recorded\",\"stock count above expected\"]";
+  }
+
+  private ReconciliationCaseResponse toResponse(ReconciliationCase reconciliationCase) {
+    return new ReconciliationCaseResponse(reconciliationCase.getId(), reconciliationCase.getTenantId(), reconciliationCase.getProductId(), reconciliationCase.getLocationId(), reconciliationCase.getExpectedStock(), reconciliationCase.getActualStock(), reconciliationCase.getMismatchQuantity(), reconciliationCase.getSeverity().name(), reconciliationCase.getStatus().name(), reconciliationCase.getLikelyCauses(), reconciliationCase.getCalculatedAt(), reconciliationCase.getCreatedAt(), reconciliationCase.getUpdatedAt());
+  }
+}

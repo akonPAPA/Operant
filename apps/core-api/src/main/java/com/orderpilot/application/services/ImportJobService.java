@@ -2,6 +2,9 @@ package com.orderpilot.application.services;
 
 import com.orderpilot.api.dto.Stage2Dtos.ImportJobRequest;
 import com.orderpilot.api.dto.Stage2Dtos.ImportRowRequest;
+import com.orderpilot.api.dto.Stage2Dtos.ValidationError;
+import com.orderpilot.api.dto.Stage2Dtos.ValidationReportResponse;
+import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.imports.ImportJob;
 import com.orderpilot.domain.imports.ImportJobRepository;
@@ -10,6 +13,7 @@ import com.orderpilot.domain.imports.ImportStagingRowRepository;
 import com.orderpilot.domain.imports.ValidationReport;
 import com.orderpilot.domain.imports.ValidationReportRepository;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +47,7 @@ public class ImportJobService {
 
   @Transactional(readOnly = true)
   public ImportJob get(UUID id) {
-    return jobRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Import job not found"));
+    return jobRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new NotFoundException("Import job not found"));
   }
 
   @Transactional
@@ -66,38 +70,60 @@ public class ImportJobService {
   }
 
   @Transactional
-  public ValidationReport validate(UUID jobId) {
+  public ValidationReportResponse validate(UUID jobId) {
     ImportJob job = get(jobId);
+    job.markValidating(clock.instant());
     List<ImportStagingRow> rows = rowRepository.findByTenantIdAndImportJobIdOrderByRowNumber(job.getTenantId(), job.getId());
     int valid = 0;
     int invalid = 0;
+    List<ValidationError> validationErrors = new ArrayList<>();
     for (ImportStagingRow row : rows) {
       ImportValidationService.RowValidationResult result = validationService.validate(job.getTenantId(), job.getImportType(), row);
       row.setValidation(result.validationStatus(), result.mappedData(), result.validationErrors());
-      if ("VALID".equals(result.validationStatus())) valid++; else invalid++;
+      if ("VALID".equals(result.validationStatus())) {
+        valid++;
+      } else {
+        invalid++;
+        validationErrors.add(new ValidationError(row.getRowNumber(), jsonSupport.errorMessages(result.validationErrors())));
+      }
     }
-    job.markValidated(valid, invalid, clock.instant());
-    ValidationReport report = new ValidationReport(job.getTenantId(), job.getId(), job.getStatus(), jsonSupport.writeObject(Map.of("totalRows", rows.size(), "validRows", valid, "invalidRows", invalid, "importType", job.getImportType())), clock.instant());
+    job.markValidated(rows.size(), valid, invalid, clock.instant());
+    String summary = jsonSupport.writeObject(Map.of(
+        "importJobId", job.getId(),
+        "tenantId", job.getTenantId(),
+        "importType", job.getImportType(),
+        "totalRows", rows.size(),
+        "validRows", valid,
+        "invalidRows", invalid,
+        "status", job.getStatus(),
+        "validationErrors", validationErrors
+    ));
+    ValidationReport report = new ValidationReport(job.getTenantId(), job.getId(), job.getStatus(), summary, clock.instant());
     reportRepository.findByTenantIdAndImportJobId(job.getTenantId(), job.getId()).ifPresent(existing -> {
       reportRepository.delete(existing);
       reportRepository.flush();
     });
     ValidationReport saved = reportRepository.save(report);
     auditEventService.record("import_job.validated", "import_job", job.getId().toString(), null, saved.getSummary());
-    return saved;
+    return toResponse(saved, job, validationErrors);
   }
 
   @Transactional(readOnly = true)
-  public ValidationReport validationReport(UUID jobId) {
+  public ValidationReportResponse validationReport(UUID jobId) {
     ImportJob job = get(jobId);
-    return reportRepository.findByTenantIdAndImportJobId(job.getTenantId(), job.getId()).orElseThrow(() -> new IllegalArgumentException("Validation report not found"));
+    ValidationReport report = reportRepository.findByTenantIdAndImportJobId(job.getTenantId(), job.getId()).orElseThrow(() -> new NotFoundException("Validation report not found"));
+    List<ValidationError> validationErrors = rowRepository.findByTenantIdAndImportJobIdOrderByRowNumber(job.getTenantId(), job.getId()).stream()
+        .filter(row -> row.getValidationErrors() != null && !row.getValidationErrors().isBlank())
+        .map(row -> new ValidationError(row.getRowNumber(), jsonSupport.errorMessages(row.getValidationErrors())))
+        .toList();
+    return toResponse(report, job, validationErrors);
   }
 
   @Transactional
   public ImportJob apply(UUID jobId) {
     ImportJob job = get(jobId);
-    if (!"VALIDATED".equals(job.getStatus())) {
-      throw new IllegalArgumentException("Only fully validated imports can be applied in Stage 2");
+    if (!"VALIDATED".equals(job.getStatus()) || job.getInvalidRows() > 0) {
+      throw new IllegalArgumentException("Only imports with zero invalid rows can be applied in Stage 2");
     }
     job.markApplied(clock.instant());
     auditEventService.record("import_job.applied", "import_job", job.getId().toString(), null, "{\"stage\":\"2\",\"note\":\"apply marks validated import as applied; domain upsert remains Stage 2.1\"}");
@@ -110,5 +136,20 @@ public class ImportJobService {
     job.markRejected("Rejected by operator", clock.instant());
     auditEventService.record("import_job.rejected", "import_job", job.getId().toString(), null, "{\"source\":\"core-api\"}");
     return job;
+  }
+
+  private ValidationReportResponse toResponse(ValidationReport report, ImportJob job, List<ValidationError> validationErrors) {
+    return new ValidationReportResponse(
+        report.getId(),
+        report.getImportJobId(),
+        job.getTenantId(),
+        job.getImportType(),
+        job.getTotalRows(),
+        job.getValidRows(),
+        job.getInvalidRows(),
+        job.getStatus(),
+        validationErrors,
+        report.getSummary()
+    );
   }
 }

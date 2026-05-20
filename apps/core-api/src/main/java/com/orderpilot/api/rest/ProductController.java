@@ -2,6 +2,7 @@ package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.Stage2Dtos.ProductAliasRequest;
 import com.orderpilot.api.dto.Stage2Dtos.ProductAliasResponse;
+import com.orderpilot.api.dto.Stage2Dtos.ProductMatchResponse;
 import com.orderpilot.api.dto.Stage2Dtos.ProductRequest;
 import com.orderpilot.api.dto.Stage2Dtos.ProductResponse;
 import com.orderpilot.application.services.ProductCatalogService;
@@ -29,6 +30,7 @@ public class ProductController {
   @PostMapping public ProductResponse create(@RequestBody ProductRequest request) { return toResponse(service.create(request)); }
   @PatchMapping("/{id}") public ProductResponse update(@PathVariable UUID id, @RequestBody ProductRequest request) { return toResponse(service.update(id, request)); }
   @GetMapping("/search") public List<ProductResponse> search(@RequestParam(defaultValue = "") String query) { return service.search(query).stream().map(this::toResponse).toList(); }
+  @GetMapping("/match") public ProductMatchResponse match(@RequestParam String code, @RequestParam(required = false) UUID customerAccountId) { return service.match(code, customerAccountId); }
   @GetMapping("/{id}/aliases") public List<ProductAliasResponse> aliases(@PathVariable UUID id) { return service.listAliases(id).stream().map(this::toAliasResponse).toList(); }
   @PostMapping("/{id}/aliases") public ProductAliasResponse addAlias(@PathVariable UUID id, @RequestBody ProductAliasRequest request) { return toAliasResponse(service.addAlias(id, request)); }
 

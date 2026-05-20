@@ -39,4 +39,13 @@ public class JsonSupport {
   public String errors(List<String> errors) {
     return writeObject(Map.of("errors", errors));
   }
+
+  @SuppressWarnings("unchecked")
+  public List<String> errorMessages(String json) {
+    Object value = parseObject(json).get("errors");
+    if (value instanceof List<?> list) {
+      return list.stream().map(String::valueOf).toList();
+    }
+    return List.of();
+  }
 }

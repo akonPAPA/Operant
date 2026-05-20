@@ -1,0 +1,29 @@
+[
+  {
+    "productSku": "TOY-CAM-2018-BPAD-OE",
+    "locationCode": "ALM-MAIN",
+    "movementType": "OPENING_STOCK",
+    "quantity": 150,
+    "occurredAt": "2026-05-01T08:00:00Z",
+    "sourceType": "DEMO_SEED",
+    "sourceReference": "DEMO-OPENING-001"
+  },
+  {
+    "productSku": "TOY-CAM-2018-BPAD-OE",
+    "locationCode": "ALM-MAIN",
+    "movementType": "SALE",
+    "quantity": 34,
+    "occurredAt": "2026-05-03T10:00:00Z",
+    "sourceType": "DEMO_SEED",
+    "sourceReference": "DEMO-SALE-001"
+  },
+  {
+    "productSku": "TOY-CAM-2018-BPAD-OE",
+    "locationCode": "ALM-MAIN",
+    "movementType": "ACTUAL_STOCK_COUNT",
+    "quantity": 100,
+    "occurredAt": "2026-05-04T18:00:00Z",
+    "sourceType": "DEMO_SEED",
+    "sourceReference": "DEMO-COUNT-001"
+  }
+]

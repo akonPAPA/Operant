@@ -31,6 +31,7 @@ public class ValidationReport {
   }
 
   public UUID getId() { return id; }
+  public UUID getTenantId() { return tenantId; }
   public UUID getImportJobId() { return importJobId; }
   public String getStatus() { return status; }
   public String getSummary() { return summary; }

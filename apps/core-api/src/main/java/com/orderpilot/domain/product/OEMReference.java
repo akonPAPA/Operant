@@ -21,6 +21,16 @@ public class OEMReference {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected OEMReference() {}
+  public OEMReference(UUID tenantId, UUID productId, String oemCode, String normalizedOemCode, String manufacturer, Instant now) {
+    this.tenantId = tenantId;
+    this.productId = productId;
+    this.oemCode = oemCode;
+    this.normalizedOemCode = normalizedOemCode;
+    this.manufacturer = manufacturer;
+    this.active = true;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
   public UUID getProductId() { return productId; }
