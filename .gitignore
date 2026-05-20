@@ -1,15 +1,33 @@
-# Local env / secrets
+﻿# ===== Secrets / environment =====
 .env
 .env.*
 !.env.example
-.env.local
-*.env.local
-apps/*/.env
-apps/*/.env.*
-!apps/*/.env.example
-!apps/*/.env.local.example
+!.env.local.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.jks
+*.keystore
+secrets.*
+*secret*
+*secrets*
+*.dump
+*.bak
+*.sqlite
+*.db
 
-# Do not publish business/IP docs
+# ===== Local/private data =====
+local-data/
+private-data/
+customer-data/
+uploads/
+data/
+tmp/
+temp/
+
+# ===== Private docs =====
 docs/investor/
 docs/business/
 docs/strategy/
@@ -17,44 +35,49 @@ docs/research/
 docs/founder/
 docs/private/
 docs/pilot/
-docs/product/
-*investor*
-*Investor*
-*Founder_Roadmap*
-*Obsidian*
-*research-report*
-deep-research-report*
+docs/product/private/
+*.pdf
 
-# Build/runtime garbage
-target/
+# ===== Node / frontend =====
 node_modules/
 .next/
 dist/
 build/
 coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== Java / backend =====
+target/
+.gradle/
+build/
+*.class
+*.jar
+*.war
+
+# ===== Python =====
 __pycache__/
 .venv/
+venv/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Local data
-local-data/
-private-data/
-customer-data/
-uploads/
-*.log
-*.zip
-*.7z
-*.rar
-*.db
-*.sqlite
-*.dump
-*.bak
-
-# IDE / OS
+# ===== IDE / OS =====
 .idea/
 .vscode/settings.json
 .vscode/launch.json
 .vscode/tasks.json
 .DS_Store
 Thumbs.db
-*.tsbuildinfo
+
+# ===== Logs =====
+*.log
+
+# ===== Keep safe examples =====
+!.env.example
+!apps/*/.env.example
+!apps/*/.env.local.example
