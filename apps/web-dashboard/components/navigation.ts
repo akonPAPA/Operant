@@ -16,6 +16,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Exception Cockpit", href: "/exception-cockpit" },
   { label: "Processing Jobs", href: "/processing-jobs" },
   { label: "Webhook Events", href: "/webhook-events" },
+  { label: "Inbound Events", href: "/inbound-events" },
   { label: "Customers", href: "/customers" },
   { label: "Products", href: "/products" },
   { label: "Inventory", href: "/inventory" },
@@ -25,7 +26,9 @@ export const navigationItems: NavigationItem[] = [
   { label: "Draft Orders", href: "/orders" },
   { label: "Analytics", href: "/analytics" },
   { label: "Reconciliation", href: "/reconciliation" },
+  { label: "Channels", href: "/channels" },
   { label: "Integrations", href: "/integrations" },
+  { label: "Sync Events", href: "/sync-events" },
   { label: "Audit / Security", href: "/audit-log" },
   { label: "Settings", href: "/settings" }
 ];
