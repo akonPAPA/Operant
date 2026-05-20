@@ -1,27 +1,60 @@
-# Java / Maven
-target/
-*.class
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Local runtime env files
+# Local env / secrets
 .env
+.env.*
+!.env.example
 .env.local
-.env.*.local
+*.env.local
 apps/*/.env
-apps/*/.env.local
-apps/*/.env.*.local
+apps/*/.env.*
+!apps/*/.env.example
+!apps/*/.env.local.example
 
-# Frontend generated artifacts
+# Do not publish business/IP docs
+docs/investor/
+docs/business/
+docs/strategy/
+docs/research/
+docs/founder/
+docs/private/
+docs/pilot/
+docs/product/
+*investor*
+*Investor*
+*Founder_Roadmap*
+*Obsidian*
+*research-report*
+deep-research-report*
+
+# Build/runtime garbage
+target/
 node_modules/
 .next/
+dist/
+build/
+coverage/
+__pycache__/
+.venv/
+.pytest_cache/
+
+# Local data
+local-data/
+private-data/
+customer-data/
+uploads/
+*.log
+*.zip
+*.7z
+*.rar
+*.db
+*.sqlite
+*.dump
+*.bak
+
+# IDE / OS
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.DS_Store
+Thumbs.db
 *.tsbuildinfo
