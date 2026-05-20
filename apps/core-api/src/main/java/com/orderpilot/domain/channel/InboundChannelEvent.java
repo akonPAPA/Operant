@@ -23,12 +23,14 @@ public class InboundChannelEvent {
   @Column(nullable = false) private String status;
   @Column(name = "received_at", nullable = false) private Instant receivedAt;
   @Column(name = "processed_at") private Instant processedAt;
+  @Column(name = "verification_status") private String verificationStatus;
+  @Column(name = "verification_reason") private String verificationReason;
   @Column(name = "error_code") private String errorCode;
   @Column(name = "error_message") private String errorMessage;
 
   protected InboundChannelEvent() {}
 
-  public InboundChannelEvent(UUID tenantId, UUID channelConnectionId, ChannelProviderType providerType, String externalEventId, String sourceActorType, String sourceActorExternalId, String normalizedText, String payloadHash, String rawPayloadJson, Instant now) {
+  public InboundChannelEvent(UUID tenantId, UUID channelConnectionId, ChannelProviderType providerType, String externalEventId, String sourceActorType, String sourceActorExternalId, String normalizedText, String payloadHash, String rawPayloadJson, String verificationStatus, String verificationReason, Instant now) {
     this.tenantId = tenantId;
     this.channelConnectionId = channelConnectionId;
     this.providerType = providerType;
@@ -38,6 +40,8 @@ public class InboundChannelEvent {
     this.normalizedText = normalizedText;
     this.payloadHash = payloadHash;
     this.rawPayloadJson = rawPayloadJson == null || rawPayloadJson.isBlank() ? "{}" : rawPayloadJson;
+    this.verificationStatus = verificationStatus;
+    this.verificationReason = verificationReason;
     this.status = "NORMALIZED";
     this.receivedAt = now;
     this.processedAt = now;
@@ -59,6 +63,8 @@ public class InboundChannelEvent {
   public String getStatus() { return status; }
   public Instant getReceivedAt() { return receivedAt; }
   public Instant getProcessedAt() { return processedAt; }
+  public String getVerificationStatus() { return verificationStatus; }
+  public String getVerificationReason() { return verificationReason; }
   public String getErrorCode() { return errorCode; }
   public String getErrorMessage() { return errorMessage; }
 }
