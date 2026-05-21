@@ -29,6 +29,8 @@ public class DiscountRule {
   protected DiscountRule() {}
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
+  public String getCode() { return code; }
+  public String getName() { return name; }
   public UUID getCustomerAccountId() { return customerAccountId; }
   public UUID getCustomerSegmentId() { return customerSegmentId; }
   public UUID getProductId() { return productId; }

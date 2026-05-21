@@ -27,6 +27,8 @@ public class MarginRule {
   protected MarginRule() {}
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
+  public String getCode() { return code; }
+  public String getName() { return name; }
   public UUID getProductId() { return productId; }
   public String getCategory() { return category; }
   public UUID getCustomerSegmentId() { return customerSegmentId; }

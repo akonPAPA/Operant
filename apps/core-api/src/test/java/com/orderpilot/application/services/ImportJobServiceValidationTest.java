@@ -15,6 +15,11 @@ import com.orderpilot.domain.imports.ImportJob;
 import com.orderpilot.domain.imports.ImportJobRepository;
 import com.orderpilot.domain.imports.ImportStagingRow;
 import com.orderpilot.domain.imports.ImportStagingRowRepository;
+import com.orderpilot.domain.imports.ImportValidationIssue;
+import com.orderpilot.domain.imports.ImportValidationIssueRepository;
+import com.orderpilot.domain.inventory.InventorySnapshotRepository;
+import com.orderpilot.domain.location.LocationRepository;
+import com.orderpilot.domain.product.ProductRepository;
 import com.orderpilot.domain.imports.ValidationReport;
 import com.orderpilot.domain.imports.ValidationReportRepository;
 import java.time.Clock;
@@ -33,10 +38,14 @@ class ImportJobServiceValidationTest {
   private final ImportJobRepository jobRepository = mock(ImportJobRepository.class);
   private final ImportStagingRowRepository rowRepository = mock(ImportStagingRowRepository.class);
   private final ValidationReportRepository reportRepository = mock(ValidationReportRepository.class);
+  private final ImportValidationIssueRepository issueRepository = mock(ImportValidationIssueRepository.class);
   private final ImportValidationService validationService = mock(ImportValidationService.class);
+  private final ProductRepository productRepository = mock(ProductRepository.class);
+  private final InventorySnapshotRepository inventorySnapshotRepository = mock(InventorySnapshotRepository.class);
+  private final LocationRepository locationRepository = mock(LocationRepository.class);
   private final AuditEventService auditEventService = mock(AuditEventService.class);
   private final JsonSupport jsonSupport = new JsonSupport(new ObjectMapper());
-  private final ImportJobService service = new ImportJobService(jobRepository, rowRepository, reportRepository, validationService, auditEventService, jsonSupport, CLOCK);
+  private final ImportJobService service = new ImportJobService(jobRepository, rowRepository, reportRepository, issueRepository, validationService, productRepository, inventorySnapshotRepository, locationRepository, auditEventService, jsonSupport, CLOCK);
 
   @AfterEach
   void clearTenant() {
@@ -55,6 +64,7 @@ class ImportJobServiceValidationTest {
     when(validationService.validate(eq(tenantId), eq("PRODUCTS"), any(ImportStagingRow.class)))
         .thenReturn(new ImportValidationService.RowValidationResult("VALID", "{}", null));
     when(reportRepository.save(any(ValidationReport.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(issueRepository.save(any(ImportValidationIssue.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     ValidationReportResponse report = service.validate(job.getId());
 
@@ -81,6 +91,7 @@ class ImportJobServiceValidationTest {
     when(validationService.validate(tenantId, "PRODUCTS", invalidRow))
         .thenReturn(new ImportValidationService.RowValidationResult("INVALID", "{}", jsonSupport.errors(List.of("name is required"))));
     when(reportRepository.save(any(ValidationReport.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(issueRepository.save(any(ImportValidationIssue.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     ValidationReportResponse report = service.validate(job.getId());
 
@@ -92,7 +103,7 @@ class ImportJobServiceValidationTest {
           assertThat(error.rowNumber()).isEqualTo(2);
           assertThat(error.errors()).containsExactly("name is required");
         });
-    assertThatThrownBy(() -> service.apply(job.getId()))
+    assertThatThrownBy(() -> service.activate(job.getId()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("zero invalid rows");
   }
@@ -117,6 +128,7 @@ class ImportJobServiceValidationTest {
     when(jobRepository.findByIdAndTenantId(job.getId(), tenantId)).thenReturn(Optional.of(job));
     when(rowRepository.findByTenantIdAndImportJobIdOrderByRowNumber(tenantId, job.getId())).thenReturn(List.of());
     when(reportRepository.save(any(ValidationReport.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(issueRepository.save(any(ImportValidationIssue.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     ValidationReportResponse report = service.validate(job.getId());
 

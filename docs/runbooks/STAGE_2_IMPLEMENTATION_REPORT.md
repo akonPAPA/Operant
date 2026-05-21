@@ -173,7 +173,8 @@ Imports:
 - `POST /api/v1/imports/jobs/{id}/rows`
 - `POST /api/v1/imports/jobs/{id}/validate`
 - `GET /api/v1/imports/jobs/{id}/validation-report`
-- `POST /api/v1/imports/jobs/{id}/apply`
+- `POST /api/v1/imports/jobs/{id}/apply` (compatibility alias)
+- `POST /api/v1/imports/{id}/activate`
 - `POST /api/v1/imports/jobs/{id}/reject`
 
 ## 9. Tests added
@@ -259,10 +260,10 @@ pytest
 
 - Full production authentication and RBAC/ABAC enforcement are still not implemented.
 - Tenant isolation is enforced through the Stage 1 tenant context placeholder and tenant-scoped service queries, not full database row-level security.
-- Import apply currently marks fully validated jobs as applied and emits audit; broad domain upsert from staging rows is intentionally left as Stage 2.1.
+- Product and inventory import activation now copies valid staging rows into controlled mirror tables. It rejects duplicates and does not overwrite trusted operational data.
 - Real Excel/PDF parsing is not implemented.
 - No AI extraction, Telegram, WhatsApp, email intake, quote/order workspace, analytics dashboards, or ERP/1C connector was implemented.
-- Discount and margin rules are persisted but do not yet have dedicated REST endpoints.
+- Discount and margin rules now have read endpoints at `/api/v1/discounts` and `/api/v1/margins`.
 - Frontend Stage 2 pages are serious placeholders, not full CRUD screens.
 
 ## 13. Security confirmation
@@ -287,3 +288,14 @@ Stage 3 â€” Omnichannel Intake:
 - object storage abstraction;
 - dedup fingerprint;
 - async processing job enqueue.
+## 15. Stage 2 gap closure
+
+Additional gap closure is documented in `docs/runbooks/STAGE_2_GAP_CLOSURE.md`.
+
+Verification after gap closure:
+
+- `mvn clean test` passed from `apps/core-api`.
+- `npm.cmd run typecheck` passed from `apps/web-dashboard`.
+- `npm.cmd test` passed from `apps/web-dashboard`.
+- `npm.cmd run build` passed from `apps/web-dashboard`.
+- `docker compose -f infra/docker/docker-compose.yml config` passed from the repository root.
