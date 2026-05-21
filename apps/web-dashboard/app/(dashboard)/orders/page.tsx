@@ -11,7 +11,7 @@ export default function Page() {
       <section className="panel table-panel">
         <table className="data-table">
           <thead><tr><th>Order</th><th>Status</th><th>Customer</th><th>Total</th><th>Inventory</th></tr></thead>
-          <tbody><tr><td><a href="/orders/latest">Latest</a></td><td>NEEDS_REVIEW</td><td>Pending</td><td>Pending</td><td>Review required</td></tr></tbody>
+          <tbody><tr><td><Link href="/orders/latest">Latest</Link></td><td>NEEDS_REVIEW</td><td>Pending</td><td>Pending</td><td>Review required</td></tr></tbody>
         </table>
       </section>
     </DashboardShell>
