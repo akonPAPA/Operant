@@ -124,7 +124,7 @@ Show-PortState "Frontend" 3000
 Write-Host ""
 Write-Host "Checking backend runtime datastore..."
 $datasourceUrl = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_URL")
-if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:5432/orderpilot" }
+if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:55432/orderpilot" }
 Test-Postgres $datasourceUrl
 
 Write-Host ""

@@ -30,6 +30,10 @@ public class InboundChannelEvent {
 
   protected InboundChannelEvent() {}
 
+  public InboundChannelEvent(UUID tenantId, UUID channelConnectionId, ChannelProviderType providerType, String externalEventId, String sourceActorType, String sourceActorExternalId, String normalizedText, String payloadHash, String rawPayloadJson, Instant now) {
+    this(tenantId, channelConnectionId, providerType, externalEventId, sourceActorType, sourceActorExternalId, normalizedText, payloadHash, rawPayloadJson, null, null, now);
+  }
+
   public InboundChannelEvent(UUID tenantId, UUID channelConnectionId, ChannelProviderType providerType, String externalEventId, String sourceActorType, String sourceActorExternalId, String normalizedText, String payloadHash, String rawPayloadJson, String verificationStatus, String verificationReason, Instant now) {
     this.tenantId = tenantId;
     this.channelConnectionId = channelConnectionId;

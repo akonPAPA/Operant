@@ -11,14 +11,14 @@ The local demo does not perform real Telegram API calls, real LLM calls, ERP wri
 Launch Docker Desktop first, then start only the repo-defined local infrastructure:
 
 ```powershell
-cd C:\OrderPilot\OrderPilot-Core\infra\docker
-docker compose up -d postgres redis
-docker compose ps
+cd C:\OrderPilot\OrderPilot-Core
+docker compose -f infra\docker\docker-compose.yml up -d postgres redis
+docker compose -f infra\docker\docker-compose.yml ps
 ```
 
 Expected local infrastructure:
 
-- `postgres` healthy on `localhost:5432`
+- `postgres` healthy on `localhost:55432` for host tools and `postgres:5432` inside Docker Compose
 - `redis` healthy on `localhost:6379`
 
 Do not run `docker compose down -v` for normal demo recovery. The local Postgres volume preserves demo data between restarts.
@@ -89,9 +89,9 @@ Backend build/test success and backend runtime readiness are different checks:
 Runtime database variables:
 
 ```powershell
-$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/orderpilot"
-$env:SPRING_DATASOURCE_USERNAME="orderpilot_app"
-$env:SPRING_DATASOURCE_PASSWORD="<local-postgres-placeholder>"
+$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:55432/orderpilot"
+$env:SPRING_DATASOURCE_USERNAME="orderpilot"
+$env:SPRING_DATASOURCE_PASSWORD="orderpilot_dev_password"
 $env:SERVER_PORT="8080"
 ```
 
@@ -293,14 +293,14 @@ Restart `npm run dev` after changing `.env.local`.
 
 ### Missing PostgreSQL Client or Service
 
-Symptom: `seed-local-demo.ps1` reports that `psql` is unavailable, or startup/check scripts report that Postgres is unreachable at `localhost:5432`.
+Symptom: `seed-local-demo.ps1` reports that `psql` is unavailable, or startup/check scripts report that Postgres is unreachable at `localhost:55432`.
 
 Preferred Docker Desktop fix:
 
 ```powershell
-cd C:\OrderPilot\OrderPilot-Core\infra\docker
-docker compose up -d postgres redis
-docker compose ps
+cd C:\OrderPilot\OrderPilot-Core
+docker compose -f infra\docker\docker-compose.yml up -d postgres redis
+docker compose -f infra\docker\docker-compose.yml ps
 ```
 
 Then:
@@ -315,7 +315,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-local-demo.ps1 -AllowFi
 Native PostgreSQL fix, only if you choose not to use Docker Desktop:
 
 1. Install or start local PostgreSQL.
-2. Create database `orderpilot` and user `orderpilot_app`.
+2. Create database `orderpilot` and user `orderpilot`.
 3. Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and the local database credential in the shell that starts core-api.
 4. Start core-api once so Flyway applies migrations.
 5. Run `scripts\seed-local-demo.ps1 -UpdateFrontendEnv`.

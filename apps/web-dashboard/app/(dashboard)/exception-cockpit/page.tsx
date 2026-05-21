@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { DashboardShell } from "@/components/dashboard-shell";
 
 export default function Page() {
@@ -13,7 +15,7 @@ export default function Page() {
       <section className="panel table-panel">
         <table className="data-table">
           <thead><tr><th>Case</th><th>Status</th><th>Priority</th><th>Severity</th><th>Customer</th><th>Assigned</th></tr></thead>
-          <tbody><tr><td><a href="/exception-cockpit/latest">Latest</a></td><td>OPEN</td><td>HIGH</td><td>ERROR</td><td>Pending</td><td>Unassigned</td></tr></tbody>
+          <tbody><tr><td><Link href="/exception-cockpit/latest">Latest</Link></td><td>OPEN</td><td>HIGH</td><td>ERROR</td><td>Pending</td><td>Unassigned</td></tr></tbody>
         </table>
       </section>
     </DashboardShell>

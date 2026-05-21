@@ -66,6 +66,7 @@ public class ConnectorSyncEventService {
   private IntegrationConnection getActiveConnection(UUID connectionId) {
     IntegrationConnection connection = connectionRepository.findByIdAndTenantId(connectionId, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Integration connection not found"));
     if (!"ACTIVE".equals(connection.getStatus())) throw new IllegalArgumentException("Integration connection must be ACTIVE to run sync");
+    if (!"READ_ONLY".equals(connection.getMode())) throw new IllegalArgumentException("Only READ_ONLY connector syncs are allowed in Stage 13");
     return connection;
   }
 }

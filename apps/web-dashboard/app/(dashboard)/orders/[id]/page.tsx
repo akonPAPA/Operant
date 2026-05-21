@@ -1,11 +1,12 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Timeline } from "@/components/timeline";
 
-export default function Page({ params }: Readonly<{ params: { id: string } }>) {
+export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
+  const { id } = await params;
   return (
     <DashboardShell title="Draft Order Detail">
       <section className="panel">
-        <h2>Order {params.id}</h2>
+        <h2>Order {id}</h2>
         <p>Review order lines, inventory warnings, substitute selection, approval state, notes, and timeline.</p>
         <p className="risk-note">Internal approve/reject/cancel actions do not write ERP, 1C, accounting, warehouse, or inventory.</p>
       </section>

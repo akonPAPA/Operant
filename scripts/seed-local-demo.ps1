@@ -16,7 +16,7 @@ $DemoSubstituteAId = "55555555-5555-4555-8555-555555555555"
 $DemoSubstituteBId = "66666666-6666-4666-8666-666666666666"
 
 function Convert-JdbcToPsql([string]$Url) {
-  if (-not $Url) { $Url = "jdbc:postgresql://localhost:5432/orderpilot" }
+  if (-not $Url) { $Url = "jdbc:postgresql://localhost:55432/orderpilot" }
   $match = [regex]::Match($Url, "^jdbc:postgresql://(?<host>[^:/]+)(:(?<port>\d+))?/(?<db>[^?]+)")
   if (-not $match.Success) {
     throw "Unsupported PostgreSQL JDBC URL: $Url"
@@ -92,7 +92,7 @@ function Invoke-SeedWithDockerComposePsql([string]$ComposePath, [hashtable]$Conn
 $resolvedRoot = (Resolve-Path $RepoRoot).Path
 $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
 $connection = Convert-JdbcToPsql $DatasourceUrl
-if (-not $Username) { $Username = "orderpilot_app" }
+if (-not $Username) { $Username = "orderpilot" }
 
 $sql = @"
 BEGIN;

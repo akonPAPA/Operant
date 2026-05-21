@@ -13,12 +13,13 @@ const sections = [
   ["Approval requirements", "Workflow-only approvals for risky validation outcomes."]
 ];
 
-export default function Page({ params }: Readonly<{ params: { id: string } }>) {
+export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
+  const { id } = await params;
   return (
     <DashboardShell title="Validation Detail">
       <section className="panel">
         <h2>Run Summary</h2>
-        <p>Run {params.id} shows the deterministic validation result prepared for operator review and the Stage 6 quote/order workspace.</p>
+        <p>Run {id} shows the deterministic validation result prepared for operator review and the Stage 6 quote/order workspace.</p>
         <p className="risk-note">Approving a Stage 5 requirement only approves validation workflow output. It does not create a quote/order or write to ERP.</p>
       </section>
       <section className="panel action-panel">

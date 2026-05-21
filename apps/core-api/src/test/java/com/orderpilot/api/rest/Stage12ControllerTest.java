@@ -40,7 +40,7 @@ class Stage12ControllerTest {
 
   @Test void webhookEndpointStoresInboundEventResponse() throws Exception {
     UUID connectionId = UUID.randomUUID();
-    when(channelEventNormalizationService.normalize(eq(connectionId), eq(ChannelProviderType.TELEGRAM), any()))
+    when(channelEventNormalizationService.normalize(eq(connectionId), eq(ChannelProviderType.TELEGRAM), any(), anyMap()))
         .thenReturn(new InboundChannelEvent(UUID.randomUUID(), connectionId, ChannelProviderType.TELEGRAM, "tg-1", "CUSTOMER", "chat-1", "Need quote", "hash", "{}", Instant.now()));
     mockMvc.perform(post("/api/v1/webhooks/channels/telegram/" + connectionId).contentType("application/json").content("{\"message_id\":\"tg-1\",\"text\":\"Need quote\"}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.normalizedText").value("Need quote"));

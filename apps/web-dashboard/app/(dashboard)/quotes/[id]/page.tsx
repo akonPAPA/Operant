@@ -1,11 +1,12 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Timeline } from "@/components/timeline";
 
-export default function Page({ params }: Readonly<{ params: { id: string } }>) {
+export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
+  const { id } = await params;
   return (
     <DashboardShell title="Draft Quote Detail">
       <section className="panel">
-        <h2>Quote {params.id}</h2>
+        <h2>Quote {id}</h2>
         <p>Review quote lines, validation status, margin/discount warnings, approval status, notes, and audit timeline.</p>
         <p className="risk-note">Internal approve/reject/cancel actions do not send a quote externally.</p>
       </section>
