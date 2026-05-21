@@ -1,0 +1,35 @@
+OrderPilot Project Status Checkpoint
+Date: 2026-05-22
+Active repository: C:\OrderPilot\OrderPilot-Core
+
+Current stage:
+- Stage 13 restored and stabilized.
+- Project is ready to move to the next stage after the verified backend test pass.
+- No Stage 14 operator workflow code remains active in the project.
+
+What was done:
+- Reviewed the referenced Codex session for the intended Stage 13 state.
+- Confirmed the active repository root from docs/runbooks/ACTIVE_REPOSITORY.md.
+- Checked current project drift against the Stage 13 boundary.
+- Removed out-of-scope Stage 14 operator workflow source from active compilation.
+- Preserved the removed Stage 14 files in /tmp/orderpilot-stage14-backup instead of deleting them.
+- Restored unrelated tracked drift that was outside the requested Stage 13 scope.
+- Kept the Stage 13 connector/security/read-only boundaries unchanged.
+
+What was fixed:
+- Fixed Maven compilation failure caused by active Stage 14 operator workflow code.
+- Restored the repo back to the Stage 13 boundary instead of adding next-stage behavior.
+- Kept connector behavior read-only by default.
+- Preserved the existing architecture and business logic.
+- Avoided adding new workflow, connector-write, or post-Stage-13 features.
+
+Verification:
+- Command run: mvn -q test
+- Location: C:\OrderPilot\OrderPilot-Core\apps\core-api
+- Java used: Java 21.0.11
+- Result: PASS
+
+Status:
+- Backend Maven test passes.
+- Stage 13 is stable.
+- Move to next stage.
