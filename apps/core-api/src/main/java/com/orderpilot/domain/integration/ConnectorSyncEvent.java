@@ -19,6 +19,8 @@ public class ConnectorSyncEvent {
   @Column(name = "records_failed", nullable = false) private int recordsFailed;
   @Column(name = "started_at", nullable = false) private Instant startedAt;
   @Column(name = "finished_at") private Instant finishedAt;
+  @Column(name = "duration_ms") private Long durationMs;
+  @Column(name = "error_category") private String errorCategory;
   @Column(name = "error_code") private String errorCode;
   @Column(name = "error_message") private String errorMessage;
 
@@ -35,9 +37,9 @@ public class ConnectorSyncEvent {
   }
 
   public void complete(int recordsRead, int recordsWritten, int recordsFailed, Instant now) {
-    this.recordsRead = recordsRead; this.recordsWritten = recordsWritten; this.recordsFailed = recordsFailed; this.status = recordsFailed > 0 ? "PARTIAL_SUCCESS" : "SUCCESS"; this.finishedAt = now;
+    this.recordsRead = recordsRead; this.recordsWritten = recordsWritten; this.recordsFailed = recordsFailed; this.status = recordsFailed > 0 ? "PARTIAL_SUCCESS" : "SUCCESS"; this.finishedAt = now; this.durationMs = java.time.Duration.between(startedAt, now).toMillis();
   }
-  public void fail(String errorCode, String errorMessage, Instant now) { this.status = "FAILED"; this.errorCode = errorCode; this.errorMessage = errorMessage; this.finishedAt = now; }
+  public void fail(String errorCode, String errorMessage, Instant now) { this.status = "FAILED"; this.errorCategory = "CONNECTOR_ERROR"; this.errorCode = errorCode; this.errorMessage = errorMessage; this.finishedAt = now; this.durationMs = java.time.Duration.between(startedAt, now).toMillis(); }
 
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
@@ -51,6 +53,8 @@ public class ConnectorSyncEvent {
   public int getRecordsFailed() { return recordsFailed; }
   public Instant getStartedAt() { return startedAt; }
   public Instant getFinishedAt() { return finishedAt; }
+  public Long getDurationMs() { return durationMs; }
+  public String getErrorCategory() { return errorCategory; }
   public String getErrorCode() { return errorCode; }
   public String getErrorMessage() { return errorMessage; }
 }

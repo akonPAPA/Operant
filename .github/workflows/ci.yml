@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-compose-config:
+    name: Docker Compose config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate local Docker Compose config
+        run: docker compose -f infra/docker/docker-compose.yml config
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/core-api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run backend tests
+        run: mvn test
+
+  frontend:
+    name: Frontend lint, build, and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web-dashboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web-dashboard/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Run frontend build
+        run: npm run build
+
+      - name: Run frontend tests
+        run: npm test
+
+  ai-worker:
+    name: AI worker tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/ai-worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/ai-worker/pyproject.toml
+
+      - name: Install AI worker dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run AI worker tests
+        run: python -m pytest
