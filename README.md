@@ -17,10 +17,17 @@ AI, frontend, chatbot, and connector components must never directly write truste
 ```powershell
 cd "C:\OrderPilot\OrderPilot-Core"
 Copy-Item ".env.example" ".env"
-docker compose -f "infra/docker/docker-compose.yml" up --build
+docker compose -f "infra/docker/docker-compose.yml" up -d postgres redis
+docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot
 ```
 
-For the current Windows local demo baseline, use `docs/runbooks/LOCAL_DEMO_RUNBOOK.md`. The Stage 9I flow starts Docker Desktop, runs repo-defined Postgres/Redis through Docker Compose, seeds deterministic demo data, starts backend/frontend, and verifies with the existing local scripts.
+For the full Windows local setup, use `docs/runbooks/local-development.md`. The primary Compose entrypoint is `infra/docker/docker-compose.yml` from the repo root. The local Postgres role/database is `orderpilot/orderpilot`; do not use `postgres/postgres` unless you intentionally created that role outside this repo.
+
+Local parity check:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\scripts\dev\check-local.ps1"
+```
 
 ## Stage status
 
