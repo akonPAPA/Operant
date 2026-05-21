@@ -169,6 +169,13 @@ cd "C:\OrderPilot\OrderPilot-Core"
 powershell -ExecutionPolicy Bypass -File ".\scripts\dev\check-local.ps1"
 ```
 
+For a CI-like frontend dependency check, use clean install mode:
+
+```powershell
+cd "C:\OrderPilot\OrderPilot-Core"
+powershell -ExecutionPolicy Bypass -File ".\scripts\dev\check-local.ps1" -CleanFrontendInstall
+```
+
 The script validates:
 
 - Docker CLI and Docker Compose are available.
@@ -176,11 +183,11 @@ The script validates:
 - PostgreSQL and Redis start through Docker Compose.
 - Compose service status is visible.
 - `orderpilot-postgres` accepts the repo-defined `orderpilot` role and `orderpilot` database.
-- Backend tests pass with Maven.
+- Backend tests pass with Maven and `SPRING_PROFILES_ACTIVE=test`.
 - Frontend lint, build, and tests pass with npm.
 - AI worker tests pass through `apps\ai-worker\.venv\Scripts\python.exe`.
 
-The check script does not create `.env`, install dependencies, delete Docker volumes, or modify business logic. If the AI worker `.venv` is missing, it prints the setup commands and fails.
+The check script does not create `.env`, delete Docker volumes, or modify business logic. By default it uses the existing frontend install. With `-CleanFrontendInstall`, it runs `npm ci` before frontend checks to mirror CI dependency installation. If the AI worker `.venv` is missing, it prints the setup commands and fails.
 
 Reminder: Docker-internal PostgreSQL is still `postgres:5432`, but Windows host tools and locally run backend processes should use `localhost:55432` because native Windows PostgreSQL may own `localhost:5432`.
 
@@ -189,13 +196,13 @@ Reminder: Docker-internal PostgreSQL is still `postgres:5432`, but Windows host 
 GitHub Actions uses `.github/workflows/ci.yml` for repository parity. It runs the same component gates as the local parity check:
 
 - Docker Compose config validation for `infra/docker/docker-compose.yml`.
-- Backend Maven tests for `apps/core-api`.
+- Backend Maven tests for `apps/core-api` with `SPRING_PROFILES_ACTIVE=test`.
 - Frontend install, lint, build, and tests for `apps/web-dashboard`.
 - AI worker install and pytest for `apps/ai-worker`.
 
 The local `scripts\dev\check-local.ps1` script is for developer machines because it starts local PostgreSQL and Redis, verifies the Docker container identity, and uses the existing AI worker virtual environment. CI is for clean repository verification and does not require production secrets, real AI provider keys, external paid services, or local Docker volumes.
 
-Keep the local parity script and CI workflow aligned when changing build tools, package scripts, Docker Compose paths, test commands, or supported runtime versions.
+CI uses Java 21, Node.js 22 LTS, and Python 3.12. Keep the local parity script and CI workflow aligned when changing build tools, package scripts, Docker Compose paths, test commands, or supported runtime versions.
 
 ## Troubleshooting: role "postgres" does not exist
 

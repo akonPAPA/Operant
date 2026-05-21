@@ -23,6 +23,8 @@ jobs:
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
+    env:
+      SPRING_PROFILES_ACTIVE: test
     defaults:
       run:
         working-directory: apps/core-api
@@ -53,7 +55,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
           cache: npm
           cache-dependency-path: apps/web-dashboard/package-lock.json
 
