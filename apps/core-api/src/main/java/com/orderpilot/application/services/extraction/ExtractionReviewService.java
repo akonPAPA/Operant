@@ -14,6 +14,7 @@ public class ExtractionReviewService {
   @Transactional(readOnly=true) public List<ExtractionResult> results(){return resultRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());}
   @Transactional(readOnly=true) public ExtractionResult result(UUID id){return resultRepository.findByIdAndTenantId(id,TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Extraction result not found"));}
   @Transactional(readOnly=true) public ExtractionResult resultForRun(UUID runId){return resultRepository.findFirstByTenantIdAndExtractionRunId(TenantContext.requireTenantId(),runId).orElseThrow(() -> new IllegalArgumentException("Extraction result not found"));}
+  @Transactional(readOnly=true) public List<ExtractionResult> resultsForSource(String sourceType, UUID sourceId){return resultRepository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(TenantContext.requireTenantId(), sourceType, sourceId);}
   @Transactional(readOnly=true) public List<ExtractedField> fields(UUID resultId){return fieldRepository.findByTenantIdAndExtractionResultId(TenantContext.requireTenantId(), resultId);}
   @Transactional(readOnly=true) public List<ExtractedLineItem> lineItems(UUID resultId){return lineRepository.findByTenantIdAndExtractionResultId(TenantContext.requireTenantId(), resultId);}
   @Transactional(readOnly=true) public List<SourceEvidence> evidence(UUID runId){return evidenceRepository.findByTenantIdAndExtractionRunId(TenantContext.requireTenantId(), runId);}

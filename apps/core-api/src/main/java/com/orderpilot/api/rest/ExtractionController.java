@@ -13,15 +13,22 @@ public class ExtractionController {
   private final ExtractionPipelineService pipelineService;
   private final ExtractionRunService runService;
   private final ExtractionReviewService reviewService;
+  private final SemanticExtractionProvider provider;
 
-  public ExtractionController(ExtractionPipelineService pipelineService, ExtractionRunService runService, ExtractionReviewService reviewService) {
+  public ExtractionController(ExtractionPipelineService pipelineService, ExtractionRunService runService, ExtractionReviewService reviewService, SemanticExtractionProvider provider) {
     this.pipelineService = pipelineService;
     this.runService = runService;
     this.reviewService = reviewService;
+    this.provider = provider;
   }
 
   @PostMapping("/runs")
   public ExtractionRunResponse createRun(@RequestBody ExtractionRunRequest request) {
+    return toRun(runService.create(request, provider.providerName(), provider.schemaVersion()));
+  }
+
+  @PostMapping("/runs/execute")
+  public ExtractionRunResponse executeRun(@RequestBody ExtractionRunRequest request) {
     return toRun(pipelineService.runNow(request));
   }
 
@@ -43,6 +50,11 @@ public class ExtractionController {
   @GetMapping("/results/{id}")
   public ExtractionResultResponse result(@PathVariable UUID id) {
     return toResult(reviewService.result(id));
+  }
+
+  @GetMapping("/sources/{sourceType}/{sourceId}/results")
+  public List<ExtractionResultResponse> resultsForSource(@PathVariable String sourceType, @PathVariable UUID sourceId) {
+    return reviewService.resultsForSource(sourceType, sourceId).stream().map(this::toResult).toList();
   }
 
   @GetMapping("/runs/{id}/result")
