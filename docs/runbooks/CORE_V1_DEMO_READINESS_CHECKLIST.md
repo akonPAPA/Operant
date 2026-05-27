@@ -55,7 +55,18 @@ Use this checklist before a local design partner, pilot, or investor demo. Mark 
 | Demo docs match current UI/API names, including `ChangeRequest`, `Demo ERP`, and `connectorIdempotencyKeyHash` |  |  |
 | Demo close clearly states what is intentionally disabled |  |  |
 
-## E. Blockers Before Real Pilot
+## E. Stage 11C Acceptance Evidence
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| `scripts\run-core-v1-acceptance.ps1` preflight executed |  |  |
+| `docs\runbooks\CORE_V1_ACCEPTANCE_EVIDENCE.md` generated or refreshed |  |  |
+| Strict runtime acceptance executed with `scripts\run-core-v1-acceptance.ps1 -RequireRuntime` before a live demo |  |  |
+| All safety guardrails in the evidence report are `PASS` |  |  |
+| Blocking Core v1 scenarios are `PASS`, or explicitly `PARTIAL` / `NOT_VERIFIED` with a reason and owner |  |  |
+| Report states production connectors and real ERP/1C writes remain disabled |  |  |
+
+## F. Blockers Before Real Pilot
 
 | Blocker | Status | Notes |
 | --- | --- | --- |

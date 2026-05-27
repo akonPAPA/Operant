@@ -127,12 +127,40 @@ Existing helper scripts:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\run-core-v1-demo-check.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\run-core-v1-acceptance.ps1
 powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\seed-local-demo.ps1
 powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\start-local-demo.ps1
 powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\check-local-demo.ps1
 ```
 
 `run-core-v1-demo-check.ps1` is a compact safe preflight wrapper. It validates local prerequisites, validates Docker Compose config when Docker is available, calls `check-local-demo.ps1`, prints the manual backend/frontend/worker commands, and points back to this runbook. It does not start production profiles or call external systems.
+
+`run-core-v1-acceptance.ps1` is the Stage 11C acceptance evidence runner. It checks repo state, required demo scripts and runbooks, Core v1 scenario evidence, safety guardrails, and optional localhost runtime readiness, then writes `docs\runbooks\CORE_V1_ACCEPTANCE_EVIDENCE.md`. It does not start services, call external networks, enable production connectors, require real secrets, write ERP/1C, mutate real inventory, or allow bot/frontend/AI worker direct DB writes.
+
+Preflight-only evidence report:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1
+```
+
+Strict runtime evidence report after backend, frontend, and local database are running:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1 -RequireRuntime
+```
+
+Use `-OutputPath` to write the report to a temporary or review-specific location:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1 -OutputPath "$env:TEMP\core-v1-acceptance.md"
+```
+
+Acceptance status meanings:
+
+- `PASS`: evidence or localhost runtime behavior satisfies the Stage 11C runner criteria.
+- `PARTIAL`: meaningful evidence exists, but the runner does not prove the full live scenario.
+- `FAIL`: required evidence or strict runtime behavior is missing.
+- `NOT_VERIFIED`: intentionally skipped or outside the current runner scope, usually because runtime mode was not requested.
 
 `check-local-demo.ps1` defaults to preflight mode. Runtime-only checks, such as missing backend/frontend listeners, are warnings unless `-RequireRuntime` is supplied. Use `-RequireRuntime` before a live demo when backend and frontend should already be running.
 
@@ -145,6 +173,7 @@ powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\c
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-demo-check.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1
 ```
 
 3. Start local services:
@@ -177,6 +206,7 @@ npm.cmd run dev
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-local-demo.ps1 -RequireRuntime
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1 -RequireRuntime
 ```
 
 8. Run worker verification if the AI worker changed or if you want a full local confidence check:
@@ -204,6 +234,22 @@ cd apps\ai-worker
 11. Close with the safety statement: no real ERP/1C write, no external connector network call, no raw secrets, no inventory mutation, and no bot-triggered connector command.
 
 Do not claim a seeded example exists if it is not present in the local database. Use the docs and UI labels as the source of truth for what can be demonstrated in a given local run.
+
+## Stage 11C Acceptance Evidence
+
+Before sharing a local/investor demo result, generate the Stage 11C report:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1
+```
+
+For a live demo signoff, start and seed the local runtime first, then run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-acceptance.ps1 -RequireRuntime
+```
+
+The report must keep these disabled conditions explicit: production connectors, real ERP/1C writes, external connector network calls, raw secrets, real inventory mutation, bot-triggered connector commands, and direct database writes from bot/frontend/AI worker surfaces.
 
 ## Troubleshooting
 

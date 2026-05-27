@@ -10,6 +10,17 @@ permissions:
   contents: read
 
 jobs:
+  stage-11c-acceptance-preflight:
+    name: Stage 11C acceptance preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Core v1 acceptance preflight
+        shell: pwsh
+        run: ./scripts/test-core-v1-acceptance.ps1 -OutputPath "${{ runner.temp }}/CORE_V1_ACCEPTANCE_EVIDENCE.md"
+
   docker-compose-config:
     name: Docker Compose config
     runs-on: ubuntu-latest
