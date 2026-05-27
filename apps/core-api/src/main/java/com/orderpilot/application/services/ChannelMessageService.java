@@ -4,6 +4,9 @@ import com.orderpilot.api.dto.Stage3Dtos.MessageRequest;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.intake.ChannelMessage;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
+import com.orderpilot.domain.intake.InboundEventLedger;
+import com.orderpilot.domain.intake.InboundEventLedgerRepository;
+import com.orderpilot.domain.intake.ObjectStorageRecord;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
@@ -12,8 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ChannelMessageService {
-  private final ChannelMessageRepository repository; private final IntakeValidationService validationService; private final ProcessingJobService jobService; private final AuditEventService auditEventService; private final Clock clock;
-  public ChannelMessageService(ChannelMessageRepository repository, IntakeValidationService validationService, ProcessingJobService jobService, AuditEventService auditEventService, Clock clock){this.repository=repository; this.validationService=validationService; this.jobService=jobService; this.auditEventService=auditEventService; this.clock=clock;}
+  private final ChannelMessageRepository repository; private final InboundEventLedgerRepository ledgerRepository; private final IntakeValidationService validationService; private final ProcessingJobService jobService; private final AuditEventService auditEventService; private final ObjectStorageService storageService; private final Clock clock;
+  public ChannelMessageService(ChannelMessageRepository repository, InboundEventLedgerRepository ledgerRepository, IntakeValidationService validationService, ProcessingJobService jobService, AuditEventService auditEventService, ObjectStorageService storageService, Clock clock){this.repository=repository; this.ledgerRepository=ledgerRepository; this.validationService=validationService; this.jobService=jobService; this.auditEventService=auditEventService; this.storageService=storageService; this.clock=clock;}
   @Transactional(readOnly=true) public List<ChannelMessage> list(){ return repository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId()); }
   @Transactional(readOnly=true) public ChannelMessage get(UUID id){ return repository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Channel message not found")); }
   @Transactional(readOnly=true) public List<ChannelMessage> conversation(String conversationId){ return repository.findByTenantIdAndConversationIdOrderByReceivedAt(TenantContext.requireTenantId(), conversationId); }
@@ -21,10 +24,17 @@ public class ChannelMessageService {
     UUID tenantId = TenantContext.requireTenantId(); validationService.validateMessage(request.channel(), request.textContent(), false);
     if (request.externalMessageId()!=null && !request.externalMessageId().isBlank()) {
       var existing = repository.findFirstByTenantIdAndChannelAndExternalMessageId(tenantId, request.channel(), request.externalMessageId());
-      if (existing.isPresent()) { ChannelMessage duplicate = new ChannelMessage(tenantId, request.channel(), request.externalMessageId(), request.conversationId(), request.senderHandle(), request.senderDisplayName(), request.customerAccountId(), request.direction()==null?"INBOUND":request.direction(), request.messageType()==null?"TEXT":request.messageType(), request.textContent(), request.rawPayload(), "DUPLICATE", clock.instant()); ChannelMessage saved=repository.save(duplicate); auditEventService.record("channel_message.duplicate", "channel_message", saved.getId().toString(), null, "{\"source\":\"intake\"}"); return saved; }
+      if (existing.isPresent()) { ObjectStorageRecord duplicatePayload = storageService.storeRawPayload(request.channel(), request.externalMessageId(), request.rawPayload() == null || request.rawPayload().isBlank() ? "{}" : request.rawPayload()); ChannelMessage duplicate = new ChannelMessage(tenantId, request.channel(), request.externalMessageId(), request.conversationId(), request.senderHandle(), request.senderDisplayName(), request.customerAccountId(), request.direction()==null?"INBOUND":request.direction(), request.messageType()==null?"TEXT":request.messageType(), request.textContent(), normalizeText(request.textContent()), request.rawPayload(), duplicatePayload.getObjectKey(), "DUPLICATE", clock.instant()); ChannelMessage saved=repository.save(duplicate); ledgerRepository.save(new InboundEventLedger(tenantId, request.channel(), request.externalMessageId(), "MESSAGE_RECEIVED", duplicatePayload.getSha256Fingerprint(), "DUPLICATE", duplicatePayload.getObjectKey(), clock.instant())); auditEventService.record("channel_message.duplicate", "channel_message", saved.getId().toString(), null, "{\"source\":\"intake\"}"); return saved; }
     }
     String conversationId = request.conversationId()==null || request.conversationId().isBlank() ? UUID.randomUUID().toString() : request.conversationId();
-    ChannelMessage msg = new ChannelMessage(tenantId, request.channel(), request.externalMessageId(), conversationId, request.senderHandle(), request.senderDisplayName(), request.customerAccountId(), request.direction()==null?"INBOUND":request.direction(), request.messageType()==null?"TEXT":request.messageType(), request.textContent(), request.rawPayload(), "QUEUED", clock.instant());
-    ChannelMessage saved = repository.save(msg); jobService.enqueue(tenantId, "MESSAGE_PROCESSING", "CHANNEL_MESSAGE", saved.getId()); auditEventService.record("channel_message.received", "channel_message", saved.getId().toString(), null, "{\"source\":\"intake\"}"); return saved;
+    String rawPayload = request.rawPayload() == null || request.rawPayload().isBlank() ? "{}" : request.rawPayload();
+    ObjectStorageRecord storedPayload = storageService.storeRawPayload(request.channel(), request.externalMessageId(), rawPayload);
+    String rawPayloadStorageKey = storedPayload.getObjectKey();
+    ChannelMessage msg = new ChannelMessage(tenantId, request.channel(), request.externalMessageId(), conversationId, request.senderHandle(), request.senderDisplayName(), request.customerAccountId(), request.direction()==null?"INBOUND":request.direction(), request.messageType()==null?"TEXT":request.messageType(), request.textContent(), normalizeText(request.textContent()), rawPayload, rawPayloadStorageKey, "QUEUED", clock.instant());
+    ChannelMessage saved = repository.save(msg); ledgerRepository.save(new InboundEventLedger(tenantId, request.channel(), request.externalMessageId(), "MESSAGE_RECEIVED", storedPayload.getSha256Fingerprint(), "QUEUED", rawPayloadStorageKey, clock.instant())); jobService.enqueue(tenantId, "MESSAGE_RECEIVED", "CHANNEL_MESSAGE", saved.getId()); auditEventService.record("channel_message.received", "channel_message", saved.getId().toString(), null, "{\"source\":\"intake\"}"); return saved;
+  }
+
+  private String normalizeText(String value) {
+    return value == null ? null : value.trim().replaceAll("\\s+", " ");
   }
 }

@@ -19,18 +19,18 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
     <DashboardShell title="Validation Detail">
       <section className="panel">
         <h2>Run Summary</h2>
-        <p>Run {id} shows the deterministic validation result prepared for operator review and the Stage 6 quote/order workspace.</p>
+        <p>Run {id} shows the deterministic validation result prepared for the Stage 6 operator review boundary.</p>
         <p className="risk-note">Approving a Stage 5 requirement only approves validation workflow output. It does not create a quote/order or write to ERP.</p>
       </section>
       <section className="panel action-panel">
-        <h2>Workspace Actions</h2>
+        <h2>Review Actions</h2>
         <div className="button-row">
-          <button className="button" type="button">Create Exception Case</button>
-          <button className="button" type="button">Generate Suggested Fixes</button>
-          <button className="button" type="button">Create Draft Quote</button>
-          <button className="button" type="button">Create Draft Order</button>
+          <button className="button" type="button">Create Review Case</button>
+          <button className="button" type="button">Generate Suggested Actions</button>
+          <button className="button" type="button">Start Review</button>
+          <button className="button" type="button">Escalate</button>
         </div>
-        <p className="risk-note">These actions create internal workflow records only. They do not send customer messages, create external orders, or update ERP/warehouse systems.</p>
+        <p className="risk-note">These actions create review workflow records only. They do not send customer messages, create quote/order records, or update ERP/warehouse systems.</p>
       </section>
       <div className="page-grid">
         {sections.map(([title, body]) => (

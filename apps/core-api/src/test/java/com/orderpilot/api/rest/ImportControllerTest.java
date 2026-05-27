@@ -16,9 +16,10 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.MediaType;
 
 @WebMvcTest(ImportController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class})
+@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class})
 class ImportControllerTest {
   @Autowired
   private MockMvc mockMvc;
@@ -35,5 +36,15 @@ class ImportControllerTest {
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("NOT_FOUND"))
         .andExpect(jsonPath("$.message").value("Import job not found"));
+  }
+
+  @Test
+  void malformedImportRequestReturnsSafeBadRequest() throws Exception {
+    mockMvc.perform(post("/api/v1/imports/PRODUCTS")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{not-json"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+        .andExpect(jsonPath("$.message").value("Request body is not valid JSON"));
   }
 }

@@ -35,6 +35,13 @@ public class ChangeRequest {
   @Column(name = "external_reference") private String externalReference;
   @Column(name = "failure_reason") private String failureReason;
   @Column(name = "cancellation_reason") private String cancellationReason;
+  @Column(name = "connector_idempotency_key") private String connectorIdempotencyKey;
+  @Column(name = "connector_attempt_count", nullable = false) private int connectorAttemptCount;
+  @Column(name = "connector_max_attempts", nullable = false) private int connectorMaxAttempts;
+  @Column(name = "connector_last_attempt_at") private Instant connectorLastAttemptAt;
+  @Column(name = "connector_next_retry_at") private Instant connectorNextRetryAt;
+  @Enumerated(EnumType.STRING) @Column(name = "connector_failure_type") private ConnectorFailureType connectorFailureType;
+  @Column(name = "connector_retryable", nullable = false) private boolean connectorRetryable;
 
   protected ChangeRequest() {}
 
@@ -49,6 +56,9 @@ public class ChangeRequest {
     this.validationStatus = "PENDING_VALIDATION";
     this.approvalStatus = "PENDING_APPROVAL";
     this.executionStatus = "EXECUTION_DISABLED";
+    this.connectorMaxAttempts = 3;
+    this.connectorAttemptCount = 0;
+    this.connectorRetryable = false;
     this.idempotencyKey = idempotencyKey == null || idempotencyKey.isBlank() ? null : idempotencyKey;
     this.createdByUserId = createdByUserId;
     this.createdAt = now;
@@ -96,6 +106,46 @@ public class ChangeRequest {
     this.executedAt = null;
     this.externalReference = null;
     this.failureReason = reason;
+  }
+
+  public void markExecutionPending(Instant now) {
+    this.executionStatus = "EXECUTION_PENDING";
+    this.failureReason = null;
+    this.connectorLastAttemptAt = now;
+    this.connectorAttemptCount = this.connectorAttemptCount + 1;
+    this.connectorRetryable = false;
+    this.connectorNextRetryAt = null;
+    this.connectorFailureType = null;
+  }
+
+  public void markExecuted(String externalReference, String connectorIdempotencyKey, Instant now) {
+    this.executionStatus = "EXECUTED";
+    this.externalReference = externalReference;
+    this.connectorIdempotencyKey = connectorIdempotencyKey;
+    this.executedAt = now;
+    this.failureReason = null;
+    this.connectorRetryable = false;
+    this.connectorNextRetryAt = null;
+    this.connectorFailureType = null;
+  }
+
+  public void markExecutionFailed(ConnectorFailureType failureType, String reason, boolean retryable, Instant nextRetryAt, Instant now) {
+    this.executionStatus = "FAILED";
+    this.failureReason = safe(reason);
+    this.executedAt = now;
+    this.connectorFailureType = failureType == null ? ConnectorFailureType.UNKNOWN : failureType;
+    this.connectorRetryable = retryable && this.connectorAttemptCount < this.connectorMaxAttempts;
+    this.connectorNextRetryAt = this.connectorRetryable ? nextRetryAt : null;
+  }
+
+  public void cancelExecution(String reason, Instant now) {
+    this.approvalStatus = "CANCELLED";
+    this.executionStatus = "CANCELLED";
+    this.cancellationReason = safe(reason);
+    this.failureReason = safe(reason);
+    this.connectorRetryable = false;
+    this.connectorNextRetryAt = null;
+    this.rejectedAt = now;
   }
 
   public void approveInternal(UUID approvedByUserId, Instant now) {
@@ -150,4 +200,16 @@ public class ChangeRequest {
   public String getExternalReference() { return externalReference; }
   public String getFailureReason() { return failureReason; }
   public String getCancellationReason() { return cancellationReason; }
+  public String getConnectorIdempotencyKey() { return connectorIdempotencyKey; }
+  public int getConnectorAttemptCount() { return connectorAttemptCount; }
+  public int getConnectorMaxAttempts() { return connectorMaxAttempts; }
+  public Instant getConnectorLastAttemptAt() { return connectorLastAttemptAt; }
+  public Instant getConnectorNextRetryAt() { return connectorNextRetryAt; }
+  public ConnectorFailureType getConnectorFailureType() { return connectorFailureType; }
+  public boolean isConnectorRetryable() { return connectorRetryable; }
+
+  private static String safe(String value) {
+    if (value == null || value.isBlank()) return null;
+    return value.replaceAll("(?i)(secret|token|password|key)=[^,\\s}]+", "$1=REDACTED");
+  }
 }

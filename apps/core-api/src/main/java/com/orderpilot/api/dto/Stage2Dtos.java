@@ -22,8 +22,13 @@ public final class Stage2Dtos {
 
   public record PriceRuleRequest(UUID productId, UUID customerAccountId, UUID customerSegmentId, UUID locationId, BigDecimal minQuantity, String uom, BigDecimal unitPrice, String currency, Instant activeFrom, Instant activeTo, Integer priority) {}
   public record PriceRuleResponse(UUID id, UUID productId, BigDecimal unitPrice, String currency) {}
+  public record DiscountRuleResponse(UUID id, String code, String name, UUID customerAccountId, UUID customerSegmentId, UUID productId, BigDecimal maxDiscountPercent, BigDecimal requiresApprovalAbovePercent) {}
+  public record MarginRuleResponse(UUID id, String code, String name, UUID productId, String category, UUID customerSegmentId, BigDecimal minimumGrossMarginPercent, BigDecimal approvalRequiredBelowPercent) {}
 
-  public record ImportJobRequest(UUID dataSourceId, String importType, String originalFilename, UUID createdBy) {}
+  public record DemoTenantRequest(String slug, String legalName) {}
+  public record DemoTenantResponse(UUID id, String slug, String legalName, String status, boolean created) {}
+
+  public record ImportJobRequest(UUID dataSourceId, String importType, String originalFilename, UUID createdBy, String csvContent) {}
   public record ImportJobResponse(UUID id, String importType, String originalFilename, String status, int totalRows, int validRows, int invalidRows, String errorSummary) {}
   public record ImportRowRequest(int rowNumber, String rawData) {}
   public record ImportRowResponse(UUID id, int rowNumber, String validationStatus, String mappedData, String validationErrors) {}

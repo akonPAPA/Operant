@@ -19,6 +19,11 @@ public class InventoryController {
   private final InventorySnapshotService service;
   public InventoryController(InventorySnapshotService service) { this.service = service; }
 
+  @GetMapping
+  public List<InventorySnapshotResponse> list(@RequestParam(required = false) UUID productId, @RequestParam(required = false) UUID locationId) {
+    return service.latest(productId, locationId).stream().map(this::toResponse).toList();
+  }
+
   @GetMapping("/latest")
   public List<InventorySnapshotResponse> latest(@RequestParam(required = false) UUID productId, @RequestParam(required = false) UUID locationId) {
     return service.latest(productId, locationId).stream().map(this::toResponse).toList();

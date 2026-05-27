@@ -23,6 +23,8 @@ public class ChannelMessage {
   @Column(nullable = false) private String direction;
   @Column(name = "message_type", nullable = false) private String messageType;
   @Column(name = "text_content") private String textContent;
+  @Column(name = "normalized_text") private String normalizedText;
+  @Column(name = "raw_payload_storage_key") private String rawPayloadStorageKey;
   @JdbcTypeCode(SqlTypes.JSON) @Column(name = "raw_payload", nullable = false, columnDefinition = "jsonb") private String rawPayload;
   @Column(nullable = false) private String status;
   @Column(name = "received_at", nullable = false) private Instant receivedAt;
@@ -32,6 +34,11 @@ public class ChannelMessage {
   public ChannelMessage(UUID tenantId, String channel, String externalMessageId, String conversationId, String senderHandle, String senderDisplayName, UUID customerAccountId, String direction, String messageType, String textContent, String rawPayload, String status, Instant now) {
     this.tenantId=tenantId; this.channel=channel; this.externalMessageId=externalMessageId; this.conversationId=conversationId; this.senderHandle=senderHandle; this.senderDisplayName=senderDisplayName; this.customerAccountId=customerAccountId; this.direction=direction; this.messageType=messageType; this.textContent=textContent; this.rawPayload=rawPayload == null || rawPayload.isBlank() ? "{}" : rawPayload; this.status=status; this.receivedAt=now; this.createdAt=now; this.updatedAt=now;
   }
+  public ChannelMessage(UUID tenantId, String channel, String externalMessageId, String conversationId, String senderHandle, String senderDisplayName, UUID customerAccountId, String direction, String messageType, String textContent, String normalizedText, String rawPayload, String rawPayloadStorageKey, String status, Instant now) {
+    this(tenantId, channel, externalMessageId, conversationId, senderHandle, senderDisplayName, customerAccountId, direction, messageType, textContent, rawPayload, status, now);
+    this.normalizedText = normalizedText;
+    this.rawPayloadStorageKey = rawPayloadStorageKey;
+  }
   public ChannelMessage(UUID tenantId, String channel, String externalMessageId, String conversationId, String senderHandle, String senderDisplayName, UUID customerAccountId, UUID customerContactId, UUID channelIdentityId, String signatureVerificationMode, String direction, String messageType, String textContent, String rawPayload, String status, Instant now) {
     this(tenantId, channel, externalMessageId, conversationId, senderHandle, senderDisplayName, customerAccountId, direction, messageType, textContent, rawPayload, status, now);
     this.customerContactId = customerContactId;
@@ -39,5 +46,5 @@ public class ChannelMessage {
     this.signatureVerificationMode = signatureVerificationMode;
   }
   public void markDuplicate(Instant now){this.status="DUPLICATE"; this.updatedAt=now;} public void markQueued(Instant now){this.status="QUEUED"; this.updatedAt=now;}
-  public UUID getId(){return id;} public UUID getTenantId(){return tenantId;} public String getChannel(){return channel;} public String getExternalMessageId(){return externalMessageId;} public String getConversationId(){return conversationId;} public String getSenderHandle(){return senderHandle;} public String getSenderDisplayName(){return senderDisplayName;} public UUID getCustomerAccountId(){return customerAccountId;} public UUID getCustomerContactId(){return customerContactId;} public UUID getChannelIdentityId(){return channelIdentityId;} public String getSignatureVerificationMode(){return signatureVerificationMode;} public String getMessageType(){return messageType;} public String getTextContent(){return textContent;} public String getStatus(){return status;} public Instant getReceivedAt(){return receivedAt;}
+  public UUID getId(){return id;} public UUID getTenantId(){return tenantId;} public String getChannel(){return channel;} public String getExternalMessageId(){return externalMessageId;} public String getConversationId(){return conversationId;} public String getSenderHandle(){return senderHandle;} public String getSenderDisplayName(){return senderDisplayName;} public UUID getCustomerAccountId(){return customerAccountId;} public UUID getCustomerContactId(){return customerContactId;} public UUID getChannelIdentityId(){return channelIdentityId;} public String getSignatureVerificationMode(){return signatureVerificationMode;} public String getMessageType(){return messageType;} public String getTextContent(){return textContent;} public String getNormalizedText(){return normalizedText;} public String getRawPayloadStorageKey(){return rawPayloadStorageKey;} public String getStatus(){return status;} public Instant getReceivedAt(){return receivedAt;}
 }

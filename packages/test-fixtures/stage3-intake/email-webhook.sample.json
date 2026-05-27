@@ -1,0 +1,16 @@
+{
+  "externalMessageId": "demo-email-001",
+  "sender": "buyer@acme-auto.example",
+  "recipients": "sales@orderpilot.example",
+  "subject": "RFQ Toyota Camry brake pads",
+  "bodyText": "Please quote brake pads for Toyota Camry 2018, 20 pcs.",
+  "attachments": [
+    {
+      "originalFilename": "rfq-lines.csv",
+      "contentType": "text/csv",
+      "sizeBytes": 128,
+      "objectStorageKey": "metadata-only/demo-email-001/rfq-lines.csv",
+      "fingerprintSha256": "demo-metadata-only"
+    }
+  ]
+}

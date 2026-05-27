@@ -14,8 +14,11 @@ class Stage9SecurityDocumentationTest {
     assertDoc("docs/security/THREAT_MODEL.md", "tenant isolation", "audit", "threat model", "no direct DB writes");
     assertDoc("docs/security/AI_AND_BOT_GOVERNANCE.md", "AI is advisory", "approval", "audit", "Bot Runtime Lite");
     assertDoc("docs/security/SECURITY_VERIFICATION_CHECKLIST.md", "tenant isolation", "audit", "approval", "webhook");
+    assertDoc("docs/security/stage9-security-hardening.md", "OWASP API", "X-OrderPilot-Permissions", "backup/restore", "observability");
     assertDoc("docs/runbooks/SECURITY_REVIEW_RUNBOOK.md", "mvn clean test", "hardcoded secrets", "audit-critical");
+    assertDoc("docs/runbooks/demo-readiness-checklist.md", "mvn test", "backup", "observability", "seed script");
     assertDoc("docs/investor/INVESTOR_DEMO_SCRIPT_CORE_V1.md", "Telegram RFQ", "mismatch -16", "analytics summary", "security");
+    assertDoc("docs/investor/investor-demo-script.md", "AI does not", "read-only analytics", "human review", "external writes");
     assertDoc("docs/investor/DEMO_DATASET_CORE_V1.md", "opening stock = 150", "sale = 34", "actual stock = 100");
   }
 

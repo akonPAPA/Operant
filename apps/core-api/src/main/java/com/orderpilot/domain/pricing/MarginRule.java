@@ -25,8 +25,23 @@ public class MarginRule {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected MarginRule() {}
+  public MarginRule(UUID tenantId, String code, String name, UUID productId, String category, UUID customerSegmentId, BigDecimal minimumGrossMarginPercent, BigDecimal approvalRequiredBelowPercent, Instant now) {
+    this.tenantId = tenantId;
+    this.code = code;
+    this.name = name;
+    this.productId = productId;
+    this.category = category;
+    this.customerSegmentId = customerSegmentId;
+    this.minimumGrossMarginPercent = minimumGrossMarginPercent;
+    this.approvalRequiredBelowPercent = approvalRequiredBelowPercent;
+    this.active = true;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
+  public String getCode() { return code; }
+  public String getName() { return name; }
   public UUID getProductId() { return productId; }
   public String getCategory() { return category; }
   public UUID getCustomerSegmentId() { return customerSegmentId; }

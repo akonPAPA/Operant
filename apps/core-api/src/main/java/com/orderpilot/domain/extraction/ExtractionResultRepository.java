@@ -4,4 +4,5 @@ public interface ExtractionResultRepository extends JpaRepository<ExtractionResu
   List<ExtractionResult> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
   Optional<ExtractionResult> findByIdAndTenantId(UUID id, UUID tenantId);
   Optional<ExtractionResult> findFirstByTenantIdAndExtractionRunId(UUID tenantId, UUID extractionRunId);
+  List<ExtractionResult> findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(UUID tenantId, String sourceType, UUID sourceId);
 }

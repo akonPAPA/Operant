@@ -2,6 +2,8 @@
 
 This runbook is the primary local development path for OrderPilot on Windows.
 
+The live repository is no longer a README-only or Stage 1-only scaffold. It contains later-stage backend, frontend, AI-worker, connector, intake, validation, workspace, and demo modules. Use this runbook to verify the shared foundation without resetting, deleting, or recreating the project.
+
 OrderPilot uses:
 
 - Java 21 and Spring Boot for `apps/core-api`
@@ -145,7 +147,40 @@ python -m orderpilot_ai_worker.main
 
 If `py` is unavailable but Python 3.12 is on PATH, use `python` instead.
 
+## Stage 2 Demo Seed Data
+
+After the backend is running, load Core v1 demo data through the API:
+
+```powershell
+cd "C:\OrderPilot\OrderPilot-Core"
+.\scripts\seed-demo-data\seed-core-v1.ps1
+```
+
+The script creates or reuses a demo tenant, imports CSV fixtures from `packages\test-fixtures\stage2-demo`, validates staged rows, activates valid imports, and prints the demo `tenant_id`. Use that value as `NEXT_PUBLIC_DEMO_TENANT_ID` for dashboard pages that read seeded data. See `docs/runbooks/demo-seed-data.md`.
+
+## Stage 3 Intake Local Testing
+
+After backend startup and demo tenant creation, use `docs\runbooks\intake-local-testing.md` to exercise file upload, API upload, email webhook stubs, Telegram webhook stubs, inbound event reads, and processing job reads.
+
+The frontend intake pages read through core-api using `NEXT_PUBLIC_CORE_API_URL` and `NEXT_PUBLIC_DEMO_TENANT_ID`; they never access the database directly.
+
 ## Tests
+
+Run focused foundation checks when changing Stage 1 surfaces:
+
+```powershell
+cd "C:\OrderPilot\OrderPilot-Core\apps\core-api"
+mvn -Dtest=HealthControllerTest,GlobalExceptionHandlerTest,Stage1MigrationFileTest test
+
+cd "C:\OrderPilot\OrderPilot-Core\apps\web-dashboard"
+npm.cmd run lint
+npm.cmd run build
+
+cd "C:\OrderPilot\OrderPilot-Core\apps\ai-worker"
+python -m pytest tests/test_process_inbound_document.py
+```
+
+Run broader component checks before handing off larger changes:
 
 ```powershell
 cd "C:\OrderPilot\OrderPilot-Core\apps\core-api"
@@ -186,6 +221,8 @@ The script validates:
 - Backend tests pass with Maven and `SPRING_PROFILES_ACTIVE=test`.
 - Frontend lint, build, and tests pass with npm.
 - AI worker tests pass through `apps\ai-worker\.venv\Scripts\python.exe`.
+
+Because this repository may have unrelated in-progress later-stage changes, inspect `git status --short` before interpreting failures. Do not reset or delete uncommitted work as part of local foundation verification.
 
 The check script does not create `.env`, delete Docker volumes, or modify business logic. By default it uses the existing frontend install. With `-CleanFrontendInstall`, it runs `npm ci` before frontend checks to mirror CI dependency installation. If the AI worker `.venv` is missing, it prints the setup commands and fails.
 

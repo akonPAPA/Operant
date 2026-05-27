@@ -31,17 +31,17 @@ public class ValidationRun {
     this.tenantId = tenantId;
     this.extractionResultId = extractionResultId;
     this.sourceType = sourceType;
-    this.status = "CREATED";
-    this.overallStatus = "NEEDS_REVIEW";
+    this.status = "VALIDATION_READY";
+    this.overallStatus = "VALIDATION_READY";
     this.overallConfidence = BigDecimal.ZERO;
     this.createdAt = now;
     this.updatedAt = now;
   }
 
   public void start(Instant now) { this.status = "RUNNING"; this.startedAt = now; this.updatedAt = now; }
-  public void complete(String overallStatus, BigDecimal confidence, Instant now) { this.status = "SUCCEEDED"; this.overallStatus = overallStatus; this.overallConfidence = confidence; this.finishedAt = now; this.updatedAt = now; }
+  public void complete(String overallStatus, BigDecimal confidence, Instant now) { this.status = overallStatus; this.overallStatus = overallStatus; this.overallConfidence = confidence; this.finishedAt = now; this.updatedAt = now; }
   public void needsReview(String overallStatus, BigDecimal confidence, Instant now) { this.status = "NEEDS_REVIEW"; this.overallStatus = overallStatus; this.overallConfidence = confidence; this.finishedAt = now; this.updatedAt = now; }
-  public void fail(String message, Instant now) { this.status = "FAILED"; this.overallStatus = "NEEDS_REVIEW"; this.errorMessage = message; this.finishedAt = now; this.updatedAt = now; }
+  public void fail(String message, Instant now) { this.status = "FAILED"; this.overallStatus = "FAILED"; this.errorMessage = message; this.finishedAt = now; this.updatedAt = now; }
 
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }

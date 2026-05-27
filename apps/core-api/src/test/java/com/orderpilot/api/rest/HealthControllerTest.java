@@ -13,7 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 
 @WebMvcTest(HealthController.class)
-@Import(CoreConfiguration.class)
+@Import({CoreConfiguration.class, NoopApiPermissionTestConfig.class})
 class HealthControllerTest {
   @Autowired
   private MockMvc mockMvc;

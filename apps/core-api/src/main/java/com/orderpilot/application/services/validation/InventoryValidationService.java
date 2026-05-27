@@ -33,9 +33,9 @@ public class InventoryValidationService {
     }
     InventorySnapshot snapshot = snapshots.get(0);
     BigDecimal available = snapshot.getQuantityAvailable();
-    String status = available.compareTo(BigDecimal.ZERO) <= 0 ? "OUT_OF_STOCK" : available.compareTo(requested) < 0 ? "INSUFFICIENT_STOCK" : "AVAILABLE";
+    String status = available.compareTo(BigDecimal.ZERO) <= 0 ? "OUT_OF_STOCK" : available.compareTo(requested) < 0 ? "LOW_STOCK" : "AVAILABLE";
     if ("OUT_OF_STOCK".equals(status)) issueService.open(validationRunId, extractionResultId, line.getId(), null, "OUT_OF_STOCK", "ERROR", "Requested product is out of stock", "{}");
-    if ("INSUFFICIENT_STOCK".equals(status)) issueService.open(validationRunId, extractionResultId, line.getId(), null, "INSUFFICIENT_STOCK", "WARNING", "Requested quantity exceeds available stock", "{}");
+    if ("LOW_STOCK".equals(status)) issueService.open(validationRunId, extractionResultId, line.getId(), null, "LOW_STOCK", "WARNING", "Requested quantity exceeds available stock", "{}");
     return save(tenantId, validationRunId, line.getId(), productId, snapshot.getLocationId(), requested, snapshot.getQuantityOnHand(), available, snapshot.getQuantityReserved(), status, snapshot.getId());
   }
 

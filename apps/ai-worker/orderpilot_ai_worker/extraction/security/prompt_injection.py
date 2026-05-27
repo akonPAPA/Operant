@@ -6,6 +6,10 @@ SUSPICIOUS_PHRASES = (
     "call the database tool",
     "write to database",
     "you are now system admin",
+    "approve this order",
+    "create quote",
+    "create order",
+    "write to erp",
 )
 
 

@@ -236,6 +236,14 @@ a {
   padding: 8px 10px;
 }
 
+.filter-row a {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
 .action-panel {
   margin-top: 18px;
 }
@@ -259,6 +267,49 @@ a {
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+.table-link-button {
+  display: inline-block;
+  margin-top: 0;
+}
+
+.upload-form {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.upload-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.upload-form label span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.upload-form input,
+.upload-form select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  padding: 10px;
+}
+
+.form-message {
+  color: var(--muted);
+  margin: 0;
+}
+
+.form-message.done {
+  color: var(--accent-strong);
+}
+
+.form-message.error {
+  color: var(--danger);
 }
 
 .secondary-button {
@@ -497,6 +548,52 @@ blockquote {
 
 .trust-panel li {
   line-height: 1.45;
+}
+
+.review-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.review-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.review-list li {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px;
+}
+
+.risk-cell {
+  background: #fff7ed;
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.inline-correction {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.compact-input {
+  max-width: 11rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.compact-actions {
+  margin-top: 0.5rem;
 }
 
 code {

@@ -40,7 +40,7 @@ class WebhookSignatureVerifierTest {
 
   @Test
   void telegramVerifierHasStage10EContractMode() {
-    TelegramSecretTokenVerifier verifier = new TelegramSecretTokenVerifier();
+    TelegramSecretTokenVerifier verifier = new TelegramSecretTokenVerifier("");
 
     var result = verifier.verify(Map.of(), "{}", ChannelType.TELEGRAM, UUID.randomUUID());
 

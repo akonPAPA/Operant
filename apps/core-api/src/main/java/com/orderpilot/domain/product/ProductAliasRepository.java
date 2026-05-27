@@ -10,4 +10,5 @@ public interface ProductAliasRepository extends JpaRepository<ProductAlias, UUID
   List<ProductAlias> findByTenantIdAndNormalizedAliasAndCustomerAccountIdAndActiveTrue(UUID tenantId, String normalizedAlias, UUID customerAccountId);
   List<ProductAlias> findByTenantIdAndNormalizedAliasAndCustomerAccountIdIsNullAndActiveTrue(UUID tenantId, String normalizedAlias);
   List<ProductAlias> findByTenantIdAndActiveTrue(UUID tenantId);
+  boolean existsByTenantIdAndProductIdAndNormalizedAliasAndActiveTrue(UUID tenantId, UUID productId, String normalizedAlias);
 }

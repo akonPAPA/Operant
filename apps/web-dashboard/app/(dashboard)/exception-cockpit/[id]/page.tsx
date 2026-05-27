@@ -7,15 +7,26 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
     <DashboardShell title="Exception Case Detail">
       <section className="panel">
         <h2>Case {id}</h2>
-        <p>Review source, customer match, validation issues, suggested fixes, substitute candidates, approval requirements, notes, and operator actions.</p>
+        <p>Review extraction fields, evidence, confidence, validation issues, suggested corrective actions, substitute candidates, approval requirements, notes, and operator actions.</p>
         <p className="risk-note">Workspace actions update OrderPilot workflow state only. They do not mutate product, customer, inventory, pricing, ERP, accounting, or warehouse systems.</p>
       </section>
       <div className="page-grid">
-        <section className="panel"><h2>Actions</h2><p>Assign, resolve issue, waive issue, accept/reject suggested fix, create draft quote, or create draft order.</p></section>
-        <section className="panel"><h2>Suggested fixes</h2><p>Customer/product selection, UOM normalization, substitute selection, price selection, and approval/manual-edit suggestions.</p></section>
-        <section className="panel"><h2>Approvals</h2><p>Workflow-only approval requirements from validation and draft review.</p></section>
+        <section className="panel"><h2>Operator Actions</h2><p>Start review, approve for next stage, reject, request correction, escalate, add internal note, or confirm a candidate match inside review state.</p></section>
+        <section className="panel"><h2>Suggested Actions</h2><p>Confirm customer match, select product candidate, normalize UOM, adjust quantity, select substitute candidate, request manager approval, reject result, or escalate.</p></section>
+        <section className="panel"><h2>Approvals</h2><p>Workflow-only approval requirements from validation confidence, margin, discount, substitute risk, and policy checks.</p></section>
+        <section className="panel"><h2>Evidence</h2><p>Extracted values show confidence, source snippets, page or message references, validation status, issue code, suggested action, and risk level.</p></section>
       </div>
-      <section className="panel"><h2>Timeline</h2><Timeline items={[{ action: "CASE_OPENED", message: "Exception case created from validation output.", createdAt: "Pending API data" }]} /></section>
+      <section className="panel action-panel">
+        <h2>Review Commands</h2>
+        <div className="button-row">
+          <button className="button" type="button">Start Review</button>
+          <button className="button" type="button">Approve for Next Stage</button>
+          <button className="button" type="button">Reject</button>
+          <button className="button" type="button">Needs Correction</button>
+          <button className="button" type="button">Escalate</button>
+        </div>
+      </section>
+      <section className="panel"><h2>Timeline</h2><Timeline items={[{ action: "REVIEW_CASE_CREATED", message: "Review case created from validation output.", createdAt: "Pending API data" }]} /></section>
     </DashboardShell>
   );
 }

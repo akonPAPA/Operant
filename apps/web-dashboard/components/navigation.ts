@@ -13,6 +13,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Messages", href: "/messages" },
   { label: "Extractions", href: "/extractions" },
   { label: "Validations", href: "/validations" },
+  { label: "Validation Review", href: "/validation-review" },
   { label: "Exception Cockpit", href: "/exception-cockpit" },
   { label: "Processing Jobs", href: "/processing-jobs" },
   { label: "Webhook Events", href: "/webhook-events" },
@@ -29,6 +30,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Channels", href: "/channels" },
   { label: "Integrations", href: "/integrations" },
   { label: "Sync Events", href: "/sync-events" },
+  { label: "Audit", href: "/audit" },
   { label: "Audit / Security", href: "/audit-log" },
   { label: "Settings", href: "/settings" }
 ];

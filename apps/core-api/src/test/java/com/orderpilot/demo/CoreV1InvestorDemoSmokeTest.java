@@ -100,7 +100,8 @@ class CoreV1InvestorDemoSmokeTest {
     assertThat(auditEventRepository.findAll()).extracting("action").contains("RECONCILIATION_CASE_CREATED");
 
     mockMvc.perform(get("/api/v1/analytics/commerce/summary")
-            .header("X-Tenant-Id", tenantId.toString()))
+            .header("X-Tenant-Id", tenantId.toString())
+            .header("X-OrderPilot-Permissions", "ANALYTICS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.tenantId").value(tenantId.toString()))
         .andExpect(jsonPath("$.totalBotRfqRequests").value(1))
@@ -110,7 +111,8 @@ class CoreV1InvestorDemoSmokeTest {
 
     UUID otherTenant = UUID.randomUUID();
     mockMvc.perform(get("/api/v1/analytics/commerce/summary")
-            .header("X-Tenant-Id", otherTenant.toString()))
+            .header("X-Tenant-Id", otherTenant.toString())
+            .header("X-OrderPilot-Permissions", "ANALYTICS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.totalBotRfqRequests").value(0))
         .andExpect(jsonPath("$.openReconciliationCases").value(0))

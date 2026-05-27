@@ -24,7 +24,7 @@ public class MarginValidationService {
   public MarginCheckResult check(UUID runId, UUID extractionResultId, UUID lineId, UUID productId, BigDecimal unitPrice) {
     UUID tenantId = TenantContext.requireTenantId();
     if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) <= 0) {
-      issueService.open(runId, extractionResultId, lineId, null, "MARGIN_BELOW_THRESHOLD", "WARNING", "Margin cannot be computed because unit price is unknown", "{}");
+      issueService.open(runId, extractionResultId, lineId, null, "MARGIN_BELOW_GUARDRAIL", "WARNING", "Margin cannot be computed because unit price is unknown", "{}");
       return save(tenantId, runId, lineId, productId, null, unitPrice, null, null, null, null, false, "PRICE_UNKNOWN");
     }
     Product product = productId == null ? null : productRepository.findByIdAndTenantIdAndDeletedAtIsNull(productId, tenantId).orElse(null);
@@ -35,8 +35,8 @@ public class MarginValidationService {
     if (rule == null) return save(tenantId, runId, lineId, productId, null, unitPrice, cost, margin, null, null, false, "PASS");
     boolean belowApproval = margin.compareTo(rule.getApprovalRequiredBelowPercent()) < 0;
     boolean belowMinimum = margin.compareTo(rule.getMinimumGrossMarginPercent()) < 0;
-    if (belowApproval) approvalService.create(runId, lineId, "MARGIN_BELOW_THRESHOLD", "HIGH", "Gross margin is below the approval threshold");
-    if (belowMinimum) issueService.open(runId, extractionResultId, lineId, null, "MARGIN_BELOW_THRESHOLD", "CRITICAL", "Gross margin is below minimum guardrail", "{}");
+    if (belowApproval) approvalService.create(runId, lineId, "MARGIN_BELOW_GUARDRAIL", "HIGH", "Gross margin is below the approval threshold");
+    if (belowMinimum) issueService.open(runId, extractionResultId, lineId, null, "MARGIN_BELOW_GUARDRAIL", "CRITICAL", "Gross margin is below minimum guardrail", "{}");
     String status = belowMinimum ? "BELOW_MINIMUM" : belowApproval ? "BELOW_APPROVAL_THRESHOLD" : "PASS";
     return save(tenantId, runId, lineId, productId, rule.getId(), unitPrice, cost, margin, rule.getMinimumGrossMarginPercent(), rule.getApprovalRequiredBelowPercent(), belowApproval, status);
   }

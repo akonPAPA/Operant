@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest({ChannelConnectionController.class, ChannelWebhookController.class, IntegrationConnectionController.class})
-@Import(CoreConfiguration.class)
+@Import({CoreConfiguration.class, NoopApiPermissionTestConfig.class})
 class Stage12ControllerTest {
   @Autowired MockMvc mockMvc;
   @MockBean ChannelConnectionService channelConnectionService;

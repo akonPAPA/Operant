@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 class UomNormalizationServiceTest {
   private final UomNormalizationResultRepository repository = mock(UomNormalizationResultRepository.class);
   private final ValidationIssueService issueService = mock(ValidationIssueService.class);
-  private final UomNormalizationService service = new UomNormalizationService(repository, issueService, Clock.fixed(Instant.parse("2026-05-18T00:00:00Z"), ZoneOffset.UTC));
+  private final ApprovalRequirementService approvalService = mock(ApprovalRequirementService.class);
+  private final UomNormalizationService service = new UomNormalizationService(repository, issueService, approvalService, Clock.fixed(Instant.parse("2026-05-18T00:00:00Z"), ZoneOffset.UTC));
 
   @AfterEach
   void clearTenant() {

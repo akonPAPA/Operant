@@ -29,7 +29,7 @@ public class ProductController {
   @GetMapping("/{id}") public ProductResponse get(@PathVariable UUID id) { return toResponse(service.get(id)); }
   @PostMapping public ProductResponse create(@RequestBody ProductRequest request) { return toResponse(service.create(request)); }
   @PatchMapping("/{id}") public ProductResponse update(@PathVariable UUID id, @RequestBody ProductRequest request) { return toResponse(service.update(id, request)); }
-  @GetMapping("/search") public List<ProductResponse> search(@RequestParam(defaultValue = "") String query) { return service.search(query).stream().map(this::toResponse).toList(); }
+  @GetMapping("/search") public List<ProductResponse> search(@RequestParam(required = false) String q, @RequestParam(required = false) String query) { return service.search(q == null ? query : q).stream().map(this::toResponse).toList(); }
   @GetMapping("/match") public ProductMatchResponse match(@RequestParam String code, @RequestParam(required = false) UUID customerAccountId) { return service.match(code, customerAccountId); }
   @GetMapping("/{id}/aliases") public List<ProductAliasResponse> aliases(@PathVariable UUID id) { return service.listAliases(id).stream().map(this::toAliasResponse).toList(); }
   @PostMapping("/{id}/aliases") public ProductAliasResponse addAlias(@PathVariable UUID id, @RequestBody ProductAliasRequest request) { return toAliasResponse(service.addAlias(id, request)); }

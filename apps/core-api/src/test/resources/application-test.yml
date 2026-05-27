@@ -3,7 +3,7 @@ spring:
     database:
       replace: none
   datasource:
-    url: jdbc:h2:mem:orderpilot;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE DOMAIN IF NOT EXISTS JSONB AS JSON
+    url: jdbc:h2:mem:orderpilot_${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE DOMAIN IF NOT EXISTS JSONB AS JSON
     driver-class-name: org.h2.Driver
     username: sa
     password:

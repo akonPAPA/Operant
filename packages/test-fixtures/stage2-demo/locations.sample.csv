@@ -1,0 +1,3 @@
+code,name,type,address,city,country,active
+WH-ALM,Almaty Main Warehouse,WAREHOUSE,Industrial District 14,Almaty,KZ,true
+WH-AST,Astana Overflow Warehouse,WAREHOUSE,Warehouse Park 7,Astana,KZ,true

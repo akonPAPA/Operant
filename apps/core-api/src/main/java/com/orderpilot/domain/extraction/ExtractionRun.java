@@ -24,10 +24,11 @@ public class ExtractionRun {
   @Column(name="updated_at",nullable=false) private Instant updatedAt;
   protected ExtractionRun() {}
   public ExtractionRun(UUID tenantId, String sourceType, UUID sourceId, UUID processingJobId, String providerType, String providerName, String modelName, String promptVersion, String schemaVersion, Instant now) {
-    this.tenantId=tenantId; this.sourceType=sourceType; this.sourceId=sourceId; this.processingJobId=processingJobId; this.status="CREATED"; this.providerType=providerType; this.providerName=providerName; this.modelName=modelName; this.promptVersion=promptVersion; this.schemaVersion=schemaVersion; this.createdAt=now; this.updatedAt=now;
+    this.tenantId=tenantId; this.sourceType=sourceType; this.sourceId=sourceId; this.processingJobId=processingJobId; this.status=ProcessingStatus.PENDING.name(); this.providerType=providerType; this.providerName=providerName; this.modelName=modelName; this.promptVersion=promptVersion; this.schemaVersion=schemaVersion; this.createdAt=now; this.updatedAt=now;
   }
-  public void markRunning(Instant now){this.status="RUNNING"; this.startedAt=now; this.updatedAt=now;}
-  public void markSucceeded(Instant now){this.status="SUCCEEDED"; this.finishedAt=now; this.updatedAt=now;}
-  public void markFailed(String error, Instant now){this.status="FAILED"; this.errorMessage=error; this.finishedAt=now; this.updatedAt=now;}
+  public void markRunning(Instant now){this.status=ProcessingStatus.PROCESSING.name(); this.startedAt=now; this.updatedAt=now;}
+  public void markSucceeded(Instant now){this.status=ProcessingStatus.SUCCEEDED.name(); this.finishedAt=now; this.updatedAt=now;}
+  public void markNeedsReview(Instant now){this.status=ProcessingStatus.NEEDS_REVIEW.name(); this.finishedAt=now; this.updatedAt=now;}
+  public void markFailed(String error, Instant now){this.status=ProcessingStatus.FAILED.name(); this.errorMessage=error; this.finishedAt=now; this.updatedAt=now;}
   public UUID getId(){return id;} public UUID getTenantId(){return tenantId;} public String getSourceType(){return sourceType;} public UUID getSourceId(){return sourceId;} public UUID getProcessingJobId(){return processingJobId;} public String getStatus(){return status;} public String getProviderType(){return providerType;} public String getProviderName(){return providerName;} public String getSchemaVersion(){return schemaVersion;} public Instant getCreatedAt(){return createdAt;}
 }

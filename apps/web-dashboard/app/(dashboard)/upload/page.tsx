@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { IntakeUploadForm } from "@/components/intake-upload-form";
 
 export default function Page() {
   return (
@@ -9,8 +10,9 @@ export default function Page() {
       </section>
       <section className="panel">
         <h2>Upload result</h2>
-        <p>The browser must call `POST /api/v1/intake/documents/upload`; no direct database or object-store access is allowed from the frontend.</p>
+        <p>The browser calls the core-api upload endpoint only; no direct database or object-store access is allowed from the frontend.</p>
       </section>
+      <IntakeUploadForm />
     </DashboardShell>
   );
 }

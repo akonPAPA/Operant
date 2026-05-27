@@ -8,13 +8,14 @@ import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OperatorActionService {
   private final OperatorActionRepository repository; private final AuditEventService auditEventService; private final Clock clock;
   public OperatorActionService(OperatorActionRepository repository, AuditEventService auditEventService, Clock clock){this.repository=repository;this.auditEventService=auditEventService;this.clock=clock;}
-  @Transactional
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
   public OperatorAction record(UUID actorUserId, String targetType, UUID targetId, String actionType, String message, String metadataJson) {
     OperatorAction action = repository.save(new OperatorAction(TenantContext.requireTenantId(), actorUserId, targetType, targetId, actionType, message, metadataJson == null ? "{}" : metadataJson, clock.instant()));
     auditEventService.record(actionType, targetType, targetId.toString(), actorUserId, metadataJson == null ? "{}" : metadataJson);

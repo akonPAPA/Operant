@@ -1,13 +1,25 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { getInboundEvents } from "@/lib/intake-api";
 
-export default function Page() {
+export default async function Page() {
+  const { data: events, error } = await getInboundEvents();
   return (
     <DashboardShell title="Inbound Events">
+      {error ? <section className="empty-state"><h2>Backend data unavailable</h2><p>{error}</p></section> : null}
       <section className="panel table-panel">
         <table className="data-table">
-          <thead><tr><th>Provider</th><th>Status</th><th>Verification</th><th>Normalized text</th><th>Received</th><th>Error</th></tr></thead>
+          <thead><tr><th>Source</th><th>Event type</th><th>External ID</th><th>Status</th><th>Fingerprint</th><th>Payload key</th></tr></thead>
           <tbody>
-            <tr><td>Telegram / WhatsApp / WeChat</td><td>NORMALIZED</td><td>ACCEPTED / SKIPPED_LOCAL_DEV</td><td>Untrusted input stored for later routing</td><td>API timestamp</td><td>Shown if failed</td></tr>
+            {events.length === 0 ? <tr><td colSpan={6}>No inbound events received.</td></tr> : events.map((event) => (
+              <tr key={event.id}>
+                <td>{event.source}</td>
+                <td>{event.eventType}</td>
+                <td>{event.externalEventId ?? "n/a"}</td>
+                <td>{event.status}</td>
+                <td>{event.fingerprintSha256?.slice(0, 12) ?? "n/a"}</td>
+                <td>{event.rawPayloadStorageKey ?? "n/a"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
         <p className="risk-note">Inbound channel messages are normalized and stored only. Verification failure rejects storage, and accepted payloads still do not execute commands or create commerce records directly.</p>

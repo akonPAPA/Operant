@@ -1,0 +1,66 @@
+package com.orderpilot.security;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.Map;
+import org.springframework.http.HttpMethod;
+import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.HandlerInterceptor;
+
+@Component
+public class ApiPermissionInterceptor implements HandlerInterceptor {
+  private final ApiPermissionGuard guard;
+  private final Map<String, ApiPermission> readPrefixes = Map.ofEntries(
+      Map.entry("/api/v1/analytics", ApiPermission.ANALYTICS_READ),
+      Map.entry("/api/v1/analytics/commerce", ApiPermission.ANALYTICS_READ),
+      Map.entry("/api/stage8/analytics", ApiPermission.ANALYTICS_READ),
+      Map.entry("/api/stage8/reconciliation", ApiPermission.ANALYTICS_READ),
+      Map.entry("/api/stage8/value", ApiPermission.ANALYTICS_READ),
+      Map.entry("/api/stage9", ApiPermission.ADMIN_SETTINGS_READ),
+      Map.entry("/api/v1/intake", ApiPermission.INTAKE_READ),
+      Map.entry("/api/v1/webhooks/events", ApiPermission.INTAKE_READ),
+      Map.entry("/api/v1/extractions", ApiPermission.EXTRACTION_READ),
+      Map.entry("/api/v1/validations", ApiPermission.VALIDATION_READ),
+      Map.entry("/api/v1/operator-review", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/bot-runtime", ApiPermission.BOT_READ),
+      Map.entry("/api/v1/bot/runtime", ApiPermission.BOT_READ),
+      Map.entry("/api/v1/audit", ApiPermission.AUDIT_READ),
+      Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ)
+  );
+
+  public ApiPermissionInterceptor(ApiPermissionGuard guard) {
+    this.guard = guard;
+  }
+
+  @Override
+  public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+    ApiPermission permission = permissionFor(request.getMethod(), request.getRequestURI());
+    if (permission != null) {
+      guard.require(request, permission);
+    }
+    return true;
+  }
+
+  private ApiPermission permissionFor(String method, String path) {
+    if ((path.startsWith("/api/v1/bot-runtime") || path.startsWith("/api/v1/bot/runtime")) && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.BOT_ACTION;
+    }
+    if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    if (path.startsWith("/api/v1/extractions") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.EXTRACTION_RUN;
+    }
+    if (path.startsWith("/api/v1/validations") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.VALIDATION_RUN;
+    }
+    if (path.startsWith("/api/v1/intake") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.INTAKE_WRITE;
+    }
+    return readPrefixes.entrySet().stream()
+        .filter(entry -> path.startsWith(entry.getKey()))
+        .map(Map.Entry::getValue)
+        .findFirst()
+        .orElse(null);
+  }
+}

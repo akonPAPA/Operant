@@ -23,7 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(BotTelegramWebhookController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class})
+@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class})
 class BotTelegramWebhookControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
@@ -31,18 +31,32 @@ class BotTelegramWebhookControllerTest {
   @MockBean private TelegramSecretTokenVerifier verifier;
 
   @Test
-  void malformedTelegramPayloadReturnsBadRequest() throws Exception {
+  void unsupportedTelegramPayloadIsIgnoredWithoutRuntimeProcessing() throws Exception {
     when(verifier.verify(any(), any(), any(), any()))
         .thenReturn(new WebhookSignatureVerificationResult(true, WebhookVerificationMode.NOT_CONFIGURED_STAGE_10E, "TELEGRAM", "not configured"));
-    when(botRuntimeService.handleTelegramUpdate(any(), any()))
-        .thenThrow(new IllegalArgumentException("Malformed Telegram update payload"));
 
     mockMvc.perform(post("/api/v1/bot/telegram/webhook")
             .contentType("application/json")
             .content("{}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("IGNORED_UNSUPPORTED_UPDATE"));
+
+    verify(botRuntimeService, never()).handleTelegramUpdate(any(), any());
+  }
+
+  @Test
+  void emptyTelegramTextReturnsBadRequest() throws Exception {
+    when(verifier.verify(any(), any(), any(), any()))
+        .thenReturn(new WebhookSignatureVerificationResult(true, WebhookVerificationMode.NOT_CONFIGURED_STAGE_10E, "TELEGRAM", "not configured"));
+
+    mockMvc.perform(post("/api/v1/bot-runtime/telegram/webhook")
+            .contentType("application/json")
+            .content("{\"message\":{\"chat\":{\"id\":\"chat-1\"},\"message_id\":1,\"text\":\" \"}}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-        .andExpect(jsonPath("$.message").value("Malformed Telegram update payload"));
+        .andExpect(jsonPath("$.message").value("Telegram message text is required"));
+
+    verify(botRuntimeService, never()).handleTelegramUpdate(any(), any());
   }
 
   @Test
@@ -68,6 +82,20 @@ class BotTelegramWebhookControllerTest {
     mockMvc.perform(post("/api/v1/bot/telegram/webhook")
             .contentType("application/json")
             .content("{\"tenantId\":\"00000000-0000-0000-0000-000000000999\",\"message\":{\"chat\":{\"id\":\"chat-1\"},\"message_id\":1,\"text\":\"Need quote\"}}"))
+        .andExpect(status().isOk());
+
+    verify(botRuntimeService).handleTelegramUpdate(any(), any());
+  }
+
+  @Test
+  void phase7bBotRuntimeTelegramPathUsesSameRuntime() throws Exception {
+    when(verifier.verify(any(), any(), any(), any()))
+        .thenReturn(new WebhookSignatureVerificationResult(true, WebhookVerificationMode.DISABLED_FIXTURE_MODE, "TELEGRAM", "fixture"));
+
+    mockMvc.perform(post("/api/v1/bot-runtime/telegram/webhook")
+            .header("X-OrderPilot-Fixture-Mode", "true")
+            .contentType("application/json")
+            .content("{\"update_id\":99,\"message\":{\"chat\":{\"id\":\"chat-1\"},\"from\":{\"id\":\"sender-1\",\"username\":\"buyer\",\"first_name\":\"Demo\",\"last_name\":\"Buyer\"},\"message_id\":1,\"date\":1770000000,\"text\":\"Need quote\"}}"))
         .andExpect(status().isOk());
 
     verify(botRuntimeService).handleTelegramUpdate(any(), any());

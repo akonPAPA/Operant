@@ -27,8 +27,25 @@ public class DiscountRule {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
   protected DiscountRule() {}
+  public DiscountRule(UUID tenantId, String code, String name, UUID customerAccountId, UUID customerSegmentId, UUID productId, BigDecimal maxDiscountPercent, BigDecimal requiresApprovalAbovePercent, Instant activeFrom, Instant activeTo, Instant now) {
+    this.tenantId = tenantId;
+    this.code = code;
+    this.name = name;
+    this.customerAccountId = customerAccountId;
+    this.customerSegmentId = customerSegmentId;
+    this.productId = productId;
+    this.maxDiscountPercent = maxDiscountPercent;
+    this.requiresApprovalAbovePercent = requiresApprovalAbovePercent;
+    this.activeFrom = activeFrom;
+    this.activeTo = activeTo;
+    this.active = true;
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
+  public String getCode() { return code; }
+  public String getName() { return name; }
   public UUID getCustomerAccountId() { return customerAccountId; }
   public UUID getCustomerSegmentId() { return customerSegmentId; }
   public UUID getProductId() { return productId; }
