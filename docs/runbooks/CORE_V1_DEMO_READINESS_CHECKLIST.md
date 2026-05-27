@@ -1,0 +1,77 @@
+# Core V1 Demo Readiness Checklist
+
+Use this checklist before a local design partner, pilot, or investor demo. Mark each item PASS, FAIL, or N/A with a short note.
+
+## A. Local Environment
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| Backend starts on `http://localhost:8080` |  |  |
+| Frontend starts on `http://localhost:3000` |  |  |
+| AI worker tests pass via `.venv\Scripts\python.exe -m pytest` |  |  |
+| PostgreSQL and Redis are available locally |  |  |
+| `docker compose -f infra\docker\docker-compose.yml ps` shows expected services when using Compose |  |  |
+| `scripts\run-core-v1-demo-check.ps1` preflight passes or warnings are understood |  |  |
+| `scripts\check-local-demo.ps1 -RequireRuntime` passes before a live demo |  |  |
+| `scripts\seed-local-demo.ps1 -UpdateFrontendEnv` completed if seeded demo data is needed |  |  |
+| `git status --short` shows no tracked dirty files |  |  |
+| No local junk is staged: `.env`, `.venv`, `node_modules`, `target`, `.next`, coverage, logs, IDE files |  |  |
+
+## B. Security Boundaries
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| Production connectors are disabled |  |  |
+| Real ERP/1C writes are disabled |  |  |
+| External network connector calls are disabled |  |  |
+| Raw secrets do not appear in UI, API responses, audit metadata, logs, or docs |  |  |
+| Idempotency hash is masked/displayed as `connectorIdempotencyKeyHash` with `sha256:*` value |  |  |
+| Bot-triggered connector commands are blocked |  |  |
+| Stage 9 integration path does not mutate inventory |  |  |
+
+## C. Stage 9B Safety
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| Approved validation-backed demo ChangeRequest can execute through Demo ERP only |  |  |
+| Duplicate execute replays safely |  |  |
+| Replay does not increment attempts |  |  |
+| Replay does not create a second sync event |  |  |
+| Replay does not create a Stage 9B `ConnectorCommand` |  |  |
+| Non-demo target is policy-blocked |  |  |
+| Audit timeline shows attempt, success, failure, replay, cancel, and policy-block events where data exists |  |  |
+| Tenant isolation tests exist and pass for Stage 9 integration access |  |  |
+| `CHANGE_REQUEST_EXECUTION_POLICY_BLOCKED` is visible for blocked execution |  |  |
+
+## D. Demo Quality
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| Founder demo talk track can be followed |  |  |
+| Investor 3-minute script can be followed |  |  |
+| Investor 10-minute script can be followed |  |  |
+| Demo runbook commands match current repo paths |  |  |
+| Key screens have usable empty/loading/error states for the available local data |  |  |
+| Demo docs match current UI/API names, including `ChangeRequest`, `Demo ERP`, and `connectorIdempotencyKeyHash` |  |  |
+| Demo close clearly states what is intentionally disabled |  |  |
+
+## E. Stage 11C Acceptance Evidence
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| `scripts\run-core-v1-acceptance.ps1` preflight executed |  |  |
+| `docs\runbooks\CORE_V1_ACCEPTANCE_EVIDENCE.md` generated or refreshed |  |  |
+| Strict runtime acceptance executed with `scripts\run-core-v1-acceptance.ps1 -RequireRuntime` before a live demo |  |  |
+| All safety guardrails in the evidence report are `PASS` |  |  |
+| Blocking Core v1 scenarios are `PASS`, or explicitly `PARTIAL` / `NOT_VERIFIED` with a reason and owner |  |  |
+| Report states production connectors and real ERP/1C writes remain disabled |  |  |
+
+## F. Blockers Before Real Pilot
+
+| Blocker | Status | Notes |
+| --- | --- | --- |
+| `connector_idempotency_key` column rename is deferred |  | Stores `sha256:*` hash values only; later migration should rename for clarity. |
+| GitHub CI/dependabot cleanup is pending |  | Does not block local demo work unless it affects the requested local task. |
+| Production connector acceptance gate is not implemented |  | Requires separate security/runbook acceptance. |
+| Real customer data import process needs a separate pilot checklist |  | Do not use demo seed scripts for production data. |
+| Production credential custody is not enabled for connectors |  | Requires a real secrets manager and separate acceptance. |

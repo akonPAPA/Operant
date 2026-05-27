@@ -114,6 +114,11 @@ a {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.stack {
+  display: grid;
+  gap: 18px;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
