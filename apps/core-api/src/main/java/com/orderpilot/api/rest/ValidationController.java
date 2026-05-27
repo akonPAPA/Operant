@@ -21,9 +21,10 @@ public class ValidationController {
   private final MarginValidationService marginValidationService;
   private final SubstitutionEngineService substitutionEngineService;
   private final ApprovalRequirementService approvalRequirementService;
+  private final ExtractionValidationService extractionValidationService;
 
-  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService) {
-    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService;
+  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService) {
+    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService;
   }
 
   @PostMapping("/runs")
@@ -54,6 +55,8 @@ public class ValidationController {
   public List<SubstituteCandidate> substitutes(@PathVariable UUID id) { return substitutionEngineService.list(id); }
   @GetMapping("/runs/{id}/approval-requirements")
   public List<ApprovalRequirement> approvals(@PathVariable UUID id) { return approvalRequirementService.list(id); }
+  @GetMapping("/sources/{sourceType}/{sourceId}/issues")
+  public List<ValidationIssue> sourceIssues(@PathVariable String sourceType, @PathVariable UUID sourceId) { return extractionValidationService.issuesBySource(sourceType, sourceId); }
   @PostMapping("/issues/{id}/resolve")
   public ValidationIssue resolve(@PathVariable UUID id) { return issueService.resolve(id); }
   @PostMapping("/issues/{id}/waive")

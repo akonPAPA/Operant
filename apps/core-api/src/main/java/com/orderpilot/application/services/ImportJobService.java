@@ -17,8 +17,25 @@ import com.orderpilot.domain.imports.ValidationReportRepository;
 import com.orderpilot.domain.inventory.InventorySnapshot;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
 import com.orderpilot.domain.location.LocationRepository;
+import com.orderpilot.domain.location.Location;
+import com.orderpilot.domain.pricing.DiscountRule;
+import com.orderpilot.domain.pricing.DiscountRuleRepository;
+import com.orderpilot.domain.pricing.MarginRule;
+import com.orderpilot.domain.pricing.MarginRuleRepository;
+import com.orderpilot.domain.pricing.PriceRule;
+import com.orderpilot.domain.pricing.PriceRuleRepository;
+import com.orderpilot.domain.customer.CustomerAccount;
+import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.product.OEMReference;
+import com.orderpilot.domain.product.OEMReferenceRepository;
 import com.orderpilot.domain.product.Product;
+import com.orderpilot.domain.product.ProductAlias;
+import com.orderpilot.domain.product.ProductAliasRepository;
+import com.orderpilot.domain.product.ProductCompatibility;
+import com.orderpilot.domain.product.ProductCompatibilityRepository;
 import com.orderpilot.domain.product.ProductRepository;
+import com.orderpilot.domain.product.ProductSubstitute;
+import com.orderpilot.domain.product.ProductSubstituteRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -38,21 +55,37 @@ public class ImportJobService {
   private final ImportValidationIssueRepository issueRepository;
   private final ImportValidationService validationService;
   private final ProductRepository productRepository;
+  private final CustomerAccountRepository customerAccountRepository;
   private final InventorySnapshotRepository inventorySnapshotRepository;
   private final LocationRepository locationRepository;
+  private final ProductAliasRepository productAliasRepository;
+  private final OEMReferenceRepository oemReferenceRepository;
+  private final ProductSubstituteRepository productSubstituteRepository;
+  private final ProductCompatibilityRepository productCompatibilityRepository;
+  private final PriceRuleRepository priceRuleRepository;
+  private final DiscountRuleRepository discountRuleRepository;
+  private final MarginRuleRepository marginRuleRepository;
   private final AuditEventService auditEventService;
   private final JsonSupport jsonSupport;
   private final Clock clock;
 
-  public ImportJobService(ImportJobRepository jobRepository, ImportStagingRowRepository rowRepository, ValidationReportRepository reportRepository, ImportValidationIssueRepository issueRepository, ImportValidationService validationService, ProductRepository productRepository, InventorySnapshotRepository inventorySnapshotRepository, LocationRepository locationRepository, AuditEventService auditEventService, JsonSupport jsonSupport, Clock clock) {
+  public ImportJobService(ImportJobRepository jobRepository, ImportStagingRowRepository rowRepository, ValidationReportRepository reportRepository, ImportValidationIssueRepository issueRepository, ImportValidationService validationService, ProductRepository productRepository, CustomerAccountRepository customerAccountRepository, InventorySnapshotRepository inventorySnapshotRepository, LocationRepository locationRepository, ProductAliasRepository productAliasRepository, OEMReferenceRepository oemReferenceRepository, ProductSubstituteRepository productSubstituteRepository, ProductCompatibilityRepository productCompatibilityRepository, PriceRuleRepository priceRuleRepository, DiscountRuleRepository discountRuleRepository, MarginRuleRepository marginRuleRepository, AuditEventService auditEventService, JsonSupport jsonSupport, Clock clock) {
     this.jobRepository = jobRepository;
     this.rowRepository = rowRepository;
     this.reportRepository = reportRepository;
     this.issueRepository = issueRepository;
     this.validationService = validationService;
     this.productRepository = productRepository;
+    this.customerAccountRepository = customerAccountRepository;
     this.inventorySnapshotRepository = inventorySnapshotRepository;
     this.locationRepository = locationRepository;
+    this.productAliasRepository = productAliasRepository;
+    this.oemReferenceRepository = oemReferenceRepository;
+    this.productSubstituteRepository = productSubstituteRepository;
+    this.productCompatibilityRepository = productCompatibilityRepository;
+    this.priceRuleRepository = priceRuleRepository;
+    this.discountRuleRepository = discountRuleRepository;
+    this.marginRuleRepository = marginRuleRepository;
     this.auditEventService = auditEventService;
     this.jsonSupport = jsonSupport;
     this.clock = clock;
@@ -70,7 +103,7 @@ public class ImportJobService {
 
   @Transactional
   public ImportJob create(ImportJobRequest request) {
-    ImportJob job = new ImportJob(TenantContext.requireTenantId(), request.dataSourceId(), request.importType(), request.originalFilename(), request.createdBy(), clock.instant());
+    ImportJob job = new ImportJob(TenantContext.requireTenantId(), request.dataSourceId(), normalizeImportType(request.importType()), request.originalFilename(), request.createdBy(), clock.instant());
     ImportJob saved = jobRepository.save(job);
     auditEventService.record("import_job.created", "import_job", saved.getId().toString(), request.createdBy(), "{\"source\":\"core-api\"}");
     if (request.csvContent() != null && !request.csvContent().isBlank()) {
@@ -82,6 +115,12 @@ public class ImportJobService {
       auditEventService.record("import_csv.staged", "import_job", saved.getId().toString(), request.createdBy(), "{\"source\":\"core-api\",\"format\":\"csv\"}");
     }
     return saved;
+  }
+
+  @Transactional
+  public ImportJob createForType(String type, ImportJobRequest request) {
+    ImportJobRequest typed = new ImportJobRequest(request.dataSourceId(), type, request.originalFilename(), request.createdBy(), request.csvContent());
+    return create(typed);
   }
 
   @Transactional
@@ -166,9 +205,18 @@ public class ImportJobService {
     }
     List<ImportStagingRow> rows = rowRepository.findByTenantIdAndImportJobIdOrderByRowNumber(job.getTenantId(), job.getId());
     int appliedRows = switch (job.getImportType()) {
+      case "LOCATIONS" -> activateLocations(job, rows);
+      case "CUSTOMERS" -> activateCustomers(job, rows);
       case "PRODUCTS" -> activateProducts(job, rows);
+      case "PRODUCT_ALIASES" -> activateProductAliases(job, rows);
+      case "OEM_REFERENCES" -> activateOemReferences(job, rows);
       case "INVENTORY" -> activateInventory(job, rows);
-      default -> throw new IllegalArgumentException("Activation is supported for product and inventory imports only");
+      case "PRICE_RULES", "PRICES" -> activatePriceRules(job, rows);
+      case "PRODUCT_SUBSTITUTES", "SUBSTITUTES" -> activateProductSubstitutes(job, rows);
+      case "COMPATIBILITY", "PRODUCT_COMPATIBILITY" -> activateCompatibility(job, rows);
+      case "DISCOUNT_RULES" -> activateDiscountRules(job, rows);
+      case "MARGIN_RULES" -> activateMarginRules(job, rows);
+      default -> throw new IllegalArgumentException("Activation is not supported for import type: " + job.getImportType());
     };
     job.markApplied(clock.instant());
     auditEventService.record("import_job.activated", "import_job", job.getId().toString(), null, jsonSupport.writeObject(Map.of("stage", "2", "importType", job.getImportType(), "appliedRows", appliedRows)));
@@ -189,6 +237,37 @@ public class ImportJobService {
     return job;
   }
 
+  private int activateLocations(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      String code = text(data.get("code"));
+      if (locationRepository.findByTenantIdAndCode(job.getTenantId(), code).isPresent()) {
+        throw new IllegalArgumentException("Location code already exists for tenant: " + code);
+      }
+      locationRepository.save(new Location(job.getTenantId(), code, text(data.get("name")), defaultText(data.get("type"), "WAREHOUSE"), text(data.get("address")), text(data.get("city")), defaultText(data.get("country"), "KZ"), booleanValue(data.get("active"), true), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateCustomers(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      String accountCode = text(data.get("accountCode"));
+      if (customerAccountRepository.existsByTenantIdAndAccountCodeAndDeletedAtIsNull(job.getTenantId(), accountCode)) {
+        throw new IllegalArgumentException("Customer account code already exists for tenant: " + accountCode);
+      }
+      UUID defaultLocationId = resolveLocationIdOptional(job.getTenantId(), data);
+      customerAccountRepository.save(new CustomerAccount(job.getTenantId(), text(data.get("externalRef")), accountCode, defaultText(data.get("legalName"), text(data.get("displayName"))), defaultText(data.get("displayName"), text(data.get("legalName"))), null, defaultText(data.get("status"), "ACTIVE"), defaultText(data.get("defaultCurrency"), "USD"), defaultLocationId, clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
   private int activateProducts(ImportJob job, List<ImportStagingRow> rows) {
     int applied = 0;
     for (ImportStagingRow row : rows) {
@@ -199,6 +278,40 @@ public class ImportJobService {
         throw new IllegalArgumentException("Product SKU already exists for tenant: " + sku);
       }
       productRepository.save(new Product(job.getTenantId(), sku, text(data.get("name")), text(data.get("description")), text(data.get("category")), text(data.get("brand")), text(data.get("manufacturer")), defaultText(data.get("baseUom"), "EA"), defaultText(data.get("status"), "ACTIVE"), decimalOrNull(data.get("cost")), defaultText(data.get("currency"), "USD"), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateProductAliases(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      UUID productId = resolveProductId(job.getTenantId(), data);
+      String rawAlias = text(data.get("rawAlias"));
+      String normalizedAlias = defaultText(data.get("normalizedAlias"), ProductCodeNormalizer.normalize(rawAlias));
+      if (productAliasRepository.existsByTenantIdAndProductIdAndNormalizedAliasAndActiveTrue(job.getTenantId(), productId, normalizedAlias)) {
+        throw new IllegalArgumentException("Product alias already exists for tenant: " + rawAlias);
+      }
+      productAliasRepository.save(new ProductAlias(job.getTenantId(), productId, defaultText(data.get("aliasType"), "OTHER"), rawAlias, normalizedAlias, resolveCustomerIdOptional(job.getTenantId(), data), decimalOrNull(data.get("confidenceDefault")), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateOemReferences(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      UUID productId = resolveProductId(job.getTenantId(), data);
+      String oemCode = text(data.get("oemCode"));
+      String normalized = defaultText(data.get("normalizedOemCode"), ProductCodeNormalizer.normalize(oemCode));
+      if (oemReferenceRepository.existsByTenantIdAndProductIdAndNormalizedOemCodeAndActiveTrue(job.getTenantId(), productId, normalized)) {
+        throw new IllegalArgumentException("OEM reference already exists for tenant: " + oemCode);
+      }
+      oemReferenceRepository.save(new OEMReference(job.getTenantId(), productId, oemCode, normalized, text(data.get("manufacturer")), clock.instant()));
       applied++;
     }
     return applied;
@@ -221,11 +334,96 @@ public class ImportJobService {
     return applied;
   }
 
+  private int activatePriceRules(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      UUID productId = resolveProductId(job.getTenantId(), data);
+      UUID customerId = resolveCustomerIdOptional(job.getTenantId(), data);
+      BigDecimal unitPrice = decimalRequired(data.get("unitPrice"), "unitPrice");
+      if (priceRuleRepository.existsByTenantIdAndProductIdAndCustomerAccountIdAndUnitPriceAndActiveTrue(job.getTenantId(), productId, customerId, unitPrice)) {
+        throw new IllegalArgumentException("Price rule already exists for tenant");
+      }
+      priceRuleRepository.save(new PriceRule(job.getTenantId(), productId, customerId, null, resolveLocationIdOptional(job.getTenantId(), data), text(data.get("minQuantity")).isBlank() ? BigDecimal.ONE : decimalRequired(data.get("minQuantity"), "minQuantity"), defaultText(data.get("uom"), "EA"), unitPrice, defaultText(data.get("currency"), "USD"), Instant.parse(defaultText(data.get("activeFrom"), clock.instant().toString())), text(data.get("activeTo")).isBlank() ? null : Instant.parse(text(data.get("activeTo"))), intOrDefault(data.get("priority"), 100), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateProductSubstitutes(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      UUID sourceProductId = resolveProductIdFromFields(job.getTenantId(), data, "sourceProductId", "sourceSku");
+      UUID substituteProductId = resolveProductIdFromFields(job.getTenantId(), data, "substituteProductId", "substituteSku");
+      String substituteType = defaultText(data.get("substituteType"), "AFTERMARKET");
+      if (productSubstituteRepository.existsByTenantIdAndSourceProductIdAndSubstituteProductIdAndSubstituteTypeAndActiveTrue(job.getTenantId(), sourceProductId, substituteProductId, substituteType)) {
+        throw new IllegalArgumentException("Product substitute already exists for tenant");
+      }
+      productSubstituteRepository.save(new ProductSubstitute(job.getTenantId(), sourceProductId, substituteProductId, substituteType, defaultText(data.get("riskLevel"), "MEDIUM"), booleanValue(data.get("requiresApproval"), true), text(data.get("notes")), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateCompatibility(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      UUID productId = resolveProductId(job.getTenantId(), data);
+      productCompatibilityRepository.save(new ProductCompatibility(job.getTenantId(), productId, defaultText(data.get("compatibleType"), "VEHICLE"), text(data.get("make")), text(data.get("model")), intOrNull(data.get("yearFrom")), intOrNull(data.get("yearTo")), text(data.get("configuration")), text(data.get("notes")), defaultText(data.get("riskLevel"), "MEDIUM"), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateDiscountRules(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      String code = text(data.get("code"));
+      if (discountRuleRepository.existsByTenantIdAndCodeAndActiveTrue(job.getTenantId(), code)) {
+        throw new IllegalArgumentException("Discount rule code already exists for tenant: " + code);
+      }
+      discountRuleRepository.save(new DiscountRule(job.getTenantId(), code, text(data.get("name")), resolveCustomerIdOptional(job.getTenantId(), data), null, resolveProductIdOptional(job.getTenantId(), data), decimalRequired(data.get("maxDiscountPercent"), "maxDiscountPercent"), decimalRequired(data.get("requiresApprovalAbovePercent"), "requiresApprovalAbovePercent"), Instant.parse(defaultText(data.get("activeFrom"), clock.instant().toString())), text(data.get("activeTo")).isBlank() ? null : Instant.parse(text(data.get("activeTo"))), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
+  private int activateMarginRules(ImportJob job, List<ImportStagingRow> rows) {
+    int applied = 0;
+    for (ImportStagingRow row : rows) {
+      if (!"VALID".equals(row.getValidationStatus())) continue;
+      Map<String, Object> data = jsonSupport.parseObject(row.getMappedData());
+      String code = text(data.get("code"));
+      if (marginRuleRepository.existsByTenantIdAndCodeAndActiveTrue(job.getTenantId(), code)) {
+        throw new IllegalArgumentException("Margin rule code already exists for tenant: " + code);
+      }
+      marginRuleRepository.save(new MarginRule(job.getTenantId(), code, text(data.get("name")), resolveProductIdOptional(job.getTenantId(), data), text(data.get("category")), null, decimalRequired(data.get("minimumGrossMarginPercent"), "minimumGrossMarginPercent"), decimalRequired(data.get("approvalRequiredBelowPercent"), "approvalRequiredBelowPercent"), clock.instant()));
+      applied++;
+    }
+    return applied;
+  }
+
   private UUID resolveProductId(UUID tenantId, Map<String, Object> data) {
-    String productId = text(data.get("productId"));
+    return resolveProductIdFromFields(tenantId, data, "productId", "sku");
+  }
+
+  private UUID resolveProductIdOptional(UUID tenantId, Map<String, Object> data) {
+    if (text(data.get("productId")).isBlank() && text(data.get("sku")).isBlank()) return null;
+    return resolveProductId(tenantId, data);
+  }
+
+  private UUID resolveProductIdFromFields(UUID tenantId, Map<String, Object> data, String productIdField, String skuField) {
+    String productId = text(data.get(productIdField));
     if (!productId.isBlank()) return UUID.fromString(productId);
-    return productRepository.findByTenantIdAndSkuAndDeletedAtIsNull(tenantId, text(data.get("sku")))
-        .orElseThrow(() -> new IllegalArgumentException("Product SKU was not found for tenant: " + text(data.get("sku"))))
+    return productRepository.findByTenantIdAndSkuAndDeletedAtIsNull(tenantId, text(data.get(skuField)))
+        .orElseThrow(() -> new IllegalArgumentException("Product SKU was not found for tenant: " + text(data.get(skuField))))
         .getId();
   }
 
@@ -234,6 +432,21 @@ public class ImportJobService {
     if (!locationId.isBlank()) return UUID.fromString(locationId);
     return locationRepository.findByTenantIdAndCode(tenantId, text(data.get("locationCode")))
         .orElseThrow(() -> new IllegalArgumentException("Location code was not found for tenant: " + text(data.get("locationCode"))))
+        .getId();
+  }
+
+  private UUID resolveLocationIdOptional(UUID tenantId, Map<String, Object> data) {
+    if (text(data.get("locationId")).isBlank() && text(data.get("locationCode")).isBlank()) return null;
+    return resolveLocationId(tenantId, data);
+  }
+
+  private UUID resolveCustomerIdOptional(UUID tenantId, Map<String, Object> data) {
+    String customerId = text(data.get("customerAccountId"));
+    if (!customerId.isBlank()) return UUID.fromString(customerId);
+    String accountCode = text(data.get("accountCode"));
+    if (accountCode.isBlank()) return null;
+    return customerAccountRepository.findByTenantIdAndAccountCodeAndDeletedAtIsNull(tenantId, accountCode)
+        .orElseThrow(() -> new IllegalArgumentException("Customer accountCode was not found for tenant: " + accountCode))
         .getId();
   }
 
@@ -311,6 +524,13 @@ public class ImportJobService {
     return text.isBlank() ? fallback : text;
   }
 
+  private String normalizeImportType(String importType) {
+    if (importType == null || importType.isBlank()) {
+      throw new IllegalArgumentException("importType is required");
+    }
+    return importType.trim().replace('-', '_').toUpperCase();
+  }
+
   private BigDecimal decimalOrNull(Object value) {
     return text(value).isBlank() ? null : new BigDecimal(text(value));
   }
@@ -318,6 +538,19 @@ public class ImportJobService {
   private BigDecimal decimalRequired(Object value, String field) {
     if (text(value).isBlank()) throw new IllegalArgumentException(field + " is required");
     return new BigDecimal(text(value));
+  }
+
+  private Integer intOrNull(Object value) {
+    return text(value).isBlank() ? null : Integer.parseInt(text(value));
+  }
+
+  private int intOrDefault(Object value, int fallback) {
+    return text(value).isBlank() ? fallback : Integer.parseInt(text(value));
+  }
+
+  private boolean booleanValue(Object value, boolean fallback) {
+    String text = text(value);
+    return text.isBlank() ? fallback : Boolean.parseBoolean(text);
   }
 
   private String issueCode(String message) {

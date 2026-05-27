@@ -36,7 +36,9 @@ public class ValidationIssue {
   public void setStatus(String status, Instant now) { this.status = status; this.updatedAt = now; }
   public UUID getId() { return id; }
   public UUID getValidationRunId() { return validationRunId; }
+  public UUID getExtractionResultId() { return extractionResultId; }
   public UUID getExtractedLineItemId() { return extractedLineItemId; }
+  public UUID getExtractedFieldId() { return extractedFieldId; }
   public String getIssueType() { return issueType; }
   public String getSeverity() { return severity; }
   public String getMessage() { return message; }

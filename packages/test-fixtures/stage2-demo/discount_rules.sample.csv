@@ -1,0 +1,2 @@
+code,name,accountCode,sku,maxDiscountPercent,requiresApprovalAbovePercent,activeFrom
+DISC-CUST-001-BRAKE,Steppe Logistics Brake Parts Discount,CUST-001,PAD-SUB-ADV,8.00,5.00,2026-01-01T00:00:00Z

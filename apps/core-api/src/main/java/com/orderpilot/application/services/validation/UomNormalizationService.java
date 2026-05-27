@@ -21,11 +21,13 @@ public class UomNormalizationService {
       Map.entry("SET", "SET"), Map.entry("KIT", "KIT"));
   private final UomNormalizationResultRepository repository;
   private final ValidationIssueService issueService;
+  private final ApprovalRequirementService approvalService;
   private final Clock clock;
 
-  public UomNormalizationService(UomNormalizationResultRepository repository, ValidationIssueService issueService, Clock clock) {
+  public UomNormalizationService(UomNormalizationResultRepository repository, ValidationIssueService issueService, ApprovalRequirementService approvalService, Clock clock) {
     this.repository = repository;
     this.issueService = issueService;
+    this.approvalService = approvalService;
     this.clock = clock;
   }
 
@@ -38,7 +40,8 @@ public class UomNormalizationService {
     BigDecimal confidence = normalized == null ? BigDecimal.ZERO : new BigDecimal("0.9800");
     UomNormalizationResult result = repository.save(new UomNormalizationResult(TenantContext.requireTenantId(), validationRunId, line.getId(), raw, normalized, status, confidence, clock.instant()));
     if (normalized == null) {
-      issueService.open(validationRunId, extractionResultId, line.getId(), null, "UOM_UNKNOWN", "WARNING", "Unit of measure requires human review", "{\"rawUom\":\"" + (raw == null ? "" : raw) + "\"}");
+      issueService.open(validationRunId, extractionResultId, line.getId(), null, "INVALID_UOM", "WARNING", "Unit of measure requires human review", "{\"rawUom\":\"" + (raw == null ? "" : raw) + "\"}");
+      approvalService.create(validationRunId, line.getId(), "INVALID_UOM_REQUIRES_REVIEW", "MEDIUM", "Unknown unit of measure requires operator review");
     } else if ("NORMALIZED".equals(status)) {
       issueService.open(validationRunId, extractionResultId, line.getId(), null, "UOM_NORMALIZED", "INFO", "Unit of measure was normalized to " + normalized, "{\"normalizedUom\":\"" + normalized + "\"}");
     }

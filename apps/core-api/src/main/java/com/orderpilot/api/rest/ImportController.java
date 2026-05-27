@@ -24,6 +24,7 @@ public class ImportController {
   public ImportController(ImportJobService service) { this.service = service; }
 
   @PostMapping public ImportJobResponse create(@RequestBody ImportJobRequest request) { return toResponse(service.create(request)); }
+  @PostMapping("/{type}") public ImportJobResponse createForType(@PathVariable String type, @RequestBody ImportJobRequest request) { return toResponse(service.createForType(type, request)); }
   @GetMapping public List<ImportJobResponse> list() { return service.list().stream().map(this::toResponse).toList(); }
   @GetMapping("/{id}") public ImportJobResponse get(@PathVariable UUID id) { return toResponse(service.get(id)); }
   @PostMapping("/{id}/rows") public ImportRowResponse addRow(@PathVariable UUID id, @RequestBody ImportRowRequest request) { return toResponse(service.addRow(id, request)); }

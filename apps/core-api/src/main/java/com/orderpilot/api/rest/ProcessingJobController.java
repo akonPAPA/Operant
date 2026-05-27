@@ -5,7 +5,7 @@ import com.orderpilot.application.services.ProcessingJobService;
 import com.orderpilot.domain.intake.ProcessingJob;
 import java.util.*; import org.springframework.web.bind.annotation.*;
 
-@RestController @RequestMapping("/api/v1/processing/jobs")
+@RestController @RequestMapping({"/api/v1/processing/jobs", "/api/v1/intake/jobs"})
 public class ProcessingJobController {
   private final ProcessingJobService service; public ProcessingJobController(ProcessingJobService service){this.service=service;}
   @GetMapping public List<ProcessingJobResponse> list(){ return service.list().stream().map(this::toResponse).toList(); }

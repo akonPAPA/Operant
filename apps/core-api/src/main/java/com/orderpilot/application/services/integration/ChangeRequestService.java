@@ -5,9 +5,26 @@ import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.integration.ChangeRequest;
 import com.orderpilot.domain.integration.ChangeRequestRepository;
+import com.orderpilot.domain.integration.ConnectorFailureType;
+import com.orderpilot.domain.integration.ConnectorSyncEvent;
+import com.orderpilot.domain.integration.ConnectorSyncEventRepository;
+import com.orderpilot.domain.integration.IntegrationConnection;
+import com.orderpilot.domain.integration.IntegrationConnectionRepository;
+import com.orderpilot.domain.integration.IntegrationProviderType;
 import com.orderpilot.domain.integration.OutboxEvent;
 import com.orderpilot.domain.integration.OutboxEventRepository;
+import com.orderpilot.domain.workspace.DraftOrder;
+import com.orderpilot.domain.workspace.DraftOrderRepository;
+import com.orderpilot.domain.workspace.DraftQuote;
+import com.orderpilot.domain.workspace.DraftQuoteRepository;
+import com.orderpilot.domain.workspace.ExceptionCase;
+import com.orderpilot.domain.workspace.ExceptionCaseRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -17,12 +34,23 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChangeRequestService {
   private final ChangeRequestRepository changeRequestRepository;
   private final OutboxEventRepository outboxEventRepository;
+  private final IntegrationConnectionRepository integrationConnectionRepository;
+  private final ConnectorSyncEventRepository connectorSyncEventRepository;
+  private final DraftQuoteRepository draftQuoteRepository;
+  private final DraftOrderRepository draftOrderRepository;
+  private final ExceptionCaseRepository exceptionCaseRepository;
+  private final DemoErpAdapterService demoErpAdapterService = new DemoErpAdapterService();
   private final AuditEventService auditEventService;
   private final Clock clock;
 
-  public ChangeRequestService(ChangeRequestRepository changeRequestRepository, OutboxEventRepository outboxEventRepository, AuditEventService auditEventService, Clock clock) {
+  public ChangeRequestService(ChangeRequestRepository changeRequestRepository, OutboxEventRepository outboxEventRepository, IntegrationConnectionRepository integrationConnectionRepository, ConnectorSyncEventRepository connectorSyncEventRepository, DraftQuoteRepository draftQuoteRepository, DraftOrderRepository draftOrderRepository, ExceptionCaseRepository exceptionCaseRepository, AuditEventService auditEventService, Clock clock) {
     this.changeRequestRepository = changeRequestRepository;
     this.outboxEventRepository = outboxEventRepository;
+    this.integrationConnectionRepository = integrationConnectionRepository;
+    this.connectorSyncEventRepository = connectorSyncEventRepository;
+    this.draftQuoteRepository = draftQuoteRepository;
+    this.draftOrderRepository = draftOrderRepository;
+    this.exceptionCaseRepository = exceptionCaseRepository;
     this.auditEventService = auditEventService;
     this.clock = clock;
   }
@@ -45,6 +73,31 @@ public class ChangeRequestService {
     auditEventService.record("CHANGE_REQUEST_CREATED", "CHANGE_REQUEST", request.getId().toString(), createdByUserId, "{\"executionMode\":\"EXTERNAL_EXECUTION_DISABLED\"}");
     emit(request, "CHANGE_REQUEST_CREATED", "{\"executionStatus\":\"EXECUTION_DISABLED\"}");
     return request;
+  }
+
+  @Transactional
+  public ChangeRequest createStage9DemoChangeRequest(String sourceType, UUID sourceId, String requestedAction, String requestPayloadJson, UUID actorId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    requireValue(sourceType, "sourceType");
+    requireValue(sourceId, "sourceId");
+    String normalizedSourceType = sourceType.trim().toUpperCase();
+    String normalizedAction = requestedAction == null || requestedAction.isBlank()
+        ? ("DRAFT_ORDER".equals(normalizedSourceType) ? "CREATE_DRAFT_ORDER" : "CREATE_DRAFT_QUOTE")
+        : requestedAction.trim().toUpperCase();
+    if ("DRAFT_QUOTE".equals(normalizedSourceType)) {
+      DraftQuote quote = draftQuoteRepository.findByIdAndTenantId(sourceId, tenantId).orElseThrow(() -> new IllegalArgumentException("Draft quote not found or not tenant-owned"));
+      requireEligibleQuote(quote);
+      requireValidationBackedCase(quote.getSourceExceptionCaseId());
+    } else if ("DRAFT_ORDER".equals(normalizedSourceType)) {
+      DraftOrder order = draftOrderRepository.findByIdAndTenantId(sourceId, tenantId).orElseThrow(() -> new IllegalArgumentException("Draft order not found or not tenant-owned"));
+      requireEligibleOrder(order);
+      requireValidationBackedCase(order.getSourceExceptionCaseId());
+    } else {
+      throw new IllegalArgumentException("Stage 9A ChangeRequest sourceType must be DRAFT_QUOTE or DRAFT_ORDER");
+    }
+    String targetEntity = "DRAFT_ORDER".equals(normalizedSourceType) ? "DRAFT_ORDER" : "DRAFT_QUOTE";
+    String idempotencyKey = "stage9a:" + sha256(tenantId + ":" + normalizedSourceType + ":" + sourceId + ":" + normalizedAction);
+    return createChangeRequest("DEMO_ERP", targetEntity, normalizedAction, normalizedSourceType, sourceId, requestPayloadJson, idempotencyKey, actorId);
   }
 
   @Transactional
@@ -90,6 +143,87 @@ public class ChangeRequestService {
     auditEventService.record("CHANGE_REQUEST_APPROVED", "CHANGE_REQUEST", request.getId().toString(), approvedByUserId, "{\"executionMode\":\"EXTERNAL_EXECUTION_DISABLED\"}");
     emit(request, "CHANGE_REQUEST_APPROVED", "{\"approvalStatus\":\"APPROVED\"}");
     emit(request, "CHANGE_REQUEST_EXTERNAL_EXECUTION_DISABLED", "{\"executionStatus\":\"EXECUTION_DISABLED\"}");
+    return request;
+  }
+
+  @Transactional
+  public ChangeRequest executeStage9DemoChangeRequest(UUID id) {
+    ChangeRequest request = getMutable(id);
+    if ("EXECUTED".equals(request.getExecutionStatus()) && request.getExternalReference() != null) {
+      auditEventService.record("DEMO_ERP_IDEMPOTENT_REPLAY", "CHANGE_REQUEST", request.getId().toString(), null, "{\"externalReference\":\"" + request.getExternalReference() + "\",\"idempotencyKeyHash\":\"" + connectorIdempotencyKeyHash(request) + "\",\"replay\":true,\"networkCall\":false}");
+      return request;
+    }
+    if ("CANCELLED".equals(request.getExecutionStatus()) || "CANCELLED".equals(request.getApprovalStatus())) {
+      auditPolicyBlock(request, "CHANGE_REQUEST_CANCELLED");
+      throw new IllegalStateException("Cancelled ChangeRequest cannot execute");
+    }
+    if ("FAILED".equals(request.getExecutionStatus())) {
+      auditPolicyBlock(request, "FAILED_REQUIRES_EXPLICIT_RETRY");
+      throw new IllegalStateException("Failed ChangeRequest requires explicit retry");
+    }
+    if (!"APPROVED".equals(request.getApprovalStatus())) {
+      auditPolicyBlock(request, "APPROVAL_REQUIRED");
+      throw new IllegalStateException("ChangeRequest must be APPROVED before demo execution");
+    }
+    if (!"DEMO_ERP".equals(request.getTargetSystem())) {
+      auditPolicyBlock(request, "NON_DEMO_TARGET_BLOCKED");
+      throw new IllegalStateException("Stage 9A only supports the demo ERP adapter");
+    }
+    if (!List.of("DRAFT_QUOTE", "DRAFT_ORDER").contains(request.getSourceType())) {
+      auditPolicyBlock(request, "UNSUPPORTED_SOURCE_TYPE");
+      throw new IllegalStateException("Stage 9A only executes draft quote/order ChangeRequests");
+    }
+    String connectorIdempotencyKeyHash = connectorIdempotencyKeyHash(request);
+    request.markExecutionPending(clock.instant());
+    auditEventService.record("CHANGE_REQUEST_EXECUTION_PENDING", "CHANGE_REQUEST", request.getId().toString(), null, "{\"adapter\":\"DEMO_ERP\",\"executionMode\":\"DEMO_ONLY\",\"idempotencyKeyHash\":\"" + connectorIdempotencyKeyHash + "\",\"networkCall\":false}");
+    ConnectorSyncEvent sync = connectorSyncEventRepository.save(new ConnectorSyncEvent(request.getTenantId(), demoConnectionId(request.getTenantId()), IntegrationProviderType.OTHER_ERP, request.getRequestedAction(), "OUTBOUND_DEMO", clock.instant()));
+    try {
+      ExternalCommandResult result = "DRAFT_ORDER".equals(request.getSourceType())
+          ? demoErpAdapterService.createDraftOrder(request)
+          : demoErpAdapterService.createDraftQuote(request);
+      if (result.success()) {
+        request.markExecuted(result.externalReference(), connectorIdempotencyKeyHash, clock.instant());
+        sync.complete(0, 0, 0, clock.instant());
+        auditEventService.record("DEMO_ERP_COMMAND_EXECUTED", "CHANGE_REQUEST", request.getId().toString(), null, "{\"externalReference\":\"" + result.externalReference() + "\",\"executionMode\":\"DEMO_ONLY\",\"idempotencyKeyHash\":\"" + connectorIdempotencyKeyHash + "\",\"networkCall\":false}");
+        emit(request, "CHANGE_REQUEST_EXECUTED_DEMO", "{\"externalReference\":\"" + result.externalReference() + "\"}");
+      } else {
+        request.markExecutionFailed(result.failureType(), result.message(), result.retryable(), clock.instant().plus(Duration.ofMinutes(15)), clock.instant());
+        sync.fail(result.statusCode(), result.message(), clock.instant());
+        auditEventService.record("DEMO_ERP_COMMAND_FAILED", "CHANGE_REQUEST", request.getId().toString(), null, "{\"errorCode\":\"" + result.statusCode() + "\",\"executionMode\":\"DEMO_ONLY\",\"idempotencyKeyHash\":\"" + connectorIdempotencyKeyHash + "\",\"networkCall\":false}");
+        emit(request, "CHANGE_REQUEST_EXECUTION_FAILED_DEMO", "{\"errorCode\":\"" + result.statusCode() + "\"}");
+      }
+    } catch (RuntimeException ex) {
+      request.markExecutionFailed(ConnectorFailureType.UNKNOWN, ex.getMessage(), true, clock.instant().plus(Duration.ofMinutes(15)), clock.instant());
+      sync.fail("DEMO_ERP_EXCEPTION", ex.getMessage(), clock.instant());
+      auditEventService.record("DEMO_ERP_COMMAND_FAILED", "CHANGE_REQUEST", request.getId().toString(), null, "{\"errorCode\":\"DEMO_ERP_EXCEPTION\",\"executionMode\":\"DEMO_ONLY\",\"idempotencyKeyHash\":\"" + connectorIdempotencyKeyHash + "\",\"networkCall\":false}");
+    }
+    return request;
+  }
+
+  @Transactional
+  public ChangeRequest retryStage9DemoChangeRequest(UUID id) {
+    ChangeRequest request = getMutable(id);
+    if (!"FAILED".equals(request.getExecutionStatus()) || !request.isConnectorRetryable()) {
+      throw new IllegalStateException("ChangeRequest failure is not retryable");
+    }
+    if (!"APPROVED".equals(request.getApprovalStatus())) {
+      throw new IllegalStateException("Only approved ChangeRequests can be retried");
+    }
+    auditEventService.record("DEMO_ERP_MANUAL_RETRY_REQUESTED", "CHANGE_REQUEST", request.getId().toString(), null, "{\"attemptCount\":" + request.getConnectorAttemptCount() + ",\"networkCall\":false}");
+    request.markExecutionDisabled("Manual retry requested for demo adapter");
+    request.approve(request.getApprovedByUserId(), clock.instant());
+    return executeStage9DemoChangeRequest(id);
+  }
+
+  @Transactional
+  public ChangeRequest cancelStage9DemoChangeRequest(UUID id, String reason) {
+    ChangeRequest request = getMutable(id);
+    if ("EXECUTED".equals(request.getExecutionStatus())) {
+      throw new IllegalStateException("Executed ChangeRequest cannot be cancelled");
+    }
+    request.cancelExecution(reason == null || reason.isBlank() ? "Cancelled by operator" : reason, clock.instant());
+    auditEventService.record("CHANGE_REQUEST_CANCELLED", "CHANGE_REQUEST", request.getId().toString(), null, "{\"networkCall\":false}");
+    emit(request, "CHANGE_REQUEST_CANCELLED", "{\"executionStatus\":\"CANCELLED\"}");
     return request;
   }
 
@@ -164,6 +298,54 @@ public class ChangeRequestService {
     return outboxEventRepository.save(new OutboxEvent(request.getTenantId(), "CHANGE_REQUEST", request.getId(), eventType, payloadJson, clock.instant()));
   }
 
+  private UUID demoConnectionId(UUID tenantId) {
+    return integrationConnectionRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+        .filter(connection -> connection.getProviderType() == IntegrationProviderType.OTHER_ERP)
+        .filter(connection -> connection.getDisplayName().contains("Demo ERP"))
+        .map(IntegrationConnection::getId)
+        .findFirst()
+        .orElseGet(() -> {
+          IntegrationConnection connection = integrationConnectionRepository.save(new IntegrationConnection(tenantId, IntegrationProviderType.OTHER_ERP, "Demo ERP Adapter", "DEMO_ERP_LOCAL", null, "demo://local", clock.instant()));
+          connection.activate(clock.instant());
+          auditEventService.record("DEMO_ERP_CONNECTION_CREATED", "INTEGRATION_CONNECTION", connection.getId().toString(), null, "{\"mode\":\"READ_ONLY\",\"networkCall\":false}");
+          return connection.getId();
+        });
+  }
+
+  private String connectorIdempotencyKey(ChangeRequest request) {
+    return "demo-erp:" + request.getTenantId() + ":" + request.getId();
+  }
+
+  private String connectorIdempotencyKeyHash(ChangeRequest request) {
+    return "sha256:" + sha256(connectorIdempotencyKey(request));
+  }
+
+  private void auditPolicyBlock(ChangeRequest request, String reasonCode) {
+    auditEventService.record("CHANGE_REQUEST_EXECUTION_POLICY_BLOCKED", "CHANGE_REQUEST", request.getId().toString(), null, "{\"reasonCode\":\"" + reasonCode + "\",\"executionMode\":\"DEMO_ONLY\",\"networkCall\":false}");
+  }
+
+  private void requireEligibleQuote(DraftQuote quote) {
+    if (!List.of("APPROVED", "APPROVED_INTERNAL").contains(quote.getStatus())) {
+      throw new IllegalStateException("Draft quote must be approved before ChangeRequest creation");
+    }
+  }
+
+  private void requireEligibleOrder(DraftOrder order) {
+    if (!List.of("APPROVED", "APPROVED_INTERNAL").contains(order.getStatus())) {
+      throw new IllegalStateException("Draft order must be approved before ChangeRequest creation");
+    }
+  }
+
+  private void requireValidationBackedCase(UUID caseId) {
+    if (caseId == null) {
+      throw new IllegalStateException("ChangeRequest source must be linked to a validation-backed review case");
+    }
+    ExceptionCase reviewCase = exceptionCaseRepository.findByIdAndTenantId(caseId, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalStateException("Source review case not found"));
+    if ("BOT_CONVERSATION".equals(reviewCase.getSourceType()) || reviewCase.getValidationRunId() == null || reviewCase.getExtractionResultId() == null) {
+      throw new IllegalStateException("Bot-only or non-validation-backed cases cannot create connector ChangeRequests");
+    }
+  }
+
   private static boolean isObjectPayload(String payload) {
     if (payload == null) {
       return false;
@@ -180,5 +362,14 @@ public class ChangeRequestService {
 
   private static String escape(String value) {
     return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+  }
+
+  private static String sha256(String value) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException("SHA-256 is required for connector idempotency hashing", ex);
+    }
   }
 }

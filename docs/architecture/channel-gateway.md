@@ -16,3 +16,20 @@ Webhook verification is routed through `ChannelWebhookVerifier` with provider st
 Health checks return structured diagnostics such as `SECRET_MISSING`, `WEBHOOK_NOT_CONFIGURED`, `WEBHOOK_VERIFICATION_DISABLED`, and `READ_ONLY_MODE`.
 
 Stage 13 status: provider adapters are adapter-ready for secure onboarding. They are not production-certified messaging integrations yet.
+
+## Stage 3 Intake Stabilization
+
+Stage 3 uses the same channel boundary for file uploads, API uploads, email webhook stubs, Telegram webhook stubs, and WhatsApp-ready stubs.
+
+```mermaid
+flowchart LR
+  A["Customer file/API/webhook"] --> B["core-api controller"]
+  B --> C["validation and tenant context"]
+  C --> D["object storage abstraction"]
+  D --> E["InboundDocument or ChannelMessage"]
+  E --> F["InboundEventLedger"]
+  E --> G["ProcessingJob PENDING"]
+  E --> H["AuditEvent"]
+```
+
+Local Stage 3 tenant resolution uses `X-Tenant-Id`. Production channel mapping should later resolve tenant from a verified `ChannelConnection` or provider-specific routing rule. Unsigned webhook acceptance is dev-only and must not be treated as production provider verification.

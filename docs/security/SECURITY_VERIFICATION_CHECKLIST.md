@@ -10,9 +10,12 @@ Use this checklist before investor demos, design-partner walkthroughs, and secur
 - [x] No hardcoded real bot token is required for Stage 7.
 - [x] Audit events emitted for important bot and reconciliation actions.
 - [x] No public API endpoint updates or deletes audit events.
-- [ ] External writes require ChangeRequest/approval before Stage 10.
-- [ ] File upload validation includes size limits, type sniffing, malware scanning, and quarantine.
-- [ ] Webhook validation includes signed payloads and replay window enforcement.
+- [x] Explicit demo permission header checks deny analytics/review/bot/intake/extraction/validation categories when an insufficient permission header is supplied.
+- [x] Analytics remains read-only and returns tenant-scoped counts/statuses only.
+- [x] AI output remains advisory and cannot directly create quotes, orders, ERP writes, or master-data writes.
+- [x] External writes are outside approved Stage 1-9 scope and require explicit controlled approval paths in later approved roadmap stages.
+- [ ] File upload validation includes production size limits, type sniffing, malware scanning, and quarantine.
+- [ ] Webhook validation includes production signed payloads and replay window enforcement.
 - [ ] Rate limiting exists per tenant/IP/provider.
 - [ ] Backup/restore has been exercised.
 - [ ] Dependency scan is run in CI.

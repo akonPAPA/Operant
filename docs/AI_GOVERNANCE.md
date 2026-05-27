@@ -7,13 +7,18 @@ OrderPilot uses AI-assisted understanding to extract advisory business meaning f
 - AI may classify intent, extract fields, identify raw line items, estimate confidence, attach source evidence, and suggest review actions.
 - AI must not directly create quotes, orders, inventory changes, price changes, discount rules, margin rules, customer account changes, product changes, users, roles, tenants, integration connections, or ERP writes.
 - AI output is stored only as extraction results, extracted fields, extracted line items, suggestions, confidence signals, source evidence, and processing status.
-- Deterministic backend validation owns the final business decision.
+- Deterministic backend validation owns the final business decision. Phase 5A consumes advisory extraction results and produces validation outcomes, issues, substitute candidates, and approval requirements without creating final business records.
+- Phase 5B may convert validation outcomes into operator review cases and internal draft quote/order preparation through typed backend services. This is still not AI authority and does not permit direct AI-created business records.
 
 ## Controlled Write Path
 
 All business mutations must go through typed backend services with authentication, tenant policy, deterministic validation, transactions, audit events, and approval gates where required.
 
 Human approval is required for risky actions, including external writes, approval-gated discounts or margin exceptions, ambiguous substitutions, unresolved customer/product matches, and any action that could affect authoritative business records.
+
+Phase 5A additionally requires review for low-confidence extraction lines, unknown UOM values, ambiguous product matches, customer-blocked substitutes, discount violations, and margin guardrail violations.
+
+Phase 5B draft preparation rejects blocked substitutes, unresolved unknown UOM values, unresolved ambiguous product matches, and discount/margin/low-confidence cases that have not passed review approval. ERP and external writes remain out of scope.
 
 ## Prompt Injection Handling
 

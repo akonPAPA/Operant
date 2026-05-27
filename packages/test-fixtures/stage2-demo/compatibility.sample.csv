@@ -1,0 +1,4 @@
+sku,compatibleType,make,model,yearFrom,yearTo,configuration,notes,riskLevel
+PAD-OE-04465,VEHICLE,Toyota,Camry,2018,2018,Front axle,Original requested product for demo RFQ,LOW
+PAD-SUB-ADV,VEHICLE,Toyota,Camry,2018,2018,Front axle,Preferred in-stock substitute for demo RFQ,LOW
+PAD-SUB-ECON,VEHICLE,Toyota,Camry,2018,2018,Front axle,Secondary substitute for demo RFQ,MEDIUM

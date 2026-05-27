@@ -8,4 +8,6 @@ public interface InventorySnapshotRepository extends JpaRepository<InventorySnap
   List<InventorySnapshot> findTop50ByTenantIdAndProductIdAndLocationIdOrderByCapturedAtDesc(UUID tenantId, UUID productId, UUID locationId);
   List<InventorySnapshot> findTop50ByTenantIdAndProductIdOrderByCapturedAtDesc(UUID tenantId, UUID productId);
   List<InventorySnapshot> findTop50ByTenantIdOrderByCapturedAtDesc(UUID tenantId);
+  long countByTenantIdAndCapturedAtBefore(UUID tenantId, java.time.Instant capturedAt);
+  long countByTenantIdAndQuantityAvailableLessThanEqual(UUID tenantId, java.math.BigDecimal quantityAvailable);
 }

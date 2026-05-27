@@ -1,0 +1,9 @@
+sku,name,description,category,brand,manufacturer,baseUom,status,cost,currency
+PAD-OE-04465,Toyota Camry 2018 OEM Front Brake Pad Set,Original-equivalent front brake pad set for Toyota Camry 2018,Brake Pads,Toyota,Toyota,SET,ACTIVE,42.00,USD
+PAD-SUB-ADV,Advantage Ceramic Front Brake Pad Set,In-stock ceramic substitute for Camry 2018 front axle,Brake Pads,Advantage,Advantage Parts,SET,ACTIVE,25.00,USD
+PAD-SUB-ECON,EconoStop Semi-Metallic Front Brake Pad Set,In-stock economy substitute for Camry 2018 front axle,Brake Pads,EconoStop,EconoStop,SET,ACTIVE,18.50,USD
+ROTOR-CAM18-F,Toyota Camry 2018 Front Brake Rotor,Front brake rotor for Camry 2018,Brake Rotors,OEPlus,OEPlus,EA,ACTIVE,31.00,USD
+FILTER-OIL-90915,Toyota Oil Filter 90915,Oil filter for Toyota passenger vehicles,Filters,Toyota,Toyota,EA,ACTIVE,4.20,USD
+BELT-SERP-CAM18,Camry 2018 Serpentine Belt,Serpentine belt for Toyota Camry 2018,Engine Belts,DrivePro,DrivePro,EA,ACTIVE,13.70,USD
+BEARING-IND-6205,Industrial Bearing 6205 ZZ,General industrial bearing 6205 ZZ,Bearings,SKF,SKF,EA,ACTIVE,5.40,USD
+HYD-HOSE-10MM,Hydraulic Hose 10mm,Industrial hydraulic hose 10mm,Hoses,HydroFlex,HydroFlex,M,ACTIVE,2.30,USD

@@ -25,6 +25,9 @@ public final class Stage2Dtos {
   public record DiscountRuleResponse(UUID id, String code, String name, UUID customerAccountId, UUID customerSegmentId, UUID productId, BigDecimal maxDiscountPercent, BigDecimal requiresApprovalAbovePercent) {}
   public record MarginRuleResponse(UUID id, String code, String name, UUID productId, String category, UUID customerSegmentId, BigDecimal minimumGrossMarginPercent, BigDecimal approvalRequiredBelowPercent) {}
 
+  public record DemoTenantRequest(String slug, String legalName) {}
+  public record DemoTenantResponse(UUID id, String slug, String legalName, String status, boolean created) {}
+
   public record ImportJobRequest(UUID dataSourceId, String importType, String originalFilename, UUID createdBy, String csvContent) {}
   public record ImportJobResponse(UUID id, String importType, String originalFilename, String status, int totalRows, int validRows, int invalidRows, String errorSummary) {}
   public record ImportRowRequest(int rowNumber, String rawData) {}

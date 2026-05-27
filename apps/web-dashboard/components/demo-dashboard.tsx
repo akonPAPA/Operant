@@ -87,7 +87,7 @@ export function DemoDashboard() {
           <strong>Core API</strong>
           <span>{demoConfig.baseUrl}</span>
           <strong>Tenant header</strong>
-          <span>{demoConfig.tenantId || "Not configured; demo fixture mode is visible."}</span>
+          <span>{demoConfig.tenantId || "67 pensil"}</span>
         </div>
       </section>
 

@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface OEMReferenceRepository extends JpaRepository<OEMReference, UUID> {
   List<OEMReference> findByTenantIdAndNormalizedOemCodeAndActiveTrue(UUID tenantId, String normalizedOemCode);
+  boolean existsByTenantIdAndProductIdAndNormalizedOemCodeAndActiveTrue(UUID tenantId, UUID productId, String normalizedOemCode);
 }

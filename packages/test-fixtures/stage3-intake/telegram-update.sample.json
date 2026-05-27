@@ -1,0 +1,18 @@
+{
+  "update_id": 3001,
+  "message": {
+    "message_id": 9001,
+    "date": 1716400000,
+    "chat": {
+      "id": 77112233,
+      "type": "private"
+    },
+    "from": {
+      "id": 77112233,
+      "is_bot": false,
+      "first_name": "Demo Buyer",
+      "username": "demo_buyer"
+    },
+    "text": "Need brake pads for Toyota Camry 2018, 20 pcs"
+  }
+}

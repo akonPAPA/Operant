@@ -1,0 +1,6 @@
+{
+  "source": "external_api",
+  "customerHint": "ACME Auto Parts",
+  "messageText": "Need brake pads for Toyota Camry 2018, 20 pcs",
+  "externalReference": "demo-api-001"
+}

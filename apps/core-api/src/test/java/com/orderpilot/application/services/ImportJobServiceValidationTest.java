@@ -19,7 +19,15 @@ import com.orderpilot.domain.imports.ImportValidationIssue;
 import com.orderpilot.domain.imports.ImportValidationIssueRepository;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
 import com.orderpilot.domain.location.LocationRepository;
+import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.pricing.DiscountRuleRepository;
+import com.orderpilot.domain.pricing.MarginRuleRepository;
+import com.orderpilot.domain.pricing.PriceRuleRepository;
+import com.orderpilot.domain.product.OEMReferenceRepository;
+import com.orderpilot.domain.product.ProductAliasRepository;
+import com.orderpilot.domain.product.ProductCompatibilityRepository;
 import com.orderpilot.domain.product.ProductRepository;
+import com.orderpilot.domain.product.ProductSubstituteRepository;
 import com.orderpilot.domain.imports.ValidationReport;
 import com.orderpilot.domain.imports.ValidationReportRepository;
 import java.time.Clock;
@@ -41,11 +49,19 @@ class ImportJobServiceValidationTest {
   private final ImportValidationIssueRepository issueRepository = mock(ImportValidationIssueRepository.class);
   private final ImportValidationService validationService = mock(ImportValidationService.class);
   private final ProductRepository productRepository = mock(ProductRepository.class);
+  private final CustomerAccountRepository customerAccountRepository = mock(CustomerAccountRepository.class);
   private final InventorySnapshotRepository inventorySnapshotRepository = mock(InventorySnapshotRepository.class);
   private final LocationRepository locationRepository = mock(LocationRepository.class);
+  private final ProductAliasRepository productAliasRepository = mock(ProductAliasRepository.class);
+  private final OEMReferenceRepository oemReferenceRepository = mock(OEMReferenceRepository.class);
+  private final ProductSubstituteRepository productSubstituteRepository = mock(ProductSubstituteRepository.class);
+  private final ProductCompatibilityRepository productCompatibilityRepository = mock(ProductCompatibilityRepository.class);
+  private final PriceRuleRepository priceRuleRepository = mock(PriceRuleRepository.class);
+  private final DiscountRuleRepository discountRuleRepository = mock(DiscountRuleRepository.class);
+  private final MarginRuleRepository marginRuleRepository = mock(MarginRuleRepository.class);
   private final AuditEventService auditEventService = mock(AuditEventService.class);
   private final JsonSupport jsonSupport = new JsonSupport(new ObjectMapper());
-  private final ImportJobService service = new ImportJobService(jobRepository, rowRepository, reportRepository, issueRepository, validationService, productRepository, inventorySnapshotRepository, locationRepository, auditEventService, jsonSupport, CLOCK);
+  private final ImportJobService service = new ImportJobService(jobRepository, rowRepository, reportRepository, issueRepository, validationService, productRepository, customerAccountRepository, inventorySnapshotRepository, locationRepository, productAliasRepository, oemReferenceRepository, productSubstituteRepository, productCompatibilityRepository, priceRuleRepository, discountRuleRepository, marginRuleRepository, auditEventService, jsonSupport, CLOCK);
 
   @AfterEach
   void clearTenant() {

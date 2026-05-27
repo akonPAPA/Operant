@@ -1,0 +1,3 @@
+sourceSku,substituteSku,substituteType,riskLevel,requiresApproval,notes
+PAD-OE-04465,PAD-SUB-ADV,AFTERMARKET,LOW,false,Ceramic in-stock substitute for Toyota Camry 2018 brake pads
+PAD-OE-04465,PAD-SUB-ECON,AFTERMARKET,MEDIUM,true,Economy substitute requires operator/customer approval

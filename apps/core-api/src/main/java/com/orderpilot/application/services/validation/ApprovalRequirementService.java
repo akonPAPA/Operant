@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.validation;
 
 import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.domain.validation.ApprovalRequirement;
 import com.orderpilot.domain.validation.ApprovalRequirementRepository;
 import java.time.Clock;
@@ -12,16 +13,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ApprovalRequirementService {
   private final ApprovalRequirementRepository repository;
+  private final AuditEventService auditEventService;
   private final Clock clock;
 
-  public ApprovalRequirementService(ApprovalRequirementRepository repository, Clock clock) {
+  public ApprovalRequirementService(ApprovalRequirementRepository repository, AuditEventService auditEventService, Clock clock) {
     this.repository = repository;
+    this.auditEventService = auditEventService;
     this.clock = clock;
   }
 
   @Transactional
   public ApprovalRequirement create(UUID validationRunId, UUID lineItemId, String type, String severity, String reason) {
-    return repository.save(new ApprovalRequirement(TenantContext.requireTenantId(), validationRunId, lineItemId, type, severity, reason, clock.instant()));
+    ApprovalRequirement requirement = repository.save(new ApprovalRequirement(TenantContext.requireTenantId(), validationRunId, lineItemId, type, severity, reason, clock.instant()));
+    auditEventService.record("APPROVAL_REQUIREMENT_GENERATED", "ApprovalRequirement", requirement.getId().toString(), null, "{\"validationRunId\":\"" + validationRunId + "\",\"requirementType\":\"" + type + "\"}");
+    return requirement;
   }
 
   @Transactional(readOnly = true)

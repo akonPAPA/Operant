@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ProductController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class})
+@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class})
 class ProductCatalogControllerTest {
   @Autowired private MockMvc mockMvc;
   @MockBean private ProductCatalogService service;

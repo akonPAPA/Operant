@@ -24,7 +24,7 @@ public class DiscountValidationService {
     DiscountRule rule = ruleRepository.findByTenantIdAndActiveTrue(tenantId).stream().filter(r -> (r.getProductId() == null || r.getProductId().equals(productId)) && (r.getCustomerAccountId() == null || r.getCustomerAccountId().equals(customerId))).findFirst().orElse(null);
     if (rule == null) return save(tenantId, runId, lineId, customerId, productId, null, requestedDiscount, null, false, "NO_RULE");
     boolean above = requestedDiscount.compareTo(rule.getMaxDiscountPercent()) > 0 || requestedDiscount.compareTo(rule.getRequiresApprovalAbovePercent()) > 0;
-    if (above) approvalService.create(runId, lineId, "DISCOUNT_EXCEEDS_RULE", "HIGH", "Requested discount exceeds deterministic discount rule");
+    if (above) approvalService.create(runId, lineId, "DISCOUNT_REQUIRES_APPROVAL", "HIGH", "Requested discount exceeds deterministic discount rule");
     return save(tenantId, runId, lineId, customerId, productId, rule.getId(), requestedDiscount, rule.getMaxDiscountPercent(), above, above ? "EXCEEDS_RULE" : "ALLOWED");
   }
   @Transactional(readOnly = true) public List<DiscountCheckResult> list(UUID runId) { return resultRepository.findByTenantIdAndValidationRunId(TenantContext.requireTenantId(), runId); }

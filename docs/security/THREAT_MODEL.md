@@ -2,138 +2,78 @@
 
 ## Scope
 
-This threat model covers the current Core API through Stage 9. It is not a claim of production certification. It documents current controls, tenant isolation assumptions, audit expectations, and gaps before a future pilot launch.
-
-## Assets
-
-- Tenants and tenant-scoped business data.
-- Users, roles, permissions, and future authentication claims.
-- Product, customer, inventory, price, discount, margin, quote draft, order draft, validation, and reconciliation records.
-- Uploaded documents, extracted document text, source evidence, bot messages, and Telegram-style external chat/message identifiers.
-- Audit events and operator timeline records.
-- Connector credentials and webhook secrets when connectors are added.
+This threat model covers OrderPilot Core v1 through Stage 10 hardening. It is security evidence for pilot readiness, not production certification. Stage 9B integration execution remains demo-only.
 
 ## Trust Boundaries
 
-- Frontend to Core API: user-controlled requests must be validated by controllers and application services.
-- Bot/webhook to Core API: customer messages are hostile input; external chat IDs are correlation identifiers, not identity.
-- AI worker to Core API: AI is advisory and must not write business tables directly.
-- Core API to database: all business mutations must go through application services, transactions, tenant filters, validation, and audit.
-- Core API to external connectors: no direct ERP writes exist in Core v1 stages so far.
-- Database to operators/auditors: audit events are append-only by service convention today; production DB-level immutability is still a TODO.
+- Frontend boundary: the Next.js dashboard is an API client only. It must not access the database directly or make authority decisions that bypass backend services.
+- Tenant boundary: tenant identity is enforced in backend services and repository queries. Cross-tenant reads or execution are treated as security defects.
+- Tenant isolation is a primary control: every tenant-owned read or mutation must include tenant ownership checks.
+- Bot boundary: customer messages and external chat identifiers are untrusted. They are correlation evidence, not authenticated customer identity.
+- AI worker boundary: AI may extract, classify, suggest, summarize, and rank. It must not directly mutate business tables or approve actions.
+- Connector boundary: Stage 9B allows only the in-process Demo ERP adapter. Production ERP/1C connectors and network writes are disabled.
+- ChangeRequest boundary: external-write intent is represented by tenant-scoped `ChangeRequest` records. Stage 9B execution uses ChangeRequest state, not `ConnectorCommand`.
+- Audit boundary: sensitive mutations and denied execution attempts must emit audit events. Audit events are append-only by service convention.
+- Credential boundary: raw credentials, tokens, webhook secrets, and raw idempotency seeds must not appear in DB fields, API responses, UI, logs, tests, or docs.
+- Data boundary: no direct DB writes are allowed from frontend, bot, AI worker, or connector surfaces; approved backend application services own business mutations.
 
-## Major Threats
+## Key Threats And Controls
 
-### Cross-tenant data exposure
+### Cross-Tenant Execution Or Data Leak
 
-Threat: a query omits `tenant_id` and exposes another tenant's bot, reconciliation, analytics, import, or workspace records.
+Threat: tenant A reads or executes tenant B data.
 
-Mitigations present:
-- `TenantContext.requireTenantId()` is used by command/read services.
-- Repositories for high-risk flows include tenant-scoped methods.
-- Tests cover bot tenant isolation, reconciliation isolation, and analytics isolation.
+Controls:
+- Tenant-scoped repository methods are used in analytics, review, bot handoff, reconciliation, and integration services.
+- `ChangeRequestService` loads executable requests by `id` and current tenant.
+- Stage 9B tests verify tenant B cannot execute tenant A ChangeRequest.
 
-Gaps/TODOs:
-- Replace the current header-based placeholder tenant resolver with production authentication and authorization.
-- Add broader controller-level authorization tests when auth exists.
+### Connector Policy Bypass
 
-### Prompt injection and unsafe AI output
+Threat: a non-demo target or unapproved request reaches connector execution.
 
-Threat: documents or messages instruct AI systems to bypass policy or output unsafe business mutations.
+Controls:
+- Stage 9B execution requires approved `ChangeRequest`.
+- Only `DEMO_ERP` target and draft quote/order source types are executable.
+- Non-demo targets emit `CHANGE_REQUEST_EXECUTION_POLICY_BLOCKED`.
+- No `ConnectorCommand` is created by Stage 9B demo execution.
 
-Mitigations present:
-- AI is advisory, not authoritative.
-- Stage 4 output is treated as extraction evidence and suggestions only.
-- Stage 5 deterministic validation and Stage 6 internal workflow records mediate downstream actions.
+### Idempotency And Replay
 
-Gaps/TODOs:
-- Add production LLM gateway controls before any real LLM calls.
-- Add model-output provenance and policy enforcement around future action proposals.
+Threat: repeated execution creates duplicate external references or duplicate connector actions.
 
-### Bot/webhook abuse
+Controls:
+- Executed ChangeRequests replay the existing external reference.
+- Replay audit contains `replay:true` and `networkCall:false`.
+- Connector execution idempotency is stored and displayed as `sha256:*` hash only.
+- Targeted tests verify no second sync event and no ConnectorCommand on replay.
 
-Threat: malformed payloads, duplicate messages, unsupported message types, or excessive request volume create duplicate RFQs or unsafe actions.
+### Raw Secret Or Raw Key Exposure
 
-Mitigations present:
-- Telegram webhook validates required structure and rejects missing text.
-- Duplicate tenant/channel/chat/message IDs are rejected through `BotWebhookSecurityService`.
-- Bot Runtime Lite cannot approve quotes/orders or mutate inventory, prices, or customers.
-- No Telegram API token or external Telegram API call exists.
+Threat: secrets or raw idempotency seeds leak through code, DB, API, UI, logs, tests, or docs.
 
-Gaps/TODOs:
-- Add signed webhook verification.
-- Add replay windows and per-tenant/IP rate limiting.
-- Add bounded request size controls.
+Controls:
+- Stage 9B credential status is placeholder-only.
+- No real connector credentials are stored.
+- `connectorIdempotencyKeyHash` is the API/frontend contract.
+- The DB column `connector_idempotency_key` currently stores only `sha256:*` hash values.
 
-### File upload abuse
+TODO: rename `connector_idempotency_key` to `connector_idempotency_key_hash` in a later cleanup migration when migration compatibility can be handled deliberately.
 
-Threat: malicious files, oversized payloads, or hidden content exploit document processing.
+### Prompt Injection
 
-Mitigations present:
-- Intake and extraction are separated from authoritative business writes.
-- Existing security docs cover file upload validation expectations.
+Threat: document/message text instructs AI or operators to bypass policy.
 
-Gaps/TODOs:
-- Add file type sniffing, antivirus scanning, size limits, and quarantine storage before production uploads.
+Controls:
+- AI output is advisory only.
+- Bot and AI cannot approve quotes, orders, discounts, substitutes, inventory changes, or connector execution.
+- Backend validation, review, approval, and ChangeRequest gates remain authoritative.
 
-### Direct DB mutation bypass
+### Production Connector Activation Risk
 
-Threat: code or operators mutate master business data directly, bypassing validation and audit.
+Threat: production ERP/1C writes are enabled without security acceptance.
 
-Mitigations present:
-- Controllers delegate to services.
-- Stage boundaries require backend command/application services.
-- Tests verify bot and reconciliation flows do not mutate product/customer/price/inventory master data.
-
-Gaps/TODOs:
-- Enforce least-privilege DB roles in production.
-- Require migration review for new write paths.
-- No direct DB writes should be allowed outside approved services.
-
-### Audit log tampering
-
-Threat: audit records are updated or deleted after sensitive actions.
-
-Mitigations present:
-- `AuditEventService` appends new audit events.
-- No public audit mutation endpoint exists.
-- Stage 7 RFQ and Stage 8 discrepancy creation emit audit events.
-
-Gaps/TODOs:
-- Add database permissions, append-only trigger/policy, and a separate `audit_append_only` DB role.
-- Add audit export and retention policy.
-
-### Connector credential leakage
-
-Threat: connector credentials, API keys, webhook secrets, or bot tokens leak through source code or logs.
-
-Mitigations present:
-- No real Telegram token is required in Stage 7.
-- `scripts/check-no-secrets.ps1` scans for obvious hardcoded secret patterns.
-
-Gaps/TODOs:
-- Use a secrets manager before production connectors.
-- Add CI secret scanning.
-
-### Replay attacks
-
-Threat: a webhook replay creates duplicate RFQ or handoff records.
-
-Mitigations present:
-- Telegram duplicate detection uses tenant/channel/chat/message uniqueness at service level.
-
-Gaps/TODOs:
-- Add signed webhook timestamps and replay windows.
-- Add persisted webhook idempotency records for every provider.
-
-### Excessive request volume / abuse
-
-Threat: repeated bot/API requests exhaust resources or create noisy workflow records.
-
-Mitigations present:
-- Stage 8 reconciliation case listing is paginated.
-- Analytics uses tenant-scoped count queries.
-
-Gaps/TODOs:
-- Add Redis-backed or gateway-backed per-tenant/IP rate limits.
-- Add request body limits and abuse monitoring.
+Controls:
+- Stage 9B is `DEMO_ONLY`.
+- Real ERP/1C writes and external connector network calls remain out of scope.
+- Production activation requires separate security/runbook acceptance, secret-manager custody, idempotency review, rate limiting, monitoring, and rollback/compensation plans.

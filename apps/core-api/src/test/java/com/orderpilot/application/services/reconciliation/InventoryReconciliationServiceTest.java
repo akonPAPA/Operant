@@ -7,11 +7,15 @@ import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.inventory.InventorySnapshot;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
+import com.orderpilot.domain.integration.ConnectorCommandRepository;
 import com.orderpilot.domain.pricing.PriceRuleRepository;
 import com.orderpilot.domain.reconciliation.*;
 import com.orderpilot.domain.workspace.DraftOrderRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
+import com.orderpilot.domain.workspace.ExceptionCase;
+import com.orderpilot.domain.workspace.ExceptionCaseRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -38,6 +42,8 @@ class InventoryReconciliationServiceTest {
   @Autowired private InventorySnapshotRepository inventorySnapshotRepository;
   @Autowired private PriceRuleRepository priceRuleRepository;
   @Autowired private CustomerAccountRepository customerAccountRepository;
+  @Autowired private ConnectorCommandRepository connectorCommandRepository;
+  @Autowired private ExceptionCaseRepository exceptionCaseRepository;
 
   @AfterEach
   void clearTenant() {
@@ -137,6 +143,7 @@ class InventoryReconciliationServiceTest {
     long inventory = inventorySnapshotRepository.count();
     long prices = priceRuleRepository.count();
     long customers = customerAccountRepository.count();
+    long connectors = connectorCommandRepository.count();
 
     service.runInventoryReconciliation(productId, locationId);
 
@@ -145,6 +152,45 @@ class InventoryReconciliationServiceTest {
     assertThat(inventorySnapshotRepository.count()).isEqualTo(inventory);
     assertThat(priceRuleRepository.count()).isEqualTo(prices);
     assertThat(customerAccountRepository.count()).isEqualTo(customers);
+    assertThat(connectorCommandRepository.count()).isEqualTo(connectors);
+  }
+
+  @Test
+  void staleInventoryRefreshCreatesWarningCaseWithoutMutatingSnapshot() {
+    UUID tenantId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    UUID locationId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    inventorySnapshotRepository.save(new InventorySnapshot(tenantId, productId, locationId, new BigDecimal("5"), new BigDecimal("5"), BigDecimal.ZERO, Instant.parse("2026-01-01T00:00:00Z"), "TEST", null, Instant.parse("2026-01-01T00:00:00Z")));
+    long snapshots = inventorySnapshotRepository.count();
+
+    var refresh = service.refreshProjections();
+
+    assertThat(refresh.inventoryMutated()).isFalse();
+    assertThat(refresh.connectorCommandsCreated()).isFalse();
+    assertThat(refresh.staleInventoryWarnings()).isEqualTo(1);
+    assertThat(inventorySnapshotRepository.count()).isEqualTo(snapshots);
+    assertThat(caseRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId, org.springframework.data.domain.PageRequest.of(0, 10)).getContent())
+        .singleElement()
+        .satisfies(c -> {
+          assertThat(c.getSeverity()).isEqualTo(ReconciliationSeverity.WARNING);
+          assertThat(c.getLikelyCauses()).contains("STALE_INVENTORY_SNAPSHOT");
+        });
+  }
+
+  @Test
+  void botOnlyHandoffDoesNotAffectReconciliationSummaryOrRefresh() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    exceptionCaseRepository.save(new ExceptionCase(tenantId, "BOT-REC", "BOT_CONVERSATION", UUID.randomUUID(), null, null, null, "Bot handoff", "OPEN", "NORMAL", "INFO", "bot-only", Instant.parse("2026-05-01T00:00:00Z")));
+
+    var summary = service.summary();
+    var refresh = service.refreshProjections();
+
+    assertThat(summary.inventoryMismatchCount()).isZero();
+    assertThat(summary.highSeverityDiscrepancyCount()).isZero();
+    assertThat(refresh.productLocationPairsEvaluated()).isZero();
+    assertThat(caseRepository.count()).isZero();
   }
 
   private void add(UUID tenantId, UUID productId, UUID locationId, InventoryMovementType type, String quantity, String occurredAt) {

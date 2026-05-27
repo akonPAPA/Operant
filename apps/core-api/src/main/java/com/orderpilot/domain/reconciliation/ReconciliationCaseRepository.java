@@ -13,4 +13,5 @@ public interface ReconciliationCaseRepository extends JpaRepository<Reconciliati
   Page<ReconciliationCase> findByTenantIdOrderByUpdatedAtDesc(UUID tenantId, Pageable pageable);
   long countByTenantIdAndStatus(UUID tenantId, ReconciliationStatus status);
   long countByTenantIdAndSeverityAndStatus(UUID tenantId, ReconciliationSeverity severity, ReconciliationStatus status);
+  long countByTenantIdAndSeverity(UUID tenantId, ReconciliationSeverity severity);
 }

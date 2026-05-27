@@ -3,12 +3,19 @@ package com.orderpilot.application.services.reconciliation;
 import com.orderpilot.api.dto.Stage8Dtos.ReconciliationCaseResponse;
 import com.orderpilot.api.dto.Stage8Dtos.ReconciliationCasesResponse;
 import com.orderpilot.api.dto.Stage8Dtos.ReconciliationRunResponse;
+import com.orderpilot.api.dto.Stage8Dtos.Stage8InventoryMovementResponse;
+import com.orderpilot.api.dto.Stage8Dtos.Stage8ProductTimelineResponse;
+import com.orderpilot.api.dto.Stage8Dtos.Stage8ReconciliationRefreshResponse;
+import com.orderpilot.api.dto.Stage8Dtos.Stage8ReconciliationSummaryResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.inventory.InventorySnapshot;
+import com.orderpilot.domain.inventory.InventorySnapshotRepository;
 import com.orderpilot.domain.reconciliation.*;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -21,14 +28,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InventoryReconciliationService {
+  private static final Duration STALE_INVENTORY_AFTER = Duration.ofDays(7);
+  private static final List<String> UNSUPPORTED_MOVEMENT_TYPES = List.of();
   private final InventoryMovementRepository movementRepository;
   private final ReconciliationCaseRepository caseRepository;
+  private final InventorySnapshotRepository inventorySnapshotRepository;
   private final AuditEventService auditEventService;
   private final Clock clock;
 
-  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, AuditEventService auditEventService, Clock clock) {
+  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, InventorySnapshotRepository inventorySnapshotRepository, AuditEventService auditEventService, Clock clock) {
     this.movementRepository = movementRepository;
     this.caseRepository = caseRepository;
+    this.inventorySnapshotRepository = inventorySnapshotRepository;
     this.auditEventService = auditEventService;
     this.clock = clock;
   }
@@ -49,7 +60,7 @@ public class InventoryReconciliationService {
     }
 
     ReconciliationSeverity severity = severity(expected, mismatch);
-    String likelyCauses = likelyCauses(mismatch);
+    String likelyCauses = likelyCauses(movements, actualCount, mismatch);
     ReconciliationCase reconciliationCase = caseRepository.findFirstByTenantIdAndProductIdAndLocationIdAndStatusInOrderByUpdatedAtDesc(tenantId, productId, locationId, Set.of(ReconciliationStatus.OPEN, ReconciliationStatus.INVESTIGATING))
         .orElse(null);
     boolean created = reconciliationCase == null;
@@ -90,6 +101,47 @@ public class InventoryReconciliationService {
     return toResponse(reconciliationCase);
   }
 
+  @Transactional(readOnly = true)
+  public Stage8ReconciliationSummaryResponse summary() {
+    UUID tenantId = TenantContext.requireTenantId();
+    Instant staleBefore = clock.instant().minus(STALE_INVENTORY_AFTER);
+    return new Stage8ReconciliationSummaryResponse(
+        tenantId,
+        caseRepository.countByTenantIdAndStatus(tenantId, ReconciliationStatus.OPEN),
+        caseRepository.countByTenantIdAndSeverityAndStatus(tenantId, ReconciliationSeverity.HIGH, ReconciliationStatus.OPEN),
+        inventorySnapshotRepository.countByTenantIdAndCapturedAtBefore(tenantId, staleBefore),
+        inventorySnapshotRepository.countByTenantIdAndQuantityAvailableLessThanEqual(tenantId, BigDecimal.ZERO),
+        caseRepository.countByTenantIdAndStatus(tenantId, ReconciliationStatus.OPEN),
+        movementRepository.countByTenantId(tenantId),
+        UNSUPPORTED_MOVEMENT_TYPES,
+        clock.instant());
+  }
+
+  @Transactional(readOnly = true)
+  public Stage8ProductTimelineResponse productTimeline(UUID productId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    List<Stage8InventoryMovementResponse> movements = movementRepository.findTop100ByTenantIdAndProductIdOrderByOccurredAtDesc(tenantId, productId).stream()
+        .map(movement -> new Stage8InventoryMovementResponse(movement.getId(), movement.getProductId(), movement.getLocationId(), movement.getMovementType().name(), movement.getQuantity(), movement.getOccurredAt(), movement.getSourceType(), movement.getSourceReference()))
+        .toList();
+    return new Stage8ProductTimelineResponse(tenantId, productId, movements, clock.instant());
+  }
+
+  @Transactional
+  public Stage8ReconciliationRefreshResponse refreshProjections() {
+    UUID tenantId = TenantContext.requireTenantId();
+    long beforeCases = caseRepository.count();
+    List<InventoryMovementRepository.ProductLocationPair> pairs = movementRepository.findDistinctProductLocationsByTenantIdAndMovementType(tenantId, InventoryMovementType.ACTUAL_STOCK_COUNT);
+    long changed = 0;
+    for (InventoryMovementRepository.ProductLocationPair pair : pairs) {
+      ReconciliationRunResponse response = runInventoryReconciliation(pair.getProductId(), pair.getLocationId());
+      if (response.discrepancyCreatedOrUpdated()) changed++;
+    }
+    long staleWarnings = createStaleInventoryWarnings(tenantId);
+    long afterCases = caseRepository.count();
+    auditEventService.record("RECONCILIATION_PROJECTION_REFRESHED", "RECONCILIATION", tenantId.toString(), null, "{\"pairsEvaluated\":" + pairs.size() + ",\"casesCreatedOrUpdated\":" + changed + ",\"staleInventoryWarnings\":" + staleWarnings + "}");
+    return new Stage8ReconciliationRefreshResponse(tenantId, pairs.size(), changed + Math.max(0, afterCases - beforeCases), staleWarnings, false, false, clock.instant());
+  }
+
   private BigDecimal expectedStock(List<InventoryMovement> movements) {
     BigDecimal expected = BigDecimal.ZERO;
     for (InventoryMovement movement : movements) {
@@ -112,9 +164,29 @@ public class InventoryReconciliationService {
     return ReconciliationSeverity.LOW;
   }
 
-  private String likelyCauses(BigDecimal mismatch) {
-    if (mismatch.compareTo(BigDecimal.ZERO) < 0) return "[\"unposted sale\",\"write-off missing\",\"stock count below expected\"]";
-    return "[\"unposted purchase receipt\",\"return not recorded\",\"stock count above expected\"]";
+  private long createStaleInventoryWarnings(UUID tenantId) {
+    Instant staleBefore = clock.instant().minus(STALE_INVENTORY_AFTER);
+    List<InventorySnapshot> staleSnapshots = inventorySnapshotRepository.findTop50ByTenantIdOrderByCapturedAtDesc(tenantId).stream()
+        .filter(snapshot -> snapshot.getCapturedAt().isBefore(staleBefore))
+        .toList();
+    long warnings = 0;
+    for (InventorySnapshot snapshot : staleSnapshots) {
+      ReconciliationCase reconciliationCase = caseRepository.findFirstByTenantIdAndProductIdAndLocationIdAndStatusInOrderByUpdatedAtDesc(tenantId, snapshot.getProductId(), snapshot.getLocationId(), Set.of(ReconciliationStatus.OPEN, ReconciliationStatus.INVESTIGATING))
+          .orElse(null);
+      if (reconciliationCase == null) {
+        caseRepository.save(new ReconciliationCase(tenantId, snapshot.getProductId(), snapshot.getLocationId(), snapshot.getQuantityOnHand(), snapshot.getQuantityOnHand(), BigDecimal.ZERO, ReconciliationSeverity.WARNING, "[\"STALE_INVENTORY_SNAPSHOT\"]", clock.instant()));
+        warnings++;
+      }
+    }
+    return warnings;
+  }
+
+  private String likelyCauses(List<InventoryMovement> movements, InventoryMovement actualCount, BigDecimal mismatch) {
+    if (movements.stream().anyMatch(m -> m.getMovementType() == InventoryMovementType.MANUAL_ADJUSTMENT)) return "[\"MANUAL_ADJUSTMENT\"]";
+    if (actualCount.getOccurredAt().isBefore(clock.instant().minus(STALE_INVENTORY_AFTER))) return "[\"STALE_INVENTORY_SNAPSHOT\"]";
+    if (mismatch.compareTo(BigDecimal.ZERO) < 0) return "[\"MISSING_STOCK_MOVEMENT\",\"POSSIBLE_SHIPMENT_DISCREPANCY\"]";
+    if (mismatch.compareTo(BigDecimal.ZERO) > 0) return "[\"UNLINKED_ORDER_OR_INVOICE\",\"MISSING_STOCK_MOVEMENT\"]";
+    return "[\"UNKNOWN\"]";
   }
 
   private ReconciliationCaseResponse toResponse(ReconciliationCase reconciliationCase) {
