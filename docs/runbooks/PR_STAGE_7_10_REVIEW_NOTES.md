@@ -27,7 +27,7 @@ This branch is cumulative because prior accepted Stage 7-9 work was still staged
 - Sandboxed Maven dependency resolution remains blocked by network restrictions: `Permission denied: getsockopt` while resolving the Spring Boot parent POM.
 - The `connector_idempotency_key` database column rename is deferred. The column stores `sha256:*` hash values only; API/frontend expose `connectorIdempotencyKeyHash`.
 - Secret-scan noise reviewed: examples/dev placeholders only; no ignored local secrets staged.
-- Local untracked `sample.csv` remains outside the commit and should not be merged unless deliberately converted into a fixture.
+- Local untracked `sample.csv` was removed locally and is not part of the PR.
 - Production connector activation remains future work only and requires separate security/runbook acceptance.
 
 ## Explicit non-goals

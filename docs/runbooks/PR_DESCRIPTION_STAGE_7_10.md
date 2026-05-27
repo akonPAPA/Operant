@@ -62,7 +62,7 @@ This is a cumulative Stage 7-10 branch. Prior accepted Stage 7-9 work was staged
 - Sandboxed Maven remains blocked by dependency/network restrictions: `Permission denied: getsockopt`.
 - Production connector activation remains future work and requires separate security/runbook acceptance.
 - Secret-scan noise reviewed: examples/dev placeholders only; no ignored local secrets staged.
-- Local `sample.csv` remains untracked and outside the PR.
+- Local `sample.csv` was removed locally and is not part of the PR.
 
 ## Explicitly disabled
 
