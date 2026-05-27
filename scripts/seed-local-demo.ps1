@@ -15,10 +15,14 @@ function Write-Step([string]$Message) {
 
 $DemoTenantId = "11111111-1111-4111-8111-111111111111"
 $DemoCustomerId = "22222222-2222-4222-8222-222222222222"
+$DemoCustomerBId = "22222222-2222-4222-8222-222222222223"
 $DemoLocationId = "33333333-3333-4333-8333-333333333333"
+$DemoLocationBId = "33333333-3333-4333-8333-333333333334"
 $DemoPrimaryProductId = "44444444-4444-4444-8444-444444444444"
 $DemoSubstituteAId = "55555555-5555-4555-8555-555555555555"
 $DemoSubstituteBId = "66666666-6666-4666-8666-666666666666"
+$DemoFilterProductId = "77777777-7777-4777-8777-777777777777"
+$DemoOilProductId = "88888888-8888-4888-8888-888888888888"
 
 function Convert-JdbcToPsql([string]$Url) {
   if (-not $Url) { $Url = "jdbc:postgresql://localhost:55432/orderpilot" }
@@ -126,8 +130,31 @@ ON CONFLICT (id) DO UPDATE SET
   active = EXCLUDED.active,
   updated_at = now();
 
+INSERT INTO location (id, tenant_id, code, name, type, city, country, active)
+VALUES ('$DemoLocationBId', '$DemoTenantId', 'AST-BRANCH', 'Astana Branch Warehouse', 'WAREHOUSE', 'Astana', 'KZ', true)
+ON CONFLICT (id) DO UPDATE SET
+  code = EXCLUDED.code,
+  name = EXCLUDED.name,
+  type = EXCLUDED.type,
+  city = EXCLUDED.city,
+  country = EXCLUDED.country,
+  active = EXCLUDED.active,
+  updated_at = now();
+
 INSERT INTO customer_account (id, tenant_id, external_ref, account_code, legal_name, display_name, status, default_currency, default_location_id)
 VALUES ('$DemoCustomerId', '$DemoTenantId', 'DEMO-CUST-001', 'ALMATY-AUTO', 'Almaty Auto Service LLP', 'Almaty Auto Service', 'ACTIVE', 'KZT', '$DemoLocationId')
+ON CONFLICT (id) DO UPDATE SET
+  external_ref = EXCLUDED.external_ref,
+  account_code = EXCLUDED.account_code,
+  legal_name = EXCLUDED.legal_name,
+  display_name = EXCLUDED.display_name,
+  status = EXCLUDED.status,
+  default_currency = EXCLUDED.default_currency,
+  default_location_id = EXCLUDED.default_location_id,
+  updated_at = now();
+
+INSERT INTO customer_account (id, tenant_id, external_ref, account_code, legal_name, display_name, status, default_currency, default_location_id)
+VALUES ('$DemoCustomerBId', '$DemoTenantId', 'DEMO-CUST-002', 'ASTANA-FLEET', 'Astana Fleet Service LLP', 'Astana Fleet Service', 'ACTIVE', 'KZT', '$DemoLocationBId')
 ON CONFLICT (id) DO UPDATE SET
   external_ref = EXCLUDED.external_ref,
   account_code = EXCLUDED.account_code,
@@ -142,7 +169,9 @@ INSERT INTO product (id, tenant_id, sku, name, description, category, brand, man
 VALUES
   ('$DemoPrimaryProductId', '$DemoTenantId', 'TOY-CAM-2018-BPAD-OE', 'Original brake pads for Toyota Camry 2018', 'OEM-grade front brake pad set for Toyota Camry 2018', 'Brake System', 'Toyota Genuine', 'Toyota', 'PCS', 'ACTIVE', 18000.00, 'KZT'),
   ('$DemoSubstituteAId', '$DemoTenantId', 'AFT-CAM-2018-BPAD-A', 'Aftermarket compatible substitute A', 'Aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake System', 'RoadMax', 'RoadMax Parts', 'PCS', 'ACTIVE', 12500.00, 'KZT'),
-  ('$DemoSubstituteBId', '$DemoTenantId', 'AFT-CAM-2018-BPAD-B', 'Budget aftermarket compatible substitute B', 'Budget aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake System', 'SteppeLine', 'SteppeLine Components', 'PCS', 'ACTIVE', 9800.00, 'KZT')
+  ('$DemoSubstituteBId', '$DemoTenantId', 'AFT-CAM-2018-BPAD-B', 'Budget aftermarket compatible substitute B', 'Budget aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake System', 'SteppeLine', 'SteppeLine Components', 'PCS', 'ACTIVE', 9800.00, 'KZT'),
+  ('$DemoFilterProductId', '$DemoTenantId', 'TOY-CAM-2018-AIR-FILTER', 'Air filter for Toyota Camry 2018', 'OEM-compatible air filter for Toyota Camry 2018', 'Filters', 'Toyota Genuine', 'Toyota', 'PCS', 'ACTIVE', 4500.00, 'KZT'),
+  ('$DemoOilProductId', '$DemoTenantId', 'OIL-5W30-4L', 'Synthetic engine oil 5W30 4L', 'Synthetic 5W30 engine oil, four liter canister', 'Fluids', 'SteppeOil', 'SteppeOil', 'PCS', 'ACTIVE', 7200.00, 'KZT')
 ON CONFLICT (id) DO UPDATE SET
   sku = EXCLUDED.sku,
   name = EXCLUDED.name,
@@ -166,6 +195,36 @@ WHERE NOT EXISTS (
     AND active = true
 );
 
+INSERT INTO product_alias (tenant_id, product_id, alias_type, raw_alias, normalized_alias, customer_account_id, confidence_default)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', 'CUSTOMER_SKU', 'camry brake pads', 'CAMRYBRAKEPADS', NULL, 0.9500
+WHERE NOT EXISTS (
+  SELECT 1 FROM product_alias
+  WHERE tenant_id = '$DemoTenantId'
+    AND product_id = '$DemoPrimaryProductId'
+    AND normalized_alias = 'CAMRYBRAKEPADS'
+    AND active = true
+);
+
+INSERT INTO product_alias (tenant_id, product_id, alias_type, raw_alias, normalized_alias, customer_account_id, confidence_default)
+SELECT '$DemoTenantId', '$DemoFilterProductId', 'CUSTOMER_SKU', 'camry air filter', 'CAMRYAIRFILTER', NULL, 0.9500
+WHERE NOT EXISTS (
+  SELECT 1 FROM product_alias
+  WHERE tenant_id = '$DemoTenantId'
+    AND product_id = '$DemoFilterProductId'
+    AND normalized_alias = 'CAMRYAIRFILTER'
+    AND active = true
+);
+
+INSERT INTO oem_reference (tenant_id, product_id, oem_code, normalized_oem_code, manufacturer)
+SELECT '$DemoTenantId', '$DemoFilterProductId', '17801-0H050', '178010H050', 'Toyota'
+WHERE NOT EXISTS (
+  SELECT 1 FROM oem_reference
+  WHERE tenant_id = '$DemoTenantId'
+    AND product_id = '$DemoFilterProductId'
+    AND normalized_oem_code = '178010H050'
+    AND active = true
+);
+
 INSERT INTO inventory_movement (tenant_id, product_id, location_id, movement_type, quantity, occurred_at, source_type, source_reference)
 SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoLocationId', 'OPENING_STOCK', 150, '2026-05-01T08:00:00Z', 'DEMO_SEED', 'DEMO-OPENING-001'
 WHERE NOT EXISTS (SELECT 1 FROM inventory_movement WHERE tenant_id = '$DemoTenantId' AND source_type = 'DEMO_SEED' AND source_reference = 'DEMO-OPENING-001');
@@ -177,6 +236,108 @@ WHERE NOT EXISTS (SELECT 1 FROM inventory_movement WHERE tenant_id = '$DemoTenan
 INSERT INTO inventory_movement (tenant_id, product_id, location_id, movement_type, quantity, occurred_at, source_type, source_reference)
 SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoLocationId', 'ACTUAL_STOCK_COUNT', 100, '2026-05-04T18:00:00Z', 'DEMO_SEED', 'DEMO-COUNT-001'
 WHERE NOT EXISTS (SELECT 1 FROM inventory_movement WHERE tenant_id = '$DemoTenantId' AND source_type = 'DEMO_SEED' AND source_reference = 'DEMO-COUNT-001');
+
+INSERT INTO inventory_snapshot (tenant_id, product_id, location_id, quantity_on_hand, quantity_reserved, quantity_available, captured_at, source)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoLocationId', 100, 0, 100, '2026-05-04T18:00:00Z', 'DEMO_SEED'
+WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoPrimaryProductId' AND location_id = '$DemoLocationId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
+
+INSERT INTO inventory_snapshot (tenant_id, product_id, location_id, quantity_on_hand, quantity_reserved, quantity_available, captured_at, source)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoLocationBId', 0, 0, 0, '2026-05-04T18:00:00Z', 'DEMO_SEED'
+WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoPrimaryProductId' AND location_id = '$DemoLocationBId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
+
+INSERT INTO inventory_snapshot (tenant_id, product_id, location_id, quantity_on_hand, quantity_reserved, quantity_available, captured_at, source)
+SELECT '$DemoTenantId', '$DemoSubstituteAId', '$DemoLocationBId', 75, 0, 75, '2026-05-04T18:00:00Z', 'DEMO_SEED'
+WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoSubstituteAId' AND location_id = '$DemoLocationBId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
+
+INSERT INTO inventory_snapshot (tenant_id, product_id, location_id, quantity_on_hand, quantity_reserved, quantity_available, captured_at, source)
+SELECT '$DemoTenantId', '$DemoSubstituteBId', '$DemoLocationBId', 50, 0, 50, '2026-05-04T18:00:00Z', 'DEMO_SEED'
+WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoSubstituteBId' AND location_id = '$DemoLocationBId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
+
+INSERT INTO inventory_snapshot (tenant_id, product_id, location_id, quantity_on_hand, quantity_reserved, quantity_available, captured_at, source)
+SELECT '$DemoTenantId', '$DemoFilterProductId', '$DemoLocationId', 30, 0, 30, '2026-05-04T18:00:00Z', 'DEMO_SEED'
+WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoFilterProductId' AND location_id = '$DemoLocationId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
+
+INSERT INTO inventory_snapshot (tenant_id, product_id, location_id, quantity_on_hand, quantity_reserved, quantity_available, captured_at, source)
+SELECT '$DemoTenantId', '$DemoOilProductId', '$DemoLocationId', 40, 0, 40, '2026-05-04T18:00:00Z', 'DEMO_SEED'
+WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoOilProductId' AND location_id = '$DemoLocationId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
+
+INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoCustomerId', 1, 'EA', 26000.00, 'KZT', '2026-01-01T00:00:00Z', 10
+WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoPrimaryProductId' AND customer_account_id = '$DemoCustomerId' AND min_quantity = 1 AND uom = 'EA' AND active = true);
+
+INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoCustomerBId', 1, 'EA', 25500.00, 'KZT', '2026-01-01T00:00:00Z', 10
+WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoPrimaryProductId' AND customer_account_id = '$DemoCustomerBId' AND min_quantity = 1 AND uom = 'EA' AND active = true);
+
+INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
+SELECT '$DemoTenantId', '$DemoSubstituteAId', NULL, 1, 'EA', 19000.00, 'KZT', '2026-01-01T00:00:00Z', 20
+WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoSubstituteAId' AND customer_account_id IS NULL AND min_quantity = 1 AND uom = 'EA' AND active = true);
+
+INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
+SELECT '$DemoTenantId', '$DemoSubstituteBId', NULL, 1, 'EA', 15000.00, 'KZT', '2026-01-01T00:00:00Z', 20
+WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoSubstituteBId' AND customer_account_id IS NULL AND min_quantity = 1 AND uom = 'EA' AND active = true);
+
+INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
+SELECT '$DemoTenantId', '$DemoFilterProductId', NULL, 1, 'EA', 9000.00, 'KZT', '2026-01-01T00:00:00Z', 20
+WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoFilterProductId' AND customer_account_id IS NULL AND min_quantity = 1 AND uom = 'EA' AND active = true);
+
+INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
+SELECT '$DemoTenantId', '$DemoOilProductId', NULL, 1, 'EA', 12000.00, 'KZT', '2026-01-01T00:00:00Z', 20
+WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoOilProductId' AND customer_account_id IS NULL AND min_quantity = 1 AND uom = 'EA' AND active = true);
+
+INSERT INTO discount_rule (tenant_id, code, name, customer_account_id, product_id, max_discount_percent, requires_approval_above_percent, active_from)
+VALUES
+  ('$DemoTenantId', 'DEMO-BRAKE-DISCOUNT', 'Demo brake discount guardrail', '$DemoCustomerId', '$DemoPrimaryProductId', 20.00, 10.00, '2026-01-01T00:00:00Z'),
+  ('$DemoTenantId', 'DEMO-FILTER-DISCOUNT', 'Demo filter discount guardrail', NULL, '$DemoFilterProductId', 15.00, 8.00, '2026-01-01T00:00:00Z')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO margin_rule (tenant_id, code, name, product_id, category, minimum_gross_margin_percent, approval_required_below_percent)
+VALUES
+  ('$DemoTenantId', 'DEMO-BRAKE-MARGIN', 'Demo brake margin guardrail', '$DemoPrimaryProductId', NULL, 20.00, 25.00),
+  ('$DemoTenantId', 'DEMO-FILTER-MARGIN', 'Demo filter margin guardrail', '$DemoFilterProductId', NULL, 20.00, 25.00),
+  ('$DemoTenantId', 'DEMO-GENERAL-MARGIN', 'Demo general margin guardrail', NULL, NULL, 15.00, 20.00)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO product_substitute (tenant_id, source_product_id, substitute_product_id, substitute_type, risk_level, requires_approval, notes)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoSubstituteAId', 'COMPATIBLE_ALTERNATIVE', 'LOW', false, 'Safe aftermarket substitute'
+WHERE NOT EXISTS (
+  SELECT 1 FROM product_substitute
+  WHERE tenant_id = '$DemoTenantId'
+    AND source_product_id = '$DemoPrimaryProductId'
+    AND substitute_product_id = '$DemoSubstituteAId'
+    AND active = true
+);
+
+INSERT INTO product_substitute (tenant_id, source_product_id, substitute_product_id, substitute_type, risk_level, requires_approval, notes)
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoSubstituteBId', 'COMPATIBLE_ALTERNATIVE', 'HIGH', true, 'Risky substitute requiring approval'
+WHERE NOT EXISTS (
+  SELECT 1 FROM product_substitute
+  WHERE tenant_id = '$DemoTenantId'
+    AND source_product_id = '$DemoPrimaryProductId'
+    AND substitute_product_id = '$DemoSubstituteBId'
+    AND active = true
+);
+
+INSERT INTO customer_substitution_preference (tenant_id, customer_account_id, product_id, allow_aftermarket, blocked_substitute_product_id, notes)
+SELECT '$DemoTenantId', '$DemoCustomerId', '$DemoPrimaryProductId', true, '$DemoSubstituteBId', 'Safe substitute A allowed; substitute B blocked for customer'
+WHERE NOT EXISTS (
+  SELECT 1 FROM customer_substitution_preference
+  WHERE tenant_id = '$DemoTenantId'
+    AND customer_account_id = '$DemoCustomerId'
+    AND product_id = '$DemoPrimaryProductId'
+    AND blocked_substitute_product_id = '$DemoSubstituteBId'
+);
+
+INSERT INTO product_compatibility (tenant_id, product_id, compatible_type, make, model, year_from, year_to, notes, risk_level)
+SELECT '$DemoTenantId', '$DemoSubstituteAId', 'VEHICLE', 'Toyota', 'Camry', 2018, 2018, 'Verified Camry 2018 fitment', 'LOW'
+WHERE NOT EXISTS (
+  SELECT 1 FROM product_compatibility
+  WHERE tenant_id = '$DemoTenantId'
+    AND product_id = '$DemoSubstituteAId'
+    AND make = 'Toyota'
+    AND model = 'Camry'
+    AND active = true
+);
 
 COMMIT;
 "@
