@@ -1,0 +1,128 @@
+﻿ M .gitignore
+ M apps/core-api/src/main/java/com/orderpilot/api/dto/Stage2Dtos.java
+ A apps/core-api/src/main/java/com/orderpilot/api/rest/ChangeRequestController.java
+ M apps/core-api/src/main/java/com/orderpilot/api/rest/ImportController.java
+ M apps/core-api/src/main/java/com/orderpilot/api/rest/ProductController.java
+ M apps/core-api/src/main/java/com/orderpilot/application/services/ImportJobService.java
+ M apps/core-api/src/main/java/com/orderpilot/application/services/JsonSupport.java
+ M apps/core-api/src/main/java/com/orderpilot/application/services/ProductCatalogService.java
+ M apps/core-api/src/main/java/com/orderpilot/common/errors/GlobalExceptionHandler.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/audit/AuditEventRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/customer/CustomerAccount.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/extraction/ExtractedLineItem.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/imports/ImportJob.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/imports/ValidationReport.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/intake/ChannelMessage.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/inventory/InventorySnapshot.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/location/Location.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/pricing/PriceRule.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/CustomerSubstitutionPreference.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/CustomerSubstitutionPreferenceRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/OEMReference.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/Product.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/ProductAliasRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/ProductCompatibility.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/ProductCompatibilityRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/ProductRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/ProductSubstitute.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/product/ProductSubstituteRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/tenant/Tenant.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftOrderRepository.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftQuote.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftQuoteLine.java
+ M apps/core-api/src/main/java/com/orderpilot/domain/workspace/DraftQuoteRepository.java
+ M apps/core-api/src/test/java/com/orderpilot/application/services/ProductCatalogServiceTest.java
+?? .env.example
+?? .github/
+?? README.md
+?? STAGE_11E_GIT_STATUS_CHECKPOINT.txt
+?? apps/ai-worker/
+?? apps/core-api/.env.example
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage10BDtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage10CDtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage10DOmnichannelDtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage11ADtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage11EDtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage7Dtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/dto/Stage8Dtos.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/BotTelegramWebhookController.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/ChannelGatewayController.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/ChannelIdentityController.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/CommerceAnalyticsController.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/DraftQuoteController.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/PilotController.java
+?? apps/core-api/src/main/java/com/orderpilot/api/rest/ReconciliationController.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/ProductCatalogMatchingService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/ProductCodeNormalizer.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/ProductSubstitutionService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/analytics/
+?? apps/core-api/src/main/java/com/orderpilot/application/services/bot/
+?? apps/core-api/src/main/java/com/orderpilot/application/services/channel/
+?? apps/core-api/src/main/java/com/orderpilot/application/services/integration/
+?? apps/core-api/src/main/java/com/orderpilot/application/services/pilot/
+?? apps/core-api/src/main/java/com/orderpilot/application/services/reconciliation/
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/QuoteExternalWritePreparationService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/QuoteHandoffReadinessService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/QuoteHandoffSnapshotService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/QuoteHandoffViolation.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/QuoteLifecycleService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/QuoteLifecycleViolation.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/RfqToDraftQuoteService.java
+?? apps/core-api/src/main/java/com/orderpilot/application/services/workspace/SubstituteApprovalService.java
+?? apps/core-api/src/main/java/com/orderpilot/common/errors/NotFoundException.java
+?? apps/core-api/src/main/java/com/orderpilot/domain/bot/
+?? apps/core-api/src/main/java/com/orderpilot/domain/channel/
+?? apps/core-api/src/main/java/com/orderpilot/domain/integration/
+?? apps/core-api/src/main/java/com/orderpilot/domain/pilot/
+?? apps/core-api/src/main/java/com/orderpilot/domain/reconciliation/
+?? apps/core-api/src/main/java/com/orderpilot/domain/tenant/TenantRepository.java
+?? apps/core-api/src/main/java/com/orderpilot/domain/workspace/QuoteHandoffSnapshot.java
+?? apps/core-api/src/main/java/com/orderpilot/domain/workspace/QuoteHandoffSnapshotRepository.java
+?? apps/core-api/src/main/java/com/orderpilot/domain/workspace/QuoteValidationIssue.java
+?? apps/core-api/src/main/java/com/orderpilot/domain/workspace/QuoteValidationIssueRepository.java
+?? apps/core-api/src/main/java/com/orderpilot/security/
+?? apps/core-api/src/main/resources/db/migration/V10__change_request_transactional_outbox.sql
+?? apps/core-api/src/main/resources/db/migration/V11__channel_identity_signature_contracts.sql
+?? apps/core-api/src/main/resources/db/migration/V12__connector_idempotency_worker_readiness.sql
+?? apps/core-api/src/main/resources/db/migration/V13__compensation_plan_contracts.sql
+?? apps/core-api/src/main/resources/db/migration/V14__connector_sandbox_execution.sql
+?? apps/core-api/src/main/resources/db/migration/V15__draft_quote_workflow.sql
+?? apps/core-api/src/main/resources/db/migration/V16__product_matching_hardening.sql
+?? apps/core-api/src/main/resources/db/migration/V17__substitution_compatibility_lookup_indexes.sql
+?? apps/core-api/src/main/resources/db/migration/V18__quote_substitute_lifecycle_controls.sql
+?? apps/core-api/src/main/resources/db/migration/V19__quote_handoff_stage_11e.sql
+?? apps/core-api/src/main/resources/db/migration/V7__bot_runtime_lite.sql
+?? apps/core-api/src/main/resources/db/migration/V8__commerce_intelligence_reconciliation.sql
+?? apps/core-api/src/main/resources/db/migration/V9__pilot_shadow_mode_metrics.sql
+?? apps/core-api/src/test/java/com/orderpilot/api/rest/BotTelegramWebhookControllerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/api/rest/CommerceAnalyticsControllerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/api/rest/DraftQuoteControllerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/api/rest/ImportControllerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/api/rest/ProductCatalogControllerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/api/rest/ReconciliationControllerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/ImportJobServiceValidationTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/ProductCatalogMatchingServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/ProductCodeNormalizerTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/ProductSubstitutionServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/analytics/
+?? apps/core-api/src/test/java/com/orderpilot/application/services/bot/
+?? apps/core-api/src/test/java/com/orderpilot/application/services/channel/
+?? apps/core-api/src/test/java/com/orderpilot/application/services/integration/
+?? apps/core-api/src/test/java/com/orderpilot/application/services/pilot/
+?? apps/core-api/src/test/java/com/orderpilot/application/services/reconciliation/
+?? apps/core-api/src/test/java/com/orderpilot/application/services/workspace/QuoteHandoffReadinessServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/workspace/QuoteHandoffSnapshotServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/workspace/QuoteLifecycleServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/workspace/RfqToDraftQuoteServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/application/services/workspace/SubstituteApprovalServiceTest.java
+?? apps/core-api/src/test/java/com/orderpilot/demo/
+?? apps/core-api/src/test/java/com/orderpilot/security/
+?? apps/core-api/src/test/resources/demo/
+?? apps/web-dashboard/
+?? apps/windows-connector-agent-placeholder/
+?? docs/
+?? infra/
+?? packages/
+?? scripts/
+?? stats_git
+?? w
