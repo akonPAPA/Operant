@@ -126,12 +126,68 @@ The Compose file also defines `core-api`, `web-dashboard`, and `ai-worker` servi
 Existing helper scripts:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\run-core-v1-demo-check.ps1
 powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\seed-local-demo.ps1
 powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\start-local-demo.ps1
 powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\check-local-demo.ps1
 ```
 
-`seed-local-demo.ps1` targets local demo data only. It must not be used as a production import process.
+`run-core-v1-demo-check.ps1` is a compact safe preflight wrapper. It validates local prerequisites, validates Docker Compose config when Docker is available, calls `check-local-demo.ps1`, prints the manual backend/frontend/worker commands, and points back to this runbook. It does not start production profiles or call external systems.
+
+`check-local-demo.ps1` defaults to preflight mode. Runtime-only checks, such as missing backend/frontend listeners, are warnings unless `-RequireRuntime` is supplied. Use `-RequireRuntime` before a live demo when backend and frontend should already be running.
+
+`seed-local-demo.ps1` targets local deterministic demo data only. It uses fixed demo UUIDs and upserts / guarded inserts for repeatable local runs. It must not be used as a production import process.
+
+## Recommended Local Demo Sequence
+
+1. Open PowerShell at `C:\OrderPilot\OrderPilot-Core`.
+2. Run a safe preflight:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-core-v1-demo-check.ps1
+```
+
+3. Start local services:
+
+```powershell
+docker compose -f infra\docker\docker-compose.yml up -d postgres redis
+```
+
+4. Seed deterministic local demo data and write frontend demo IDs:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\seed-local-demo.ps1 -UpdateFrontendEnv
+```
+
+5. Start backend:
+
+```powershell
+cd apps\core-api
+mvn spring-boot:run
+```
+
+6. Start frontend in a second shell:
+
+```powershell
+cd apps\web-dashboard
+npm.cmd run dev
+```
+
+7. Run a runtime-strict demo check from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-local-demo.ps1 -RequireRuntime
+```
+
+8. Run worker verification if the AI worker changed or if you want a full local confidence check:
+
+```powershell
+cd apps\ai-worker
+.\.venv\Scripts\python.exe -m pytest
+```
+
+9. Open `http://localhost:3000/demo`.
+10. Follow `docs/investor/FOUNDER_DEMO_TALK_TRACK.md`.
 
 ## Demo Flow
 
@@ -194,6 +250,12 @@ Action: stop the dev server, remove `.next` if necessary, then rerun `npm.cmd ru
 Symptom: queues are empty or demo IDs are missing.
 
 Action: run `scripts\seed-local-demo.ps1`, confirm `.env.local` demo IDs, and then run `scripts\check-local-demo.ps1`.
+
+### Preflight Passes But Runtime Warnings Remain
+
+Symptom: `run-core-v1-demo-check.ps1` or `check-local-demo.ps1` prints warnings for backend, frontend, PostgreSQL, or seeded IDs.
+
+Action: this is expected when services are not running yet. Start local services, seed data, start backend/frontend, then rerun `check-local-demo.ps1 -RequireRuntime`.
 
 ## Expected Verification Baseline
 

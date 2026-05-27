@@ -11,7 +11,9 @@ Use this checklist before a local design partner, pilot, or investor demo. Mark 
 | AI worker tests pass via `.venv\Scripts\python.exe -m pytest` |  |  |
 | PostgreSQL and Redis are available locally |  |  |
 | `docker compose -f infra\docker\docker-compose.yml ps` shows expected services when using Compose |  |  |
-| `scripts\check-local-demo.ps1` passes or blockers are understood |  |  |
+| `scripts\run-core-v1-demo-check.ps1` preflight passes or warnings are understood |  |  |
+| `scripts\check-local-demo.ps1 -RequireRuntime` passes before a live demo |  |  |
+| `scripts\seed-local-demo.ps1 -UpdateFrontendEnv` completed if seeded demo data is needed |  |  |
 | `git status --short` shows no tracked dirty files |  |  |
 | No local junk is staged: `.env`, `.venv`, `node_modules`, `target`, `.next`, coverage, logs, IDE files |  |  |
 

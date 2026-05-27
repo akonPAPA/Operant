@@ -1,5 +1,5 @@
 param(
-  [string]$RepoRoot = "C:\OrderPilot\OrderPilot-Core",
+  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$DatasourceUrl = $env:SPRING_DATASOURCE_URL,
   [string]$Username = $env:SPRING_DATASOURCE_USERNAME,
   [string]$Credential = $env:SPRING_DATASOURCE_PASSWORD,
@@ -7,6 +7,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Write-Step([string]$Message) {
+  Write-Host ""
+  Write-Host "== $Message =="
+}
 
 $DemoTenantId = "11111111-1111-4111-8111-111111111111"
 $DemoCustomerId = "22222222-2222-4222-8222-222222222222"
@@ -94,6 +99,11 @@ $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
 $connection = Convert-JdbcToPsql $DatasourceUrl
 if (-not $Username) { $Username = "orderpilot" }
 
+Write-Host "OrderPilot local demo seed"
+Write-Host "Repository: $resolvedRoot"
+Write-Host "This script is deterministic and local-only. It does not call Telegram, LLMs, ERP/1C, external connector networks, or production seeders."
+Write-Host "It uses fixed demo UUIDs and SQL upserts / guarded inserts for repeatable local runs."
+
 $sql = @"
 BEGIN;
 
@@ -172,6 +182,7 @@ COMMIT;
 "@
 
 $psqlCommand = Get-Command "psql" -ErrorAction SilentlyContinue
+Write-Step "Applying deterministic local seed"
 if ($psqlCommand) {
   Invoke-SeedWithLocalPsql $connection $Username $Credential $sql
 } else {

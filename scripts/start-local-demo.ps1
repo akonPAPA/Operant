@@ -1,10 +1,15 @@
 param(
-  [string]$RepoRoot = "C:\OrderPilot\OrderPilot-Core",
+  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$BackendUrl = "http://localhost:8080",
   [string]$FrontendUrl = "http://localhost:3000"
 )
 
 $ErrorActionPreference = "Stop"
+
+function Write-Step([string]$Message) {
+  Write-Host ""
+  Write-Host "== $Message =="
+}
 
 function Test-Endpoint([string]$Url) {
   try {
@@ -20,6 +25,18 @@ function Require-Command([string]$Name) {
     throw "$Name is unavailable on PATH. Open the correct developer shell or install $Name before starting the demo."
   }
   Write-Host "OK: Found $Name"
+}
+
+function Test-DockerComposeAvailable() {
+  if (-not (Get-Command "docker" -ErrorAction SilentlyContinue)) {
+    return $false
+  }
+  try {
+    & docker compose version *> $null
+    return $LASTEXITCODE -eq 0
+  } catch {
+    return $false
+  }
 }
 
 function Get-ListeningPids([int]$Port) {
@@ -97,32 +114,45 @@ $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
 
 Write-Host "OrderPilot local demo startup"
 Write-Host "Repository: $resolvedRoot"
-Write-Host "This script does not seed production data, call Telegram, call an LLM, write to ERP, install dependencies, or use secrets."
+Write-Host "This script does not seed production data, call Telegram, call an LLM, write to ERP/1C, execute external connector networks, install dependencies, or use raw secrets."
 Write-Host "It opens local backend/frontend processes only after prerequisite checks."
 Write-Host "For seeded local demo data, run scripts\seed-local-demo.ps1 first against a local Postgres database."
 
-Write-Host ""
-Write-Host "Checking required tools..."
+Write-Step "Checking required tools"
 Require-Command "java"
 Require-Command "mvn"
 Require-Command "node"
 Require-Command "npm.cmd"
 
-Write-Host ""
-Write-Host "Checking frontend dependencies and demo env..."
+Write-Step "Checking Docker Compose file"
+$composePath = Join-Path $resolvedRoot "infra\docker\docker-compose.yml"
+if (Test-Path $composePath) {
+  if (Test-DockerComposeAvailable) {
+    & docker compose -f $composePath config
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "OK: Docker Compose config is valid."
+    } else {
+      Write-Host "WARN: Docker Compose config validation failed for $composePath. Continue only if PostgreSQL/Redis are available another way."
+    }
+  } else {
+    Write-Host "WARN: Docker Compose is unavailable or not accessible. Start PostgreSQL/Redis another way, or install Docker Desktop with Compose."
+  }
+} else {
+  Write-Host "WARN: No Docker Compose file found at $composePath."
+}
+
+Write-Step "Checking frontend dependencies and demo env"
 if (-not (Test-Path (Join-Path $webRoot "node_modules"))) {
   throw "npm dependencies are missing. Run: cd $webRoot; npm install"
 }
 Write-Host "OK: npm dependencies are installed."
 Require-DemoEnv $webRoot
 
-Write-Host ""
-Write-Host "Checking ports..."
+Write-Step "Checking ports"
 Show-PortState "Backend" 8080
 Show-PortState "Frontend" 3000
 
-Write-Host ""
-Write-Host "Checking backend runtime datastore..."
+Write-Step "Checking backend runtime datastore"
 $datasourceUrl = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_URL")
 if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:55432/orderpilot" }
 Test-Postgres $datasourceUrl

@@ -1,8 +1,9 @@
 param(
-  [string]$RepoRoot = "C:\OrderPilot\OrderPilot-Core",
+  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$BackendUrl = "http://localhost:8080",
   [string]$FrontendUrl = "http://localhost:3000",
-  [switch]$AllowFixtureMode
+  [switch]$AllowFixtureMode,
+  [switch]$RequireRuntime
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +20,14 @@ function Add-Failure([System.Collections.Generic.List[string]]$Failures, [string
 
 function Add-Warning([string]$Message) {
   Write-Host "WARN: $Message"
+}
+
+function Add-RuntimeIssue([System.Collections.Generic.List[string]]$Failures, [string]$Message) {
+  if ($RequireRuntime) {
+    Add-Failure $Failures $Message
+  } else {
+    Add-Warning "$Message Manual check required when runtime services are not started."
+  }
 }
 
 function Test-CommandAvailable([string]$Name, [System.Collections.Generic.List[string]]$Failures) {
@@ -39,7 +48,24 @@ function Test-HttpEndpoint([string]$Name, [string]$Url, [System.Collections.Gene
     }
     Write-Host "OK: $Name returned HTTP $($response.StatusCode)"
   } catch {
-    Add-Failure $Failures "$Name is not reachable at $Url. $($_.Exception.Message)"
+    Add-RuntimeIssue $Failures "$Name is not reachable at $Url. $($_.Exception.Message)"
+  }
+}
+
+function Invoke-DockerComposeConfig([string]$ComposePath) {
+  & docker compose -f $ComposePath config
+  return $LASTEXITCODE
+}
+
+function Test-DockerComposeAvailable() {
+  if (-not (Get-Command "docker" -ErrorAction SilentlyContinue)) {
+    return $false
+  }
+  try {
+    & docker compose version *> $null
+    return $LASTEXITCODE -eq 0
+  } catch {
+    return $false
   }
 }
 
@@ -64,7 +90,7 @@ function Test-ApiEndpoint([string]$Name, [string]$Url, [string]$Method, [hashtab
     }
     Write-Host "OK: $Name returned HTTP $($response.StatusCode)"
   } catch {
-    Add-Failure $Failures "$Name is not reachable at $Url. $($_.Exception.Message)"
+    Add-RuntimeIssue $Failures "$Name is not reachable at $Url. $($_.Exception.Message)"
   }
 }
 
@@ -75,7 +101,7 @@ function Test-Port([string]$Name, [int]$Port, [bool]$ShouldListen, [System.Colle
       $pids = ($listeners | Select-Object -ExpandProperty OwningProcess -Unique) -join ", "
       Write-Host "OK: $Name port $Port is listening (PID $pids)."
     } else {
-      Add-Failure $Failures "$Name is not listening on localhost:$Port."
+      Add-RuntimeIssue $Failures "$Name is not listening on localhost:$Port."
     }
     return
   }
@@ -146,7 +172,8 @@ $buildPath = Join-Path $webRoot ".next"
 
 Write-Host "OrderPilot local demo runtime check"
 Write-Host "Repository: $resolvedRoot"
-Write-Host "No production seeding, Telegram calls, LLM calls, ERP writes, payment integrations, or dependency upgrades are performed."
+Write-Host "No production seeding, Telegram outbound calls, LLM calls, ERP/1C writes, external connector network calls, payment integrations, or dependency upgrades are performed."
+Write-Host "Runtime checks are warnings unless -RequireRuntime is supplied."
 
 Write-Step "Required tools"
 Test-CommandAvailable "java" $failures
@@ -163,6 +190,23 @@ foreach ($path in @($webRoot, $coreRoot, (Join-Path $resolvedRoot "docs\runbooks
   }
 }
 
+Write-Step "Docker Compose"
+$composePath = Join-Path $resolvedRoot "infra\docker\docker-compose.yml"
+if (Test-Path $composePath) {
+  if (Test-DockerComposeAvailable) {
+    $composeExitCode = Invoke-DockerComposeConfig $composePath
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "OK: Docker Compose config is valid."
+    } else {
+      Add-RuntimeIssue $failures "Docker Compose config validation failed for $composePath."
+    }
+  } else {
+    Add-Warning "Docker Compose is unavailable or not accessible. Compose config validation skipped."
+  }
+} else {
+  Add-Failure $failures "Missing Docker Compose file: $composePath"
+}
+
 Write-Step "Frontend dependencies and environment"
 if (Test-Path (Join-Path $webRoot "node_modules")) {
   Write-Host "OK: npm dependencies are installed in apps\web-dashboard\node_modules."
@@ -175,7 +219,7 @@ if (Test-Path $envPath) {
   $envValues = Read-DotEnv $envPath
 } else {
   $envValues = @{}
-  Add-Failure $failures "Missing $envPath. Copy $envExamplePath to .env.local and fill seeded demo UUIDs."
+  Add-RuntimeIssue $failures "Missing $envPath. Copy $envExamplePath to .env.local and fill seeded demo UUIDs."
 }
 
 $coreApiUrl = Get-EnvValue $envValues "NEXT_PUBLIC_CORE_API_URL"
@@ -184,7 +228,7 @@ if ($coreApiUrl -eq "http://localhost:8080") {
 } elseif ($coreApiUrl) {
   Add-Warning "NEXT_PUBLIC_CORE_API_URL is '$coreApiUrl'. That may be intentional, but the standard local demo uses http://localhost:8080."
 } else {
-  Add-Failure $failures "NEXT_PUBLIC_CORE_API_URL is missing. Set it to http://localhost:8080 in apps\web-dashboard\.env.local."
+  Add-RuntimeIssue $failures "NEXT_PUBLIC_CORE_API_URL is missing. Set it to http://localhost:8080 in apps\web-dashboard\.env.local."
 }
 
 foreach ($name in @("NEXT_PUBLIC_DEMO_TENANT_ID", "NEXT_PUBLIC_DEMO_PRODUCT_ID", "NEXT_PUBLIC_DEMO_LOCATION_ID")) {
@@ -220,7 +264,7 @@ if ($jdbc) {
   if ($postgresReachable) {
     Write-Host "OK: Postgres TCP endpoint is reachable at $($jdbc.Host):$($jdbc.Port)."
   } else {
-    Add-Failure $failures "Postgres is unreachable at $($jdbc.Host):$($jdbc.Port). Start local Postgres or fix SPRING_DATASOURCE_URL before backend runtime."
+    Add-RuntimeIssue $failures "Postgres is unreachable at $($jdbc.Host):$($jdbc.Port). Start local Postgres or fix SPRING_DATASOURCE_URL before backend runtime."
   }
 } else {
   Add-Failure $failures "SPRING_DATASOURCE_URL is not a supported PostgreSQL JDBC URL: $datasourceUrl"
@@ -260,7 +304,7 @@ if ($fullDemoIdsConfigured) {
 } elseif ($AllowFixtureMode) {
   Add-Warning "Demo API probes that require seeded tenant/product/location IDs were skipped because fixture-only visual mode is allowed."
 } else {
-  Add-Failure $failures "Demo API probes were skipped because seeded tenant/product/location IDs are not configured."
+  Add-RuntimeIssue $failures "Demo API probes were skipped because seeded tenant/product/location IDs are not configured."
 }
 
 Write-Step "Key dashboard routes"
@@ -291,4 +335,8 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host ""
-Write-Host "Local demo check passed. Backend runtime, frontend runtime, env config, and key routes are ready."
+if ($RequireRuntime) {
+  Write-Host "Local demo check passed. Backend runtime, frontend runtime, env config, and key routes are ready."
+} else {
+  Write-Host "Local demo preflight passed. Runtime-only checks may have been reported as warnings; rerun with -RequireRuntime before a live demo."
+}
