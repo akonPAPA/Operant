@@ -203,9 +203,9 @@ $fullDemoIdsConfigured =
 
 Write-Step "Backend runtime prerequisites"
 $datasourceUrl = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_URL")
-if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:5432/orderpilot" }
+if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:55432/orderpilot" }
 $datasourceUsername = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_USERNAME")
-if (-not $datasourceUsername) { $datasourceUsername = "orderpilot_app" }
+if (-not $datasourceUsername) { $datasourceUsername = "orderpilot" }
 $datasourceCredential = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_PASSWORD")
 
 Write-Host "Runtime datasource URL: $datasourceUrl"

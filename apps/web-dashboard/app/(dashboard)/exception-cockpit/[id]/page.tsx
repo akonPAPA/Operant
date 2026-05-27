@@ -1,11 +1,12 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Timeline } from "@/components/timeline";
 
-export default function Page({ params }: Readonly<{ params: { id: string } }>) {
+export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
+  const { id } = await params;
   return (
     <DashboardShell title="Exception Case Detail">
       <section className="panel">
-        <h2>Case {params.id}</h2>
+        <h2>Case {id}</h2>
         <p>Review source, customer match, validation issues, suggested fixes, substitute candidates, approval requirements, notes, and operator actions.</p>
         <p className="risk-note">Workspace actions update OrderPilot workflow state only. They do not mutate product, customer, inventory, pricing, ERP, accounting, or warehouse systems.</p>
       </section>

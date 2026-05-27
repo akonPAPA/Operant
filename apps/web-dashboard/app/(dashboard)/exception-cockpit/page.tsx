@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { DashboardShell } from "@/components/dashboard-shell";
 
 export default function Page() {

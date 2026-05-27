@@ -1,4 +1,6 @@
-param()
+param(
+  [switch]$CleanFrontendInstall
+)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -53,7 +55,10 @@ function Resolve-NpmCommand {
 
 Write-Host "OrderPilot local parity check"
 Write-Host "Repo root: $repoRoot"
-Write-Host "This script does not delete volumes, create .env files, install dependencies, or modify business data."
+Write-Host "This script does not delete volumes, create .env files, or modify business data."
+if ($CleanFrontendInstall) {
+  Write-Host "Clean frontend install mode is enabled: npm ci will refresh apps\web-dashboard\node_modules."
+}
 
 Write-Section "Tooling"
 $docker = Resolve-RequiredCommand "docker" "Install and start Docker Desktop."
@@ -78,7 +83,24 @@ Write-Section "Postgres Identity"
 Invoke-Native $docker @("exec", "orderpilot-postgres", "psql", "-U", "orderpilot", "-d", "orderpilot", "-c", "select current_user, current_database();") $repoRoot
 
 Write-Section "Backend Tests"
-Invoke-Native $mvn @("test") $coreApiDir
+$previousSpringProfilesActive = [Environment]::GetEnvironmentVariable("SPRING_PROFILES_ACTIVE")
+try {
+  $env:SPRING_PROFILES_ACTIVE = "test"
+  Invoke-Native $mvn @("test") $coreApiDir
+}
+finally {
+  if ($null -eq $previousSpringProfilesActive) {
+    Remove-Item Env:SPRING_PROFILES_ACTIVE -ErrorAction SilentlyContinue
+  }
+  else {
+    $env:SPRING_PROFILES_ACTIVE = $previousSpringProfilesActive
+  }
+}
+
+if ($CleanFrontendInstall) {
+  Write-Section "Frontend Clean Install"
+  Invoke-Native $npm @("ci") $webDashboardDir
+}
 
 Write-Section "Frontend Lint"
 Invoke-Native $npm @("run", "lint") $webDashboardDir

@@ -155,6 +155,29 @@ a {
   width: 10px;
 }
 
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.status-pill {
+  background: var(--panel-muted);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 8px;
+}
+
+.status-pill.warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: var(--warning);
+}
+
 .risk-note {
   border-left: 4px solid var(--warning);
   color: var(--muted);
