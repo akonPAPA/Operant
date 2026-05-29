@@ -18,6 +18,7 @@ import com.orderpilot.domain.location.LocationRepository;
 import com.orderpilot.domain.pricing.*;
 import com.orderpilot.domain.product.*;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
+import com.orderpilot.domain.workspace.QuoteInternalOrderBoundaryRepository;
 import com.orderpilot.domain.workspace.QuoteApprovalRequestRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.math.BigDecimal;
@@ -44,6 +45,7 @@ import org.springframework.test.context.ActiveProfiles;
     QuoteMarginValidationService.class,
     SubstitutionService.class,
     ApprovalPolicyService.class,
+    QuoteApprovalStateMachineService.class,
     ProductCatalogMatchingService.class,
     ProductSubstitutionService.class,
     AuditEventService.class,
@@ -53,6 +55,7 @@ class QuoteDraftServiceStage12ATest {
   private static final Instant NOW = Instant.parse("2026-05-20T00:00:00Z");
 
   @Autowired private QuoteDraftService service;
+  @Autowired private QuoteApprovalStateMachineService approvalService;
   @Autowired private CustomerAccountRepository customers;
   @Autowired private ProductRepository products;
   @Autowired private ProductAliasRepository aliases;
@@ -67,6 +70,7 @@ class QuoteDraftServiceStage12ATest {
   @Autowired private MarginRuleRepository margins;
   @Autowired private DraftQuoteRepository quotes;
   @Autowired private QuoteApprovalRequestRepository approvalRequests;
+  @Autowired private QuoteInternalOrderBoundaryRepository internalOrderBoundaries;
   @Autowired private AuditEventRepository auditEvents;
 
   @AfterEach
@@ -224,6 +228,126 @@ class QuoteDraftServiceStage12ATest {
     assertThat(quotes.findByTenantIdOrderByCreatedAtDesc(tenantId)).hasSize(1);
   }
 
+  @Test
+  void approvingValidQuoteSucceedsAndAuditsDecision() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("BRK-001", "Brake pads", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "BRK-001", "1", "0.00", "stage12b-approve-valid"));
+
+    QuoteApprovalCommandResponse response = approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved"));
+
+    assertThat(response.previousStatus()).isEqualTo("DRAFT");
+    assertThat(response.newStatus()).isEqualTo("APPROVED");
+    assertThat(response.auditCorrelationId()).isNotNull();
+    assertThat(auditEvents.findAll()).extracting("action").contains("quote.approved", "approval.decision.recorded");
+  }
+
+  @Test
+  void approvingQuoteWithBlockingValidationIssueFails() {
+    UUID tenantId = tenant();
+    customer("CUST-1", "ACME", "Acme Parts");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "UNKNOWN-SKU", "1", "0.00", "stage12b-blocked"));
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approve"))))
+        .isInstanceOf(QuoteLifecycleViolation.class)
+        .hasMessageContaining("unresolved blocking validation issues");
+  }
+
+  @Test
+  void rejectingPendingQuoteSucceeds() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("DISC-REQ", "Discount approval", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    discountRule(customer, product, "30.00", "5.00");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "DISC-REQ", "1", "10.00", "stage12b-reject"));
+
+    QuoteApprovalCommandResponse response = approvalService.rejectQuote(quote.draftQuoteId(), decision(tenantId, "Rejected by manager"));
+
+    assertThat(response.previousStatus()).isEqualTo("PENDING_APPROVAL");
+    assertThat(response.newStatus()).isEqualTo("REJECTED");
+  }
+
+  @Test
+  void requestingChangesSucceedsAndRequiresReason() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("CHG-REQ", "Change request", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "CHG-REQ", "1", "0.00", "stage12b-change"));
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.requestQuoteChanges(quote.draftQuoteId(), decision(tenantId, ""))))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+    QuoteApprovalCommandResponse response = approvalService.requestQuoteChanges(quote.draftQuoteId(), decision(tenantId, "Fix customer terms"));
+
+    assertThat(response.newStatus()).isEqualTo("CHANGES_REQUESTED");
+  }
+
+  @Test
+  void convertedQuoteCannotBeApprovedOrRejectedAgain() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("CONV-001", "Convertible", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "CONV-001", "1", "0.00", "stage12b-convert"));
+    approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved"));
+    approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"));
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "again"))))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.rejectQuote(quote.draftQuoteId(), decision(tenantId, "reject"))))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+  }
+
+  @Test
+  void tenantACannotApproveTenantBQuote() {
+    UUID tenantB = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("TENANT-B-SKU", "Tenant B", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantB, "CUST-1", null, "TENANT-B-SKU", "1", "0.00", "stage12b-tenant-b"));
+
+    UUID tenantA = tenant();
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.approveQuote(quote.draftQuoteId(), decision(tenantA, "approve"))))
+        .isInstanceOf(com.orderpilot.common.errors.NotFoundException.class);
+  }
+
+  @Test
+  void conversionIsBlockedUnlessApprovedAndCreatesInternalOnlyBoundary() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("BOUNDARY-001", "Boundary", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "BOUNDARY-001", "1", "0.00", "stage12b-boundary"));
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"))))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+    approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved"));
+    QuoteApprovalCommandResponse converted = approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"));
+    QuoteApprovalCommandResponse replay = approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"));
+
+    assertThat(converted.newStatus()).isEqualTo("CONVERTED_TO_INTERNAL_ORDER");
+    assertThat(converted.internalDraftOrderId()).isNotNull();
+    assertThat(converted.externalExecutionStatus()).isEqualTo("EXTERNAL_EXECUTION_DISABLED");
+    assertThat(replay.internalDraftOrderId()).isEqualTo(converted.internalDraftOrderId());
+    assertThat(internalOrderBoundaries.findByTenantIdAndDraftQuoteId(tenantId, quote.draftQuoteId())).isPresent();
+    assertThat(auditEvents.findAll()).extracting("action").contains("quote.converted_to_internal_order");
+  }
+
   private UUID tenant() {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
@@ -259,5 +383,9 @@ class QuoteDraftServiceStage12ATest {
 
   private CreateDraftQuoteFromRfqCommand command(UUID tenantId, String customerExternalRef, String customerName, String sku, String quantity, String discount, String idempotencyKey) {
     return new CreateDraftQuoteFromRfqCommand(tenantId, UUID.randomUUID(), "OPERATOR", customerExternalRef, customerName, List.of(new RequestedItem(sku, "Requested " + sku, new BigDecimal(quantity), "EA")), "ALM", new BigDecimal(discount), idempotencyKey);
+  }
+
+  private QuoteApprovalDecisionCommand decision(UUID tenantId, String reason) {
+    return new QuoteApprovalDecisionCommand(tenantId, UUID.randomUUID(), "OPERATOR", null, reason, reason, "decision-" + UUID.randomUUID());
   }
 }

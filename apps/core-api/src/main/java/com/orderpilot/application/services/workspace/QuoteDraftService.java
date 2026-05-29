@@ -209,7 +209,7 @@ public class QuoteDraftService {
 
     boolean hasBlocking = pendingIssues.stream().anyMatch(PendingIssue::blocking);
     boolean approvalRequired = approvalRepository.countByTenantIdAndDraftQuoteIdAndStatus(tenantId, quote.getId(), "OPEN") > 0;
-    String nextStatus = approvalRequired ? "NEEDS_APPROVAL" : hasBlocking ? "NEEDS_REVIEW" : "DRAFT";
+    String nextStatus = approvalRequired ? "PENDING_APPROVAL" : hasBlocking ? "NEEDS_REVIEW" : "DRAFT";
     BigDecimal quoteMargin = quoteMarginWeightedDenominator.compareTo(BigDecimal.ZERO) > 0
         ? quoteMarginWeightedNumerator.divide(quoteMarginWeightedDenominator, 2, RoundingMode.HALF_UP)
         : null;

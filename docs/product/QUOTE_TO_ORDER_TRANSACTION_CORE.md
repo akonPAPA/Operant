@@ -77,3 +77,96 @@ The response includes `draftQuoteId`, `status`, `resolvedCustomer`, quote `lines
 - It does not execute connectors, create ERP/1C writes, or call external systems.
 - Approval request decision workflow is represented by `quote_approval_request`; final approval actions remain a later stage.
 - AI, bot, and frontend surfaces must continue to call backend APIs instead of writing directly to the database.
+
+## Stage 12B Approval State Machine
+
+Stage 12B adds an operator-controlled quote lifecycle around the Stage 12A draft transaction. Controllers expose commands, but `QuoteApprovalStateMachineService` owns the business rules, tenant checks, audit events, and internal conversion boundary.
+
+Lifecycle states used by the Stage 12B command layer:
+
+- `DRAFT`
+- `PENDING_APPROVAL`
+- `APPROVED`
+- `REJECTED`
+- `CHANGES_REQUESTED`
+- `EXPIRED`
+- `CONVERTED_TO_INTERNAL_ORDER`
+
+Approval decisions are recorded in `quote_approval_decision` with tenant id, quote id, optional approval request id, decision, comment, actor, decision timestamp, previous/new quote status, resolved reasons, blocking reasons, and audit correlation id. Open approval requests are marked with their decision metadata. Invalid transitions return `QUOTE_LIFECYCLE_TRANSITION_BLOCKED`.
+
+Approval rules:
+
+- Quotes with unresolved hard blocking validation issues cannot become `APPROVED`.
+- Approval-resolvable policy warnings such as `MARGIN_APPROVAL_REQUIRED` and `DISCOUNT_APPROVAL_REQUIRED` are resolved only by an explicit `APPROVE` decision.
+- Hard margin violations, unresolved product/customer/price/stock issues, risky substitute blockers, rejected quotes, change-requested quotes, and already converted quotes cannot be converted.
+- Converted quotes cannot be approved or rejected again.
+- Every approval, rejection, change request, conversion, or blocked conversion emits audit evidence.
+
+## Stage 12B API
+
+`GET /api/v1/quotes/{quoteId}/approval-state`
+
+Returns quote status, `approvalRequired`, blocking issues, approval reasons, approval requests, latest approval decision, internal draft order boundary id, ChangeRequest id if one is ever attached, external execution status, and audit correlation id.
+
+`POST /api/v1/quotes/{quoteId}/approve`
+
+```json
+{
+  "tenantId": "11111111-1111-4111-8111-111111111111",
+  "actorId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "actorRole": "OPERATOR",
+  "reason": "Discount approved by operator",
+  "idempotencyKey": "approve-quote-001"
+}
+```
+
+`POST /api/v1/quotes/{quoteId}/reject`
+
+`POST /api/v1/quotes/{quoteId}/request-changes`
+
+Reject and request-changes commands use the same request shape. Request changes requires a reason/comment.
+
+`POST /api/v1/quotes/{quoteId}/convert-to-internal-order`
+
+Only an `APPROVED` quote can create the internal draft order boundary. The result includes `internalDraftOrderId`, optional `changeRequestId`, `externalExecutionStatus`, and `auditCorrelationId`.
+
+## Stage 12B Conversion Boundary
+
+The conversion boundary is internal-only. Stage 12B creates `quote_internal_order_boundary` as an internal draft order candidate and moves the quote to `CONVERTED_TO_INTERNAL_ORDER`. It does not call connectors, does not write ERP/1C/accounting/warehouse systems, does not reserve or mutate inventory, and does not report an external send as successful. `externalExecutionStatus` remains `EXTERNAL_EXECUTION_DISABLED`.
+
+## Stage 12B Audit Events
+
+- `quote.approved`
+- `quote.rejected`
+- `quote.changes_requested`
+- `quote.converted_to_internal_order`
+- `quote.conversion_blocked`
+- `approval.decision.recorded`
+
+Metadata includes tenant id, quote id, previous/new status, decision, reason, resolved reasons, blocking reasons, actor through the audit event, correlation id, and external execution disabled status.
+
+## Stage 12B Acceptance Criteria
+
+- Backend enforces lifecycle transitions and tenant scope.
+- API endpoints are real service-backed commands.
+- Blocking validation issues prevent approval.
+- Invalid transitions return structured errors.
+- Conversion is approved-only, idempotent, audited, and internal-only.
+- Dashboard approval buttons call backend APIs and show status, reasons, blockers, result, audit correlation, and disabled external execution.
+- No production connector, ERP/1C write, external inventory mutation, autonomous AI action, raw secret, direct frontend/AI/bot database write, PR, tag, commit, or push is part of this stage.
+
+## Stage 12B Test Evidence Commands
+
+```powershell
+cd C:\OrderPilot\OrderPilot-Core\apps\core-api
+mvn test
+
+cd C:\OrderPilot\OrderPilot-Core\apps\web-dashboard
+npm.cmd run lint
+npm.cmd test
+npm.cmd run build
+
+cd C:\OrderPilot\OrderPilot-Core
+git diff --check
+git status --short
+```
