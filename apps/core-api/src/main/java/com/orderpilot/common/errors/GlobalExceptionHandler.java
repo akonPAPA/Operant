@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import com.orderpilot.common.tenant.TenantContextMissingException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
+import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
 import com.orderpilot.security.policy.TenantPolicyException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +49,17 @@ public class GlobalExceptionHandler {
         "path", request.getRequestURI(),
         "timestamp", clock.instant(),
         "blockingReasons", ex.getBlockingReasons()
+    ));
+  }
+
+  @ExceptionHandler(QuoteLifecycleViolation.class)
+  ResponseEntity<Map<String, Object>> handleQuoteLifecycleViolation(QuoteLifecycleViolation ex, HttpServletRequest request) {
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+        "code", "QUOTE_LIFECYCLE_TRANSITION_BLOCKED",
+        "message", ex.getMessage(),
+        "status", HttpStatus.CONFLICT.value(),
+        "path", request.getRequestURI(),
+        "timestamp", clock.instant()
     ));
   }
 

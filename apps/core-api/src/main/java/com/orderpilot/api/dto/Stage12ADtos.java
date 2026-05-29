@@ -23,6 +23,15 @@ public final class Stage12ADtos {
       BigDecimal requestedDiscountPercent,
       String idempotencyKey) {}
 
+  public record QuoteApprovalDecisionCommand(
+      UUID tenantId,
+      UUID actorId,
+      String actorRole,
+      UUID approvalRequestId,
+      String reason,
+      String comment,
+      String idempotencyKey) {}
+
   public record RequestedItem(
       String rawSkuOrAlias,
       String description,
@@ -107,6 +116,50 @@ public final class Stage12ADtos {
   public record ApprovalRequest(UUID id, UUID lineId, String requestType, String severity, String reasonCode, String reason, String status, Instant createdAt) {
     public static ApprovalRequest from(QuoteApprovalRequest request) {
       return new ApprovalRequest(request.getId(), request.getDraftQuoteLineId(), request.getRequestType(), request.getSeverity(), request.getReasonCode(), request.getReason(), request.getStatus(), request.getCreatedAt());
+    }
+  }
+
+  public record QuoteApprovalStateResponse(
+      UUID quoteId,
+      String status,
+      boolean approvalRequired,
+      List<ValidationIssue> blockingIssues,
+      List<String> approvalReasons,
+      List<ApprovalRequest> approvalRequests,
+      ApprovalDecision approvalDecision,
+      UUID internalDraftOrderId,
+      UUID changeRequestId,
+      String externalExecutionStatus,
+      UUID auditCorrelationId) {}
+
+  public record QuoteApprovalCommandResponse(
+      UUID quoteId,
+      String previousStatus,
+      String newStatus,
+      boolean approvalRequired,
+      String approvalDecision,
+      List<ValidationIssue> blockingIssues,
+      List<String> approvalReasons,
+      UUID internalDraftOrderId,
+      UUID changeRequestId,
+      String externalExecutionStatus,
+      UUID auditCorrelationId) {}
+
+  public record ApprovalDecision(
+      UUID id,
+      UUID approvalRequestId,
+      String decision,
+      String comment,
+      UUID decidedBy,
+      Instant decidedAt,
+      String previousQuoteStatus,
+      String newQuoteStatus,
+      UUID auditCorrelationId) {
+    public static ApprovalDecision from(com.orderpilot.domain.workspace.QuoteApprovalDecision decision) {
+      if (decision == null) {
+        return null;
+      }
+      return new ApprovalDecision(decision.getId(), decision.getApprovalRequestId(), decision.getDecision(), decision.getDecisionComment(), decision.getDecidedBy(), decision.getDecidedAt(), decision.getPreviousQuoteStatus(), decision.getNewQuoteStatus(), decision.getAuditCorrelationId());
     }
   }
 }

@@ -1,14 +1,18 @@
 package com.orderpilot.api.rest;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.Stage12ADtos.*;
+import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineService;
 import com.orderpilot.application.services.workspace.QuoteDraftService;
+import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.math.BigDecimal;
@@ -27,6 +31,7 @@ class QuoteTransactionControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @MockBean private QuoteDraftService quoteDraftService;
+  @MockBean private QuoteApprovalStateMachineService approvalStateMachineService;
 
   @Test
   void createsDraftQuoteFromRfqAtRequiredEndpoint() throws Exception {
@@ -62,5 +67,79 @@ class QuoteTransactionControllerTest {
         .andExpect(jsonPath("$.draftQuoteId").value(quoteId.toString()))
         .andExpect(jsonPath("$.status").value("DRAFT"))
         .andExpect(jsonPath("$.approvalRequired").value(false));
+  }
+
+  @Test
+  void exposesApprovalStateEndpoint() throws Exception {
+    UUID quoteId = UUID.randomUUID();
+    when(approvalStateMachineService.getQuoteApprovalState(quoteId)).thenReturn(new QuoteApprovalStateResponse(
+        quoteId,
+        "PENDING_APPROVAL",
+        true,
+        List.of(),
+        List.of("DISCOUNT_APPROVAL_REQUIRED"),
+        List.of(),
+        null,
+        null,
+        null,
+        "EXTERNAL_EXECUTION_DISABLED",
+        UUID.randomUUID()));
+
+    mockMvc.perform(get("/api/v1/quotes/" + quoteId + "/approval-state").header("X-Tenant-Id", UUID.randomUUID().toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.quoteId").value(quoteId.toString()))
+        .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
+        .andExpect(jsonPath("$.approvalRequired").value(true));
+  }
+
+  @Test
+  void approveRejectRequestChangesAndConvertEndpointsCallService() throws Exception {
+    UUID quoteId = UUID.randomUUID();
+    UUID tenantId = UUID.randomUUID();
+    QuoteApprovalCommandResponse approved = response(quoteId, "PENDING_APPROVAL", "APPROVED", "APPROVE");
+    QuoteApprovalCommandResponse rejected = response(quoteId, "PENDING_APPROVAL", "REJECTED", "REJECT");
+    QuoteApprovalCommandResponse changes = response(quoteId, "PENDING_APPROVAL", "CHANGES_REQUESTED", "REQUEST_CHANGES");
+    QuoteApprovalCommandResponse converted = new QuoteApprovalCommandResponse(quoteId, "APPROVED", "CONVERTED_TO_INTERNAL_ORDER", false, "CONVERT", List.of(), List.of(), UUID.randomUUID(), null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID());
+    when(approvalStateMachineService.approveQuote(eq(quoteId), any())).thenReturn(approved);
+    when(approvalStateMachineService.rejectQuote(eq(quoteId), any())).thenReturn(rejected);
+    when(approvalStateMachineService.requestQuoteChanges(eq(quoteId), any())).thenReturn(changes);
+    when(approvalStateMachineService.convertApprovedQuoteToInternalDraftOrder(eq(quoteId), any())).thenReturn(converted);
+    QuoteApprovalDecisionCommand command = new QuoteApprovalDecisionCommand(tenantId, UUID.randomUUID(), "OPERATOR", null, "decision note", "decision note", "idem");
+
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("APPROVED"));
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/reject").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("REJECTED"));
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/request-changes").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CHANGES_REQUESTED"));
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/convert-to-internal-order").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CONVERTED_TO_INTERNAL_ORDER")).andExpect(jsonPath("$.externalExecutionStatus").value("EXTERNAL_EXECUTION_DISABLED"));
+  }
+
+  @Test
+  void structuredErrorReturnedForInvalidTransition() throws Exception {
+    UUID quoteId = UUID.randomUUID();
+    when(approvalStateMachineService.approveQuote(eq(quoteId), any())).thenThrow(new QuoteLifecycleViolation("Quote status CONVERTED_TO_INTERNAL_ORDER does not allow another approval decision"));
+
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve")
+            .contentType("application/json")
+            .header("X-Tenant-Id", UUID.randomUUID().toString())
+            .content("{}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("QUOTE_LIFECYCLE_TRANSITION_BLOCKED"));
+  }
+
+  @Test
+  void tenantHeaderBehaviorReportsMissingTenant() throws Exception {
+    UUID quoteId = UUID.randomUUID();
+    when(approvalStateMachineService.getQuoteApprovalState(quoteId)).thenThrow(new com.orderpilot.common.tenant.TenantContextMissingException("Missing tenant header X-Tenant-Id"));
+
+    mockMvc.perform(get("/api/v1/quotes/" + quoteId + "/approval-state"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("TENANT_REQUIRED"));
+  }
+
+  private QuoteApprovalCommandResponse response(UUID quoteId, String previous, String next, String decision) {
+    return new QuoteApprovalCommandResponse(quoteId, previous, next, false, decision, List.of(), List.of(), null, null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID());
   }
 }

@@ -2,12 +2,26 @@
 
 import { FormEvent, useState } from "react";
 
-import { createDraftQuoteFromRfq, QuoteTransactionResponse } from "@/lib/quote-transaction-api";
+import {
+  approveQuote,
+  convertQuoteToInternalOrder,
+  createDraftQuoteFromRfq,
+  getQuoteApprovalState,
+  QuoteApprovalCommandResponse,
+  QuoteApprovalState,
+  QuoteTransactionResponse,
+  rejectQuote,
+  requestQuoteChanges
+} from "@/lib/quote-transaction-api";
 
 const demoTenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
 
 export function QuoteWorkspace() {
   const [result, setResult] = useState<QuoteTransactionResponse | null>(null);
+  const [approvalState, setApprovalState] = useState<QuoteApprovalState | null>(null);
+  const [approvalResult, setApprovalResult] = useState<QuoteApprovalCommandResponse | null>(null);
+  const [tenantId, setTenantId] = useState(demoTenantId);
+  const [decisionReason, setDecisionReason] = useState("");
   const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [defaultIdempotencyKey] = useState(() => `quote-workspace-${Date.now()}`);
@@ -32,10 +46,48 @@ export function QuoteWorkspace() {
           uom: String(form.get("uom") || "EA")
         }]
       });
+      const selectedTenant = String(form.get("tenantId") || demoTenantId);
+      setTenantId(selectedTenant);
       setResult(response);
+      setApprovalResult(null);
+      setApprovalState(await getQuoteApprovalState(selectedTenant, response.draftQuoteId));
       setMessage("Draft quote created through the backend transaction service.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Quote request failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function runApprovalAction(action: "approve" | "reject" | "changes" | "convert") {
+    if (!result) return;
+    if ((action === "reject" || action === "changes") && !decisionReason.trim()) {
+      setMessage("Reason/comment is required for reject or request changes.");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    const payload = {
+      tenantId,
+      actorRole: "OPERATOR",
+      reason: decisionReason,
+      comment: decisionReason,
+      idempotencyKey: `${action}-${result.draftQuoteId}-${Date.now()}`
+    };
+    try {
+      const response = action === "approve"
+        ? await approveQuote(result.draftQuoteId, payload)
+        : action === "reject"
+          ? await rejectQuote(result.draftQuoteId, payload)
+          : action === "changes"
+            ? await requestQuoteChanges(result.draftQuoteId, payload)
+            : await convertQuoteToInternalOrder(result.draftQuoteId, payload);
+      setApprovalResult(response);
+      setApprovalState(await getQuoteApprovalState(tenantId, result.draftQuoteId));
+      setResult({ ...result, status: response.newStatus, approvalRequired: response.approvalRequired, approvalReasons: response.approvalReasons });
+      setMessage(`${response.approvalDecision} completed. External ERP write was not executed.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Quote approval action failed.");
     } finally {
       setLoading(false);
     }
@@ -69,6 +121,32 @@ export function QuoteWorkspace() {
             <p>Customer: {result.resolvedCustomer?.displayName ?? "Unresolved"}</p>
             <p>Approval: {result.approvalRequired ? result.approvalReasons.join(", ") : "Not required"}</p>
             <p>Audit correlation: {result.auditCorrelationId}</p>
+            <p>External ERP write: disabled / not executed</p>
+          </section>
+          <section className="panel">
+            <h2>Approval</h2>
+            <p>Status: {approvalState?.status ?? result.status}</p>
+            <p>Approval required: {(approvalState?.approvalRequired ?? result.approvalRequired) ? "Yes" : "No"}</p>
+            <p>Approval reasons: {(approvalState?.approvalReasons.length ? approvalState.approvalReasons : result.approvalReasons).join(", ") || "None"}</p>
+            <p>Blocking issues: {(approvalState?.blockingIssues ?? result.validationIssues.filter((issue) => issue.blocking)).map((issue) => issue.issueCode).join(", ") || "None"}</p>
+            <label><span>Reason/comment</span><input aria-label="Approval decision reason" value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} placeholder="Required for reject or request changes" /></label>
+            <div className="action-row">
+              <button className="button" disabled={loading || Boolean((approvalState?.blockingIssues ?? result.validationIssues).some((issue) => issue.blocking)) || result.status === "CONVERTED_TO_INTERNAL_ORDER"} type="button" onClick={() => runApprovalAction("approve")}>Approve</button>
+              <button className="button secondary-button" disabled={loading || !decisionReason.trim() || result.status === "CONVERTED_TO_INTERNAL_ORDER"} type="button" onClick={() => runApprovalAction("reject")}>Reject</button>
+              <button className="button secondary-button" disabled={loading || !decisionReason.trim() || result.status === "CONVERTED_TO_INTERNAL_ORDER"} type="button" onClick={() => runApprovalAction("changes")}>Request changes</button>
+              {result.status === "APPROVED" ? <button className="button" disabled={loading} type="button" onClick={() => runApprovalAction("convert")}>Convert to internal order</button> : null}
+            </div>
+            {approvalResult ? (
+              <div className="result-panel">
+                <p>Decision: {approvalResult.approvalDecision}</p>
+                <p>Previous status: {approvalResult.previousStatus}</p>
+                <p>New status: {approvalResult.newStatus}</p>
+                <p>Internal draft order boundary: {approvalResult.internalDraftOrderId ?? "Not created"}</p>
+                <p>ChangeRequest: {approvalResult.changeRequestId ?? "Not created"}</p>
+                <p>External execution: {approvalResult.externalExecutionStatus}</p>
+                <p>Audit correlation: {approvalResult.auditCorrelationId}</p>
+              </div>
+            ) : null}
           </section>
           <section className="panel table-panel">
             <h2>Lines</h2>

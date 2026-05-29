@@ -20,6 +20,9 @@ public class QuoteApprovalRequest {
   @Column(name = "reason_code", nullable = false) private String reasonCode;
   @Column(nullable = false) private String reason;
   @Column(nullable = false) private String status;
+  @Column(name = "decision_comment") private String decisionComment;
+  @Column(name = "decided_by") private UUID decidedBy;
+  @Column(name = "decided_at") private Instant decidedAt;
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -47,5 +50,16 @@ public class QuoteApprovalRequest {
   public String getReasonCode() { return reasonCode; }
   public String getReason() { return reason; }
   public String getStatus() { return status; }
+  public String getDecisionComment() { return decisionComment; }
+  public UUID getDecidedBy() { return decidedBy; }
+  public Instant getDecidedAt() { return decidedAt; }
   public Instant getCreatedAt() { return createdAt; }
+
+  public void decide(String status, String comment, UUID actorId, Instant now) {
+    this.status = status;
+    this.decisionComment = comment;
+    this.decidedBy = actorId;
+    this.decidedAt = now;
+    this.updatedAt = now;
+  }
 }
