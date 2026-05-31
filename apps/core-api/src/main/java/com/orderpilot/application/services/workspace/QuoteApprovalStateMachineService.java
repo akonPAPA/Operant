@@ -3,6 +3,7 @@ package com.orderpilot.application.services.workspace;
 import com.orderpilot.api.dto.Stage12ADtos.*;
 import com.orderpilot.api.dto.Stage12ADtos;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.JsonSupport;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.common.tenant.TenantContextMissingException;
@@ -25,15 +26,17 @@ public class QuoteApprovalStateMachineService {
   private final QuoteApprovalDecisionRepository decisionRepository;
   private final QuoteInternalOrderBoundaryRepository boundaryRepository;
   private final AuditEventService auditEventService;
+  private final JsonSupport jsonSupport;
   private final Clock clock;
 
-  public QuoteApprovalStateMachineService(DraftQuoteRepository quoteRepository, QuoteValidationIssueRepository issueRepository, QuoteApprovalRequestRepository approvalRequestRepository, QuoteApprovalDecisionRepository decisionRepository, QuoteInternalOrderBoundaryRepository boundaryRepository, AuditEventService auditEventService, Clock clock) {
+  public QuoteApprovalStateMachineService(DraftQuoteRepository quoteRepository, QuoteValidationIssueRepository issueRepository, QuoteApprovalRequestRepository approvalRequestRepository, QuoteApprovalDecisionRepository decisionRepository, QuoteInternalOrderBoundaryRepository boundaryRepository, AuditEventService auditEventService, JsonSupport jsonSupport, Clock clock) {
     this.quoteRepository = quoteRepository;
     this.issueRepository = issueRepository;
     this.approvalRequestRepository = approvalRequestRepository;
     this.decisionRepository = decisionRepository;
     this.boundaryRepository = boundaryRepository;
     this.auditEventService = auditEventService;
+    this.jsonSupport = jsonSupport;
     this.clock = clock;
   }
 
@@ -47,7 +50,10 @@ public class QuoteApprovalStateMachineService {
   @Transactional
   public QuoteApprovalCommandResponse approveQuote(UUID quoteId, QuoteApprovalDecisionCommand command) {
     CommandContext ctx = context(command);
-    DraftQuote quote = quote(ctx.tenantId(), quoteId);
+    DraftQuote quote = quoteForTransition(ctx.tenantId(), quoteId);
+    if ("APPROVED".equals(quote.getStatus())) {
+      return commandResponse(ctx.tenantId(), quote, "APPROVED", "APPROVE", quote.getAuditCorrelationId());
+    }
     requireNotTerminalForDecision(quote);
     List<QuoteValidationIssue> hardBlockers = hardBlockers(ctx.tenantId(), quoteId);
     if (!hardBlockers.isEmpty()) {
@@ -89,7 +95,7 @@ public class QuoteApprovalStateMachineService {
   @Transactional
   public QuoteApprovalCommandResponse convertApprovedQuoteToInternalDraftOrder(UUID quoteId, QuoteApprovalDecisionCommand command) {
     CommandContext ctx = context(command);
-    DraftQuote quote = quote(ctx.tenantId(), quoteId);
+    DraftQuote quote = quoteForTransition(ctx.tenantId(), quoteId);
     if ("CONVERTED_TO_INTERNAL_ORDER".equals(quote.getStatus())) {
       QuoteInternalOrderBoundary existing = boundaryRepository.findByTenantIdAndDraftQuoteId(ctx.tenantId(), quoteId).orElseThrow(() -> new QuoteLifecycleViolation("Converted quote is missing its internal boundary record"));
       return commandResponse(ctx.tenantId(), quote, "CONVERTED_TO_INTERNAL_ORDER", "CONVERT", existing.getId(), existing.getChangeRequestId(), existing.getExternalExecutionStatus(), quote.getAuditCorrelationId());
@@ -113,7 +119,7 @@ public class QuoteApprovalStateMachineService {
 
   private QuoteApprovalCommandResponse terminalDecision(UUID quoteId, QuoteApprovalDecisionCommand command, String decisionType, String newStatus, String auditAction) {
     CommandContext ctx = context(command);
-    DraftQuote quote = quote(ctx.tenantId(), quoteId);
+    DraftQuote quote = quoteForTransition(ctx.tenantId(), quoteId);
     requireNotTerminalForDecision(quote);
     if ("APPROVED".equals(quote.getStatus())) {
       throw new QuoteLifecycleViolation("Approved quote cannot be " + newStatus.toLowerCase());
@@ -192,7 +198,7 @@ public class QuoteApprovalStateMachineService {
   }
 
   private QuoteApprovalDecision recordDecision(CommandContext ctx, DraftQuote quote, UUID approvalRequestId, String decision, String previous, String next, String comment, List<String> resolvedReasons, List<String> blockingReasons, UUID auditCorrelationId) {
-    return decisionRepository.save(new QuoteApprovalDecision(ctx.tenantId(), quote.getId(), approvalRequestId, decision, comment, ctx.actorId(), clock.instant(), previous, next, jsonArray(resolvedReasons), jsonArray(blockingReasons), auditCorrelationId));
+    return decisionRepository.save(new QuoteApprovalDecision(ctx.tenantId(), quote.getId(), approvalRequestId, decision, comment, ctx.actorId(), clock.instant(), previous, next, jsonSupport.writeObject(resolvedReasons), jsonSupport.writeObject(blockingReasons), auditCorrelationId));
   }
 
   private void auditBlocked(CommandContext ctx, DraftQuote quote, String decision, List<QuoteValidationIssue> blockers) {
@@ -207,6 +213,13 @@ public class QuoteApprovalStateMachineService {
     return quoteRepository.findByIdAndTenantId(quoteId, tenantId).orElseThrow(() -> new NotFoundException("Draft quote not found: " + quoteId));
   }
 
+  private DraftQuote quoteForTransition(UUID tenantId, UUID quoteId) {
+    if (quoteId == null) {
+      throw new IllegalArgumentException("quoteId is required");
+    }
+    return quoteRepository.findWithLockByIdAndTenantId(quoteId, tenantId).orElseThrow(() -> new NotFoundException("Draft quote not found: " + quoteId));
+  }
+
   private CommandContext context(QuoteApprovalDecisionCommand command) {
     UUID commandTenantId = command == null ? null : command.tenantId();
     try {
@@ -216,11 +229,7 @@ public class QuoteApprovalStateMachineService {
       }
       return new CommandContext(contextTenantId, command == null ? null : command.actorId());
     } catch (TenantContextMissingException ex) {
-      if (commandTenantId == null) {
-        throw ex;
-      }
-      TenantContext.setTenantId(commandTenantId);
-      return new CommandContext(commandTenantId, command == null ? null : command.actorId());
+      throw ex;
     }
   }
 
@@ -242,20 +251,28 @@ public class QuoteApprovalStateMachineService {
     return requests.stream().map(QuoteApprovalRequest::getReasonCode).distinct().toList();
   }
 
-  private static String metadata(UUID tenantId, UUID quoteId, String previous, String next, String decision, String reason, List<String> resolvedReasons, List<String> blockingReasons, UUID auditCorrelationId, UUID internalOrderId) {
-    return "{\"tenantId\":\"" + tenantId + "\",\"quoteId\":\"" + quoteId + "\",\"previousStatus\":\"" + escape(previous) + "\",\"newStatus\":\"" + escape(next) + "\",\"decision\":\"" + escape(decision) + "\",\"reason\":\"" + escape(reason) + "\",\"resolvedReasons\":" + jsonArray(resolvedReasons) + ",\"blockingReasons\":" + jsonArray(blockingReasons) + ",\"internalDraftOrderId\":\"" + (internalOrderId == null ? "" : internalOrderId) + "\",\"auditCorrelationId\":\"" + auditCorrelationId + "\",\"externalExecution\":\"DISABLED\"}";
-  }
-
-  private static String jsonArray(List<String> values) {
-    return "[" + values.stream().map(value -> "\"" + escape(value) + "\"").reduce((left, right) -> left + "," + right).orElse("") + "]";
+  private String metadata(UUID tenantId, UUID quoteId, String previous, String next, String decision, String reason, List<String> resolvedReasons, List<String> blockingReasons, UUID auditCorrelationId, UUID internalOrderId) {
+    java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+    metadata.put("tenantId", tenantId.toString());
+    metadata.put("quoteId", quoteId.toString());
+    metadata.put("previousStatus", text(previous));
+    metadata.put("newStatus", text(next));
+    metadata.put("decision", text(decision));
+    metadata.put("reason", text(reason));
+    metadata.put("resolvedReasons", resolvedReasons == null ? List.of() : resolvedReasons);
+    metadata.put("blockingReasons", blockingReasons == null ? List.of() : blockingReasons);
+    metadata.put("internalDraftOrderId", internalOrderId == null ? "" : internalOrderId.toString());
+    metadata.put("auditCorrelationId", auditCorrelationId.toString());
+    metadata.put("externalExecution", "DISABLED");
+    return jsonSupport.writeObject(metadata);
   }
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
   }
 
-  private static String escape(String value) {
-    return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+  private static String text(String value) {
+    return value == null ? "" : value;
   }
 
   private record CommandContext(UUID tenantId, UUID actorId) {}

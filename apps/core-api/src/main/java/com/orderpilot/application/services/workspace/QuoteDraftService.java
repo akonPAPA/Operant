@@ -249,11 +249,7 @@ public class QuoteDraftService {
       }
       return contextTenantId;
     } catch (TenantContextMissingException ex) {
-      if (commandTenantId == null) {
-        throw ex;
-      }
-      TenantContext.setTenantId(commandTenantId);
-      return commandTenantId;
+      throw ex;
     }
   }
 

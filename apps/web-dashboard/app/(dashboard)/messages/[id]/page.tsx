@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { ChannelQuoteConversionPanel } from "@/components/channel-quote-conversion-panel";
 import { getIntakeMessage } from "@/lib/intake-api";
 
 export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
@@ -19,8 +20,9 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
       </section>
       <section className="panel">
         <h2>Processing boundary</h2>
-        <p>This record is intake-only. It does not create an order, quote, ERP write, product update, customer update, OCR result, or AI extraction.</p>
+        <p>This record is source evidence. Quote preparation runs through tenant-scoped backend validation and does not approve quotes, create orders, or write to ERP.</p>
       </section>
+      <ChannelQuoteConversionPanel sourceId={id} sourceType="CHANNEL_MESSAGE" />
     </DashboardShell>
   );
 }

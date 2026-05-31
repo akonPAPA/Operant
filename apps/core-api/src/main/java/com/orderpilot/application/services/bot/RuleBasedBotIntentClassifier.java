@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 public class RuleBasedBotIntentClassifier {
   public BotIntent detect(String rawText) {
     String text = rawText == null ? "" : rawText.toLowerCase(Locale.ROOT);
+    if (containsAny(text, "hello", "hi", "salam", "good morning", "good afternoon")) return BotIntent.GREETING;
     if (containsAny(text, "human", "operator", "manager", "help", "agent", "person")) return BotIntent.HUMAN_HELP_REQUEST;
     if (containsAny(text, "status", "order status", "where is my order")) return BotIntent.ORDER_STATUS_QUESTION;
     if (containsAny(text, "price", "cost", "how much")) return BotIntent.PRICE_QUESTION;
@@ -19,7 +20,11 @@ public class RuleBasedBotIntentClassifier {
 
   private boolean containsAny(String text, String... needles) {
     for (String needle : needles) {
-      if (text.contains(needle)) return true;
+      if (needle.contains(" ")) {
+        if (text.contains(needle)) return true;
+      } else if (java.util.regex.Pattern.compile("(^|[^a-z0-9])" + java.util.regex.Pattern.quote(needle) + "([^a-z0-9]|$)").matcher(text).find()) {
+        return true;
+      }
     }
     return false;
   }

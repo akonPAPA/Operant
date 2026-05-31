@@ -12,4 +12,5 @@ public interface BotMessageRepository extends JpaRepository<BotMessage, UUID> {
   Optional<BotMessage> findByIdAndTenantId(UUID id, UUID tenantId);
   List<BotMessage> findByTenantIdAndConversationIdOrderByCreatedAtAsc(UUID tenantId, UUID conversationId);
   List<BotMessage> findByTenantIdAndConversationIdOrderByCreatedAtDesc(UUID tenantId, UUID conversationId);
+  Optional<BotMessage> findFirstByTenantIdAndChannelAndExternalChatIdAndExternalMessageId(UUID tenantId, String channel, String externalChatId, String externalMessageId);
 }

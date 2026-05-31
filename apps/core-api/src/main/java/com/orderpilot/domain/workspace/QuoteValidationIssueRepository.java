@@ -5,6 +5,8 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface QuoteValidationIssueRepository extends JpaRepository<QuoteValidationIssue, UUID> {
+  java.util.Optional<QuoteValidationIssue> findByIdAndTenantId(UUID id, UUID tenantId);
+  List<QuoteValidationIssue> findByTenantIdOrderByCreatedAtAsc(UUID tenantId);
   List<QuoteValidationIssue> findByTenantIdAndDraftQuoteIdOrderByCreatedAtAsc(UUID tenantId, UUID draftQuoteId);
   List<QuoteValidationIssue> findByTenantIdAndDraftQuoteIdAndStatusOrderByCreatedAtAsc(UUID tenantId, UUID draftQuoteId, String status);
   List<QuoteValidationIssue> findByTenantIdAndDraftQuoteIdAndDraftQuoteLineIdAndStatusOrderByCreatedAtAsc(UUID tenantId, UUID draftQuoteId, UUID draftQuoteLineId, String status);

@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface BotHandoffRepository extends JpaRepository<BotHandoff, UUID> {
+  List<BotHandoff> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
   List<BotHandoff> findByTenantIdAndConversationIdOrderByCreatedAtDesc(UUID tenantId, UUID conversationId);
   List<BotHandoff> findByTenantIdAndMessageIdOrderByCreatedAtDesc(UUID tenantId, UUID messageId);
 }

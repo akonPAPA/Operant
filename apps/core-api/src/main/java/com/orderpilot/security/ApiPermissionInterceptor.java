@@ -22,6 +22,9 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/extractions", ApiPermission.EXTRACTION_READ),
       Map.entry("/api/v1/validations", ApiPermission.VALIDATION_READ),
       Map.entry("/api/v1/operator-review", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/quote-review", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/quotes", ApiPermission.QUOTE_READ),
+      Map.entry("/api/v1/quote-transactions", ApiPermission.QUOTE_READ),
       Map.entry("/api/v1/bot-runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/bot/runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/audit", ApiPermission.AUDIT_READ),
@@ -47,6 +50,12 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
+    }
+    if (path.startsWith("/api/v1/quote-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    if ((path.startsWith("/api/v1/quotes") || path.startsWith("/api/v1/quote-transactions")) && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.QUOTE_ACTION;
     }
     if (path.startsWith("/api/v1/extractions") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.EXTRACTION_RUN;

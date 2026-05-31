@@ -100,6 +100,52 @@ export type QuoteApprovalCommandResponse = {
   auditCorrelationId: string;
 };
 
+export type ChannelToQuoteResponse = {
+  status: string;
+  quoteId?: string | null;
+  conversionAttemptId: string;
+  sourceType: string;
+  sourceId: string;
+  customerResolution?: string | null;
+  lineCount: number;
+  acceptedLineCount: number;
+  validationIssues: Array<{
+    code: string;
+    severity: string;
+    blocking: boolean;
+    message: string;
+    lineId?: string | null;
+  }>;
+  reviewRequired: boolean;
+  auditEventIds: string[];
+};
+
+export type QuoteSourceContext = {
+  sourceType: string;
+  sourceId: string;
+  sourceChannel?: string | null;
+  sourceExternalRef?: string | null;
+  sourceReceivedAt?: string | null;
+  triggeredBy?: string | null;
+  createdByType?: string | null;
+  conversionAttemptId?: string | null;
+  conversionStatus?: string | null;
+  validationIssues: ChannelToQuoteResponse["validationIssues"];
+};
+
+export type ChannelToQuotePayload = {
+  idempotencyKey?: string;
+  requestedCustomerAccountId?: string;
+  requestedQuoteType?: string;
+  operatorNotes?: string;
+  dryRun?: boolean;
+  forceReview?: boolean;
+  selectedLineItemIds?: string[];
+  selectedSubstituteIds?: Record<string, string>;
+  actorId?: string;
+  actorType?: "USER" | "BOT" | "SYSTEM" | "API" | string;
+};
+
 export type CreateDraftQuoteFromRfqPayload = {
   tenantId: string;
   actorRole: string;
@@ -162,6 +208,18 @@ export function convertQuoteToInternalOrder(quoteId: string, payload: QuoteAppro
   return requestQuoteApproval<QuoteApprovalCommandResponse>(payload.tenantId, `/api/v1/quotes/${quoteId}/convert-to-internal-order`, payload);
 }
 
+export function createQuoteFromChannelMessage(tenantId: string, messageId: string, payload: ChannelToQuotePayload): Promise<ChannelToQuoteResponse> {
+  return requestQuoteTransaction<ChannelToQuoteResponse>(tenantId, `/api/v1/quote-transactions/from-channel-message/${messageId}`, payload);
+}
+
+export function createQuoteFromInboundDocument(tenantId: string, documentId: string, payload: ChannelToQuotePayload): Promise<ChannelToQuoteResponse> {
+  return requestQuoteTransaction<ChannelToQuoteResponse>(tenantId, `/api/v1/quote-transactions/from-inbound-document/${documentId}`, payload);
+}
+
+export function getQuoteSourceContext(tenantId: string, quoteId: string): Promise<QuoteSourceContext> {
+  return requestQuoteApproval<QuoteSourceContext>(tenantId, `/api/v1/quotes/${quoteId}/source-context`);
+}
+
 async function requestQuoteApproval<T>(tenantId: string, path: string, payload?: QuoteApprovalDecisionPayload): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: payload ? "POST" : "GET",
@@ -170,6 +228,22 @@ async function requestQuoteApproval<T>(tenantId: string, path: string, payload?:
       "X-Tenant-Id": tenantId
     },
     body: payload ? JSON.stringify(payload) : undefined
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Core API returned ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function requestQuoteTransaction<T>(tenantId: string, path: string, payload: ChannelToQuotePayload): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Tenant-Id": tenantId
+    },
+    body: JSON.stringify(payload)
   });
   if (!response.ok) {
     const message = await response.text();

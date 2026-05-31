@@ -5,6 +5,8 @@ import com.orderpilot.api.dto.Stage12ADtos.QuoteApprovalCommandResponse;
 import com.orderpilot.api.dto.Stage12ADtos.QuoteApprovalDecisionCommand;
 import com.orderpilot.api.dto.Stage12ADtos.QuoteApprovalStateResponse;
 import com.orderpilot.api.dto.Stage12ADtos.QuoteTransactionResponse;
+import com.orderpilot.api.dto.Stage12BDtos.QuoteSourceContextDto;
+import com.orderpilot.application.services.workspace.ChannelToQuoteWiringService;
 import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineService;
 import com.orderpilot.application.services.workspace.QuoteDraftService;
 import java.util.UUID;
@@ -15,10 +17,12 @@ import org.springframework.web.bind.annotation.*;
 public class QuoteTransactionController {
   private final QuoteDraftService quoteDraftService;
   private final QuoteApprovalStateMachineService approvalStateMachineService;
+  private final ChannelToQuoteWiringService channelToQuoteWiringService;
 
-  public QuoteTransactionController(QuoteDraftService quoteDraftService, QuoteApprovalStateMachineService approvalStateMachineService) {
+  public QuoteTransactionController(QuoteDraftService quoteDraftService, QuoteApprovalStateMachineService approvalStateMachineService, ChannelToQuoteWiringService channelToQuoteWiringService) {
     this.quoteDraftService = quoteDraftService;
     this.approvalStateMachineService = approvalStateMachineService;
+    this.channelToQuoteWiringService = channelToQuoteWiringService;
   }
 
   @PostMapping("/from-rfq")
@@ -29,6 +33,11 @@ public class QuoteTransactionController {
   @GetMapping("/{id}/transaction")
   public QuoteTransactionResponse getTransaction(@PathVariable UUID id) {
     return quoteDraftService.get(id);
+  }
+
+  @GetMapping("/{id}/source-context")
+  public QuoteSourceContextDto getSourceContext(@PathVariable UUID id) {
+    return channelToQuoteWiringService.sourceContext(id);
   }
 
   @GetMapping("/{id}/approval-state")

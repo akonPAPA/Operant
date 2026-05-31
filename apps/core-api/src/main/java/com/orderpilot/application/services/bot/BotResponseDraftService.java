@@ -99,6 +99,7 @@ public class BotResponseDraftService {
     draft.markStubSent(clock.instant());
     BotResponseDraft saved = responseDraftRepository.save(draft);
     auditEventService.record("BOT_RESPONSE_STUB_SENT", "BOT_RESPONSE_DRAFT", saved.getId().toString(), null, "{\"transport\":\"" + result.transport() + "\",\"status\":\"" + result.status() + "\",\"externalNetwork\":\"DISABLED\"}");
+    auditEventService.record("BOT_RESPONSE_SENT", "BOT_RESPONSE_DRAFT", saved.getId().toString(), null, "{\"transport\":\"" + result.transport() + "\",\"status\":\"" + result.status() + "\",\"externalExecution\":\"DISABLED\"}");
     return saved;
   }
 
@@ -111,6 +112,16 @@ public class BotResponseDraftService {
 
   private String template(BotIntent intent, BotPolicyService.PolicyResult policy) {
     return switch (intent) {
+      case GREETING -> "Hello. Send a part number, quantity, or RFQ request and an operator-controlled workflow will handle it.";
+      case CHECK_AVAILABILITY -> "We need an operator-controlled availability check before responding with stock information.";
+      case CHECK_PRICE -> policy.decision() == BotPolicyDecision.REQUIRE_CUSTOMER_IDENTIFICATION
+          ? "We need an operator to verify your customer identity before discussing price."
+          : "An operator will review the request before any price information is shared.";
+      case REQUEST_QUOTE -> "We received your request and created an RFQ draft for operator review.";
+      case SUGGEST_SUBSTITUTE -> "An operator will review substitute options before any recommendation is shared.";
+      case ORDER_OR_QUOTE_STATUS -> "We need an operator to verify your customer identity before discussing quote or order status.";
+      case HUMAN_HANDOFF -> "An operator will review this conversation and follow up.";
+      case UNSUPPORTED_REQUEST_SAFE_REPLY -> "This request cannot be handled automatically and needs human review.";
       case RFQ_REQUEST -> "We received your request and created an RFQ draft for operator review.";
       case PRODUCT_AVAILABILITY_QUESTION -> "We need an operator to confirm the exact product before checking availability.";
       case PRICE_QUESTION -> policy.decision() == BotPolicyDecision.REQUIRE_CUSTOMER_IDENTIFICATION

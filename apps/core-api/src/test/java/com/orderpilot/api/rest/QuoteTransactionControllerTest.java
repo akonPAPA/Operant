@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.Stage12ADtos.*;
+import com.orderpilot.application.services.workspace.ChannelToQuoteWiringService;
 import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineService;
 import com.orderpilot.application.services.workspace.QuoteDraftService;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
@@ -32,6 +33,7 @@ class QuoteTransactionControllerTest {
   @Autowired private ObjectMapper objectMapper;
   @MockBean private QuoteDraftService quoteDraftService;
   @MockBean private QuoteApprovalStateMachineService approvalStateMachineService;
+  @MockBean private ChannelToQuoteWiringService channelToQuoteWiringService;
 
   @Test
   void createsDraftQuoteFromRfqAtRequiredEndpoint() throws Exception {
