@@ -35,12 +35,12 @@ export function QuoteWorkspace() {
       const response = await createDraftQuoteFromRfq({
         tenantId: String(form.get("tenantId") || demoTenantId),
         actorRole: "OPERATOR",
-        customerExternalRef: String(form.get("customerExternalRef") || "DEMO-CUST-001"),
-        requestedLocation: String(form.get("requestedLocation") || "ALM-MAIN"),
+        customerExternalRef: String(form.get("customerExternalRef") || "CUST-001"),
+        requestedLocation: String(form.get("requestedLocation") || "WH-ALM"),
         requestedDiscountPercent: Number(form.get("requestedDiscountPercent") || 0),
         idempotencyKey: String(form.get("idempotencyKey") || `quote-workspace-${Date.now()}`),
         requestedItems: [{
-          rawSkuOrAlias: String(form.get("rawSkuOrAlias") || "TOY-CAM-2018-BPAD-OE"),
+          rawSkuOrAlias: String(form.get("rawSkuOrAlias") || "PAD-OE-04465"),
           description: String(form.get("description") || "Original brake pads for Toyota Camry 2018"),
           quantity: Number(form.get("quantity") || 2),
           uom: String(form.get("uom") || "EA")
@@ -97,14 +97,15 @@ export function QuoteWorkspace() {
     <div className="stack">
       <section className="panel">
         <h2>RFQ to Draft Quote</h2>
+        <p className="risk-note">Demo path: Steppe Logistics requests out-of-stock OE brake pads. OrderPilot validates the draft, shows substitute/approval context, and keeps externalExecution=DISABLED.</p>
         <form className="upload-form" onSubmit={submit}>
           <label><span>Tenant ID</span><input name="tenantId" defaultValue={demoTenantId} /></label>
-          <label><span>Customer external ref</span><input name="customerExternalRef" defaultValue="DEMO-CUST-001" /></label>
-          <label><span>SKU or alias</span><input name="rawSkuOrAlias" defaultValue="TOY-CAM-2018-BPAD-OE" /></label>
+          <label><span>Customer external ref</span><input name="customerExternalRef" defaultValue="CUST-001" /></label>
+          <label><span>SKU or alias</span><input name="rawSkuOrAlias" defaultValue="PAD-OE-04465" /></label>
           <label><span>Description</span><input name="description" defaultValue="Original brake pads for Toyota Camry 2018" /></label>
           <label><span>Quantity</span><input name="quantity" type="number" min="1" defaultValue="2" /></label>
           <label><span>UOM</span><input name="uom" defaultValue="EA" /></label>
-          <label><span>Location</span><input name="requestedLocation" defaultValue="ALM-MAIN" /></label>
+          <label><span>Location</span><input name="requestedLocation" defaultValue="WH-ALM" /></label>
           <label><span>Discount percent</span><input name="requestedDiscountPercent" type="number" min="0" step="0.01" defaultValue="0" /></label>
           <label><span>Idempotency key</span><input name="idempotencyKey" defaultValue={defaultIdempotencyKey} /></label>
           <button className="button" disabled={loading} type="submit">{loading ? "Submitting..." : "Create Draft Quote"}</button>

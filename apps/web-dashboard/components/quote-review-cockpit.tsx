@@ -61,13 +61,13 @@ export function QuoteReviewQueue() {
           <tbody>
             {rows.length ? rows.map((row) => (
               <tr key={row.quoteId}>
-                <td>{row.quoteId}</td>
-                <td>{row.status}</td>
+                <td>Quote {shortId(row.quoteId)}<br /><span className="muted-copy">{row.conversionAttemptId ? `conversion ${shortId(row.conversionAttemptId)}` : "direct quote review"}</span></td>
+                <td><span className={`status-pill ${row.status.includes("REVIEW") ? "warning" : ""}`}>{humanize(row.status)}</span></td>
                 <td>{row.customer.displayName ?? row.customer.resolutionStatus}</td>
                 <td>{row.validationIssueCount}</td>
                 <td>{row.highestSeverity}</td>
                 <td>{row.sourceType ?? "RFQ"} {row.sourceChannel ? `/${row.sourceChannel}` : ""}</td>
-                <td>{row.nextRequiredAction}</td>
+                <td>{humanize(row.nextRequiredAction)}</td>
                 <td><a className="button secondary-button" href={`/quote-review/${row.quoteId}?tenantId=${tenantId}`}>Open Review</a></td>
               </tr>
             )) : <tr><td colSpan={8}>No tenant-owned quote reviews returned by backend.</td></tr>}
@@ -138,17 +138,18 @@ export function QuoteReviewDetailWorkspace({ quoteId, initialTenantId = demoTena
           <section className="panel">
             <h2>Review Status</h2>
             <p>Quote: {detail.header.quoteNumber}</p>
-            <p>Status: {detail.status}</p>
+            <p>Status: {humanize(detail.status)}</p>
             <p>Customer: {detail.header.customer.displayName ?? detail.header.customer.resolutionStatus}</p>
-            <p>Review-required reasons: {detail.reviewRequiredReasons.join(", ") || "None"}</p>
+            <p>Review-required reasons: {formatList(detail.reviewRequiredReasons)}</p>
             <p>Approval required: {detail.pricingSummary.approvalRequired || detail.approvalRequirements.some((approval) => approval.status === "OPEN") ? "Yes" : "No"}</p>
             <p>External ERP write: disabled / not executed</p>
+            <p>externalExecution=DISABLED</p>
           </section>
 
           <section className="panel table-panel">
             <h2>Source Evidence</h2>
-            <p>Source context: {detail.sourceContext ? `${detail.sourceContext.sourceType} ${detail.sourceContext.sourceChannel ?? ""}` : "RFQ/manual source or source link unavailable"}</p>
-            <p>Conversion attempt: {detail.conversionAttempt?.id ?? "None"} {detail.conversionAttempt?.status ?? ""}</p>
+            <p>Source context: {detail.sourceContext ? `${humanize(detail.sourceContext.sourceType)} ${detail.sourceContext.sourceChannel ?? ""}` : "RFQ/manual source or source link unavailable"}</p>
+            <p>Conversion attempt: {detail.conversionAttempt ? `${shortId(detail.conversionAttempt.id)} / ${humanize(detail.conversionAttempt.status)}` : "None"}</p>
             <table className="data-table">
               <thead><tr><th>Line</th><th>SKU/Text</th><th>Qty</th><th>Status</th></tr></thead>
               <tbody>{detail.sourceLines.length ? detail.sourceLines.map((line) => <tr key={`${line.lineNumber}-${line.sourceLineItemId ?? line.rawSkuOrAlias}`}><td>{line.lineNumber}</td><td>{line.rawSkuOrAlias ?? line.description}</td><td>{line.quantity ?? "n/a"} {line.uom ?? ""}</td><td>{line.status ?? "SOURCE"}</td></tr>) : <tr><td colSpan={4}>No extracted source lines available.</td></tr>}</tbody>
@@ -162,7 +163,7 @@ export function QuoteReviewDetailWorkspace({ quoteId, initialTenantId = demoTena
               <tbody>
                 {detail.validationIssues.length ? detail.validationIssues.map((issue) => (
                   <tr key={issue.id}>
-                    <td>{issue.issueCode}</td>
+                    <td>{humanize(issue.issueCode)}</td>
                     <td>{issue.severity}</td>
                     <td>{issue.status}</td>
                     <td>{issue.message}</td>
@@ -186,7 +187,7 @@ export function QuoteReviewDetailWorkspace({ quoteId, initialTenantId = demoTena
                   <td>{line.productName ?? line.rawSkuOrAlias ?? "Unresolved"}</td>
                   <td>{line.quantity}</td>
                   <td>{line.uom}</td>
-                  <td>{line.validationStatus}</td>
+                  <td>{humanize(line.validationStatus)}</td>
                   <td className="action-row">
                     <button className="button secondary-button" onClick={() => mutate(() => correctQuoteReviewLine(quoteId, line.id, { tenantId, quantity: Number(line.quantity) > 0 ? Number(line.quantity) : 1, reasonCode: reason, note }), "Line quantity correction persisted and revalidated.")}>Fix qty</button>
                     <button className="button secondary-button" onClick={() => mutate(() => correctQuoteReviewLine(quoteId, line.id, { tenantId, uom: "EA", reasonCode: reason, note }), "Line UOM correction persisted and revalidated.")}>Set EA</button>
@@ -204,9 +205,9 @@ export function QuoteReviewDetailWorkspace({ quoteId, initialTenantId = demoTena
               <tbody>{detail.proposedSubstitutes.length ? detail.proposedSubstitutes.map((candidate) => (
                 <tr key={`${candidate.lineId}-${candidate.productId}`}>
                   <td>{candidate.sku}</td>
-                  <td>{candidate.riskLevel}{candidate.blocked ? " / BLOCKED" : ""}</td>
+                  <td>{humanize(candidate.riskLevel)}{candidate.blocked ? " / BLOCKED" : ""}</td>
                   <td>{candidate.stockStatus}</td>
-                  <td>{candidate.reasonCode}</td>
+                  <td>{humanize(candidate.reasonCode)}</td>
                   <td className="action-row">
                     <button className="button secondary-button" disabled={!candidate.lineId || candidate.blocked} onClick={() => mutate(() => selectQuoteReviewSubstitute(quoteId, candidate.lineId!, { tenantId, substituteProductId: candidate.productId, reasonCode: reason, note }), candidate.requiresApproval ? "Substitute selected and routed to approval." : "Substitute selection persisted and revalidated.")}>Select</button>
                     <button className="button secondary-button" disabled={!candidate.lineId} onClick={() => mutate(() => rejectQuoteReviewSubstitute(quoteId, candidate.lineId!, { tenantId, substituteProductId: candidate.productId, reasonCode: reason, note }), "Substitute rejection persisted.")}>Reject</button>
@@ -220,18 +221,45 @@ export function QuoteReviewDetailWorkspace({ quoteId, initialTenantId = demoTena
             <h2>Approval Status</h2>
             <p>Margin risk: {detail.pricingSummary.marginRisk ? "Yes" : "No"}</p>
             <p>Discount risk: {detail.pricingSummary.discountRisk ? "Yes" : "No"}</p>
-            <p>Open requirements: {detail.approvalRequirements.filter((approval) => approval.status === "OPEN").map((approval) => approval.reasonCode).join(", ") || "None"}</p>
+            <p>Open requirements: {formatList(detail.approvalRequirements.filter((approval) => approval.status === "OPEN").map((approval) => approval.reasonCode))}</p>
+            <p>External execution: DISABLED until an approved connector flow exists.</p>
           </section>
 
           <section className="panel table-panel">
             <h2>Audit Timeline</h2>
             <table className="data-table">
               <thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Metadata</th></tr></thead>
-              <tbody>{detail.auditTimeline.length ? detail.auditTimeline.map((event) => <tr key={event.id}><td>{event.occurredAt}</td><td>{event.action}</td><td>{event.actorId ?? "system"}</td><td>{event.metadata}</td></tr>) : <tr><td colSpan={4}>No mutation audit events yet.</td></tr>}</tbody>
+              <tbody>{detail.auditTimeline.length ? detail.auditTimeline.map((event) => <tr key={event.id}><td>{event.occurredAt}</td><td>{humanize(event.action)}</td><td>{event.actorId ? shortId(event.actorId) : "system"}</td><td>{summarizeMetadata(event.metadata)}</td></tr>) : <tr><td colSpan={4}>No mutation audit events yet. Create or review a draft quote to populate the controlled audit trail.</td></tr>}</tbody>
             </table>
           </section>
         </>
       ) : null}
     </div>
   );
+}
+
+function shortId(value?: string | null) {
+  if (!value) return "n/a";
+  return value.length > 8 ? value.slice(0, 8) : value;
+}
+
+function humanize(value?: string | null) {
+  if (!value) return "n/a";
+  return value.replaceAll("_", " ").replaceAll(".", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatList(values: string[]) {
+  return values.length ? values.map(humanize).join(", ") : "None";
+}
+
+function summarizeMetadata(metadata: string) {
+  try {
+    const parsed = JSON.parse(metadata) as Record<string, unknown>;
+    const parts = ["reason", "reasonCode", "decision", "externalExecution", "newStatus", "previousStatus"]
+      .map((key) => parsed[key] ? `${humanize(key)}: ${String(parsed[key])}` : "")
+      .filter(Boolean);
+    return parts.length ? parts.join(" | ") : metadata;
+  } catch {
+    return metadata;
+  }
 }
