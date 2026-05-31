@@ -82,3 +82,6 @@ Thumbs.db
 !.env.example
 !apps/*/.env.example
 !apps/*/.env.local.example
+# ===== Investor / business docs =====
+!docs/investor/
+!docs/investor/**
