@@ -18,6 +18,7 @@ secrets.*
 *.bak
 *.sqlite
 *.db
+*.md
 
 # ===== Local/private data =====
 local-data/
