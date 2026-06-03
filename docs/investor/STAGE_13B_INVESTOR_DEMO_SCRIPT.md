@@ -2,7 +2,7 @@
 
 ## Scenario
 
-OrderPilot is shown as a controlled B2B distributor workflow for Steppe Logistics requesting Toyota Camry 2018 front brake pads. The primary product, `PAD-OE-04465`, is out of stock in `WH-ALM`; `PAD-SUB-ADV` and `PAD-SUB-ECON` exist as substitute candidates. The walkthrough shows capture, policy routing, operator review, draft quote review, approval controls, and audit evidence. It does not show autonomous ordering or ERP execution.
+OrderPilot is shown as a controlled B2B distributor workflow for Steppe Logistics requesting `2 EA` Toyota Camry 2018 front brake pads. The primary product, `PAD-OE-04465`, is out of stock in `WH-ALM`; `PAD-SUB-ADV` and `PAD-SUB-ECON` exist as substitute candidates. The walkthrough shows capture, policy routing, operator review, draft quote review, approval controls, and audit evidence. It does not show autonomous ordering or ERP execution.
 
 ## Setup Assumptions
 
@@ -16,7 +16,7 @@ OrderPilot is shown as a controlled B2B distributor workflow for Steppe Logistic
 
 1. Open `/demo`.
 2. Explain the business context: a distributor receives messy Telegram/RFQ-style demand and must avoid bad quotes, leaked prices, and uncontrolled orders.
-3. Click `Send demo Telegram RFQ`.
+3. Click `Send demo Telegram RFQ`. The demo message is `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.`
 4. Show the Telegram RFQ panel:
    - detected intent is RFQ-oriented;
    - operator review is required;

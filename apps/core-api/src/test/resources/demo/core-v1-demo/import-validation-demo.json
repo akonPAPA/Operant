@@ -3,9 +3,9 @@
   "note": "Import validation flow exists in Core API, but this Stage 9B smoke fixture does not auto-load a PDF or external file.",
   "sampleRows": [
     {
-      "sku": "TOY-CAM-2018-BPAD-OE",
-      "quantity": 20,
-      "customer": "Almaty Auto Service"
+      "sku": "PAD-OE-04465",
+      "quantity": 2,
+      "customer": "Steppe Logistics"
     }
   ]
 }

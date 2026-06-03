@@ -6,7 +6,7 @@ Show that OrderPilot is an investor-grade B2B SaaS transaction intelligence plat
 
 ## Flow 1 - Telegram RFQ Intake
 
-1. Send a Telegram-style RFQ message: "Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty."
+1. Send a Telegram-style RFQ message: "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty."
 2. Call `POST /api/v1/bot/telegram/webhook`.
 3. Show that Bot Runtime Lite creates a bot conversation, bot message, and internal RFQ draft.
 4. Explain that the bot response requires human review.

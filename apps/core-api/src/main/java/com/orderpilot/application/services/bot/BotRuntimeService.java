@@ -18,6 +18,7 @@ import com.orderpilot.application.services.channel.WebhookVerificationMode;
 import com.orderpilot.application.services.workspace.ChannelToQuoteWiringService;
 import com.orderpilot.application.services.workspace.PricingService;
 import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.domain.bot.*;
 import com.orderpilot.domain.customer.CustomerAccount;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
@@ -27,6 +28,7 @@ import com.orderpilot.domain.intake.ChannelMessage;
 import com.orderpilot.domain.pricing.PriceRule;
 import com.orderpilot.domain.product.Product;
 import com.orderpilot.domain.product.ProductRepository;
+import com.orderpilot.domain.tenant.TenantRepository;
 import com.orderpilot.domain.workspace.ExceptionCaseRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -68,6 +70,7 @@ public class BotRuntimeService {
   private final ProductRepository productRepository;
   private final InventorySnapshotRepository inventorySnapshotRepository;
   private final CustomerAccountRepository customerAccountRepository;
+  private final TenantRepository tenantRepository;
   private final JsonSupport jsonSupport;
   private final Clock clock;
 
@@ -91,6 +94,7 @@ public class BotRuntimeService {
       ProductRepository productRepository,
       InventorySnapshotRepository inventorySnapshotRepository,
       CustomerAccountRepository customerAccountRepository,
+      TenantRepository tenantRepository,
       JsonSupport jsonSupport,
       Clock clock) {
     this.conversationRepository = conversationRepository;
@@ -112,6 +116,7 @@ public class BotRuntimeService {
     this.productRepository = productRepository;
     this.inventorySnapshotRepository = inventorySnapshotRepository;
     this.customerAccountRepository = customerAccountRepository;
+    this.tenantRepository = tenantRepository;
     this.jsonSupport = jsonSupport;
     this.clock = clock;
   }
@@ -125,6 +130,7 @@ public class BotRuntimeService {
   public BotWebhookAckResponse handleTelegramUpdate(JsonNode update, WebhookVerificationMode verificationMode) {
     TelegramMessage incoming = parse(update);
     UUID tenantId = TenantContext.requireTenantId();
+    requireSeededTenant(tenantId);
     Instant now = clock.instant();
     String externalMessageId = incoming.updateId() == null ? incoming.messageId() : incoming.updateId() + ":" + incoming.messageId();
     Optional<BotMessage> existingMessage = messageRepository.findFirstByTenantIdAndChannelAndExternalChatIdAndExternalMessageId(tenantId, CHANNEL_TELEGRAM, incoming.chatId(), externalMessageId);
@@ -470,6 +476,12 @@ public class BotRuntimeService {
         .orElseGet(() -> connectionRepository.save(new BotConnection(tenantId, channel, null, null, true, allowedFlowsJson(DEFAULT_ALLOWED_FLOWS), "BOT_REVIEW", "{}", now)));
     connection.touch(now);
     return connectionRepository.save(connection);
+  }
+
+  private void requireSeededTenant(UUID tenantId) {
+    if (!tenantRepository.existsById(tenantId)) {
+      throw new NotFoundException("Tenant not found for X-Tenant-Id. Run scripts\\seed-local-demo.ps1 for the investor demo or use a seeded tenant id.");
+    }
   }
 
   private BotPolicyService.PolicyResult policyFor(BotConnection connection, String flow, BotIntent intent, boolean knownCustomer) {

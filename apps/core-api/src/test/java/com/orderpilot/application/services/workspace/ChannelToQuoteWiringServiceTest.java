@@ -149,6 +149,7 @@ class ChannelToQuoteWiringServiceTest {
     verifyNoInteractions(quoteDraftService);
     verifyNoInteractions(attemptRepository);
     verifyNoInteractions(sourceLinkRepository);
+    verify(auditEventService).record(eq("CHANNEL_TO_QUOTE_CONVERSION_REJECTED"), eq("CHANNEL_MESSAGE"), eq(messageId.toString()), any(), contains("POLICY_DENIED"));
   }
 
   @Test
@@ -233,8 +234,30 @@ class ChannelToQuoteWiringServiceTest {
     var response = service.createFromChannelMessage(messageId, request("review-1", null, false, "USER"));
 
     assertThat(response.status()).isEqualTo("NEEDS_REVIEW");
+    assertThat(response.quoteId()).isNull();
+    assertThat(response.reviewRequired()).isTrue();
     assertThat(response.validationIssues()).extracting("code").contains("CUSTOMER_UNRESOLVED");
     verifyNoInteractions(quoteDraftService);
+    verifyNoInteractions(sourceLinkRepository);
+    verify(auditEventService).record(eq("CHANNEL_TO_QUOTE_VALIDATION_ISSUE_CREATED"), eq("QUOTE_CONVERSION_ATTEMPT"), any(), any(), contains("CUSTOMER_UNRESOLVED"));
+    verify(auditEventService).record(eq("CHANNEL_TO_QUOTE_REVIEW_REQUIRED"), eq("QUOTE_CONVERSION_ATTEMPT"), any(), any(), contains("CUSTOMER_UNRESOLVED"));
+    ArgumentCaptor<QuoteConversionAttempt> attempts = ArgumentCaptor.forClass(QuoteConversionAttempt.class);
+    verify(attemptRepository, atLeastOnce()).save(attempts.capture());
+    assertThat(attempts.getAllValues()).anySatisfy(attempt -> {
+      assertThat(attempt.getTenantId()).isEqualTo(tenantId);
+      assertThat(attempt.getQuoteId()).isNull();
+      assertThat(attempt.getFailureCode()).isEqualTo("CUSTOMER_UNRESOLVED");
+      assertThat(attempt.getValidationSummaryJson()).contains("CUSTOMER_UNRESOLVED");
+    });
+    ArgumentCaptor<String> metadata = ArgumentCaptor.forClass(String.class);
+    verify(auditEventService, atLeastOnce()).record(any(), any(), any(), any(), metadata.capture());
+    assertThat(metadata.getAllValues()).anySatisfy(value -> {
+      assertThat(value).contains("\"sourceType\":\"CHANNEL_MESSAGE\"");
+      assertThat(value).contains("\"sourceChannel\":\"TELEGRAM\"");
+      assertThat(value).contains("\"draftQuoteId\":null");
+      assertThat(value).contains("\"customerId\":null");
+      assertThat(value).contains("\"externalExecution\":\"DISABLED\"");
+    });
   }
 
   @Test
@@ -252,13 +275,19 @@ class ChannelToQuoteWiringServiceTest {
     var response = service.createFromChannelMessage(messageId, request("empty-1", customerId, false, "USER"));
 
     assertThat(response.status()).isEqualTo("REJECTED_NO_LINE_ITEMS");
+    assertThat(response.quoteId()).isNull();
+    assertThat(response.reviewRequired()).isTrue();
     assertThat(response.validationIssues()).extracting("code").contains("NO_LINE_ITEMS");
     verifyNoInteractions(quoteDraftService);
     verifyNoInteractions(sourceLinkRepository);
+    verify(auditEventService).record(eq("CHANNEL_TO_QUOTE_VALIDATION_ISSUE_CREATED"), eq("QUOTE_CONVERSION_ATTEMPT"), any(), any(), contains("NO_LINE_ITEMS"));
+    verify(auditEventService).record(eq("CHANNEL_TO_QUOTE_CONVERSION_REJECTED"), eq("QUOTE_CONVERSION_ATTEMPT"), any(), any(), contains("NO_LINE_ITEMS"));
     ArgumentCaptor<QuoteConversionAttempt> attempts = ArgumentCaptor.forClass(QuoteConversionAttempt.class);
     verify(attemptRepository, atLeastOnce()).save(attempts.capture());
     assertThat(attempts.getAllValues()).anySatisfy(attempt -> {
+      assertThat(attempt.getTenantId()).isEqualTo(tenantId);
       assertThat(attempt.getStatus()).isEqualTo("REJECTED_NO_LINE_ITEMS");
+      assertThat(attempt.getQuoteId()).isNull();
       assertThat(attempt.getFailureCode()).isEqualTo("NO_LINE_ITEMS");
     });
   }

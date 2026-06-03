@@ -35,6 +35,8 @@ Examples:
 
 Raw RFQ text and raw SKU values are preserved on draft quote lines.
 
+The deterministic validation path uses the same normalizer for extracted line item SKU, alias, and OEM-reference checks. Validation lookup must query tenant-scoped active products by `normalized_sku`, not by raw customer formatting.
+
 ## Tenant Isolation
 
 Every lookup includes `tenantId`. Tenant A cannot resolve Tenant B product, alias, or OEM data into Tenant A draft quote lines.

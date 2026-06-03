@@ -1,4 +1,5 @@
 OrderPilot Project Status Checkpoint
+Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is docs/product/current-stage.md, which points to docs/product/STAGE_STATUS_RECONCILIATION.md. Do not use this file alone to determine the active implementation stage.
 Date: 2026-05-22
 Active repository: C:\OrderPilot\OrderPilot-Core
 

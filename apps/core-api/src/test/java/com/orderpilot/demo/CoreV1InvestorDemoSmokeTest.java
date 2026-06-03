@@ -46,6 +46,28 @@ class CoreV1InvestorDemoSmokeTest {
   @Autowired private ProductRepository productRepository;
 
   @Test
+  void serviceRootAndFaviconDoNotReturnInternalError() throws Exception {
+    mockMvc.perform(get("/"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.service").value("orderpilot-core-api"))
+        .andExpect(jsonPath("$.status").value("UP"));
+
+    mockMvc.perform(get("/favicon.ico"))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void telegramRfqWithMissingDemoSeedReturnsControlledClientError() throws Exception {
+    mockMvc.perform(post("/api/v1/bot/telegram/webhook")
+            .header("X-Tenant-Id", "11111111-1111-4111-8111-111111111111")
+            .contentType("application/json")
+            .content(demoDataService.fixtureText("telegram-rfq-demo.json")))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+        .andExpect(jsonPath("$.message").value("Tenant not found for X-Tenant-Id. Run scripts\\seed-local-demo.ps1 for the investor demo or use a seeded tenant id."));
+  }
+
+  @Test
   void investorDemoSmokeFlowRunsThroughBotReconciliationAnalyticsAndAudit() throws Exception {
     DemoDataService.DemoSeedResult seed = demoDataService.seedCoreV1Demo();
     UUID tenantId = seed.tenantId();

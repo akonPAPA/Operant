@@ -101,7 +101,7 @@ Use `/demo` in this order:
 
 Expected demo RFQ:
 
-`Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.`
+`Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.`
 
 Expected reconciliation fixture:
 

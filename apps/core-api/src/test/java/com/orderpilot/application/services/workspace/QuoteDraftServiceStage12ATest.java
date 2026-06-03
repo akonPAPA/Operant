@@ -13,6 +13,7 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.customer.CustomerAccount;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.integration.ConnectorCommandRepository;
 import com.orderpilot.domain.inventory.InventorySnapshot;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
 import com.orderpilot.domain.location.Location;
@@ -78,6 +79,7 @@ class QuoteDraftServiceStage12ATest {
   @Autowired private QuoteApprovalDecisionRepository approvalDecisions;
   @Autowired private QuoteInternalOrderBoundaryRepository internalOrderBoundaries;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private ConnectorCommandRepository connectorCommands;
 
   @AfterEach
   void clearTenant() {
@@ -103,6 +105,9 @@ class QuoteDraftServiceStage12ATest {
     assertThat(response.lines().get(0).lineTotal()).isEqualByComparingTo("200.00");
     assertThat(response.approvalRequired()).isFalse();
     assertThat(response.validationIssues()).isEmpty();
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED")).isZero();
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED_INTERNAL")).isZero();
+    assertThat(connectorCommands.count()).isZero();
   }
 
   @Test
@@ -171,6 +176,28 @@ class QuoteDraftServiceStage12ATest {
     assertThat(response.status()).isEqualTo("NEEDS_REVIEW");
     assertThat(response.lines().get(0).productId()).isNull();
     assertThat(response.validationIssues()).extracting(ValidationIssue::issueCode).contains("PRODUCT_NOT_RESOLVED");
+    assertThat(auditEvents.findAll()).extracting("action").contains("DRAFT_QUOTE_VALIDATION_ISSUE_CREATED", "DRAFT_QUOTE_REVIEW_REQUIRED");
+    assertThat(connectorCommands.count()).isZero();
+  }
+
+  @Test
+  void invalidQuantityCreatesReviewIssueAuditAndNoExternalWrite() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("QTY-001", "Quantity guarded item", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+
+    QuoteTransactionResponse response = service.createFromRfq(command(tenantId, "CUST-1", null, "QTY-001", "0", "0.00", "invalid-qty"));
+
+    assertThat(response.status()).isEqualTo("NEEDS_REVIEW");
+    assertThat(response.lines().get(0).productId()).isEqualTo(product.getId());
+    assertThat(response.validationIssues()).extracting(ValidationIssue::issueCode).contains("INVALID_QUANTITY");
+    assertThat(auditEvents.findAll()).extracting("action").contains("DRAFT_QUOTE_VALIDATION_ISSUE_CREATED", "DRAFT_QUOTE_RFQ_VALIDATION_COMPLETED", "DRAFT_QUOTE_REVIEW_REQUIRED");
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED")).isZero();
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED_INTERNAL")).isZero();
+    assertThat(connectorCommands.count()).isZero();
   }
 
   @Test

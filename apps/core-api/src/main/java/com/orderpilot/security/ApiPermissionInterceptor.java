@@ -45,6 +45,9 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
   }
 
   private ApiPermission permissionFor(String method, String path) {
+    if (HttpMethod.OPTIONS.matches(method)) {
+      return null;
+    }
     if ((path.startsWith("/api/v1/bot-runtime") || path.startsWith("/api/v1/bot/runtime")) && !HttpMethod.GET.matches(method)) {
       return ApiPermission.BOT_ACTION;
     }

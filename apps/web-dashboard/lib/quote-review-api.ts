@@ -91,6 +91,51 @@ export type QuoteReviewCommandPayload = {
   values?: Record<string, string>;
 };
 
+export type QuoteConversionAttemptReviewFilter = {
+  status?: string;
+  reviewRequired?: boolean;
+  reasonCode?: string;
+  sourceChannel?: string;
+  draftQuoteLinked?: boolean;
+  createdFrom?: string;
+  createdTo?: string;
+};
+
+export type QuoteConversionAttemptReviewItem = {
+  id: string;
+  sourceType: string;
+  sourceId: string;
+  sourceChannel?: string | null;
+  channelMessageId?: string | null;
+  inboundDocumentId?: string | null;
+  draftQuoteId?: string | null;
+  draftQuoteLinked: boolean;
+  status: string;
+  reviewRequired: boolean;
+  reasonCode?: string | null;
+  reasonCodes: string[];
+  issueCount: number;
+  customerResolution?: string | null;
+  lineCount: number;
+  requestMode?: string | null;
+  triggeredBy?: string | null;
+  triggeredByType?: string | null;
+  createdAt: string;
+};
+
+export type QuoteValidationIssueDto = {
+  code: string;
+  severity: string;
+  blocking: boolean;
+  message: string;
+  lineId?: string | null;
+};
+
+export type QuoteConversionAttemptReviewDetail = QuoteConversionAttemptReviewItem & {
+  safeMetadata: Record<string, string | number | boolean | null>;
+  validationIssues: QuoteValidationIssueDto[];
+};
+
 const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
 
 export function getQuoteReviewQueue(tenantId: string): Promise<QuoteReviewQueueRow[]> {
@@ -99,6 +144,19 @@ export function getQuoteReviewQueue(tenantId: string): Promise<QuoteReviewQueueR
 
 export function getQuoteReviewDetail(tenantId: string, quoteId: string): Promise<QuoteReviewDetail> {
   return requestQuoteReview<QuoteReviewDetail>(tenantId, `/api/v1/quote-review/${quoteId}`);
+}
+
+export function getQuoteConversionAttempts(tenantId: string, filter: QuoteConversionAttemptReviewFilter = {}): Promise<QuoteConversionAttemptReviewItem[]> {
+  const query = new URLSearchParams();
+  Object.entries(filter).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  });
+  const queryString = query.toString();
+  return requestQuoteReview<QuoteConversionAttemptReviewItem[]>(tenantId, `/api/v1/quote-review/conversion-attempts${queryString ? `?${queryString}` : ""}`);
+}
+
+export function getQuoteConversionAttemptDetail(tenantId: string, attemptId: string): Promise<QuoteConversionAttemptReviewDetail> {
+  return requestQuoteReview<QuoteConversionAttemptReviewDetail>(tenantId, `/api/v1/quote-review/conversion-attempts/${attemptId}`);
 }
 
 export function resolveQuoteReviewIssue(quoteId: string, issueId: string, payload: QuoteReviewCommandPayload): Promise<QuoteReviewCommandResult> {

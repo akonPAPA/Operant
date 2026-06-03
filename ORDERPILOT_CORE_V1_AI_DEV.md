@@ -1,5 +1,7 @@
 # OrderPilot Core v1 AI Development Roadmap
 
+Status note: This document remains useful as roadmap and guardrail context, but it is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
+
 This file is the canonical roadmap and instruction source for OrderPilot Core v1 AI-assisted development. `AGENTS.md`, local task prompts, and stage docs must align with this file.
 
 ## Product Thesis

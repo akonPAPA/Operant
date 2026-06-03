@@ -24,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -143,14 +144,19 @@ public class ChannelToQuoteWiringService {
   private ChannelToQuoteResponse convert(SourceContext source, ChannelToQuoteRequest nullableRequest) {
     ChannelToQuoteRequest request = nullableRequest == null ? new ChannelToQuoteRequest(null, null, null, null, false, false, List.of(), Map.of(), null, "USER") : nullableRequest;
     UUID tenantId = TenantContext.requireTenantId();
-    requireCreatePermission(tenantId, request);
+    try {
+      requireCreatePermission(tenantId, request);
+    } catch (TenantPolicyException ex) {
+      auditEventService.record("CHANNEL_TO_QUOTE_CONVERSION_REJECTED", source.sourceType, source.sourceId.toString(), request.actorId(), auditJson(source, request, null, List.of("POLICY_DENIED"), null, null));
+      throw ex;
+    }
     String requestMode = request.dryRun() ? "DRY_RUN" : "CREATE";
     String idempotencyKey = firstNonBlank(request.idempotencyKey(), source.sourceType + ":" + source.sourceId);
     Optional<QuoteConversionAttempt> replay = isBlank(request.idempotencyKey())
         ? Optional.empty()
         : attemptRepository.findFirstByTenantIdAndSourceTypeAndSourceIdAndIdempotencyKeyAndRequestModeOrderByCreatedAtDesc(tenantId, source.sourceType, source.sourceId, request.idempotencyKey().trim(), requestMode);
     if (replay.isPresent()) {
-      AuditEvent audit = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", replay.get().getId().toString(), request.actorId(), auditJson(source, request, replay.get().getId(), List.of("IDEMPOTENT_REPLAY"), replay.get().getQuoteId()));
+      AuditEvent audit = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", replay.get().getId().toString(), request.actorId(), auditJson(source, request, replay.get().getId(), List.of("IDEMPOTENT_REPLAY"), replay.get().getQuoteId(), null));
       return new ChannelToQuoteResponse(replay.get().getStatus(), replay.get().getQuoteId(), replay.get().getId(), source.sourceType, source.sourceId, null, 0, 0, issuesFromJson(replay.get().getValidationSummaryJson()), "NEEDS_REVIEW".equals(replay.get().getStatus()), List.of(audit.getId()));
     }
 
@@ -161,21 +167,22 @@ public class ChannelToQuoteWiringService {
     String candidateStatus = candidateStatus(lines, customer, issues, request.forceReview());
     String summary = validationSummaryJson(issues, lines.size(), customer);
     QuoteConversionAttempt attempt = attemptRepository.save(new QuoteConversionAttempt(tenantId, source.sourceType, source.sourceId, candidateStatus, summary, request.actorId(), actorType(request.actorType()), request.idempotencyKey(), requestMode, clock.instant()));
-    AuditEvent attempted = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null));
+    AuditEvent attempted = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null, customer));
 
     if (request.dryRun()) {
       attempt.markTerminal(candidateStatus, null, null, summary);
       attemptRepository.save(attempt);
-      AuditEvent dryRun = auditEventService.record("CHANNEL_TO_QUOTE_DRY_RUN", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null));
+      AuditEvent dryRun = auditEventService.record("CHANNEL_TO_QUOTE_DRY_RUN", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null, customer));
       return response(candidateStatus, null, attempt.getId(), source, customer, lines, issues, List.of(attempted.getId(), dryRun.getId()));
     }
     if (!"READY_FOR_DRAFT_QUOTE".equals(candidateStatus)) {
-      String action = "NEEDS_REVIEW".equals(candidateStatus) ? "CHANNEL_TO_QUOTE_REVIEW_REQUIRED" : "CHANNEL_TO_QUOTE_REJECTED";
       String failureCode = issues.isEmpty() ? candidateStatus : issues.get(0).code();
       attempt.markTerminal(candidateStatus, failureCode, candidateStatus, summary);
       attemptRepository.save(attempt);
-      AuditEvent terminal = auditEventService.record(action, "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null));
-      return response(candidateStatus, null, attempt.getId(), source, customer, lines, issues, List.of(attempted.getId(), terminal.getId()));
+      List<UUID> auditIds = new ArrayList<>();
+      auditIds.add(attempted.getId());
+      auditIds.addAll(recordPreDraftRejectionEvidence(source, request, attempt, customer, issues, candidateStatus));
+      return response(candidateStatus, null, attempt.getId(), source, customer, lines, issues, auditIds);
     }
 
     Stage12ADtos.QuoteTransactionResponse quote = quoteDraftService.createFromRfq(new Stage12ADtos.CreateDraftQuoteFromRfqCommand(
@@ -196,9 +203,21 @@ public class ChannelToQuoteWiringService {
     attempt.markDraftCreated(quote.draftQuoteId(), finalStatus, validationSummaryJson(mergedIssues, lines.size(), customer));
     attemptRepository.save(attempt);
     sourceLinkRepository.save(new QuoteSourceLink(tenantId, quote.draftQuoteId(), source.sourceType, source.sourceId, source.channel, source.externalRef, source.receivedAt, request.actorId(), actorType(request.actorType()), metadataJson(source, attempt.getId(), lines), clock.instant()));
-    AuditEvent created = auditEventService.record("CHANNEL_TO_QUOTE_DRAFT_CREATED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId()));
-    AuditEvent linked = auditEventService.record("QUOTE_SOURCE_LINKED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId()));
+    AuditEvent created = auditEventService.record("CHANNEL_TO_QUOTE_DRAFT_CREATED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId(), customer));
+    AuditEvent linked = auditEventService.record("QUOTE_SOURCE_LINKED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId(), customer));
     return response(finalStatus, quote.draftQuoteId(), attempt.getId(), source, customer, lines, mergedIssues, List.of(attempted.getId(), created.getId(), linked.getId()));
+  }
+
+  private List<UUID> recordPreDraftRejectionEvidence(SourceContext source, ChannelToQuoteRequest request, QuoteConversionAttempt attempt, CustomerAccount customer, List<QuoteValidationIssueDto> issues, String candidateStatus) {
+    List<UUID> auditIds = new ArrayList<>();
+    for (QuoteValidationIssueDto issue : issues) {
+      AuditEvent issueEvent = auditEventService.record("CHANNEL_TO_QUOTE_VALIDATION_ISSUE_CREATED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), issueAuditJson(source, request, attempt.getId(), customer, issue));
+      auditIds.add(issueEvent.getId());
+    }
+    String action = "NEEDS_REVIEW".equals(candidateStatus) ? "CHANNEL_TO_QUOTE_REVIEW_REQUIRED" : "CHANNEL_TO_QUOTE_CONVERSION_REJECTED";
+    AuditEvent terminal = auditEventService.record(action, "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodesOrStatus(issues, candidateStatus), null, customer));
+    auditIds.add(terminal.getId());
+    return auditIds;
   }
 
   private List<QuoteCandidateLineDto> candidateLinesFor(String sourceType, UUID sourceId) {
@@ -340,24 +359,65 @@ public class ChannelToQuoteWiringService {
     }
   }
 
-  private String auditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, List<String> reasonCodes, UUID quoteId) {
+  private String auditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, List<String> reasonCodes, UUID quoteId, CustomerAccount customer) {
     try {
-      return objectMapper.writeValueAsString(Map.of(
-          "sourceType", source.sourceType,
-          "sourceId", source.sourceId,
-          "sourceChannel", source.channel == null ? "" : source.channel,
-          "quoteId", quoteId == null ? "" : quoteId.toString(),
-          "conversionAttemptId", conversionAttemptId == null ? "" : conversionAttemptId.toString(),
-          "actorType", actorType(request.actorType()),
-          "reasonCodes", reasonCodes,
-          "externalExecution", "DISABLED"));
+      Map<String, Object> metadata = baseAuditMetadata(source, request, conversionAttemptId, customer);
+      metadata.put("quoteId", quoteId == null ? null : quoteId.toString());
+      metadata.put("draftQuoteId", quoteId == null ? null : quoteId.toString());
+      metadata.put("reasonCodes", reasonCodes == null ? List.of() : reasonCodes);
+      metadata.put("reviewRequired", auditReviewRequired(reasonCodes));
+      return objectMapper.writeValueAsString(metadata);
     } catch (Exception ex) {
       return "{}";
     }
   }
 
+  private String issueAuditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, CustomerAccount customer, QuoteValidationIssueDto issue) {
+    try {
+      Map<String, Object> metadata = baseAuditMetadata(source, request, conversionAttemptId, customer);
+      metadata.put("draftQuoteId", null);
+      metadata.put("quoteId", null);
+      metadata.put("issueCode", issue.code());
+      metadata.put("severity", issue.severity());
+      metadata.put("blocking", issue.blocking());
+      metadata.put("lineId", issue.lineId() == null ? null : issue.lineId().toString());
+      metadata.put("reasonCodes", List.of(issue.code()));
+      metadata.put("reviewRequired", true);
+      return objectMapper.writeValueAsString(metadata);
+    } catch (Exception ex) {
+      return "{}";
+    }
+  }
+
+  private Map<String, Object> baseAuditMetadata(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, CustomerAccount customer) {
+    Map<String, Object> metadata = new LinkedHashMap<>();
+    metadata.put("sourceType", source.sourceType);
+    metadata.put("sourceId", source.sourceId == null ? null : source.sourceId.toString());
+    metadata.put("sourceChannel", source.channel == null ? "" : source.channel);
+    metadata.put("sourceExternalRef", source.externalRef == null ? "" : source.externalRef);
+    metadata.put("normalizedIntent", normalizedIntent(request.requestedQuoteType()));
+    metadata.put("conversionAttemptId", conversionAttemptId == null ? null : conversionAttemptId.toString());
+    metadata.put("actorType", actorType(request.actorType()));
+    metadata.put("customerId", customer == null ? null : customer.getId().toString());
+    metadata.put("externalExecution", "DISABLED");
+    return metadata;
+  }
+
   private List<String> reasonCodes(List<QuoteValidationIssueDto> issues) {
     return issues.stream().map(QuoteValidationIssueDto::code).distinct().toList();
+  }
+
+  private List<String> reasonCodesOrStatus(List<QuoteValidationIssueDto> issues, String status) {
+    List<String> codes = reasonCodes(issues);
+    return codes.isEmpty() ? List.of(status) : codes;
+  }
+
+  private static boolean auditReviewRequired(List<String> reasonCodes) {
+    return reasonCodes != null && reasonCodes.stream().anyMatch(code -> !"IDEMPOTENT_REPLAY".equals(code));
+  }
+
+  private static String normalizedIntent(String intent) {
+    return isBlank(intent) ? "RFQ" : intent.trim().toUpperCase(Locale.ROOT);
   }
 
   private static String actorType(String actorType) {

@@ -2,6 +2,7 @@ package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.Stage12ADtos.ValidationIssue;
 import com.orderpilot.api.dto.Stage12CDtos.*;
+import com.orderpilot.application.services.workspace.QuoteConversionAttemptReviewQueryService;
 import com.orderpilot.application.services.workspace.QuoteReviewService;
 import java.time.Instant;
 import java.util.List;
@@ -12,9 +13,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/quote-review")
 public class QuoteReviewController {
   private final QuoteReviewService service;
+  private final QuoteConversionAttemptReviewQueryService conversionAttemptQueryService;
 
-  public QuoteReviewController(QuoteReviewService service) {
+  public QuoteReviewController(QuoteReviewService service, QuoteConversionAttemptReviewQueryService conversionAttemptQueryService) {
     this.service = service;
+    this.conversionAttemptQueryService = conversionAttemptQueryService;
   }
 
   @GetMapping("/queue")
@@ -38,8 +41,20 @@ public class QuoteReviewController {
   }
 
   @GetMapping("/conversion-attempts")
-  public List<ConversionAttemptSummary> conversionAttempts(@RequestParam(required = false) String status) {
-    return service.conversionAttempts(status);
+  public List<QuoteConversionAttemptReviewItem> conversionAttempts(
+      @RequestParam(required = false) String status,
+      @RequestParam(required = false) Boolean reviewRequired,
+      @RequestParam(required = false) String reasonCode,
+      @RequestParam(required = false) String sourceChannel,
+      @RequestParam(required = false) Boolean draftQuoteLinked,
+      @RequestParam(required = false) Instant createdFrom,
+      @RequestParam(required = false) Instant createdTo) {
+    return conversionAttemptQueryService.list(new QuoteConversionAttemptReviewFilter(status, reviewRequired, reasonCode, sourceChannel, draftQuoteLinked, createdFrom, createdTo));
+  }
+
+  @GetMapping("/conversion-attempts/{attemptId}")
+  public QuoteConversionAttemptReviewDetail conversionAttemptDetail(@PathVariable UUID attemptId) {
+    return conversionAttemptQueryService.detail(attemptId);
   }
 
   @GetMapping("/issues")

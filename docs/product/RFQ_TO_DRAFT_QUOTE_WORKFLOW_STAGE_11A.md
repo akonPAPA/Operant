@@ -40,7 +40,7 @@ It adds:
 Stage 11A supports:
 
 - Structured RFQ commands with customer hint, raw SKU/product text, quantity, and UOM.
-- Minimal deterministic text parsing for demo-style RFQ text such as `Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty`.
+- Minimal deterministic text parsing for demo-style RFQ text such as `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty`.
 
 The parser is deterministic and local. It does not call AI providers and does not infer product ids from vague text.
 

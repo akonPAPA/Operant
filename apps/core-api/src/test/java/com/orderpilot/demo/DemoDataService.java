@@ -110,9 +110,9 @@ public class DemoDataService {
   }
 
   private void seedStage11C(UUID tenantId, UUID customerId, UUID locationId, java.util.Map<String, Product> productsBySku) {
-    Product original = productsBySku.get("TOY-CAM-2018-BPAD-OE");
-    Product substituteA = productsBySku.get("AFT-CAM-2018-BPAD-A");
-    Product substituteB = productsBySku.get("AFT-CAM-2018-BPAD-B");
+    Product original = productsBySku.get("PAD-OE-04465");
+    Product substituteA = productsBySku.get("PAD-SUB-ADV");
+    Product substituteB = productsBySku.get("PAD-SUB-ECON");
     if (original == null || substituteA == null || substituteB == null) {
       return;
     }

@@ -1,5 +1,7 @@
 # OrderPilot Core
 
+Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
+
 OrderPilot Core is the Stage 1 foundation for an investor-grade B2B SaaS transaction intelligence platform for auto and industrial parts distributors.
 
 This repository is intentionally scoped to platform foundation only:

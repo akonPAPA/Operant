@@ -50,14 +50,15 @@ Set `NEXT_PUBLIC_DEMO_TENANT_ID` to the seeded tenant before starting the dashbo
 
 1. Open `http://localhost:3000/demo`.
 2. Click `Send demo Telegram RFQ`.
-3. Confirm the panel shows operator review and `External execution: DISABLED`.
-4. Open `http://localhost:3000/bot-conversations`.
-5. Confirm the captured conversation shows intent, policy decision, handoff reason, and no unsafe action controls.
-6. Open `http://localhost:3000/quote-review`.
-7. Open a quote review when seeded/backend data exists and show validation, substitutes, approval needs, and audit timeline.
-8. Open `http://localhost:3000/quotes`.
-9. Use the defaults `CUST-001`, `PAD-OE-04465`, `WH-ALM`, `2 EA`.
-10. Create the draft quote and show approval controls, validation/substitute context, audit correlation, and disabled external execution.
+3. Confirm the RFQ text is `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.`
+4. Confirm the panel shows operator review and `External execution: DISABLED`.
+5. Open `http://localhost:3000/bot-conversations`.
+6. Confirm the captured conversation shows intent, policy decision, handoff reason, and no unsafe action controls.
+7. Open `http://localhost:3000/quote-review`.
+8. Open a quote review when seeded/backend data exists and show validation, substitutes, approval needs, and audit timeline.
+9. Open `http://localhost:3000/quotes`.
+10. Use the defaults `CUST-001`, `PAD-OE-04465`, `WH-ALM`, `2 EA`.
+11. Create the draft quote and show approval controls, validation/substitute context, audit correlation, and disabled external execution.
 
 ## Expected Backend Behavior
 

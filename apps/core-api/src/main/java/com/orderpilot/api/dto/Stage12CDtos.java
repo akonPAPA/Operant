@@ -7,6 +7,7 @@ import com.orderpilot.api.dto.Stage12ADtos.SubstituteCandidate;
 import com.orderpilot.api.dto.Stage12ADtos.ValidationIssue;
 import com.orderpilot.api.dto.Stage12BDtos.QuoteCandidateLineDto;
 import com.orderpilot.api.dto.Stage12BDtos.QuoteSourceContextDto;
+import com.orderpilot.api.dto.Stage12BDtos.QuoteValidationIssueDto;
 import com.orderpilot.domain.audit.AuditEvent;
 import com.orderpilot.domain.workspace.DraftQuote;
 import com.orderpilot.domain.workspace.QuoteConversionAttempt;
@@ -93,6 +94,59 @@ public final class Stage12CDtos {
       return new ConversionAttemptSummary(attempt.getId(), attempt.getSourceType(), attempt.getSourceId(), attempt.getStatus(), attempt.getFailureCode(), attempt.getFailureMessage(), attempt.getRequestMode(), attempt.getTriggeredBy(), attempt.getTriggeredByType());
     }
   }
+
+  public record QuoteConversionAttemptReviewFilter(
+      String status,
+      Boolean reviewRequired,
+      String reasonCode,
+      String sourceChannel,
+      Boolean draftQuoteLinked,
+      Instant createdFrom,
+      Instant createdTo) {}
+
+  public record QuoteConversionAttemptReviewItem(
+      UUID id,
+      String sourceType,
+      UUID sourceId,
+      String sourceChannel,
+      UUID channelMessageId,
+      UUID inboundDocumentId,
+      UUID draftQuoteId,
+      boolean draftQuoteLinked,
+      String status,
+      boolean reviewRequired,
+      String reasonCode,
+      List<String> reasonCodes,
+      int issueCount,
+      String customerResolution,
+      int lineCount,
+      String requestMode,
+      UUID triggeredBy,
+      String triggeredByType,
+      Instant createdAt) {}
+
+  public record QuoteConversionAttemptReviewDetail(
+      UUID id,
+      String sourceType,
+      UUID sourceId,
+      String sourceChannel,
+      UUID channelMessageId,
+      UUID inboundDocumentId,
+      UUID draftQuoteId,
+      boolean draftQuoteLinked,
+      String status,
+      boolean reviewRequired,
+      String reasonCode,
+      List<String> reasonCodes,
+      int issueCount,
+      String customerResolution,
+      int lineCount,
+      String requestMode,
+      UUID triggeredBy,
+      String triggeredByType,
+      Instant createdAt,
+      Map<String, Object> safeMetadata,
+      List<QuoteValidationIssueDto> validationIssues) {}
 
   public record PricingRiskSummary(
       BigDecimal subtotalAmount,

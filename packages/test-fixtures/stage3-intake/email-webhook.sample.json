@@ -3,7 +3,7 @@
   "sender": "buyer@acme-auto.example",
   "recipients": "sales@orderpilot.example",
   "subject": "RFQ Toyota Camry brake pads",
-  "bodyText": "Please quote brake pads for Toyota Camry 2018, 20 pcs.",
+  "bodyText": "Please quote 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018.",
   "attachments": [
     {
       "originalFilename": "rfq-lines.csv",

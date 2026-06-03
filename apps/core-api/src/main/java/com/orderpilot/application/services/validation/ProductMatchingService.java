@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.validation;
 
 import com.orderpilot.application.services.JsonSupport;
+import com.orderpilot.application.services.ProductCodeNormalizer;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.ExtractedLineItem;
 import com.orderpilot.domain.product.*;
@@ -9,7 +10,6 @@ import com.orderpilot.domain.validation.ProductMatchResultRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -23,10 +23,11 @@ public class ProductMatchingService {
   @Transactional
   public ProductMatchResult match(UUID validationRunId, UUID extractionResultId, ExtractedLineItem line) {
     UUID tenantId = TenantContext.requireTenantId();
-    String sku = normalizeCode(line.getRawSku());
+    String sku = ProductCodeNormalizer.normalize(line.getRawSku());
     if (!sku.isBlank()) {
-      var exact = productRepository.findByTenantIdAndSkuAndDeletedAtIsNull(tenantId, sku);
-      if (exact.isPresent()) return save(tenantId, validationRunId, line, exact.get().getId(), "EXACT_SKU", "MATCHED", "0.9900", null);
+      List<Product> exact = productRepository.findByTenantIdAndNormalizedSkuAndDeletedAtIsNullAndStatus(tenantId, sku, "ACTIVE");
+      if (exact.size() == 1) return save(tenantId, validationRunId, line, exact.get(0).getId(), "EXACT_SKU", "MATCHED", "0.9900", null);
+      if (exact.size() > 1) return ambiguous(validationRunId, extractionResultId, tenantId, line, "EXACT_SKU", candidates(exact.stream().map(Product::getId).toList()));
       List<ProductAlias> aliases = aliasRepository.findByTenantIdAndNormalizedAliasAndActiveTrue(tenantId, sku);
       if (aliases.size() == 1) { issueService.open(validationRunId, extractionResultId, line.getId(), null, "PRODUCT_ALIAS_MATCHED", "INFO", "Product matched through a tenant alias", "{}"); return save(tenantId, validationRunId, line, aliases.get(0).getProductId(), "PRODUCT_ALIAS", "MATCHED", "0.9000", candidates(aliases.stream().map(ProductAlias::getProductId).toList())); }
       if (aliases.size() > 1) return ambiguous(validationRunId, extractionResultId, tenantId, line, "PRODUCT_ALIAS", candidates(aliases.stream().map(ProductAlias::getProductId).toList()));
@@ -57,5 +58,4 @@ public class ProductMatchingService {
   }
 
   private String candidates(List<UUID> ids) { return jsonSupport.writeObject(Map.of("candidateProductIds", ids)); }
-  private String normalizeCode(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT); }
 }

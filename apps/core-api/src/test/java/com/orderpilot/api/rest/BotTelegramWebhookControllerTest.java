@@ -4,7 +4,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,20 +17,47 @@ import com.orderpilot.application.services.channel.WebhookSignatureVerificationR
 import com.orderpilot.application.services.channel.WebhookVerificationMode;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+import com.orderpilot.security.ApiSecurityWebConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(BotTelegramWebhookController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class})
+@Import({CoreConfiguration.class, GlobalExceptionHandler.class, ApiSecurityWebConfig.class, NoopApiPermissionTestConfig.class})
 class BotTelegramWebhookControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @MockBean private BotRuntimeService botRuntimeService;
   @MockBean private TelegramSecretTokenVerifier verifier;
+
+  @Test
+  void localDashboardCorsPreflightSucceedsForTelegramWebhook() throws Exception {
+    mockMvc.perform(options("/api/v1/bot/telegram/webhook")
+            .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Content-Type,X-Tenant-Id,Idempotency-Key"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+        .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET,POST,PUT,PATCH,DELETE,OPTIONS"))
+        .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, X-Tenant-Id, Idempotency-Key"));
+  }
+
+  @Test
+  void loopbackDashboardCorsPreflightSucceedsForTelegramWebhook() throws Exception {
+    mockMvc.perform(options("/api/v1/bot/telegram/webhook")
+            .header(HttpHeaders.ORIGIN, "http://127.0.0.1:3000")
+            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Content-Type,X-Request-Id,Authorization"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://127.0.0.1:3000"))
+        .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET,POST,PUT,PATCH,DELETE,OPTIONS"))
+        .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, X-Request-Id, Authorization"));
+  }
+
 
   @Test
   void unsupportedTelegramPayloadIsIgnoredWithoutRuntimeProcessing() throws Exception {

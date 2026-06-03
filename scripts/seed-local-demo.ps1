@@ -102,11 +102,16 @@ $resolvedRoot = (Resolve-Path $RepoRoot).Path
 $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
 $connection = Convert-JdbcToPsql $DatasourceUrl
 if (-not $Username) { $Username = "orderpilot" }
+$activeProfile = if ($env:SPRING_PROFILES_ACTIVE) { $env:SPRING_PROFILES_ACTIVE } else { "(default)" }
 
 Write-Host "OrderPilot local demo seed"
 Write-Host "Repository: $resolvedRoot"
 Write-Host "This script is deterministic and local-only. It does not call Telegram, LLMs, ERP/1C, external connector networks, or production seeders."
 Write-Host "It uses fixed demo UUIDs and SQL upserts / guarded inserts for repeatable local runs."
+Write-Host "Target datasource: jdbc:postgresql://$($connection.Host):$($connection.Port)/$($connection.Database)"
+Write-Host "Target database:   $($connection.Database)"
+Write-Host "Target user:       $Username"
+Write-Host "Spring profile:    $activeProfile"
 
 $sql = @"
 BEGIN;
@@ -120,7 +125,7 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 INSERT INTO location (id, tenant_id, code, name, type, city, country, active)
-VALUES ('$DemoLocationId', '$DemoTenantId', 'ALM-MAIN', 'Almaty Main Warehouse', 'WAREHOUSE', 'Almaty', 'KZ', true)
+VALUES ('$DemoLocationId', '$DemoTenantId', 'WH-ALM', 'Almaty Main Warehouse', 'WAREHOUSE', 'Almaty', 'KZ', true)
 ON CONFLICT (id) DO UPDATE SET
   code = EXCLUDED.code,
   name = EXCLUDED.name,
@@ -142,7 +147,7 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 INSERT INTO customer_account (id, tenant_id, external_ref, account_code, legal_name, display_name, status, default_currency, default_location_id)
-VALUES ('$DemoCustomerId', '$DemoTenantId', 'DEMO-CUST-001', 'ALMATY-AUTO', 'Almaty Auto Service LLP', 'Almaty Auto Service', 'ACTIVE', 'KZT', '$DemoLocationId')
+VALUES ('$DemoCustomerId', '$DemoTenantId', 'CUST-001', 'CUST-001', 'Steppe Logistics LLP', 'Steppe Logistics', 'ACTIVE', 'USD', '$DemoLocationId')
 ON CONFLICT (id) DO UPDATE SET
   external_ref = EXCLUDED.external_ref,
   account_code = EXCLUDED.account_code,
@@ -165,15 +170,16 @@ ON CONFLICT (id) DO UPDATE SET
   default_location_id = EXCLUDED.default_location_id,
   updated_at = now();
 
-INSERT INTO product (id, tenant_id, sku, name, description, category, brand, manufacturer, base_uom, status, cost, currency)
+INSERT INTO product (id, tenant_id, sku, normalized_sku, name, description, category, brand, manufacturer, base_uom, status, cost, currency)
 VALUES
-  ('$DemoPrimaryProductId', '$DemoTenantId', 'TOY-CAM-2018-BPAD-OE', 'Original brake pads for Toyota Camry 2018', 'OEM-grade front brake pad set for Toyota Camry 2018', 'Brake System', 'Toyota Genuine', 'Toyota', 'PCS', 'ACTIVE', 18000.00, 'KZT'),
-  ('$DemoSubstituteAId', '$DemoTenantId', 'AFT-CAM-2018-BPAD-A', 'Aftermarket compatible substitute A', 'Aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake System', 'RoadMax', 'RoadMax Parts', 'PCS', 'ACTIVE', 12500.00, 'KZT'),
-  ('$DemoSubstituteBId', '$DemoTenantId', 'AFT-CAM-2018-BPAD-B', 'Budget aftermarket compatible substitute B', 'Budget aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake System', 'SteppeLine', 'SteppeLine Components', 'PCS', 'ACTIVE', 9800.00, 'KZT'),
-  ('$DemoFilterProductId', '$DemoTenantId', 'TOY-CAM-2018-AIR-FILTER', 'Air filter for Toyota Camry 2018', 'OEM-compatible air filter for Toyota Camry 2018', 'Filters', 'Toyota Genuine', 'Toyota', 'PCS', 'ACTIVE', 4500.00, 'KZT'),
-  ('$DemoOilProductId', '$DemoTenantId', 'OIL-5W30-4L', 'Synthetic engine oil 5W30 4L', 'Synthetic 5W30 engine oil, four liter canister', 'Fluids', 'SteppeOil', 'SteppeOil', 'PCS', 'ACTIVE', 7200.00, 'KZT')
+  ('$DemoPrimaryProductId', '$DemoTenantId', 'PAD-OE-04465', 'PADOE04465', 'Toyota Camry 2018 OEM Front Brake Pad Set', 'Original-equivalent front brake pad set for Toyota Camry 2018', 'Brake Pads', 'Toyota', 'Toyota', 'EA', 'ACTIVE', 42.00, 'USD'),
+  ('$DemoSubstituteAId', '$DemoTenantId', 'PAD-SUB-ADV', 'PADSUBADV', 'Advantage Ceramic Brake Pad Set', 'Aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake Pads', 'RoadMax', 'RoadMax Parts', 'EA', 'ACTIVE', 25.00, 'USD'),
+  ('$DemoSubstituteBId', '$DemoTenantId', 'PAD-SUB-ECON', 'PADSUBECON', 'Economy Brake Pad Set', 'Economy aftermarket brake pad set compatible with Toyota Camry 2018', 'Brake Pads', 'SteppeLine', 'SteppeLine Components', 'EA', 'ACTIVE', 19.00, 'USD'),
+  ('$DemoFilterProductId', '$DemoTenantId', 'TOY-CAM-2018-AIR-FILTER', 'TOYCAM2018AIRFILTER', 'Air filter for Toyota Camry 2018', 'OEM-compatible air filter for Toyota Camry 2018', 'Filters', 'Toyota Genuine', 'Toyota', 'PCS', 'ACTIVE', 4500.00, 'KZT'),
+  ('$DemoOilProductId', '$DemoTenantId', 'OIL-5W30-4L', 'OIL5W304L', 'Synthetic engine oil 5W30 4L', 'Synthetic 5W30 engine oil, four liter canister', 'Fluids', 'SteppeOil', 'SteppeOil', 'PCS', 'ACTIVE', 7200.00, 'KZT')
 ON CONFLICT (id) DO UPDATE SET
   sku = EXCLUDED.sku,
+  normalized_sku = EXCLUDED.normalized_sku,
   name = EXCLUDED.name,
   description = EXCLUDED.description,
   category = EXCLUDED.category,
@@ -186,22 +192,22 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 INSERT INTO product_alias (tenant_id, product_id, alias_type, raw_alias, normalized_alias, customer_account_id, confidence_default)
-SELECT '$DemoTenantId', '$DemoPrimaryProductId', 'CUSTOMER_TEXT', 'brake pads for Toyota Camry 2018', 'BRAKE PADS TOYOTA CAMRY 2018', '$DemoCustomerId', 0.9500
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', 'CUSTOMER_TEXT', 'brake pads for Toyota Camry 2018', 'BRAKEPADSFORTOYOTACAMRY2018', '$DemoCustomerId', 0.9500
 WHERE NOT EXISTS (
   SELECT 1 FROM product_alias
   WHERE tenant_id = '$DemoTenantId'
     AND product_id = '$DemoPrimaryProductId'
-    AND normalized_alias = 'BRAKE PADS TOYOTA CAMRY 2018'
+    AND normalized_alias = 'BRAKEPADSFORTOYOTACAMRY2018'
     AND active = true
 );
 
 INSERT INTO product_alias (tenant_id, product_id, alias_type, raw_alias, normalized_alias, customer_account_id, confidence_default)
-SELECT '$DemoTenantId', '$DemoPrimaryProductId', 'CUSTOMER_SKU', 'camry brake pads', 'CAMRYBRAKEPADS', NULL, 0.9500
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', 'CUSTOMER_SKU', 'PAD-OE-04465', 'PADOE04465', NULL, 0.9900
 WHERE NOT EXISTS (
   SELECT 1 FROM product_alias
   WHERE tenant_id = '$DemoTenantId'
     AND product_id = '$DemoPrimaryProductId'
-    AND normalized_alias = 'CAMRYBRAKEPADS'
+    AND normalized_alias = 'PADOE04465'
     AND active = true
 );
 
@@ -262,19 +268,19 @@ SELECT '$DemoTenantId', '$DemoOilProductId', '$DemoLocationId', 40, 0, 40, '2026
 WHERE NOT EXISTS (SELECT 1 FROM inventory_snapshot WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoOilProductId' AND location_id = '$DemoLocationId' AND captured_at = '2026-05-04T18:00:00Z' AND source = 'DEMO_SEED');
 
 INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
-SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoCustomerId', 1, 'EA', 26000.00, 'KZT', '2026-01-01T00:00:00Z', 10
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoCustomerId', 1, 'EA', 65.00, 'USD', '2026-01-01T00:00:00Z', 10
 WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoPrimaryProductId' AND customer_account_id = '$DemoCustomerId' AND min_quantity = 1 AND uom = 'EA' AND active = true);
 
 INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
-SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoCustomerBId', 1, 'EA', 25500.00, 'KZT', '2026-01-01T00:00:00Z', 10
+SELECT '$DemoTenantId', '$DemoPrimaryProductId', '$DemoCustomerBId', 1, 'EA', 62.00, 'USD', '2026-01-01T00:00:00Z', 10
 WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoPrimaryProductId' AND customer_account_id = '$DemoCustomerBId' AND min_quantity = 1 AND uom = 'EA' AND active = true);
 
 INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
-SELECT '$DemoTenantId', '$DemoSubstituteAId', NULL, 1, 'EA', 19000.00, 'KZT', '2026-01-01T00:00:00Z', 20
+SELECT '$DemoTenantId', '$DemoSubstituteAId', NULL, 1, 'EA', 39.00, 'USD', '2026-01-01T00:00:00Z', 20
 WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoSubstituteAId' AND customer_account_id IS NULL AND min_quantity = 1 AND uom = 'EA' AND active = true);
 
 INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
-SELECT '$DemoTenantId', '$DemoSubstituteBId', NULL, 1, 'EA', 15000.00, 'KZT', '2026-01-01T00:00:00Z', 20
+SELECT '$DemoTenantId', '$DemoSubstituteBId', NULL, 1, 'EA', 29.50, 'USD', '2026-01-01T00:00:00Z', 20
 WHERE NOT EXISTS (SELECT 1 FROM price_rule WHERE tenant_id = '$DemoTenantId' AND product_id = '$DemoSubstituteBId' AND customer_account_id IS NULL AND min_quantity = 1 AND uom = 'EA' AND active = true);
 
 INSERT INTO price_rule (tenant_id, product_id, customer_account_id, min_quantity, uom, unit_price, currency, active_from, priority)
@@ -342,6 +348,55 @@ WHERE NOT EXISTS (
 COMMIT;
 "@
 
+$verifySql = @"
+DO `$`$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM tenant WHERE id = '$DemoTenantId') THEN
+    RAISE EXCEPTION 'Demo seed verification failed: tenant % is missing', '$DemoTenantId';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM product
+    WHERE tenant_id = '$DemoTenantId'
+      AND id = '$DemoPrimaryProductId'
+      AND sku = 'PAD-OE-04465'
+      AND normalized_sku = 'PADOE04465'
+      AND deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: product PAD-OE-04465 / normalized_sku PADOE04465 is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM location
+    WHERE tenant_id = '$DemoTenantId'
+      AND id = '$DemoLocationId'
+      AND code = 'WH-ALM'
+      AND active = true
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: warehouse WH-ALM is missing';
+  END IF;
+END
+`$`$;
+
+SELECT
+  current_database() AS database,
+  current_user AS username,
+  inet_server_addr() AS server_addr,
+  inet_server_port() AS server_port;
+
+SELECT id, slug, status
+FROM tenant
+WHERE id = '$DemoTenantId';
+
+SELECT id, sku, normalized_sku, status
+FROM product
+WHERE tenant_id = '$DemoTenantId'
+  AND sku = 'PAD-OE-04465';
+
+SELECT id, code, active
+FROM location
+WHERE tenant_id = '$DemoTenantId'
+  AND code = 'WH-ALM';
+"@
+
 $psqlCommand = Get-Command "psql" -ErrorAction SilentlyContinue
 Write-Step "Applying deterministic local seed"
 if ($psqlCommand) {
@@ -352,6 +407,13 @@ if ($psqlCommand) {
     throw "psql is unavailable on PATH and the repo-defined Docker Compose postgres service is not running. Start it with: docker compose -f $resolvedRoot\infra\docker\docker-compose.yml up -d postgres"
   }
   Invoke-SeedWithDockerComposePsql $composePath $connection $Username $sql
+}
+
+Write-Step "Verifying deterministic local seed"
+if ($psqlCommand) {
+  Invoke-SeedWithLocalPsql $connection $Username $Credential $verifySql
+} else {
+  Invoke-SeedWithDockerComposePsql $composePath $connection $Username $verifySql
 }
 
 if ($UpdateFrontendEnv) {

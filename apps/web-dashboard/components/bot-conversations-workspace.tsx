@@ -11,7 +11,7 @@ type ActionState = {
 
 export function BotConversationsWorkspace({ initialDetails }: Readonly<{ initialDetails: BotConversationDetail[] }>) {
   const [details, setDetails] = useState(initialDetails);
-  const [text, setText] = useState("Need quote for 10 EA SKU-100");
+  const [text, setText] = useState("Need quote for 2 EA PAD-OE-04465");
   const [simulation, setSimulation] = useState<BotSimulateMessageResponse | null>(null);
   const [reviewHandoffs, setReviewHandoffs] = useState<Record<string, BotReviewHandoff>>({});
   const [action, setAction] = useState<ActionState>({ status: "idle", message: "" });

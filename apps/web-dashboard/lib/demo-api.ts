@@ -47,7 +47,7 @@ export type CommerceAnalyticsSummaryResponse = {
 };
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
-const DEMO_RFQ_TEXT = "Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.";
+const DEMO_RFQ_TEXT = "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.";
 
 export const demoConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
@@ -148,7 +148,10 @@ export function runInventoryReconciliation() {
 }
 
 export function refreshCommerceAnalytics() {
-  return requestJson<CommerceAnalyticsSummaryResponse>("/api/v1/analytics/commerce/summary", { method: "GET" });
+  return requestJson<CommerceAnalyticsSummaryResponse>("/api/v1/analytics/commerce/summary", {
+    method: "GET",
+    headers: { "X-OrderPilot-Permissions": "ANALYTICS_READ" }
+  });
 }
 
 export function viewReconciliationCases() {

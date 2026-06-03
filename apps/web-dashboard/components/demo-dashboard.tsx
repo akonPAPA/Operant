@@ -87,7 +87,7 @@ export function DemoDashboard() {
           <strong>Core API</strong>
           <span>{demoConfig.baseUrl}</span>
           <strong>Tenant header</strong>
-          <span>{demoConfig.tenantId || "67 pensil"}</span>
+          <span>{demoConfig.tenantId || "not configured"}</span>
         </div>
       </section>
 

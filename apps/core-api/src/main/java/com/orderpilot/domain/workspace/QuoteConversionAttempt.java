@@ -61,6 +61,7 @@ public class QuoteConversionAttempt {
   public String getFailureCode() { return failureCode; }
   public String getFailureMessage() { return failureMessage; }
   public String getValidationSummaryJson() { return validationSummaryJson; }
+  public Instant getCreatedAt() { return createdAt; }
   public UUID getTriggeredBy() { return triggeredBy; }
   public String getTriggeredByType() { return triggeredByType; }
   public String getIdempotencyKey() { return idempotencyKey; }

@@ -16,6 +16,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Validations", href: "/validations" },
   { label: "Validation Review", href: "/validation-review" },
   { label: "Exception Cockpit", href: "/exception-cockpit" },
+  { label: "Conversion Review", href: "/conversion-review" },
   { label: "Quote Review", href: "/quote-review" },
   { label: "Processing Jobs", href: "/processing-jobs" },
   { label: "Webhook Events", href: "/webhook-events" },
