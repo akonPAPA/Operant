@@ -4,11 +4,25 @@ on:
   push:
     branches: [main]
 jobs:
-  test:
+  backend-integration-tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/core-api
+    environment: test
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: orderpilot_test
+          POSTGRES_USER: orderpilot_test
+          POSTGRES_PASSWORD: orderpilot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orderpilot_test -d orderpilot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Cache
         uses: actions/cache@v5.0.5
