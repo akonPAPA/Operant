@@ -1,0 +1,25 @@
+name: "OrderPilot CodeQL config"
+
+paths:
+  - apps/core-api/src
+  - apps/web-dashboard
+  - apps/ai-worker
+  - .github/workflows
+
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/.next/**"
+  - "**/target/**"
+  - "**/.venv/**"
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - "**/coverage/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/out/**"
+  - "**/.turbo/**"
+  - "**/reports/**"
+  - "**/surefire-reports/**"
+  - "**/failsafe-reports/**"
+  - "**/*.generated.*"
+  - "**/generated/**"
