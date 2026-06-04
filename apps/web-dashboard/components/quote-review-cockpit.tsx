@@ -68,7 +68,7 @@ export function QuoteReviewQueue() {
                 <td>{row.highestSeverity}</td>
                 <td>{row.sourceType ?? "RFQ"} {row.sourceChannel ? `/${row.sourceChannel}` : ""}</td>
                 <td>{humanize(row.nextRequiredAction)}</td>
-                <td><a className="button secondary-button" href={`/quote-review/${row.quoteId}?tenantId=${tenantId}`}>Open Review</a></td>
+                <td><a className="button secondary-button" href={`/quote-review/${row.quoteId}?tenantId=${encodeURIComponent(tenantId)}`}>Open Review</a></td>
               </tr>
             )) : <tr><td colSpan={8}>No tenant-owned quote reviews returned by backend.</td></tr>}
           </tbody>
