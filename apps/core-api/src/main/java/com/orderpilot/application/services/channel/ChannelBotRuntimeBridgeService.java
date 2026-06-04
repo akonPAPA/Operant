@@ -6,9 +6,15 @@ import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeEventResponse
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
 import com.orderpilot.api.dto.Stage7Dtos.BotWebhookAckResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.bot.BotFlowPolicyDecision;
+import com.orderpilot.application.services.bot.BotRuntimePolicyService;
 import com.orderpilot.application.services.bot.BotRuntimeService;
+import com.orderpilot.application.services.bot.RuleBasedBotIntentClassifier;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.bot.BotFlow;
+import com.orderpilot.domain.bot.BotIntent;
+import com.orderpilot.domain.channel.ChannelBotRuntimeConfiguration;
 import com.orderpilot.domain.channel.ChannelConnection;
 import com.orderpilot.domain.channel.ChannelConnectionRepository;
 import com.orderpilot.domain.channel.ChannelProviderType;
@@ -50,6 +56,9 @@ public class ChannelBotRuntimeBridgeService {
   private final ChannelEventNormalizationService normalizationService;
   private final InboundChannelEventRepository eventRepository;
   private final BotRuntimeService botRuntimeService;
+  private final BotRuntimeConfigurationService configurationService;
+  private final BotRuntimePolicyService policyService;
+  private final RuleBasedBotIntentClassifier intentClassifier;
   private final AuditEventService auditEventService;
   private final ObjectMapper objectMapper;
   private final Clock clock;
@@ -59,6 +68,9 @@ public class ChannelBotRuntimeBridgeService {
       ChannelEventNormalizationService normalizationService,
       InboundChannelEventRepository eventRepository,
       BotRuntimeService botRuntimeService,
+      BotRuntimeConfigurationService configurationService,
+      BotRuntimePolicyService policyService,
+      RuleBasedBotIntentClassifier intentClassifier,
       AuditEventService auditEventService,
       ObjectMapper objectMapper,
       Clock clock) {
@@ -66,6 +78,9 @@ public class ChannelBotRuntimeBridgeService {
     this.normalizationService = normalizationService;
     this.eventRepository = eventRepository;
     this.botRuntimeService = botRuntimeService;
+    this.configurationService = configurationService;
+    this.policyService = policyService;
+    this.intentClassifier = intentClassifier;
     this.auditEventService = auditEventService;
     this.objectMapper = objectMapper;
     this.clock = clock;
@@ -106,6 +121,20 @@ public class ChannelBotRuntimeBridgeService {
       audit("BOT_CHANNEL_EVENT_BRIDGE_REJECTED", event, connection, "MALFORMED_PROVIDER_PAYLOAD", null);
       return result(event, connection, "BRIDGE_REJECTED",
           "Inbound event stored but could not be processed by the controlled bot runtime. Routed for operator review.");
+    }
+
+    // OP-CAP-06B: consult the tenant/connection-scoped controlled runtime configuration before
+    // driving the runtime. A disabled or policy-blocked flow never reaches the runtime, so no
+    // RFQ/draft/price/availability output or bot conversation is produced for it.
+    ChannelBotRuntimeConfiguration config = configurationService.getOrCreateDefaultForConnection(connectionId);
+    BotIntent intent = intentClassifier.detect(event.getNormalizedText());
+    BotFlow flow = BotFlow.fromIntent(intent);
+    BotFlowPolicyDecision decision = policyService.decide(config, flow, BotRuntimePolicyService.Context.unidentified());
+    if (!decision.allowed()) {
+      event.markBotNotBridged("CONFIG_BLOCKED:" + decision.reasonCode().name(), clock.instant());
+      eventRepository.save(event);
+      auditConfigBlocked(event, connection, decision);
+      return configBlockedResult(event, connection, decision);
     }
 
     BotWebhookAckResponse ack = botRuntimeService.handleTelegramUpdate(payload, verificationModeFor(connection));
@@ -174,6 +203,44 @@ public class ChannelBotRuntimeBridgeService {
         event.getReceivedAt(),
         event.getVerificationStatus(),
         EXTERNAL_EXECUTION);
+  }
+
+  private ChannelBotBridgeResultResponse configBlockedResult(InboundChannelEvent event, ChannelConnection connection, BotFlowPolicyDecision decision) {
+    String message = decision.warningMessage() == null || decision.warningMessage().isBlank()
+        ? "This bot flow is not enabled for this connection. Routed to operator review."
+        : decision.warningMessage();
+    return new ChannelBotBridgeResultResponse(
+        event.getId(),
+        connection.getId(),
+        connection.getProviderType().name(),
+        event.getExternalEventId(),
+        event.getStatus(),
+        "BLOCKED_BY_CONFIG",
+        null,
+        null,
+        decision.flow().name(),
+        decision.requiresHandoff(),
+        null,
+        message,
+        event.getReceivedAt(),
+        event.getVerificationStatus(),
+        EXTERNAL_EXECUTION);
+  }
+
+  /** Audit a configuration-blocked flow with safe metadata only. */
+  private void auditConfigBlocked(InboundChannelEvent event, ChannelConnection connection, BotFlowPolicyDecision decision) {
+    Map<String, Object> metadata = new LinkedHashMap<>();
+    metadata.put("channelConnectionId", str(connection.getId()));
+    metadata.put("providerType", connection.getProviderType().name());
+    metadata.put("inboundChannelEventId", str(event.getId()));
+    metadata.put("externalEventId", safe(event.getExternalEventId()));
+    metadata.put("flow", decision.flow().name());
+    metadata.put("policyReason", decision.reasonCode().name());
+    metadata.put("requiresHumanReview", decision.requiresHandoff());
+    metadata.put("configId", str(decision.configId()));
+    metadata.put("bridgeStatus", "BLOCKED_BY_CONFIG");
+    metadata.put("externalExecution", EXTERNAL_EXECUTION);
+    auditEventService.record("BOT_CHANNEL_EVENT_BLOCKED_BY_CONFIG", "INBOUND_CHANNEL_EVENT", event.getId().toString(), null, writeJson(metadata));
   }
 
   private WebhookVerificationMode verificationModeFor(ChannelConnection connection) {

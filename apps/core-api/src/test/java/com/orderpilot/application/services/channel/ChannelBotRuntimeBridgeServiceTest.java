@@ -47,6 +47,8 @@ import org.springframework.test.context.ActiveProfiles;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
     ChannelBotRuntimeBridgeService.class,
+    BotRuntimeConfigurationService.class,
+    com.orderpilot.application.services.bot.BotRuntimePolicyService.class,
     ChannelEventNormalizationService.class,
     ChannelConnectionService.class,
     TelegramChannelAdapter.class,
