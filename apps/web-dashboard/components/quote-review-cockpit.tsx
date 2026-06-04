@@ -60,21 +60,28 @@ export function QuoteReviewQueue() {
           <thead><tr><th>Quote</th><th>Status</th><th>Customer</th><th>Issues</th><th>Severity</th><th>Source</th><th>Next action</th><th>Open</th></tr></thead>
           <tbody>
             {rows.length ? rows.map((row) => (
-              <tr key={row.quoteId}>
-                <td>Quote {shortId(row.quoteId)}<br /><span className="muted-copy">{row.conversionAttemptId ? `conversion ${shortId(row.conversionAttemptId)}` : "direct quote review"}</span></td>
-                <td><span className={`status-pill ${row.status.includes("REVIEW") ? "warning" : ""}`}>{humanize(row.status)}</span></td>
-                <td>{row.customer.displayName ?? row.customer.resolutionStatus}</td>
-                <td>{row.validationIssueCount}</td>
-                <td>{row.highestSeverity}</td>
-                <td>{row.sourceType ?? "RFQ"} {row.sourceChannel ? `/${row.sourceChannel}` : ""}</td>
-                <td>{humanize(row.nextRequiredAction)}</td>
-                <td><a className="button secondary-button" href={`/quote-review/${row.quoteId}?tenantId=${encodeURIComponent(tenantId)}`}>Open Review</a></td>
-              </tr>
+              <QuoteReviewQueueTableRow key={row.quoteId} row={row} tenantId={tenantId} />
             )) : <tr><td colSpan={8}>No tenant-owned quote reviews returned by backend.</td></tr>}
           </tbody>
         </table>
       </section>
     </div>
+  );
+}
+
+function QuoteReviewQueueTableRow({ row, tenantId }: { row: QuoteReviewQueueRow; tenantId: string }) {
+  const reviewHref = buildQuoteReviewHref(row.quoteId, tenantId);
+  return (
+    <tr>
+      <td>Quote {shortId(row.quoteId)}<br /><span className="muted-copy">{row.conversionAttemptId ? `conversion ${shortId(row.conversionAttemptId)}` : "direct quote review"}</span></td>
+      <td><span className={`status-pill ${row.status.includes("REVIEW") ? "warning" : ""}`}>{humanize(row.status)}</span></td>
+      <td>{row.customer.displayName ?? row.customer.resolutionStatus}</td>
+      <td>{row.validationIssueCount}</td>
+      <td>{row.highestSeverity}</td>
+      <td>{row.sourceType ?? "RFQ"} {row.sourceChannel ? `/${row.sourceChannel}` : ""}</td>
+      <td>{humanize(row.nextRequiredAction)}</td>
+      <td>{reviewHref ? <a className="button secondary-button" href={reviewHref}>Open Review</a> : <span className="muted-copy">Unavailable</span>}</td>
+    </tr>
   );
 }
 
@@ -236,6 +243,14 @@ export function QuoteReviewDetailWorkspace({ quoteId, initialTenantId = demoTena
       ) : null}
     </div>
   );
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function buildQuoteReviewHref(quoteId: string, tenantId: string) {
+  if (!UUID_RE.test(quoteId)) return null;
+  const params = new URLSearchParams({ tenantId });
+  return `/quote-review/${encodeURIComponent(quoteId)}?${params.toString()}`;
 }
 
 function shortId(value?: string | null) {

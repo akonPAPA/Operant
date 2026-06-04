@@ -40,3 +40,13 @@ test("review UI does not show draft review quotes as final or fake fixed", () =>
   assert.match(cockpit, /persisted and revalidated/);
   assert.match(cockpit, /External ERP write: disabled \/ not executed/);
 });
+
+test("quote review links encode route data and avoid raw HTML sinks", () => {
+  assert.match(cockpit, /buildQuoteReviewHref/);
+  assert.match(cockpit, /URLSearchParams\(\{ tenantId \}\)/);
+  assert.match(cockpit, /encodeURIComponent\(quoteId\)/);
+  assert.match(cockpit, /UUID_RE\.test\(quoteId\)/);
+  assert.match(cockpit, /reviewHref \? <a className="button secondary-button" href=\{reviewHref\}>Open Review<\/a> : <span className="muted-copy">Unavailable<\/span>/);
+  assert.doesNotMatch(cockpit, /href=\{`\/quote-review\/\$\{row\.quoteId\}\?tenantId=\$\{tenantId\}`\}/);
+  assert.doesNotMatch(cockpit, /dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|DOMParser|document\.write/);
+});
