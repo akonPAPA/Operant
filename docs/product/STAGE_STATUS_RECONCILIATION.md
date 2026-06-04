@@ -329,3 +329,73 @@ No AI-worker, public RFQ API, connector command, service-info endpoint, ERP/1C w
 Remaining limitation:
 
 - Mutation/operator actions remain intentionally not implemented. Any approve/reject/correct/retry/create behavior, connector command, ERP/1C write, public RFQ API, or AI-worker behavior remains a separate gated slice.
+
+## 16. Stage 14 Completion and OP-CAP-06A Authorization Gate
+
+Gate date: 2026-06-04
+
+This section is a gate-reconciliation step only. It changes documentation authority and scope. It does not implement, refactor, or verify product code. The OP-CAP-06A implementation is authorized by this section but is performed in a separate capability slice.
+
+### 16.1 Stage 14 record
+
+- Stage 14 (branch `stage-14-master-controlled-core-v1`, merge commit `19c34c0`) was infrastructure work: Root-Cause Merge / CI / CodeQL Stabilization.
+- Stage 14 is **not** a product chatbot, AI, or ERP capability stage. It added no bot autonomy, no external execution, and no new trusted business-mutation surface.
+- The forward suggestion in `docs/product/stage-13-connector-security-provider-onboarding.md` (that "Stage 14 should implement one production-grade read-only provider adapter with real vault integration") was non-authoritative roadmap-guardrail planning per `CANONICAL_STAGE_TAXONOMY.md`. It was **not** the path taken and does not redefine the actual Stage 14 work. No stage was renamed to reconcile this.
+
+### 16.2 Next authorized product capability
+
+- Next active product capability: **OP-CAP-06A — Messenger Chatbot Integration Layer**.
+- The `Capability freeze: ACTIVE` state from `CANONICAL_STAGE_TAXONOMY.md` is lifted **only** for OP-CAP-06A, as an explicitly owner-chosen next safe executable slice (owner-directed 2026-06-04).
+- OP-CAP-06A is a controlled extension of the already-verified Stage 7 "Safe Bot Runtime Boundary" / Stage 10 "Bot Runtime Lite" and Stage 12 "Universal Channel Integration Foundation." It introduces no new parallel architecture and must not be renamed "Stage 15."
+
+### 16.3 Repository finding that scopes OP-CAP-06A
+
+A targeted scan (2026-06-04) found the messenger/chatbot integration layer is largely already implemented:
+
+- Secure tenant-scoped connection model: `domain/channel/ChannelConnection` (provider type, status `ACTIVE/DISABLED/ERROR/...`, `secretRef`/`secretReferenceId` — no raw token, `webhookVerificationMode`, health checks) + `ChannelConnectionService`.
+- Provider webhook intake + normalized ledger: `ChannelWebhookController` (`/api/v1/webhooks/channels/{provider}/{connectionId}`), `ChannelEventNormalizationService` -> `InboundChannelEvent`, `ChannelMessage`.
+- Controlled bot runtime flows: `BotRuntimeService` (RFQ capture, availability, price, substitute, handoff — all operator-review-routed, all `externalExecution=DISABLED`), `BotPolicyService`, `RuleBasedBotIntentClassifier`.
+- Bot/channel API controllers, frontend routes (`channels`, `bot`, `bot-conversations`, `bot-settings`, `integrations`, `inbound-events`, `webhook-events`), and backend tests already exist.
+
+Genuine remaining gap (the OP-CAP-06A scope): two parallel Telegram intake paths exist for the same domain.
+
+- Path A: `BotTelegramWebhookController` -> `BotRuntimeService.handleTelegramUpdate()` drives the controlled bot flows but auto-creates a `bot.BotConnection` and verifies via `TelegramSecretTokenVerifier`; it does not validate against a managed `channel.ChannelConnection`.
+- Path B: `ChannelWebhookController` -> `ChannelEventNormalizationService.normalize()` verifies, dedupes, and persists an `InboundChannelEvent` against the managed `channel.ChannelConnection`, but does **not** drive the bot runtime.
+
+OP-CAP-06A is the bridge between the secure managed connection model (Path B) and the controlled bot runtime (Path A), with no new connection/message models.
+
+### 16.4 OP-CAP-06A is allowed to
+
+- Bridge the managed `channel.ChannelConnection` intake path into `BotRuntimeService` so verified per-connection messenger events drive the existing controlled bot flows.
+- Resolve and validate inbound webhooks against the managed `channel.ChannelConnection` (status, provider, verification mode, secret reference).
+- Link `InboundChannelEvent` <-> `BotConversation`/`BotMessage`.
+- Reuse/extend existing services (`BotRuntimeService`, `ChannelEventNormalizationService`, `ChannelGatewayService`, `BotPolicyService`, `RuleBasedBotIntentClassifier`, `ChannelToQuoteWiringService`) without duplicating them.
+- Preserve and extend tenant-scoped idempotency for duplicate provider webhook replay across the bridged path.
+- Add targeted backend tests (tenant isolation, duplicate replay, no-secret-in-DTO, policy denial audited, external-execution-disabled, bridge wiring) and frontend surfacing of channel-status and connection -> conversation linkage.
+- Emit an audit event for every important bridged action.
+- Add a minimal, non-destructive Flyway migration **only** if a new linkage column/index/unique constraint is genuinely required, following existing migration naming.
+
+### 16.5 OP-CAP-06A must not
+
+- Create a new parallel connection or message model when `channel.ChannelConnection`, `bot.BotConnection`, `ChannelMessage`, or `InboundChannelEvent` already exist.
+- Approve quotes, orders, or discounts by bot.
+- Mutate inventory, price, customer, or product master data from bot/frontend/AI worker.
+- Enable real outbound Telegram/WhatsApp sends or any external ERP/1C/connector write.
+- Add a no-code bot builder or broad AI-agent tool-use layer.
+- Expose raw bot tokens/secrets in logs, API, or UI.
+- Rename existing stages/capabilities or introduce "Stage 15."
+- Perform destructive migrations or reset/clean the dirty worktree.
+
+### 16.6 Required verification before OP-CAP-06A is complete
+
+- Targeted backend tests for the bridged path plus existing bot/channel suites: `BotRuntimeServiceTest`, `BotTelegramWebhookControllerTest`, `ChannelConnectionServiceTest`, `ChannelEventNormalizationServiceTest`, `ChannelWebhookSecurityTest`, `TelegramWebhookVerifierTest`, `ChannelToQuoteWiringServiceTest`, plus new bridge tests.
+- Frontend lint/build and any new/affected dashboard tests for channel status and conversation timeline.
+- Confirmation that `externalExecution=DISABLED` remains enforced and no forbidden mutation/external-write path was added.
+- Duplicate provider webhook replay produces no duplicate RFQ/draft/handoff/audit side effects.
+
+### 16.7 Files changed by this reconciliation step
+
+- `docs/product/STAGE_STATUS_RECONCILIATION.md`
+- `docs/product/current-stage.md`
+
+No backend, frontend, API, migration, bot runtime, connector, AI-worker, test, fixture, script, dependency, or lockfile code was changed in this reconciliation step. No files were staged, committed, deleted, moved, or cleaned.

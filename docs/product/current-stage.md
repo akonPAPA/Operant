@@ -1,12 +1,14 @@
 # Current Product Stage
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 This file is the canonical current-stage pointer for OrderPilot Core v1.
 
 - Canonical status source: `docs/product/STAGE_STATUS_RECONCILIATION.md`
 - Current recommended stage status: `PARTIAL` overall Core v1; `PASS` for the RFQ / Channel -> Draft Quote Review backend/API layer gate; `PASS` for read-only operator UI surfacing; mutation/operator action layer intentionally not implemented.
-- Active gate: RFQ / Channel -> Draft Quote Review Layer Completion Gate
+- Active gate: OP-CAP-06A — Messenger Chatbot Integration Layer Authorization Gate (owner-directed 2026-06-04). See `STAGE_STATUS_RECONCILIATION.md` section 16 for allowed/forbidden scope and required verification. The prior RFQ / Channel -> Draft Quote Review Layer gate remains PASS and is now historical.
+- Capability freeze is lifted **only** for OP-CAP-06A as the explicitly chosen next safe executable slice. All other new bot/analytics/integration/AI/product-expansion work remains frozen.
+- OP-CAP-06A extends the already-verified Stage 7 / Stage 10 bot runtime and Stage 12 channel integration. It must not introduce a parallel architecture and must not be renamed "Stage 15".
 - Product capability work is allowed only from the completed layer gate decision and must remain within the explicitly accepted next slice.
 - Current implementation should be treated as broad Core v1 medium-layer implementation, mostly partial or demo/local controlled, not production-complete.
 - The next allowed executable slice after this gate must come from the reconciled roadmap. This UI surface does not authorize mutation/operator actions, connector commands, ERP/1C writes, public RFQ API work, or AI-worker changes.
@@ -24,8 +26,9 @@ OrderPilot is a secure AI-assisted transaction intelligence platform for B2B aut
 - Stage 7 Safe Bot Runtime Boundary: DONE / verified as inbound bot workflow state only.
 - Stage 8 Read-only Commerce Analytics Boundary: DONE / verified as tenant-scoped analytics only.
 - Stage 9 Security Hardening, Reliability, and Investor Demo Readiness: implemented; final backend rerun is pending because Maven dependency access was blocked after the last documentation wording fix.
+- Stage 14 Root-Cause Merge / CI / CodeQL Stabilization: DONE (infrastructure stabilization only; branch `stage-14-master-controlled-core-v1`, merge commit `19c34c0`). This is infrastructure work, not a product chatbot/AI/ERP stage.
 
-The live filesystem also includes later-looking code/docs beyond Stage 8. Do not treat those as approved active scope without a dedicated reconciliation step.
+Stages 10-13 (Bot Runtime Lite, Commerce Intelligence, Integration Control, demo/freeze) exist as partially-implemented code/docs; see the stage/layer mapping in `STAGE_STATUS_RECONCILIATION.md`. The live filesystem also includes later-looking code/docs beyond Stage 8. Do not treat those as approved active scope without a dedicated reconciliation step.
 
 ## Implemented Architecture
 
@@ -134,3 +137,14 @@ Stage 9 hardens approved Stage 1-8 surfaces only:
 The RFQ / Channel -> Draft Quote Review backend/API layer gate is PASS. Read-only operator UI surfacing for the frozen conversion-attempt review contract is also PASS through `/conversion-review` and `/conversion-review/[attemptId]`. The next roadmap stage should still be started only from the authoritative roadmap and the latest reconciliation findings. Treat existing Stage 10+ quote/order/connector surfaces in the dirty worktree as experimental unless explicitly reconciled.
 
 Correct next slice after the gate: choose from the reconciled roadmap. Mutation/operator actions, retries, quote creation actions, connector commands, ERP/1C writes, public RFQ API work, and AI-worker changes remain separate gated slices.
+
+## Authorized Next Capability: OP-CAP-06A
+
+As of 2026-06-04, the owner has explicitly authorized **OP-CAP-06A — Messenger Chatbot Integration Layer** as the next safe executable capability slice. Full scope, allowed/forbidden boundaries, and required verification are recorded in `STAGE_STATUS_RECONCILIATION.md` section 16.
+
+Summary:
+
+- OP-CAP-06A bridges the secure managed `channel.ChannelConnection` intake path into the existing controlled bot runtime (`BotRuntimeService`). It does not build a new connection/message model — most of the messenger layer already exists from Stages 7/10/12.
+- Allowed: wire verified per-connection messenger webhooks into the controlled bot flows; link `InboundChannelEvent` to bot conversations; reuse existing channel/bot services; add tenant-isolation, duplicate-replay, no-secret, and external-execution-disabled tests; surface channel status and conversation timeline in the dashboard; minimal non-destructive migration only if genuinely required.
+- Forbidden: parallel architecture/models; bot approval of quotes/orders/discounts; master-data mutation from bot/frontend/AI worker; real outbound messenger sends; ERP/1C/connector writes; no-code bot builder; raw token exposure; stage renaming; destructive migrations.
+- `externalExecution=DISABLED` remains enforced. The "AI suggests, rules validate, human approves, backend writes, audit records" safety model is preserved.
