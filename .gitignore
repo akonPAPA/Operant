@@ -18,6 +18,14 @@ secrets.*
 *.bak
 *.sqlite
 *.db
+AGENTS.md
+.claude/
+CLAUDE.md
+apps/.vscode/
+orderpilot_claude_code_complete_setup_v2 (1).md
+.next/
+target/
+node_modules/
 
 # ===== Local/private data =====
 local-data/

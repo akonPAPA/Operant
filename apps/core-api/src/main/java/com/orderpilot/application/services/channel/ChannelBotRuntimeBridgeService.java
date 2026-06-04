@@ -1,0 +1,236 @@
+package com.orderpilot.application.services.channel;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeEventResponse;
+import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
+import com.orderpilot.api.dto.Stage7Dtos.BotWebhookAckResponse;
+import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.bot.BotRuntimeService;
+import com.orderpilot.common.errors.NotFoundException;
+import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.channel.ChannelConnection;
+import com.orderpilot.domain.channel.ChannelConnectionRepository;
+import com.orderpilot.domain.channel.ChannelProviderType;
+import com.orderpilot.domain.channel.InboundChannelEvent;
+import com.orderpilot.domain.channel.InboundChannelEventRepository;
+import java.time.Clock;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * OP-CAP-06A Messenger Chatbot Integration Layer.
+ *
+ * <p>Bridges the secure, tenant-scoped {@code channel.ChannelConnection} intake path
+ * ({@link ChannelEventNormalizationService}) into the existing controlled bot runtime
+ * ({@link BotRuntimeService}). This is the single bridge between verified channel intake
+ * and controlled bot workflows; it does not introduce a second Telegram runtime or any
+ * new connection/message model.
+ *
+ * <p>Safety invariants preserved:
+ * <ul>
+ *   <li>Tenant is resolved from {@link TenantContext} + connection ownership, never the request body.</li>
+ *   <li>Verification, ACTIVE-status, provider-match, and replay dedup are delegated to the
+ *       existing {@link ChannelEventNormalizationService}.</li>
+ *   <li>Duplicate provider delivery cannot create duplicate bot conversations/messages/RFQ/handoff:
+ *       a re-delivered event short-circuits once it is already linked to a bot conversation.</li>
+ *   <li>{@code externalExecution=DISABLED}: no outbound sends, ERP/1C, or connector writes.</li>
+ *   <li>No raw bot token, secret reference, or raw provider payload is ever returned or audited.</li>
+ * </ul>
+ */
+@Service
+public class ChannelBotRuntimeBridgeService {
+  private static final String EXTERNAL_EXECUTION = "DISABLED";
+
+  private final ChannelConnectionRepository connectionRepository;
+  private final ChannelEventNormalizationService normalizationService;
+  private final InboundChannelEventRepository eventRepository;
+  private final BotRuntimeService botRuntimeService;
+  private final AuditEventService auditEventService;
+  private final ObjectMapper objectMapper;
+  private final Clock clock;
+
+  public ChannelBotRuntimeBridgeService(
+      ChannelConnectionRepository connectionRepository,
+      ChannelEventNormalizationService normalizationService,
+      InboundChannelEventRepository eventRepository,
+      BotRuntimeService botRuntimeService,
+      AuditEventService auditEventService,
+      ObjectMapper objectMapper,
+      Clock clock) {
+    this.connectionRepository = connectionRepository;
+    this.normalizationService = normalizationService;
+    this.eventRepository = eventRepository;
+    this.botRuntimeService = botRuntimeService;
+    this.auditEventService = auditEventService;
+    this.objectMapper = objectMapper;
+    this.clock = clock;
+  }
+
+  /**
+   * Verify and normalize a provider webhook against the managed connection, then drive the
+   * controlled bot runtime for supported providers. Telegram-first for OP-CAP-06A.
+   */
+  @Transactional
+  public ChannelBotBridgeResultResponse handleInbound(UUID connectionId, ChannelProviderType providerType, JsonNode payload, Map<String, String> headers) {
+    UUID tenantId = TenantContext.requireTenantId();
+    // Delegate trust decisions to the existing secure path:
+    // tenant ownership + provider match + ACTIVE status + verification + replay dedup + persistence.
+    InboundChannelEvent event = normalizationService.normalize(connectionId, providerType, payload, headers);
+    ChannelConnection connection = connectionRepository.findByIdAndTenantId(connectionId, tenantId)
+        .orElseThrow(() -> new NotFoundException("Channel connection not found"));
+
+    // Idempotency: a re-delivered provider event is returned by normalize() as the existing row.
+    // If it was already bridged, do not re-run the bot runtime.
+    if (event.getBotConversationId() != null) {
+      audit("BOT_CHANNEL_EVENT_DUPLICATE_IGNORED", event, connection, safe(event.getBotRuntimeStatus()), null);
+      return result(event, connection, "DUPLICATE_IGNORED",
+          "Duplicate provider event ignored. No new bot workflow, RFQ, draft, or handoff was created.");
+    }
+
+    if (providerType != ChannelProviderType.TELEGRAM) {
+      event.markBotNotBridged("NOT_BRIDGED_PROVIDER_" + providerType.name(), clock.instant());
+      eventRepository.save(event);
+      audit("BOT_CHANNEL_EVENT_NOT_BRIDGED", event, connection, "NOT_BRIDGED", null);
+      return result(event, connection, "NOT_BRIDGED",
+          "Inbound event stored. The controlled bot runtime supports Telegram in OP-CAP-06A; other providers remain intake-only.");
+    }
+
+    if (!isProcessableTelegram(payload)) {
+      event.markBotBridgeFailed("Malformed Telegram payload for controlled bot runtime", clock.instant());
+      eventRepository.save(event);
+      audit("BOT_CHANNEL_EVENT_BRIDGE_REJECTED", event, connection, "MALFORMED_PROVIDER_PAYLOAD", null);
+      return result(event, connection, "BRIDGE_REJECTED",
+          "Inbound event stored but could not be processed by the controlled bot runtime. Routed for operator review.");
+    }
+
+    BotWebhookAckResponse ack = botRuntimeService.handleTelegramUpdate(payload, verificationModeFor(connection));
+    event.linkBotRuntime(ack.conversationId(), ack.messageId(), ack.status(), clock.instant());
+    eventRepository.save(event);
+    audit("BOT_CHANNEL_EVENT_BRIDGED", event, connection, ack.status(), ack);
+    return resultFromAck(event, connection, ack);
+  }
+
+  @Transactional(readOnly = true)
+  public List<ChannelBotBridgeEventResponse> listBridgedEvents() {
+    return normalizationService.list().stream().map(ChannelBotRuntimeBridgeService::toEventResponse).toList();
+  }
+
+  private static ChannelBotBridgeEventResponse toEventResponse(InboundChannelEvent e) {
+    return new ChannelBotBridgeEventResponse(
+        e.getId(),
+        e.getChannelConnectionId(),
+        e.getProviderType().name(),
+        e.getExternalEventId(),
+        e.getSourceActorType(),
+        e.getSourceActorExternalId(),
+        e.getNormalizedText(),
+        e.getStatus(),
+        e.getVerificationStatus(),
+        e.getBotConversationId(),
+        e.getBotMessageId(),
+        e.getBotRuntimeStatus(),
+        e.getReceivedAt(),
+        e.getProcessedAt());
+  }
+
+  private ChannelBotBridgeResultResponse result(InboundChannelEvent event, ChannelConnection connection, String bridgeStatus, String message) {
+    return new ChannelBotBridgeResultResponse(
+        event.getId(),
+        connection.getId(),
+        connection.getProviderType().name(),
+        event.getExternalEventId(),
+        event.getStatus(),
+        bridgeStatus,
+        event.getBotConversationId(),
+        event.getBotMessageId(),
+        null,
+        false,
+        null,
+        message,
+        event.getReceivedAt(),
+        event.getVerificationStatus(),
+        EXTERNAL_EXECUTION);
+  }
+
+  private ChannelBotBridgeResultResponse resultFromAck(InboundChannelEvent event, ChannelConnection connection, BotWebhookAckResponse ack) {
+    return new ChannelBotBridgeResultResponse(
+        event.getId(),
+        connection.getId(),
+        connection.getProviderType().name(),
+        event.getExternalEventId(),
+        event.getStatus(),
+        ack.status(),
+        ack.conversationId(),
+        ack.messageId(),
+        ack.intent() == null ? null : ack.intent().name(),
+        ack.requiresHumanReview(),
+        ack.createdRfqDraftId(),
+        ack.responseMessage(),
+        event.getReceivedAt(),
+        event.getVerificationStatus(),
+        EXTERNAL_EXECUTION);
+  }
+
+  private WebhookVerificationMode verificationModeFor(ChannelConnection connection) {
+    String mode = connection.getWebhookVerificationMode();
+    if (mode == null || mode.isBlank()) {
+      return WebhookVerificationMode.DISABLED_FOR_LOCAL_DEV;
+    }
+    try {
+      return WebhookVerificationMode.valueOf(mode);
+    } catch (IllegalArgumentException ex) {
+      return WebhookVerificationMode.DISABLED_FOR_LOCAL_DEV;
+    }
+  }
+
+  private boolean isProcessableTelegram(JsonNode update) {
+    if (update == null) {
+      return false;
+    }
+    JsonNode message = update.path("message");
+    JsonNode chat = message.path("chat");
+    JsonNode text = message.path("text");
+    return !message.isMissingNode()
+        && !chat.path("id").isMissingNode()
+        && !message.path("message_id").isMissingNode()
+        && !text.isMissingNode()
+        && !text.asText("").isBlank();
+  }
+
+  /** Audit with safe metadata only. Never includes secret references, raw tokens, or raw payloads. */
+  private void audit(String type, InboundChannelEvent event, ChannelConnection connection, String bridgeStatus, BotWebhookAckResponse ack) {
+    Map<String, Object> metadata = new LinkedHashMap<>();
+    metadata.put("channelConnectionId", str(connection.getId()));
+    metadata.put("providerType", connection.getProviderType().name());
+    metadata.put("inboundChannelEventId", str(event.getId()));
+    metadata.put("externalEventId", safe(event.getExternalEventId()));
+    metadata.put("botConversationId", ack == null ? str(event.getBotConversationId()) : str(ack.conversationId()));
+    metadata.put("botMessageId", ack == null ? str(event.getBotMessageId()) : str(ack.messageId()));
+    metadata.put("detectedIntent", ack == null || ack.intent() == null ? "" : ack.intent().name());
+    metadata.put("bridgeStatus", safe(bridgeStatus));
+    metadata.put("requiresHumanReview", ack != null && ack.requiresHumanReview());
+    metadata.put("externalExecution", EXTERNAL_EXECUTION);
+    auditEventService.record(type, "INBOUND_CHANNEL_EVENT", event.getId().toString(), null, writeJson(metadata));
+  }
+
+  private String writeJson(Map<String, Object> metadata) {
+    try {
+      return objectMapper.writeValueAsString(metadata);
+    } catch (Exception ex) {
+      return "{\"externalExecution\":\"" + EXTERNAL_EXECUTION + "\"}";
+    }
+  }
+
+  private static String str(UUID value) {
+    return value == null ? "" : value.toString();
+  }
+
+  private static String safe(String value) {
+    return value == null ? "" : value;
+  }
+}
