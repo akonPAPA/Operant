@@ -33,10 +33,29 @@ export type BotHandoff = {
   id: string;
   conversationId: string;
   messageId: string;
+  channelMessageId?: string;
+  customerAccountId?: string;
   channel: string;
   reason: string;
+  detectedIntent?: string;
+  assignedQueue?: string;
+  extractedHintsJson?: string;
+  riskFlagsJson?: string;
   status: string;
   requiresHumanReview: boolean;
+};
+
+export type BotRuntimeSettings = {
+  connectionId?: string;
+  channelType: string;
+  botExternalId?: string;
+  telegramBotId?: string;
+  enabled: boolean;
+  allowedFlows: string[];
+  defaultHandoffQueue: string;
+  lastSeenAt?: string;
+  updatedAt?: string;
+  safeResponseTemplates: string[];
 };
 
 export type BotResponseDraft = {
@@ -134,6 +153,27 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
 
 export function listBotConversations() {
   return requestJson<BotConversation[]>("/api/v1/bot-runtime/conversations", { method: "GET" }, []);
+}
+
+export function getBotRuntimeSettings() {
+  return requestJson<BotRuntimeSettings>("/api/v1/bot-runtime/settings", { method: "GET" }, {
+    channelType: "TELEGRAM",
+    enabled: false,
+    allowedFlows: [],
+    defaultHandoffQueue: "BOT_REVIEW",
+    safeResponseTemplates: []
+  });
+}
+
+export function updateBotRuntimeSettings(settings: Pick<BotRuntimeSettings, "enabled" | "allowedFlows" | "defaultHandoffQueue">) {
+  return requestJson<BotRuntimeSettings>("/api/v1/bot-runtime/settings", {
+    method: "POST",
+    body: JSON.stringify(settings)
+  });
+}
+
+export function listBotHandoffs() {
+  return requestJson<BotHandoff[]>("/api/v1/bot-runtime/handoffs", { method: "GET" }, []);
 }
 
 export function getBotConversation(conversationId: string) {

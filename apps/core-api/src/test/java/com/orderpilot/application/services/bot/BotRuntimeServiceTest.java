@@ -9,6 +9,7 @@ import com.orderpilot.api.dto.Stage7Dtos.BotSimulateMessageResponse;
 import com.orderpilot.api.dto.Stage7Dtos.BotWebhookAckResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.IntakeValidationService;
+import com.orderpilot.application.services.JsonSupport;
 import com.orderpilot.application.services.ProcessingJobService;
 import com.orderpilot.application.services.channel.ChannelGatewayService;
 import com.orderpilot.application.services.channel.ChannelIdentityService;
@@ -16,11 +17,20 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.bot.*;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.customer.CustomerAccount;
 import com.orderpilot.domain.integration.ChangeRequestRepository;
 import com.orderpilot.domain.integration.ConnectorCommandRepository;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
+import com.orderpilot.domain.inventory.InventorySnapshot;
+import com.orderpilot.domain.location.Location;
+import com.orderpilot.domain.location.LocationRepository;
+import com.orderpilot.domain.pricing.PriceRule;
 import com.orderpilot.domain.pricing.PriceRuleRepository;
+import com.orderpilot.domain.product.Product;
+import com.orderpilot.domain.product.ProductRepository;
+import com.orderpilot.domain.tenant.Tenant;
+import com.orderpilot.domain.tenant.TenantRepository;
 import com.orderpilot.domain.workspace.DraftOrderRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.domain.workspace.ApprovalDecisionRepository;
@@ -28,6 +38,8 @@ import com.orderpilot.domain.workspace.ExceptionCase;
 import com.orderpilot.domain.workspace.ExceptionCaseRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.util.UUID;
+import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +51,7 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({BotRuntimeService.class, BotResponseDraftService.class, BotReviewHandoffService.class, NoopTelegramOutboundTransport.class, RuleBasedBotIntentClassifier.class, BotPolicyService.class, BotWebhookSecurityService.class, ChannelGatewayService.class, ChannelIdentityService.class, IntakeValidationService.class, ProcessingJobService.class, AuditEventService.class, CoreConfiguration.class})
+@Import({BotRuntimeService.class, BotResponseDraftService.class, BotReviewHandoffService.class, NoopTelegramOutboundTransport.class, RuleBasedBotIntentClassifier.class, BotPolicyService.class, BotWebhookSecurityService.class, ChannelGatewayService.class, ChannelIdentityService.class, IntakeValidationService.class, ProcessingJobService.class, AuditEventService.class, JsonSupport.class, ObjectMapper.class, CoreConfiguration.class})
 class BotRuntimeServiceTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
   @Autowired private BotRuntimeService service;
@@ -57,19 +69,28 @@ class BotRuntimeServiceTest {
   @Autowired private InventorySnapshotRepository inventorySnapshotRepository;
   @Autowired private PriceRuleRepository priceRuleRepository;
   @Autowired private CustomerAccountRepository customerAccountRepository;
+  @Autowired private ProductRepository productRepository;
+  @Autowired private LocationRepository locationRepository;
   @Autowired private ChangeRequestRepository changeRequestRepository;
   @Autowired private ConnectorCommandRepository connectorCommandRepository;
   @Autowired private ApprovalDecisionRepository approvalDecisionRepository;
   @Autowired private ExceptionCaseRepository exceptionCaseRepository;
+  @Autowired private BotConnectionRepository botConnectionRepository;
+  @Autowired private BotRateLimitEventRepository botRateLimitEventRepository;
+  @Autowired private TenantRepository tenantRepository;
 
   @AfterEach
   void clearTenant() {
     TenantContext.clear();
   }
 
+  private UUID createTenant() {
+    return tenantRepository.save(new Tenant("bot-runtime-" + UUID.randomUUID(), "Bot Runtime Test", "ACTIVE", Instant.parse("2026-05-18T00:00:00Z"))).getId();
+  }
+
   @Test
   void validTelegramRfqMessageCreatesConversationMessageRfqDraftGatewayMessageAndAuditEvents() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     BotWebhookAckResponse response = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1001,"message":{"message_id":501,"chat":{"id":90001},"text":"Need quote for brake pads RFQ"}}
@@ -91,10 +112,10 @@ class BotRuntimeServiceTest {
 
   @Test
   void unknownTelegramMessageRoutesToHumanHandoff() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     BotWebhookAckResponse response = service.handleTelegramUpdate(objectMapper.readTree("""
-        {"update_id":1002,"message":{"message_id":502,"chat":{"id":90002},"text":"hello there"}}
+        {"update_id":1002,"message":{"message_id":502,"chat":{"id":90002},"text":"blue sky random note"}}
         """));
 
     assertThat(response.intent()).isEqualTo(BotIntent.UNKNOWN);
@@ -110,7 +131,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void deterministicClassifierUsesBoundedStage7IntentVocabulary() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     assertThat(service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1101,"message":{"message_id":601,"chat":{"id":90101},"text":"Is this filter in stock?"}}
@@ -131,7 +152,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void simulateRfqMessageCreatesConversationMessageAndRfqRequestDraft() {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "demo-chat", "demo-msg-1", "Demo Buyer", "Need quote for 10 EA SKU-100", false));
 
@@ -151,7 +172,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void availabilityQuestionIsClassifiedAndRoutedToOperatorReviewWithoutInventoryQueryMutation() {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     long inventoryBefore = inventorySnapshotRepository.count();
 
     BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "demo-chat-availability", "demo-msg-2", "Demo Buyer", "Is SKU-100 in stock?", true));
@@ -165,7 +186,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void priceQuestionWithoutKnownCustomerRequiresIdentificationAndHandoff() {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "demo-chat-price", "demo-msg-3", "Unknown Buyer", "What is the price for SKU-100?", false));
 
@@ -180,7 +201,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void unsupportedTextIsBlockedAndRoutedToHandoff() {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "demo-chat-unknown", "demo-msg-4", "Unknown Buyer", "blue sky random note", false));
 
@@ -192,8 +213,112 @@ class BotRuntimeServiceTest {
   }
 
   @Test
+  void operatorReviewAvailabilityDoesNotDiscloseSeededStock() {
+    UUID tenantId = createTenant();
+    TenantContext.setTenantId(tenantId);
+    Product product = productRepository.save(new Product(tenantId, "SKU-LEAK", "Leak Test", null, "Parts", null, null, "EA", "ACTIVE", new BigDecimal("10.00"), "USD", Instant.parse("2026-05-20T00:00:00Z")));
+    Location location = locationRepository.save(new Location(tenantId, "ALM", "Almaty", "WAREHOUSE", null, "Almaty", "KZ", true, Instant.parse("2026-05-20T00:00:00Z")));
+    inventorySnapshotRepository.save(new InventorySnapshot(tenantId, product.getId(), location.getId(), new BigDecimal("99"), new BigDecimal("77"), BigDecimal.ZERO, Instant.parse("2026-05-31T00:00:00Z"), "TEST", null, Instant.parse("2026-05-31T00:00:00Z")));
+
+    BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "stock-no-leak", "stock-no-leak-msg", "Known Buyer", "Is SKU-LEAK in stock?", true));
+
+    assertThat(response.policyDecision()).isEqualTo(BotPolicyDecision.REQUIRE_OPERATOR_REVIEW);
+    assertThat(response.suggestedSafeResponse()).contains("operator review");
+    assertThat(response.suggestedSafeResponse()).doesNotContain("77").doesNotContain("available in the latest stock snapshot");
+    assertThat(handoffRepository.count()).isEqualTo(1);
+    assertThat(auditEventRepository.findAll()).extracting("action").contains("BOT_POLICY_DENIED", "BOT_HANDOFF_CREATED");
+  }
+
+  @Test
+  void operatorReviewPriceDoesNotDiscloseSeededCustomerPrice() {
+    UUID tenantId = createTenant();
+    TenantContext.setTenantId(tenantId);
+    Product product = productRepository.save(new Product(tenantId, "SKU-PRICE", "Price Test", null, "Parts", null, null, "EA", "ACTIVE", new BigDecimal("10.00"), "USD", Instant.parse("2026-05-20T00:00:00Z")));
+    CustomerAccount customer = customerAccountRepository.save(new CustomerAccount(tenantId, "EXT-1", "CUST-1", "ACME", "ACME", null, "ACTIVE", "USD", null, Instant.parse("2026-05-20T00:00:00Z")));
+    priceRuleRepository.save(new PriceRule(tenantId, product.getId(), customer.getId(), null, null, BigDecimal.ONE, "EA", new BigDecimal("123.45"), "USD", Instant.parse("2026-05-20T00:00:00Z"), null, 1, Instant.parse("2026-05-20T00:00:00Z")));
+
+    BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "price-no-leak", "price-no-leak-msg", "Known Buyer", "What is the price for SKU-PRICE?", true));
+
+    assertThat(response.policyDecision()).isEqualTo(BotPolicyDecision.REQUIRE_OPERATOR_REVIEW);
+    assertThat(response.suggestedSafeResponse()).contains("operator review");
+    assertThat(response.suggestedSafeResponse()).doesNotContain("123.45").doesNotContain("Customer-specific price");
+    assertThat(handoffRepository.count()).isEqualTo(1);
+    assertThat(auditEventRepository.findAll()).extracting("action").contains("BOT_POLICY_DENIED", "BOT_HANDOFF_CREATED");
+  }
+
+  @Test
+  void disabledBotPolicyDeniesFlowAndCreatesContextualHandoff() {
+    UUID tenantId = createTenant();
+    TenantContext.setTenantId(tenantId);
+    service.updateSettings(false, java.util.List.of("REQUEST_QUOTE"), "BOT_REVIEW");
+
+    BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "disabled-chat", "disabled-msg", "Buyer", "Need quote for 2 EA SKU-100", false));
+
+    assertThat(response.policyDecision()).isEqualTo(BotPolicyDecision.BLOCK_UNSUPPORTED);
+    assertThat(response.reasonCode()).isEqualTo("BOT_DISABLED");
+    assertThat(response.requiresHumanReview()).isTrue();
+    BotHandoff handoff = handoffRepository.findAll().get(0);
+    assertThat(handoff.getChannelMessageId()).isNotNull();
+    assertThat(handoff.getDetectedIntent()).isEqualTo(BotIntent.RFQ_REQUEST.name());
+    assertThat(handoff.getAssignedQueue()).isEqualTo("BOT_REVIEW");
+    assertThat(auditEventRepository.findAll()).extracting("action").contains("BOT_POLICY_DENIED", "BOT_HANDOFF_CREATED");
+  }
+
+  @Test
+  void rateLimitBlocksExcessiveMessagesWithoutDuplicateRfqOrUnsafeWrites() throws Exception {
+    UUID tenantId = createTenant();
+    TenantContext.setTenantId(tenantId);
+
+    BotWebhookAckResponse blocked = null;
+    for (int i = 0; i < 21; i++) {
+      blocked = service.handleTelegramUpdate(objectMapper.readTree("""
+          {"update_id":%d,"message":{"message_id":%d,"chat":{"id":91234},"text":"Need quote for belts"}}
+          """.formatted(2000 + i, 3000 + i)));
+    }
+
+    assertThat(blocked).isNotNull();
+    assertThat(blocked.status()).isEqualTo("BOT_RATE_LIMITED");
+    assertThat(botRateLimitEventRepository.countByTenantIdAndConversationKeyAndEventType(tenantId, "TELEGRAM:91234", "ACCEPTED")).isEqualTo(20);
+    assertThat(botRateLimitEventRepository.countByTenantIdAndConversationKeyAndEventType(tenantId, "TELEGRAM:91234", "BLOCKED")).isEqualTo(1);
+    assertThat(auditEventRepository.findAll()).extracting("action").contains("BOT_RATE_LIMITED");
+    assertThat(draftOrderRepository.count()).isZero();
+    assertThat(connectorCommandRepository.count()).isZero();
+  }
+
+  @Test
+  void rateLimitAllowsExactlyConfiguredWindowBeforeBlocking() throws Exception {
+    UUID tenantId = createTenant();
+    TenantContext.setTenantId(tenantId);
+    String conversationKey = "TELEGRAM:91300";
+
+    for (int i = 0; i < 20; i++) {
+      BotWebhookAckResponse response = service.handleTelegramUpdate(objectMapper.readTree("""
+          {"update_id":%d,"message":{"message_id":%d,"chat":{"id":91300},"text":"Need quote for filters"}}
+          """.formatted(3100 + i, 4100 + i)));
+      assertThat(response.status()).isNotEqualTo("BOT_RATE_LIMITED");
+    }
+
+    assertThat(botRateLimitEventRepository.countByTenantIdAndConversationKeyAndEventType(tenantId, conversationKey, "ACCEPTED")).isEqualTo(20);
+    assertThat(botRateLimitEventRepository.countByTenantIdAndConversationKeyAndEventType(tenantId, conversationKey, "BLOCKED")).isZero();
+  }
+
+  @Test
+  void botSettingsPersistAllowedFlowsAndDisabledFlowCreatesPolicyHandoff() {
+    UUID tenantId = createTenant();
+    TenantContext.setTenantId(tenantId);
+    service.updateSettings(true, java.util.List.of("GREETING"), "HANDOFF_Q");
+
+    BotSimulateMessageResponse response = service.simulate(new BotSimulateMessageRequest("TELEGRAM", "flow-chat", "flow-msg", "Buyer", "What is the price for SKU-100?", true));
+
+    assertThat(botConnectionRepository.findFirstByTenantIdAndChannelTypeOrderByCreatedAtDesc(tenantId, "TELEGRAM")).isPresent();
+    assertThat(response.policyDecision()).isEqualTo(BotPolicyDecision.BLOCK_UNSUPPORTED);
+    assertThat(response.reasonCode()).isEqualTo("FLOW_DISABLED_CHECK_PRICE");
+    assertThat(handoffRepository.findAll().get(0).getAssignedQueue()).isEqualTo("HANDOFF_Q");
+  }
+
+  @Test
   void botFlowDoesNotCreateApprovedQuoteFinalOrderChangeRequestOrMutateMasterData() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     long quotesBefore = draftQuoteRepository.count();
     long ordersBefore = draftOrderRepository.count();
     long inventoryBefore = inventorySnapshotRepository.count();
@@ -216,8 +341,8 @@ class BotRuntimeServiceTest {
 
   @Test
   void botDataIsTenantIsolatedAndTenantBDoesNotSeeTenantARecords() throws Exception {
-    UUID tenantA = UUID.randomUUID();
-    UUID tenantB = UUID.randomUUID();
+    UUID tenantA = createTenant();
+    UUID tenantB = createTenant();
     TenantContext.setTenantId(tenantA);
 
     BotWebhookAckResponse response = service.handleTelegramUpdate(objectMapper.readTree("""
@@ -233,17 +358,17 @@ class BotRuntimeServiceTest {
   }
 
   @Test
-  void duplicateTelegramMessageIsRejectedAndDoesNotCreateDuplicateRfqOrChannelMessage() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+  void duplicateTelegramMessageIsIdempotentlyIgnoredAndDoesNotCreateDuplicateRfqOrChannelMessage() throws Exception {
+    TenantContext.setTenantId(createTenant());
     String payload = """
         {"update_id":1005,"message":{"message_id":505,"chat":{"id":90005},"text":"Need quote for belts"}}
         """;
 
-    service.handleTelegramUpdate(objectMapper.readTree(payload));
+    BotWebhookAckResponse first = service.handleTelegramUpdate(objectMapper.readTree(payload));
+    BotWebhookAckResponse duplicate = service.handleTelegramUpdate(objectMapper.readTree(payload));
 
-    assertThatThrownBy(() -> service.handleTelegramUpdate(objectMapper.readTree(payload)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("already received");
+    assertThat(duplicate.status()).isEqualTo("DUPLICATE_IGNORED");
+    assertThat(duplicate.messageId()).isEqualTo(first.messageId());
     assertThat(rfqRequestRepository.count()).isEqualTo(1);
     assertThat(messageRepository.count()).isEqualTo(1);
     assertThat(channelMessageRepository.count()).isEqualTo(1);
@@ -251,7 +376,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void missingTelegramTextIsRejectedSafely() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
 
     assertThatThrownBy(() -> service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1006,"message":{"message_id":506,"chat":{"id":90006}}}
@@ -265,7 +390,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void operatorOnlyRuntimeCommandsCreateHandoffAndNeedsReviewWithoutApprovalsOrExternalWrites() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse response = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1007,"message":{"message_id":507,"chat":{"id":90007},"text":"What is the price?"}}
         """));
@@ -288,8 +413,21 @@ class BotRuntimeServiceTest {
   }
 
   @Test
+  void repeatedHandoffRequestsForSameMessageReuseExistingHandoff() throws Exception {
+    TenantContext.setTenantId(createTenant());
+    BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
+        {"update_id":1210,"message":{"message_id":710,"chat":{"id":90210},"text":"random unsupported text"}}
+        """));
+
+    service.createHandoff(intake.conversationId(), intake.messageId(), "FIRST_REASON");
+    service.createHandoff(intake.conversationId(), intake.messageId(), "SECOND_REASON");
+
+    assertThat(handoffRepository.findByTenantIdAndMessageIdOrderByCreatedAtDesc(TenantContext.requireTenantId(), intake.messageId())).hasSize(1);
+  }
+
+  @Test
   void rfqTelegramMessageCanProduceSafeOperatorReviewedResponseDraftAndStubSendWithoutExternalWrites() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1201,"message":{"message_id":701,"chat":{"id":90201},"text":"Need quote for 20 EA SKU-200"}}
         """));
@@ -317,7 +455,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void unknownMessageDoesNotProduceUnsafeResponseDraftAndIsAuditedAsBlocked() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1202,"message":{"message_id":702,"chat":{"id":90202},"text":"random unrelated note"}}
         """));
@@ -331,7 +469,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void priceResponseWithoutTrustedCustomerIdentityRequiresIdentificationDraftAndReview() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1203,"message":{"message_id":703,"chat":{"id":90203},"text":"What is the price for SKU-200?"}}
         """));
@@ -347,7 +485,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void availabilityAndSubstituteDraftsRemainBoundedAndOperatorReviewed() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse availability = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1204,"message":{"message_id":704,"chat":{"id":90204},"text":"Is SKU-200 in stock?"}}
         """));
@@ -368,8 +506,8 @@ class BotRuntimeServiceTest {
 
   @Test
   void tenantCannotAccessAnotherTenantResponseDrafts() throws Exception {
-    UUID tenantA = UUID.randomUUID();
-    UUID tenantB = UUID.randomUUID();
+    UUID tenantA = createTenant();
+    UUID tenantB = createTenant();
     TenantContext.setTenantId(tenantA);
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1206,"message":{"message_id":706,"chat":{"id":90206},"text":"Need quote for SKU-200"}}
@@ -385,7 +523,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void rfqBotConversationCreatesAndLinksOperatorReviewHandoffWithBotMetadata() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1301,"message":{"message_id":801,"chat":{"id":90301},"text":"Need quote for 5 EA SKU-300"}}
         """));
@@ -416,7 +554,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void priceRequestWithoutTrustedIdentityCreatesReviewHandoffWithoutDrafts() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1302,"message":{"message_id":802,"chat":{"id":90302},"text":"What is the price for SKU-300?"}}
         """));
@@ -432,7 +570,7 @@ class BotRuntimeServiceTest {
 
   @Test
   void unknownReviewHandoffIsIdempotentAndDoesNotCreateUnsafeDraftState() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+    TenantContext.setTenantId(createTenant());
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1303,"message":{"message_id":803,"chat":{"id":90303},"text":"hello random note"}}
         """));
@@ -451,8 +589,8 @@ class BotRuntimeServiceTest {
 
   @Test
   void tenantCannotCreateReviewHandoffForAnotherTenantConversation() throws Exception {
-    UUID tenantA = UUID.randomUUID();
-    UUID tenantB = UUID.randomUUID();
+    UUID tenantA = createTenant();
+    UUID tenantB = createTenant();
     TenantContext.setTenantId(tenantA);
     BotWebhookAckResponse intake = service.handleTelegramUpdate(objectMapper.readTree("""
         {"update_id":1304,"message":{"message_id":804,"chat":{"id":90304},"text":"Need quote for SKU-300"}}

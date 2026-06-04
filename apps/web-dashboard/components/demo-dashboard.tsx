@@ -23,13 +23,13 @@ type DemoActionState = {
 };
 
 const timeline = [
-  "Telegram RFQ received",
-  "Bot classifies RFQ_REQUEST",
-  "RFQ draft/request created for review",
-  "Unknown message routes to human handoff",
-  "Inventory reconciliation detects mismatch",
-  "Analytics summary updates",
-  "Audit/security model explains why this is safe"
+  "Telegram RFQ received from Steppe Logistics",
+  "Bot classifies RFQ_REQUEST and applies policy",
+  "Operator review handoff is required",
+  "Draft quote is created or reviewed",
+  "Quote approval state machine controls approval or changes",
+  "Audit timeline records controlled decisions",
+  "externalExecution=DISABLED remains visible"
 ];
 
 const trustBullets = [
@@ -87,7 +87,7 @@ export function DemoDashboard() {
           <strong>Core API</strong>
           <span>{demoConfig.baseUrl}</span>
           <strong>Tenant header</strong>
-          <span>{demoConfig.tenantId || "67 pensil"}</span>
+          <span>{demoConfig.tenantId || "not configured"}</span>
         </div>
       </section>
 
@@ -116,7 +116,7 @@ export function DemoDashboard() {
         <div className="section-heading">
           <div>
             <h2>Demo controls</h2>
-            <p>Calls are demo-only browser requests to core-api. Missing seed/config is handled as a visible demo limitation.</p>
+            <p>Calls are demo-only browser requests to core-api. Missing seed/config is handled as a visible demo limitation. externalExecution=DISABLED is the expected boundary.</p>
           </div>
         </div>
         <div className="button-row">
@@ -148,9 +148,11 @@ export function DemoDashboard() {
           <blockquote>{demoTelegramRfqPayload.message.text}</blockquote>
           <dl className="detail-list">
             <div><dt>Detected intent</dt><dd>{rfqResult?.intent ?? "RFQ_REQUEST fixture"}</dd></div>
+            <div><dt>Policy route</dt><dd>Operator review required before quote/order action</dd></div>
             <div><dt>Requires human review</dt><dd>{String(rfqResult?.requiresHumanReview ?? true)}</dd></div>
             <div><dt>RFQ draft/request ID</dt><dd>{rfqResult?.createdRfqDraftId ?? "Available after backend seed and button run"}</dd></div>
             <div><dt>Audit status</dt><dd>BOT_RFQ_DRAFT_CREATED when backend flow succeeds</dd></div>
+            <div><dt>External execution</dt><dd>DISABLED</dd></div>
           </dl>
         </section>
 
@@ -184,6 +186,8 @@ export function DemoDashboard() {
           <h2>Security and trust panel</h2>
           <ul>
             {trustBullets.map((item) => <li key={item}>{item}</li>)}
+            <li>Quote approval is controlled by backend transition guards.</li>
+            <li>externalExecution=DISABLED is the demo default and expected audit metadata.</li>
           </ul>
         </section>
       </div>

@@ -197,7 +197,7 @@ The `/demo` page should show:
 - `B2B auto and industrial parts distributor`.
 - Timeline from Telegram RFQ intake through audit/security.
 - KPI cards for bot RFQs, human handoffs, reconciliation cases, high severity cases, Telegram count, and demo status.
-- Telegram RFQ text: `Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.`
+- Telegram RFQ text: `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.`
 - Reconciliation values: opening `150`, sold `34`, expected `116`, actual `100`, mismatch `-16`, severity `HIGH`.
 - Analytics note that total sales amount is `0` when invoice/sales mirror records are not present.
 - Security/trust panel stating that the bot cannot approve quotes, create final orders, update inventory/prices/customers, or write to ERP.

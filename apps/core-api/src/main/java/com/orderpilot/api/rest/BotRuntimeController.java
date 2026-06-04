@@ -5,6 +5,7 @@ import com.orderpilot.application.services.bot.BotResponseDraftService;
 import com.orderpilot.application.services.bot.BotReviewHandoffService;
 import com.orderpilot.application.services.bot.BotRuntimeService;
 import com.orderpilot.domain.bot.BotConversation;
+import com.orderpilot.domain.bot.BotConnection;
 import com.orderpilot.domain.bot.BotHandoff;
 import com.orderpilot.domain.bot.BotMessage;
 import com.orderpilot.domain.bot.BotResponseDraft;
@@ -28,6 +29,21 @@ public class BotRuntimeController {
   @PostMapping("/messages/simulate")
   public BotSimulateMessageResponse simulate(@RequestBody BotSimulateMessageRequest request) {
     return service.simulate(request);
+  }
+
+  @GetMapping("/settings")
+  public BotRuntimeSettingsResponse settings() {
+    return settings(service.getSettings());
+  }
+
+  @PostMapping("/settings")
+  public BotRuntimeSettingsResponse updateSettings(@RequestBody UpdateBotRuntimeSettingsRequest request) {
+    return settings(service.updateSettings(request == null ? null : request.enabled(), request == null ? null : request.allowedFlows(), request == null ? null : request.defaultHandoffQueue()));
+  }
+
+  @GetMapping("/handoffs")
+  public List<BotHandoffQueueResponse> handoffQueue() {
+    return service.listHandoffQueue().stream().map(this::handoffQueue).toList();
   }
 
   @GetMapping("/conversations")
@@ -110,7 +126,31 @@ public class BotRuntimeController {
     return new BotHandoffResponse(handoff.getId(), handoff.getConversationId(), handoff.getMessageId(), handoff.getChannel(), handoff.getReason(), handoff.getStatus(), handoff.isRequiresHumanReview());
   }
 
+  private BotHandoffQueueResponse handoffQueue(BotHandoff handoff) {
+    return new BotHandoffQueueResponse(handoff.getId(), handoff.getConversationId(), handoff.getMessageId(), handoff.getChannelMessageId(), handoff.getCustomerAccountId(), handoff.getChannel(), handoff.getReason(), handoff.getDetectedIntent(), handoff.getAssignedQueue(), handoff.getExtractedHintsJson(), handoff.getRiskFlagsJson(), handoff.getStatus(), handoff.isRequiresHumanReview());
+  }
+
   private BotResponseDraftResponse responseDraft(BotResponseDraft draft) {
     return new BotResponseDraftResponse(draft.getId(), draft.getConversationId(), draft.getSourceMessageId(), draft.getChannel(), draft.getResponseType(), draft.getPolicyDecision(), draft.getStatus(), draft.getResponseText(), draft.isRequiresOperatorReview(), draft.getReviewedBy(), draft.getReviewedAt(), draft.getStubSentAt(), draft.getCreatedAt(), draft.getUpdatedAt());
+  }
+
+  private BotRuntimeSettingsResponse settings(BotConnection connection) {
+    List<String> allowedFlows = List.of("GREETING", "CHECK_AVAILABILITY", "CHECK_PRICE", "REQUEST_QUOTE", "SUGGEST_SUBSTITUTE", "ORDER_OR_QUOTE_STATUS", "HUMAN_HANDOFF", "UNSUPPORTED_REQUEST_SAFE_REPLY").stream()
+        .filter(flow -> connection.getAllowedFlows() == null || connection.getAllowedFlows().isBlank() || "[]".equals(connection.getAllowedFlows()) || connection.getAllowedFlows().contains(flow))
+        .toList();
+    return new BotRuntimeSettingsResponse(
+        connection.getId(),
+        connection.getChannelType(),
+        connection.getBotExternalId(),
+        connection.getTelegramBotId(),
+        connection.isEnabled(),
+        allowedFlows,
+        connection.getDefaultHandoffQueue(),
+        connection.getLastSeenAt(),
+        connection.getUpdatedAt(),
+        List.of(
+            "Availability replies never promise delivery.",
+            "Price replies require resolved customer identity and policy approval.",
+            "RFQ requests are received for draft/review only; no autonomous approval."));
   }
 }

@@ -117,6 +117,9 @@ public class BotReviewHandoffService {
 
   private String priority(BotMessage message) {
     return switch (message.getDetectedIntent()) {
+      case REQUEST_QUOTE, CHECK_PRICE, ORDER_OR_QUOTE_STATUS -> "HIGH";
+      case CHECK_AVAILABILITY, SUGGEST_SUBSTITUTE -> "NORMAL";
+      case GREETING, HUMAN_HANDOFF, UNSUPPORTED_REQUEST_SAFE_REPLY -> "NORMAL";
       case RFQ_REQUEST, PRICE_QUESTION, ORDER_STATUS_QUESTION -> "HIGH";
       case PRODUCT_AVAILABILITY_QUESTION, SUBSTITUTE_QUESTION -> "NORMAL";
       case HUMAN_HELP_REQUEST, UNKNOWN -> "NORMAL";
@@ -145,6 +148,12 @@ public class BotReviewHandoffService {
 
   private List<String> nextActions(BotMessage message, BotRfqRequest rfq) {
     return switch (message.getDetectedIntent()) {
+      case REQUEST_QUOTE -> rfq == null
+          ? List.of("CREATE_MANUAL_RFQ_REVIEW", "OPERATOR_REPLY_DRAFT", "WAIT_FOR_CUSTOMER")
+          : List.of("CREATE_MANUAL_RFQ_REVIEW", "OPERATOR_REPLY_DRAFT", "WAIT_FOR_CUSTOMER", "CLOSE_HANDOFF");
+      case CHECK_PRICE, ORDER_OR_QUOTE_STATUS -> List.of("REQUEST_IDENTIFICATION", "OPERATOR_REPLY_DRAFT", "WAIT_FOR_CUSTOMER");
+      case CHECK_AVAILABILITY, SUGGEST_SUBSTITUTE -> List.of("OPERATOR_REPLY_DRAFT", "CREATE_MANUAL_RFQ_REVIEW", "WAIT_FOR_CUSTOMER");
+      case HUMAN_HANDOFF, GREETING, UNSUPPORTED_REQUEST_SAFE_REPLY -> List.of("OPERATOR_REPLY_DRAFT", "WAIT_FOR_CUSTOMER", "CLOSE_HANDOFF");
       case RFQ_REQUEST -> rfq == null
           ? List.of("CREATE_MANUAL_RFQ_REVIEW", "OPERATOR_REPLY_DRAFT", "WAIT_FOR_CUSTOMER")
           : List.of("CREATE_MANUAL_RFQ_REVIEW", "OPERATOR_REPLY_DRAFT", "WAIT_FOR_CUSTOMER", "CLOSE_HANDOFF");

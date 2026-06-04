@@ -201,7 +201,8 @@ public class QuoteDraftService {
     }
 
     for (PendingIssue issue : pendingIssues) {
-      issueRepository.save(new QuoteValidationIssue(tenantId, quote.getId(), issue.lineId(), issue.code(), issue.severity(), issue.blocking(), issue.message(), issue.detailsJson(), clock.instant()));
+      QuoteValidationIssue savedIssue = issueRepository.save(new QuoteValidationIssue(tenantId, quote.getId(), issue.lineId(), issue.code(), issue.severity(), issue.blocking(), issue.message(), issue.detailsJson(), clock.instant()));
+      auditEventService.record("DRAFT_QUOTE_VALIDATION_ISSUE_CREATED", "QUOTE_VALIDATION_ISSUE", savedIssue.getId().toString(), request.actorId(), "{\"draftQuoteId\":\"" + quote.getId() + "\",\"draftQuoteLineId\":" + uuidJsonValue(issue.lineId()) + ",\"issueCode\":\"" + escape(issue.code()) + "\",\"severity\":\"" + escape(issue.severity()) + "\",\"blocking\":" + issue.blocking() + ",\"externalExecution\":\"DISABLED\"}");
       if (requiresApproval(issue.code())) {
         approvalPolicyService.request(tenantId, quote.getId(), issue.lineId(), approvalType(issue.code()), issue.severity(), issue.code(), issue.message());
       }
@@ -216,6 +217,10 @@ public class QuoteDraftService {
     quote.setTotals(subtotal, discountTotal, total, quoteMargin, clock.instant());
     quote.markValidated(nextStatus, hasBlocking ? "NEEDS_REVIEW" : "VALIDATED", hasBlocking || approvalRequired, clock.instant());
     quote = quoteRepository.save(quote);
+    auditEventService.record("DRAFT_QUOTE_RFQ_VALIDATION_COMPLETED", "DRAFT_QUOTE", quote.getId().toString(), request.actorId(), "{\"auditCorrelationId\":\"" + auditCorrelationId + "\",\"issueCount\":" + pendingIssues.size() + ",\"blockingIssueCount\":" + pendingIssues.stream().filter(PendingIssue::blocking).count() + ",\"approvalRequired\":" + approvalRequired + ",\"status\":\"" + nextStatus + "\",\"externalExecution\":\"DISABLED\"}");
+    if (hasBlocking || approvalRequired) {
+      auditEventService.record("DRAFT_QUOTE_REVIEW_REQUIRED", "DRAFT_QUOTE", quote.getId().toString(), request.actorId(), "{\"auditCorrelationId\":\"" + auditCorrelationId + "\",\"blocking\":" + hasBlocking + ",\"approvalRequired\":" + approvalRequired + ",\"status\":\"" + nextStatus + "\",\"externalExecution\":\"DISABLED\"}");
+    }
     auditEventService.record("DRAFT_QUOTE_CREATED", "DRAFT_QUOTE", quote.getId().toString(), request.actorId(), "{\"auditCorrelationId\":\"" + auditCorrelationId + "\",\"issueCount\":" + pendingIssues.size() + ",\"approvalRequired\":" + approvalRequired + ",\"externalExecution\":\"DISABLED\"}");
     return response(tenantId, quote);
   }
@@ -249,11 +254,7 @@ public class QuoteDraftService {
       }
       return contextTenantId;
     } catch (TenantContextMissingException ex) {
-      if (commandTenantId == null) {
-        throw ex;
-      }
-      TenantContext.setTenantId(commandTenantId);
-      return commandTenantId;
+      throw ex;
     }
   }
 
@@ -325,6 +326,10 @@ public class QuoteDraftService {
 
   private static String escape(String value) {
     return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+  }
+
+  private static String uuidJsonValue(UUID value) {
+    return value == null ? "null" : "\"" + value + "\"";
   }
 
   private record PendingIssue(UUID lineId, String code, String severity, boolean blocking, String message, String detailsJson) {

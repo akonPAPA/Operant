@@ -28,9 +28,12 @@ public final class Stage7Dtos {
   public record BotConversationResponse(UUID id, String channel, String externalChatId, String status, boolean requiresHumanReview, UUID linkedReviewCaseId, String policyDecision, String suggestedNextAction, Instant createdAt, Instant updatedAt) {}
   public record BotMessageResponse(UUID id, UUID conversationId, String channel, String externalChatId, String externalMessageId, String rawText, BotIntent detectedIntent, String status, boolean requiresHumanReview, Instant createdAt) {}
   public record BotHandoffResponse(UUID id, UUID conversationId, UUID messageId, String channel, String reason, String status, boolean requiresHumanReview) {}
+  public record BotHandoffQueueResponse(UUID id, UUID conversationId, UUID messageId, UUID channelMessageId, UUID customerAccountId, String channel, String reason, String detectedIntent, String assignedQueue, String extractedHintsJson, String riskFlagsJson, String status, boolean requiresHumanReview) {}
   public record BotResponseDraftResponse(UUID id, UUID conversationId, UUID sourceMessageId, String channel, String responseType, String policyDecision, String status, String responseText, boolean requiresOperatorReview, UUID reviewedBy, Instant reviewedAt, Instant stubSentAt, Instant createdAt, Instant updatedAt) {}
   public record BotConversationDetail(BotConversationResponse conversation, List<BotMessageResponse> messages, List<BotHandoffResponse> handoffs, List<BotResponseDraftResponse> responseDrafts) {}
   public record BotReviewHandoffResponse(UUID reviewCaseId, String caseNumber, String sourceType, UUID sourceId, UUID sourceConversationId, String status, String title, String summary, boolean reusedExisting, UUID conversationId, UUID sourceMessageId, UUID rfqRequestId, String detectedIntent, String policyDecision, String latestMessage, String handoffReason, List<String> nextActions) {}
+  public record BotRuntimeSettingsResponse(UUID connectionId, String channelType, String botExternalId, String telegramBotId, boolean enabled, List<String> allowedFlows, String defaultHandoffQueue, Instant lastSeenAt, Instant updatedAt, List<String> safeResponseTemplates) {}
+  public record UpdateBotRuntimeSettingsRequest(Boolean enabled, List<String> allowedFlows, String defaultHandoffQueue) {}
   public record CreateHandoffRequest(UUID messageId, String reason) {}
   public record LinkReviewCaseRequest(UUID reviewCaseId) {}
   public record CreateBotResponseDraftRequest(UUID sourceMessageId, boolean knownCustomerIdentity) {}

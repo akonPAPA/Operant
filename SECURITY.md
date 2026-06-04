@@ -1,21 +1,15 @@
 # Security Policy
 
-## Supported Versions
+## Supported Branches
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+Security fixes are handled on the active development branch and the default branch for the OrderPilot Core repository. Historical stage snapshots are not supported as standalone release lines.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Report suspected vulnerabilities privately to the repository owner. Do not open public issues with exploit details, secrets, tenant data, customer documents, webhook payloads, or credentials.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Include the affected area, reproduction steps, impact, and any relevant commit or workflow run. Redact all customer/private data before sharing evidence.
+
+## Security Baseline
+
+OrderPilot backend changes must preserve tenant isolation, authorization boundaries, audit behavior, deterministic approval gates, safe external-write controls, and secret redaction. CI and code-scanning workflows should use least-privilege permissions and must not use `write-all`.

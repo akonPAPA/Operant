@@ -32,7 +32,7 @@ This folder documents the Stage 9J investor demo evidence pass. It intentionally
 On `/demo`:
 
 - `OrderPilot Demo Parts Distributor`
-- `Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.`
+- `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.`
 - Opening stock `150`
 - Sold `34`
 - Expected stock `116`

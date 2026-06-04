@@ -1,6 +1,6 @@
 {
   "location": {
-    "code": "ALM-MAIN",
+    "code": "WH-ALM",
     "name": "Almaty Main Warehouse",
     "type": "WAREHOUSE",
     "city": "Almaty",
@@ -8,16 +8,16 @@
   },
   "products": [
     {
-      "sku": "TOY-CAM-2018-BPAD-OE",
-      "name": "Original brake pads for Toyota Camry 2018",
-      "description": "OEM-grade front brake pad set for Toyota Camry 2018",
-      "category": "Brake System",
-      "brand": "Toyota Genuine",
+      "sku": "PAD-OE-04465",
+      "name": "Toyota Camry 2018 OEM Front Brake Pad Set",
+      "description": "Original-equivalent front brake pad set for Toyota Camry 2018",
+      "category": "Brake Pads",
+      "brand": "Toyota",
       "manufacturer": "Toyota",
-      "baseUom": "PCS",
+      "baseUom": "EA",
       "status": "ACTIVE",
-      "cost": 18000.00,
-      "currency": "KZT",
+      "cost": 42.00,
+      "currency": "USD",
       "aliases": [
         {
           "aliasType": "CUSTOMER_TEXT",
@@ -28,28 +28,28 @@
       ]
     },
     {
-      "sku": "AFT-CAM-2018-BPAD-A",
-      "name": "Aftermarket compatible substitute A",
+      "sku": "PAD-SUB-ADV",
+      "name": "Advantage Ceramic Brake Pad Set",
       "description": "Aftermarket brake pad set compatible with Toyota Camry 2018",
-      "category": "Brake System",
+      "category": "Brake Pads",
       "brand": "RoadMax",
       "manufacturer": "RoadMax Parts",
-      "baseUom": "PCS",
+      "baseUom": "EA",
       "status": "ACTIVE",
-      "cost": 12500.00,
-      "currency": "KZT"
+      "cost": 25.00,
+      "currency": "USD"
     },
     {
-      "sku": "AFT-CAM-2018-BPAD-B",
-      "name": "Aftermarket compatible substitute B",
-      "description": "Budget aftermarket brake pad set compatible with Toyota Camry 2018",
-      "category": "Brake System",
+      "sku": "PAD-SUB-ECON",
+      "name": "Economy Brake Pad Set",
+      "description": "Economy aftermarket brake pad set compatible with Toyota Camry 2018",
+      "category": "Brake Pads",
       "brand": "SteppeLine",
       "manufacturer": "SteppeLine Components",
-      "baseUom": "PCS",
+      "baseUom": "EA",
       "status": "ACTIVE",
-      "cost": 9800.00,
-      "currency": "KZT"
+      "cost": 19.00,
+      "currency": "USD"
     }
   ]
 }

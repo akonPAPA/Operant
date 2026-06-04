@@ -1,10 +1,10 @@
 [
   {
-    "externalRef": "DEMO-CUST-001",
-    "accountCode": "ALMATY-AUTO",
-    "legalName": "Almaty Auto Service LLP",
-    "displayName": "Almaty Auto Service",
+    "externalRef": "CUST-001",
+    "accountCode": "CUST-001",
+    "legalName": "Steppe Logistics LLP",
+    "displayName": "Steppe Logistics",
     "status": "ACTIVE",
-    "defaultCurrency": "KZT"
+    "defaultCurrency": "USD"
   }
 ]

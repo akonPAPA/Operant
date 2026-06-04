@@ -183,6 +183,12 @@ a {
   color: var(--warning);
 }
 
+.status-pill.done {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
 .risk-note {
   border-left: 4px solid var(--warning);
   color: var(--muted);
@@ -558,6 +564,22 @@ blockquote {
 .review-workspace {
   display: grid;
   gap: 18px;
+}
+
+.control-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.check-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr auto;
+  padding: 10px;
 }
 
 .review-list {

@@ -9,4 +9,5 @@ public interface BotRfqRequestRepository extends JpaRepository<BotRfqRequest, UU
   long countByTenantId(UUID tenantId);
   Optional<BotRfqRequest> findByIdAndTenantId(UUID id, UUID tenantId);
   List<BotRfqRequest> findByTenantIdAndConversationIdOrderByCreatedAtDesc(UUID tenantId, UUID conversationId);
+  List<BotRfqRequest> findByTenantIdAndMessageIdOrderByCreatedAtDesc(UUID tenantId, UUID messageId);
 }

@@ -24,7 +24,7 @@
 | Item | Status | Route URL | What should be visible | Demo data realistic enough | Visual issue or missing data |
 | --- | --- | --- | --- | --- | --- |
 | `/demo` hero and timeline | PASS | `http://localhost:3000/demo` | `OrderPilot Demo Parts Distributor`, B2B distributor context, and timeline from Telegram RFQ through audit/security. | Yes | None found in route/content evidence. |
-| `/demo` Telegram RFQ panel | PASS | `http://localhost:3000/demo` | `Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.` | Yes | None found. |
+| `/demo` Telegram RFQ panel | PASS | `http://localhost:3000/demo` | `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.` | Yes | None found. |
 | `/demo` reconciliation panel | PASS | `http://localhost:3000/demo` | Opening `150`, sold `34`, expected `116`, actual `100`, mismatch `-16`, severity `HIGH`. | Yes | None found. |
 | `/demo` analytics summary panel | PASS | `http://localhost:3000/demo` | Total sales amount note and channel breakdown. | Yes | None found; backend analytics probe passed. |
 | `/demo` security/trust panel | PASS | `http://localhost:3000/demo` | No quote approval, no final order, no ERP write, audit, and tenant isolation language. | Yes | None found. |

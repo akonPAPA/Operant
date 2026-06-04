@@ -3,6 +3,7 @@ package com.orderpilot.application.services.validation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.orderpilot.application.services.ProductCodeNormalizer;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.customer.CustomerAccount;
@@ -136,11 +137,25 @@ class ValidationRunServiceStage5Test {
   }
 
   @Test
+  void skuMatchingUsesCanonicalNormalizedSku() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    Product product = product(tenantId, "PAD-OE-04465", "Brake Pads", "10");
+    prices.save(new PriceRule(tenantId, product.getId(), null, null, null, BigDecimal.ONE, "EA", new BigDecimal("25"), "USD", NOW.minusSeconds(60), null, 100, NOW));
+    ExtractionResult result = extractionWithCustomerAndLine(tenantId, "pad oe / 04465", "2", "EA", "0.90");
+
+    ValidationRun run = service.run(result.getId(), "FULL");
+
+    assertThat(issueTypes(tenantId, run.getId())).doesNotContain("PRODUCT_NOT_FOUND");
+    assertThat(run.getOverallStatus()).isNotEqualTo("NEEDS_REVIEW");
+  }
+
+  @Test
   void aliasMatchCreatesProductAliasMatchedIssue() {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
     Product product = product(tenantId, "SKU-A", "Filter", "10");
-    aliases.save(new ProductAlias(tenantId, product.getId(), "CUSTOMER", "ALIAS-A", "ALIAS-A", null, new BigDecimal("0.90"), NOW));
+    aliases.save(new ProductAlias(tenantId, product.getId(), "CUSTOMER", "ALIAS-A", ProductCodeNormalizer.normalize("ALIAS-A"), null, new BigDecimal("0.90"), NOW));
     ExtractionResult result = extractionWithCustomerAndLine(tenantId, "ALIAS-A", "2", "EA", "0.90");
 
     ValidationRun run = service.run(result.getId(), "FULL");
@@ -153,7 +168,7 @@ class ValidationRunServiceStage5Test {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
     Product product = product(tenantId, "SKU-OEM", "OEM Filter", "10");
-    oemReferences.save(new OEMReference(tenantId, product.getId(), "OEM 123", "OEM 123", "OEMCO", NOW));
+    oemReferences.save(new OEMReference(tenantId, product.getId(), "OEM 123", ProductCodeNormalizer.normalize("OEM 123"), "OEMCO", NOW));
     prices.save(new PriceRule(tenantId, product.getId(), null, null, null, BigDecimal.ONE, "EA", new BigDecimal("25"), "USD", NOW.minusSeconds(60), null, 100, NOW));
     ExtractionResult result = extractionWithCustomerAndLine(tenantId, "OEM 123", "2", "EA", "0.90");
 

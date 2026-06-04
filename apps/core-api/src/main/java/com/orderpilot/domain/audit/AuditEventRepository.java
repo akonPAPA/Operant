@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AuditEventRepository extends JpaRepository<AuditEvent, UUID> {
   List<AuditEvent> findByTenantIdOrderByOccurredAtDesc(UUID tenantId);
+  List<AuditEvent> findByTenantIdAndEntityTypeAndEntityIdOrderByOccurredAtDesc(UUID tenantId, String entityType, String entityId);
 }

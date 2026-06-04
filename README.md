@@ -1,14 +1,16 @@
 # OrderPilot Core
 
+Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
+
 OrderPilot Core is the Stage 1 foundation for an investor-grade B2B SaaS transaction intelligence platform for auto and industrial parts distributors.
 
 This repository is intentionally scoped to platform foundation only:
 
- Java 21 Spring Boot core API
- Next.js TypeScript dashboard shell
- Python 3.12 AI/OCR worker skeleton
- PostgreSQL, Redis, Flyway migrations, Docker Compose
- Security and architecture documentation
+- Java 21 Spring Boot core API
+- Next.js TypeScript dashboard shell
+- Python 3.12 AI/OCR worker skeleton
+- PostgreSQL, Redis, Flyway migrations, Docker Compose
+- Security and architecture documentation
 
 AI, frontend, chatbot, and connector components must never directly write trusted business data. Future mutations must go through typed core-api command services, authentication, authorization, tenant policy, deterministic validation, approval gates, transactions, audit events, and outbox events.
 

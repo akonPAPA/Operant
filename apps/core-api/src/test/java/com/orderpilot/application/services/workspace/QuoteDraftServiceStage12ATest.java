@@ -2,8 +2,10 @@ package com.orderpilot.application.services.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.Stage12ADtos.*;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.JsonSupport;
 import com.orderpilot.application.services.ProductCatalogMatchingService;
 import com.orderpilot.application.services.ProductCodeNormalizer;
 import com.orderpilot.application.services.ProductSubstitutionService;
@@ -11,6 +13,7 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.customer.CustomerAccount;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.integration.ConnectorCommandRepository;
 import com.orderpilot.domain.inventory.InventorySnapshot;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
 import com.orderpilot.domain.location.Location;
@@ -19,6 +22,7 @@ import com.orderpilot.domain.pricing.*;
 import com.orderpilot.domain.product.*;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.domain.workspace.QuoteInternalOrderBoundaryRepository;
+import com.orderpilot.domain.workspace.QuoteApprovalDecisionRepository;
 import com.orderpilot.domain.workspace.QuoteApprovalRequestRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.math.BigDecimal;
@@ -49,6 +53,8 @@ import org.springframework.test.context.ActiveProfiles;
     ProductCatalogMatchingService.class,
     ProductSubstitutionService.class,
     AuditEventService.class,
+    JsonSupport.class,
+    ObjectMapper.class,
     CoreConfiguration.class
 })
 class QuoteDraftServiceStage12ATest {
@@ -70,8 +76,10 @@ class QuoteDraftServiceStage12ATest {
   @Autowired private MarginRuleRepository margins;
   @Autowired private DraftQuoteRepository quotes;
   @Autowired private QuoteApprovalRequestRepository approvalRequests;
+  @Autowired private QuoteApprovalDecisionRepository approvalDecisions;
   @Autowired private QuoteInternalOrderBoundaryRepository internalOrderBoundaries;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private ConnectorCommandRepository connectorCommands;
 
   @AfterEach
   void clearTenant() {
@@ -97,6 +105,9 @@ class QuoteDraftServiceStage12ATest {
     assertThat(response.lines().get(0).lineTotal()).isEqualByComparingTo("200.00");
     assertThat(response.approvalRequired()).isFalse();
     assertThat(response.validationIssues()).isEmpty();
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED")).isZero();
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED_INTERNAL")).isZero();
+    assertThat(connectorCommands.count()).isZero();
   }
 
   @Test
@@ -165,6 +176,28 @@ class QuoteDraftServiceStage12ATest {
     assertThat(response.status()).isEqualTo("NEEDS_REVIEW");
     assertThat(response.lines().get(0).productId()).isNull();
     assertThat(response.validationIssues()).extracting(ValidationIssue::issueCode).contains("PRODUCT_NOT_RESOLVED");
+    assertThat(auditEvents.findAll()).extracting("action").contains("DRAFT_QUOTE_VALIDATION_ISSUE_CREATED", "DRAFT_QUOTE_REVIEW_REQUIRED");
+    assertThat(connectorCommands.count()).isZero();
+  }
+
+  @Test
+  void invalidQuantityCreatesReviewIssueAuditAndNoExternalWrite() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("QTY-001", "Quantity guarded item", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+
+    QuoteTransactionResponse response = service.createFromRfq(command(tenantId, "CUST-1", null, "QTY-001", "0", "0.00", "invalid-qty"));
+
+    assertThat(response.status()).isEqualTo("NEEDS_REVIEW");
+    assertThat(response.lines().get(0).productId()).isEqualTo(product.getId());
+    assertThat(response.validationIssues()).extracting(ValidationIssue::issueCode).contains("INVALID_QUANTITY");
+    assertThat(auditEvents.findAll()).extracting("action").contains("DRAFT_QUOTE_VALIDATION_ISSUE_CREATED", "DRAFT_QUOTE_RFQ_VALIDATION_COMPLETED", "DRAFT_QUOTE_REVIEW_REQUIRED");
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED")).isZero();
+    assertThat(quotes.countByTenantIdAndStatus(tenantId, "APPROVED_INTERNAL")).isZero();
+    assertThat(connectorCommands.count()).isZero();
   }
 
   @Test
@@ -247,6 +280,40 @@ class QuoteDraftServiceStage12ATest {
   }
 
   @Test
+  void duplicateApproveCommandDoesNotCreateSecondDecision() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("DUP-APPROVE", "Duplicate approve", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "DUP-APPROVE", "1", "0.00", "stage12b-dup-approve"));
+
+    approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved"));
+    QuoteApprovalCommandResponse replay = approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved again"));
+
+    assertThat(replay.newStatus()).isEqualTo("APPROVED");
+    assertThat(approvalDecisions.findByTenantIdAndDraftQuoteIdOrderByDecidedAtDesc(tenantId, quote.draftQuoteId())).hasSize(1);
+  }
+
+  @Test
+  void approvedQuoteCannotBeRejectedAfterApproval() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("APP-REJECT", "Approve reject", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "APP-REJECT", "1", "0.00", "stage12b-approve-reject"));
+
+    approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved"));
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.rejectQuote(quote.draftQuoteId(), decision(tenantId, "reject after approve"))))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+    assertThat(approvalDecisions.findByTenantIdAndDraftQuoteIdOrderByDecidedAtDesc(tenantId, quote.draftQuoteId())).hasSize(1);
+  }
+
+  @Test
   void approvingQuoteWithBlockingValidationIssueFails() {
     UUID tenantId = tenant();
     customer("CUST-1", "ACME", "Acme Parts");
@@ -322,6 +389,24 @@ class QuoteDraftServiceStage12ATest {
     UUID tenantA = tenant();
     assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.approveQuote(quote.draftQuoteId(), decision(tenantA, "approve"))))
         .isInstanceOf(com.orderpilot.common.errors.NotFoundException.class);
+  }
+
+  @Test
+  void requestBodyTenantCannotCreateQuoteWithoutTenantContext() {
+    UUID bodyTenant = UUID.randomUUID();
+    TenantContext.clear();
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> service.createFromRfq(command(bodyTenant, "CUST-1", null, "SKU", "1", "0.00", "body-tenant-denied"))))
+        .isInstanceOf(com.orderpilot.common.tenant.TenantContextMissingException.class);
+  }
+
+  @Test
+  void requestBodyTenantCannotApproveWithoutTenantContext() {
+    UUID bodyTenant = UUID.randomUUID();
+    TenantContext.clear();
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.approveQuote(UUID.randomUUID(), decision(bodyTenant, "approve"))))
+        .isInstanceOf(com.orderpilot.common.tenant.TenantContextMissingException.class);
   }
 
   @Test

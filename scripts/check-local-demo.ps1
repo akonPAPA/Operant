@@ -293,7 +293,7 @@ if ($fullDemoIdsConfigured) {
     message = @{
       message_id = [int](700000 + ($messageSuffix % 100000))
       chat = @{ id = 450001 }
-      text = "Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty."
+      text = "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty."
     }
   } | ConvertTo-Json -Depth 5 -Compress
   Test-ApiEndpoint "Demo Telegram RFQ webhook" "$BackendUrl/api/v1/bot/telegram/webhook" "POST" $headers $rfqPayload $failures

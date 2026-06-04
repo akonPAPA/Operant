@@ -1,6 +1,15 @@
 # Current Product Stage
 
-Date: 2026-05-23
+Date: 2026-06-03
+
+This file is the canonical current-stage pointer for OrderPilot Core v1.
+
+- Canonical status source: `docs/product/STAGE_STATUS_RECONCILIATION.md`
+- Current recommended stage status: `PARTIAL` overall Core v1; `PASS` for the RFQ / Channel -> Draft Quote Review backend/API layer gate; `PASS` for read-only operator UI surfacing; mutation/operator action layer intentionally not implemented.
+- Active gate: RFQ / Channel -> Draft Quote Review Layer Completion Gate
+- Product capability work is allowed only from the completed layer gate decision and must remain within the explicitly accepted next slice.
+- Current implementation should be treated as broad Core v1 medium-layer implementation, mostly partial or demo/local controlled, not production-complete.
+- The next allowed executable slice after this gate must come from the reconciled roadmap. This UI surface does not authorize mutation/operator actions, connector commands, ERP/1C writes, public RFQ API work, or AI-worker changes.
 
 OrderPilot is a secure AI-assisted transaction intelligence platform for B2B auto/industrial parts distributors.
 
@@ -122,4 +131,6 @@ Stage 9 hardens approved Stage 1-8 surfaces only:
 
 ## Next Stage
 
-The next roadmap stage should be started only from the authoritative roadmap. Treat existing Stage 10+ quote/order/connector surfaces in the dirty worktree as experimental until explicitly reconciled.
+The RFQ / Channel -> Draft Quote Review backend/API layer gate is PASS. Read-only operator UI surfacing for the frozen conversion-attempt review contract is also PASS through `/conversion-review` and `/conversion-review/[attemptId]`. The next roadmap stage should still be started only from the authoritative roadmap and the latest reconciliation findings. Treat existing Stage 10+ quote/order/connector surfaces in the dirty worktree as experimental unless explicitly reconciled.
+
+Correct next slice after the gate: choose from the reconciled roadmap. Mutation/operator actions, retries, quote creation actions, connector commands, ERP/1C writes, public RFQ API work, and AI-worker changes remain separate gated slices.

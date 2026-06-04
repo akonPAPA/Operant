@@ -152,7 +152,7 @@ No obvious hardcoded secrets found.
 | Checklist item | Status | Route | Expected visible content | Demo data realistic enough | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `/demo` hero and timeline | PASS | `http://localhost:3000/demo` | OrderPilot Demo Parts Distributor, B2B distributor context, timeline from Telegram RFQ through audit/security. | Yes | Rendered content found. |
-| `/demo` Telegram RFQ panel | PASS | `http://localhost:3000/demo` | `Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.` | Yes | Canonical RFQ text found. |
+| `/demo` Telegram RFQ panel | PASS | `http://localhost:3000/demo` | `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.` | Yes | Canonical RFQ text found. |
 | `/demo` reconciliation panel | PASS | `http://localhost:3000/demo` | Opening `150`, sold `34`, expected `116`, actual `100`, mismatch `-16`. | Yes | Canonical mismatch values found. |
 | `/demo` analytics summary panel | PASS | `http://localhost:3000/demo` | Sales amount note and channel breakdown. | Yes | Analytics labels found; backend analytics probe passed. |
 | `/demo` security/trust panel | PASS | `http://localhost:3000/demo` | No quote approval, no final order, no ERP write, audit, tenant isolation. | Yes | Required trust language found. |

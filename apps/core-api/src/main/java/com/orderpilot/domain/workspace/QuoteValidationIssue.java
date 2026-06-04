@@ -51,4 +51,6 @@ public class QuoteValidationIssue {
   public Instant getResolvedAt() { return resolvedAt; }
   public void resolve(Instant now) { this.status = "RESOLVED"; this.blocking = false; this.resolvedAt = now; }
   public void handle(Instant now) { this.status = "HANDLED"; this.blocking = false; this.resolvedAt = now; }
+  public void reject(Instant now) { this.status = "REJECTED"; this.resolvedAt = now; }
+  public void escalate(Instant now) { this.status = "ESCALATED"; this.resolvedAt = now; }
 }

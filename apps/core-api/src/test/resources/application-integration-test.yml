@@ -1,0 +1,37 @@
+spring:
+  test:
+    database:
+      replace: none
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/orderpilot_test}
+    username: ${SPRING_DATASOURCE_USERNAME:orderpilot_test}
+    password: ${SPRING_DATASOURCE_PASSWORD:orderpilot_test}
+  flyway:
+    enabled: true
+    clean-disabled: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  sql:
+    init:
+      mode: never
+
+logging:
+  level:
+    org.hibernate.SQL: warn
+    org.hibernate.orm.jdbc.bind: off
+
+orderpilot:
+  external-execution:
+    enabled: false
+  connectors:
+    execution-enabled: false
+  bot:
+    outbound-enabled: false
+  test-database:
+    name: orderpilot_test
+    externalExecution: DISABLED

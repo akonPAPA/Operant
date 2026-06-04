@@ -1,5 +1,7 @@
 # Roadmap
 
+Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
+
 ## Current Phase: Stage 10 Security, Reliability And Investor Demo Hardening
 
 OrderPilot Core v1 now connects advisory AI extraction results to deterministic validation, operator review, and an operator-facing workspace:

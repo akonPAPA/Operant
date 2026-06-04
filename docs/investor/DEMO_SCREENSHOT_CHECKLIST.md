@@ -36,7 +36,7 @@ npm run dev
 Capture these views:
 
 1. `/demo` hero and timeline.
-2. `/demo` Telegram RFQ panel showing `Need brake pads for Toyota Camry 2018, 20 pcs, wholesale, Almaty.`
+2. `/demo` Telegram RFQ panel showing `Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.`
 3. `/demo` reconciliation panel showing opening `150`, sold `34`, expected `116`, actual `100`, mismatch `-16`.
 4. `/demo` analytics summary panel showing the sales amount note and channel breakdown.
 5. `/demo` security/trust panel showing no quote approval, no final order, no ERP write, audit, and tenant isolation.

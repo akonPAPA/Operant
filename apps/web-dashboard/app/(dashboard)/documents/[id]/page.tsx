@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { ChannelQuoteConversionPanel } from "@/components/channel-quote-conversion-panel";
 import { getIntakeDocument } from "@/lib/intake-api";
 
 export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
@@ -21,8 +22,9 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
       </section>
       <section className="panel">
         <h2>Processing boundary</h2>
-        <p>The uploaded object is stored and queued for later processing. This page does not parse content, run OCR, run AI extraction, or mutate business data.</p>
+        <p>The uploaded object remains source evidence. Quote preparation uses backend extraction/validation results and does not approve quotes, create orders, or write to ERP.</p>
       </section>
+      <ChannelQuoteConversionPanel sourceId={id} sourceType="INBOUND_DOCUMENT" />
     </DashboardShell>
   );
 }
