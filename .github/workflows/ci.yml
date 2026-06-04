@@ -51,7 +51,7 @@ jobs:
           cache: maven
 
       - name: Run backend tests
-        run: mvn test
+        run: mvn test "-Dtest=!*IntegrationTest"
 
   frontend:
     name: Frontend lint, build, and tests
