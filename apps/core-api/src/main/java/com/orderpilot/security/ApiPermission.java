@@ -16,6 +16,7 @@ public enum ApiPermission {
   BOT_ACTION,
   AUDIT_READ,
   ADMIN_SETTINGS_READ,
+  //Idk why but cloud deleted CHANNEL_IDENTITY_ACTION and then regenerated it
   CHANNEL_IDENTITY_ACTION,
   AI_WORK_ACTION
 }
