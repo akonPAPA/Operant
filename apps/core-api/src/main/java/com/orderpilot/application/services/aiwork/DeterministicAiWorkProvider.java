@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
  * secret, which keeps the layer testable and demo-safe. The output is intentionally conservative and
  * always frames suggestions as advisory, draft-only, and subject to human approval. A real
  * LLM-backed provider can replace this later behind the same {@link AiWorkProvider} contract.
+ *go to look at source code issues -> https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQzCbjlIp3WcsoodCskNqxBqtxsNQu8F_G1lA&s
  */
 @Component
 public class DeterministicAiWorkProvider implements AiWorkProvider {
