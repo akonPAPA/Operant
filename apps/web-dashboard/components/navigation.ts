@@ -18,6 +18,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Exception Cockpit", href: "/exception-cockpit" },
   { label: "Conversion Review", href: "/conversion-review" },
   { label: "Quote Review", href: "/quote-review" },
+  { label: "AI Work Assistant", href: "/ai-work" },
   { label: "Processing Jobs", href: "/processing-jobs" },
   { label: "Webhook Events", href: "/webhook-events" },
   { label: "Inbound Events", href: "/inbound-events" },

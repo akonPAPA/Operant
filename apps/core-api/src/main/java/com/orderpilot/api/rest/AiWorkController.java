@@ -1,0 +1,120 @@
+package com.orderpilot.api.rest;
+
+import com.orderpilot.api.dto.AiWorkDtos.AiWorkDecisionRequest;
+import com.orderpilot.api.dto.AiWorkDtos.AiWorkSuggestionResponse;
+import com.orderpilot.api.dto.AiWorkDtos.CreateAiWorkSuggestionRequest;
+import com.orderpilot.application.services.aiwork.AiWorkService;
+import com.orderpilot.domain.aiwork.AiWorkSourceType;
+import com.orderpilot.domain.aiwork.AiWorkSuggestion;
+import com.orderpilot.domain.aiwork.AiWorkType;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * OP-CAP-07A AI Agent Work Layer read/command contract (AI Work Assistant).
+ *
+ * <p>All operations are tenant-scoped (tenant resolved server-side from {@code TenantContext}).
+ * Permission guard (enforced by {@code ApiPermissionInterceptor}): GET requires {@code REVIEW_READ}
+ * (the AI Work Assistant is an operator review surface); mutations require {@code AI_WORK_ACTION}.
+ *
+ * <p>Suggestions are advisory only. Accept/reject record operator intent and emit audit events; they
+ * never approve a quote/order, approve a discount/substitute, or perform any external/ERP write.
+ */
+@RestController
+@RequestMapping("/api/v1/ai-work")
+public class AiWorkController {
+  private final AiWorkService service;
+
+  public AiWorkController(AiWorkService service) {
+    this.service = service;
+  }
+
+  @PostMapping("/suggestions")
+  public AiWorkSuggestionResponse create(@RequestBody CreateAiWorkSuggestionRequest request) {
+    AiWorkSuggestion saved = service.createSuggestion(
+        parseWorkType(request.workType()),
+        parseSourceType(request.sourceType()),
+        request.sourceId(),
+        request.contextText(),
+        request.idempotencyKey(),
+        request.createdByUserId());
+    return toResponse(saved);
+  }
+
+  @GetMapping("/suggestions/{id}")
+  public AiWorkSuggestionResponse get(@PathVariable UUID id) {
+    return toResponse(service.getSuggestion(id));
+  }
+
+  @GetMapping("/suggestions")
+  public List<AiWorkSuggestionResponse> list(
+      @RequestParam(name = "sourceType", required = false) String sourceType,
+      @RequestParam(name = "sourceId", required = false) UUID sourceId,
+      @RequestParam(name = "limit", required = false, defaultValue = "50") int limit) {
+    List<AiWorkSuggestion> suggestions = (sourceType != null && sourceId != null)
+        ? service.listForSource(parseSourceType(sourceType), sourceId)
+        : service.listRecent(limit);
+    return suggestions.stream().map(this::toResponse).toList();
+  }
+
+  @PostMapping("/suggestions/{id}/accept")
+  public AiWorkSuggestionResponse accept(
+      @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request) {
+    return toResponse(service.accept(
+        id, request == null ? null : request.decidedByUserId(), request == null ? null : request.reason()));
+  }
+
+  @PostMapping("/suggestions/{id}/reject")
+  public AiWorkSuggestionResponse reject(
+      @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request) {
+    return toResponse(service.reject(
+        id, request == null ? null : request.decidedByUserId(), request == null ? null : request.reason()));
+  }
+
+  private static AiWorkType parseWorkType(String value) {
+    if (value == null || value.isBlank()) throw new IllegalArgumentException("work_type is required");
+    try {
+      return AiWorkType.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException("Unsupported work_type: " + value);
+    }
+  }
+
+  private static AiWorkSourceType parseSourceType(String value) {
+    if (value == null || value.isBlank()) throw new IllegalArgumentException("source_type is required");
+    try {
+      return AiWorkSourceType.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException("Unsupported source_type: " + value);
+    }
+  }
+
+  private AiWorkSuggestionResponse toResponse(AiWorkSuggestion s) {
+    return new AiWorkSuggestionResponse(
+        s.getId(),
+        s.getWorkType(),
+        s.getSourceType(),
+        s.getSourceId(),
+        s.getStatus(),
+        s.getStrategyVersion(),
+        s.getRiskLevel(),
+        s.getConfidence(),
+        s.getGeneratedText(),
+        s.getStructuredPayloadJson(),
+        s.getEvidenceRefsJson(),
+        true,
+        s.getCreatedByUserId(),
+        s.getCreatedAt(),
+        s.getUpdatedAt(),
+        s.getDecidedByUserId(),
+        s.getDecidedAt(),
+        s.getDecisionReason());
+  }
+}
