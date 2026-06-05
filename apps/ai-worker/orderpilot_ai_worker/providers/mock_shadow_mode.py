@@ -1,8 +1,19 @@
+"""Mock shadow-mode provider for advisory predictions."""
+
 from orderpilot_ai_worker.schemas.shadow_mode import ShadowModeAdvisoryPayload
 
 
-class MockShadowModeProvider:
-    def predict(self, source_type: str, source_id: str, prediction_type: str, text: str) -> ShadowModeAdvisoryPayload:
+class MockShadowModeProvider:  # pylint: disable=too-few-public-methods
+    """Build advisory-only shadow-mode payloads without external provider calls."""
+
+    def predict(
+        self,
+        source_type: str,
+        source_id: str,
+        prediction_type: str,
+        text: str,
+    ) -> ShadowModeAdvisoryPayload:
+        """Return a deterministic advisory shadow-mode payload."""
         return ShadowModeAdvisoryPayload(
             source_type=source_type,
             source_id=source_id,
