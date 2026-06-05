@@ -24,7 +24,5 @@ def process_extraction_job(payload: ExtractionJobPayload) -> ExtractionResult:
     text = MockTextExtractionProvider().extract_text(
         {"text": payload.text, "metadata": payload.metadata}
     )
-    return MockSemanticExtractionProvider().extract(
-        text,
-        source_channel_context=payload.metadata.get("source_channel"),
-    )
+    source_channel = payload.metadata.get("source_channel")
+    return MockSemanticExtractionProvider().extract(text, source_channel_context=source_channel)

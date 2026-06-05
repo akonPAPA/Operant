@@ -3,7 +3,7 @@
 from orderpilot_ai_worker.schemas.shadow_mode import ShadowModeAdvisoryPayload
 
 
-class MockShadowModeProvider:  # pylint: disable=too-few-public-methods
+class MockShadowModeProvider:  # pylint: disable=too-few-public-methods,no-self-use
     """Build advisory-only shadow-mode payloads without external provider calls."""
 
     def predict(
