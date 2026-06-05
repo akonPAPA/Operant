@@ -49,4 +49,8 @@ public class CustomerContact {
   public String getEmail() { return email; }
   public String getPhone() { return phone; }
   public boolean isActive() { return active; }
+  public boolean isPreferred() { return preferred; }
+  public String getTitle() { return title; }
+  public Instant getCreatedAt() { return createdAt; }
+  public Instant getUpdatedAt() { return updatedAt; }
 }

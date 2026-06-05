@@ -9,12 +9,17 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.integration.ChangeRequestRepository;
 import com.orderpilot.domain.channel.ChannelIdentityRepository;
+import com.orderpilot.domain.customer.CustomerAccount;
+import com.orderpilot.domain.customer.CustomerAccountRepository;
+import com.orderpilot.domain.customer.CustomerContact;
+import com.orderpilot.domain.customer.CustomerContactRepository;
 import com.orderpilot.domain.intake.ChannelMessage;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
 import com.orderpilot.domain.workspace.DraftOrderRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +44,8 @@ class ChannelGatewayServiceTest {
   @Autowired private ChangeRequestRepository changeRequestRepository;
   @Autowired private ChannelIdentityRepository channelIdentityRepository;
   @Autowired private ChannelIdentityService channelIdentityService;
+  @Autowired private CustomerAccountRepository customerAccountRepository;
+  @Autowired private CustomerContactRepository customerContactRepository;
 
   @AfterEach
   void clearTenant() {
@@ -104,9 +111,10 @@ class ChannelGatewayServiceTest {
 
   @Test
   void linkedIdentityAttachesCustomerContextToFutureInboundMessages() {
-    TenantContext.setTenantId(UUID.randomUUID());
-    UUID customerAccountId = UUID.randomUUID();
-    UUID customerContactId = UUID.randomUUID();
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID customerAccountId = seedCustomerAccount(tenantId);
+    UUID customerContactId = seedCustomerContact(tenantId, customerAccountId);
     var identity = channelIdentityService.findOrCreateUnlinkedIdentity(ChannelType.WHATSAPP, "77001112233", "77001112233", "77001112233", "Buyer One");
     channelIdentityService.linkIdentity(identity.getId(), customerAccountId, customerContactId, UUID.randomUUID(), "confirmed by operator");
 
@@ -129,6 +137,20 @@ class ChannelGatewayServiceTest {
 
     assertThat(message.getStatus()).isEqualTo("BLOCKED_IDENTITY_NEEDS_REVIEW");
     assertThat(processingJobRepository.findAll()).isEmpty();
+  }
+
+  private UUID seedCustomerAccount(UUID tenantId) {
+    CustomerAccount account = new CustomerAccount(
+        tenantId, null, "ACC-" + UUID.randomUUID().toString().substring(0, 8),
+        "Test Customer", null, null, "ACTIVE", "USD", null, Instant.parse("2026-06-05T00:00:00Z"));
+    return customerAccountRepository.save(account).getId();
+  }
+
+  private UUID seedCustomerContact(UUID tenantId, UUID accountId) {
+    CustomerContact contact = new CustomerContact(
+        tenantId, accountId, "PRIMARY", "Test Contact", null, null, null, true,
+        Instant.parse("2026-06-05T00:00:00Z"));
+    return customerContactRepository.save(contact).getId();
   }
 
   @Test

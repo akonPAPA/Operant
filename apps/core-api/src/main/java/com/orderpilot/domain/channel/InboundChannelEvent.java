@@ -27,6 +27,9 @@ public class InboundChannelEvent {
   @Column(name = "verification_reason") private String verificationReason;
   @Column(name = "error_code") private String errorCode;
   @Column(name = "error_message") private String errorMessage;
+  @Column(name = "bot_conversation_id") private UUID botConversationId;
+  @Column(name = "bot_message_id") private UUID botMessageId;
+  @Column(name = "bot_runtime_status") private String botRuntimeStatus;
 
   protected InboundChannelEvent() {}
 
@@ -54,6 +57,27 @@ public class InboundChannelEvent {
   public void markIgnoredDuplicate(Instant now) { this.status = "IGNORED"; this.processedAt = now; }
   public void markFailed(String errorCode, String errorMessage, Instant now) { this.status = "FAILED"; this.errorCode = errorCode; this.errorMessage = errorMessage; this.processedAt = now; }
 
+  /** OP-CAP-06A: record that this verified channel event drove the controlled bot runtime. */
+  public void linkBotRuntime(UUID botConversationId, UUID botMessageId, String botRuntimeStatus, Instant now) {
+    this.botConversationId = botConversationId;
+    this.botMessageId = botMessageId;
+    this.botRuntimeStatus = botRuntimeStatus;
+    this.status = "ROUTED";
+    this.processedAt = now;
+  }
+
+  /** OP-CAP-06A: event stored but intentionally not driven into the bot runtime (e.g. non-Telegram provider this slice). */
+  public void markBotNotBridged(String botRuntimeStatus, Instant now) {
+    this.botRuntimeStatus = botRuntimeStatus;
+    this.processedAt = now;
+  }
+
+  /** OP-CAP-06A: bot bridge could not process the event; routed for review without uncontrolled failure. */
+  public void markBotBridgeFailed(String reason, Instant now) {
+    this.botRuntimeStatus = "BRIDGE_FAILED";
+    markFailed("BOT_BRIDGE_FAILED", reason, now);
+  }
+
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
   public UUID getChannelConnectionId() { return channelConnectionId; }
@@ -71,4 +95,7 @@ public class InboundChannelEvent {
   public String getVerificationReason() { return verificationReason; }
   public String getErrorCode() { return errorCode; }
   public String getErrorMessage() { return errorMessage; }
+  public UUID getBotConversationId() { return botConversationId; }
+  public UUID getBotMessageId() { return botMessageId; }
+  public String getBotRuntimeStatus() { return botRuntimeStatus; }
 }

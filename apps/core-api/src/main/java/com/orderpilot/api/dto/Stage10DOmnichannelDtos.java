@@ -42,6 +42,20 @@ public final class Stage10DOmnichannelDtos {
       String signatureMode,
       List<ChannelGatewayMessageResponse> messages) {}
 
+  /**
+   * OP-CAP-06D stable read contract for frontend identity badges. Maps the raw domain
+   * identityStatus to the five canonical frontend-facing resolution statuses.
+   * status values: RESOLVED | AMBIGUOUS | UNKNOWN | BLOCKED | NOT_APPLICABLE
+   */
+  public record ChannelIdentityResolutionView(
+      String status,
+      UUID channelIdentityId,
+      UUID customerAccountId,
+      UUID customerContactId,
+      String externalSenderId,
+      String reason,
+      Instant updatedAt) {}
+
   public record ChannelIdentityResponse(
       UUID id,
       String channelType,
@@ -57,7 +71,8 @@ public final class Stage10DOmnichannelDtos {
       Instant updatedAt,
       Instant linkedAt,
       UUID linkedByUserId,
-      String notes) {}
+      String notes,
+      ChannelIdentityResolutionView identityResolution) {}
 
   public record ChannelIdentityLinkRequest(
       UUID customerAccountId,

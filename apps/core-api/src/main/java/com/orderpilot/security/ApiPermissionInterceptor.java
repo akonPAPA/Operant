@@ -28,7 +28,8 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/bot-runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/bot/runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/audit", ApiPermission.AUDIT_READ),
-      Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ)
+      Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ),
+      Map.entry("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ)
   );
 
   public ApiPermissionInterceptor(ApiPermissionGuard guard) {
@@ -50,6 +51,9 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     }
     if ((path.startsWith("/api/v1/bot-runtime") || path.startsWith("/api/v1/bot/runtime")) && !HttpMethod.GET.matches(method)) {
       return ApiPermission.BOT_ACTION;
+    }
+    if (path.startsWith("/api/v1/channel-identities") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.CHANNEL_IDENTITY_ACTION;
     }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
