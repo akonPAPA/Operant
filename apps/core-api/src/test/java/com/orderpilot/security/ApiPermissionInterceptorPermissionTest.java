@@ -75,6 +75,33 @@ class ApiPermissionInterceptorPermissionTest {
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
+  // --- /api/v1/channel-gateway/messages requires INTAKE_WRITE ---
+
+  @Test
+  void channelGatewayMessagesPostWithIntakeWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/channel-gateway/messages");
+    req.addHeader("X-OrderPilot-Permissions", "INTAKE_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void channelGatewayMessagesPostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/channel-gateway/messages");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("INTAKE_WRITE");
+  }
+
+  @Test
+  void channelGatewayWhatsappWebhookPostIsUnguardedForExternalProvider() throws Exception {
+    // Webhook path from external provider — must remain unguarded (signature-verified internally).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/channel-gateway/whatsapp/webhook");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
