@@ -1,5 +1,48 @@
 ---
+exclude_paths:
+  - "**/node_modules/**"
+  - "**/.next/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/coverage/**"
+  - "**/.pytest_cache/**"
+  - "**/__pycache__/**"
+  - "**/.venv/**"
+  - "**/target/**"
+  - "**/.tmp-codacy-triage/**"
+
 engines:
+  bandit:
+    exclude_paths:
+      - "apps/ai-worker/tests/**"
+  csslint:
+    exclude_paths:
+      - "apps/web-dashboard/app/globals.css"
+  psscriptanalyzer:
+    exclude_paths:
+      - "scripts/dev/**"
+      - "scripts/local-dev/**"
+      - "scripts/seed-demo-data/**"
+      - "scripts/test-db/**"
+      - "scripts/check-local-demo.ps1"
+      - "scripts/run-core-v1-acceptance.ps1"
+      - "scripts/run-core-v1-demo-check.ps1"
+      - "scripts/seed-local-demo.ps1"
+      - "scripts/start-local-demo.ps1"
+      - "scripts/test-core-v1-acceptance.ps1"
+  pylintpython3:
+    exclude_paths:
+      - "apps/ai-worker/**"
+  remark-lint:
+    exclude_paths:
+      - "README.md"
+      - "apps/*/README.md"
+      - "docs/**/*.md"
+      - "infra/**/*.md"
+      - "packages/*/README.md"
+      - "scripts/**/README.md"
   tsqllint:
     exclude_paths:
       - "apps/core-api/src/main/resources/db/migration/**"
+      - "apps/core-api/src/test/resources/db/testdata/**"
+      - "infra/docker/postgres/init-test-db.sql"
