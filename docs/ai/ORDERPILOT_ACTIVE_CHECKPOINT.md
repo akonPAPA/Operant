@@ -26,13 +26,21 @@ Update at the start of a task only when needed:
 ## Completed / Known State
 
 - Stage 14 Root-Cause Merge / CI / CodeQL Stabilization is completed.
+- OP-CAP-06F messenger bridge end-to-end closeout / runtime integration verification is complete:
+  - Scope: integration-contract verification across OP-CAP-06A/B/C/D/D.1/E (no new capability).
+  - Contracts verified consistent: permission (CHANNEL_IDENTITY_ACTION required for mutations; BOT_ACTION alone rejected; frontend client + workspace never send BOT_ACTION), identity resolution (no auto-link; linked→RESOLVED, suggested/needs-review→AMBIGUOUS, blocked→BLOCKED, unlinked/none→UNKNOWN; resolver and `ChannelIdentityResolutionMapper` aligned), contact/account (tenant-scoped contact+account validation, contact-only derives account, mismatch + cross-tenant rejected, locked mutation fetch retained), runtime gating (blocked never reaches runtime; ambiguous routes to operator review and is not treated as linked), operator workspace (real API, error surfacing, badge mapping, route present), audit/idempotency (idempotency guards + safe audit metadata preserved).
+  - Concrete fixes: corrected stale `ChannelIdentityController` javadoc that still said mutations require BOT_ACTION (now CHANNEL_IDENTITY_ACTION); corrected "no PII"/"non-PII" wording in `CustomerContactResponse` (`Stage2Dtos`), `CustomerContactController`, frontend `CustomerContactSummary`, and this checkpoint to "minimal contact summary; direct contact details excluded".
+  - Tests added: `ChannelBotRuntimeIdentityGatingTest.ambiguousIdentityPriceFlowRoutesToReviewAndIsNotTreatedAsLinked` (end-to-end proof a NEEDS_REVIEW/AMBIGUOUS sender's price flow routes to operator review via `CONFIG_BLOCKED:AMBIGUOUS_CUSTOMER_HANDOFF`, creates no conversation, and is audited).
+  - Commands run: targeted backend `mvn -Dtest=...` 60 tests, 0 failures, BUILD SUCCESS; frontend `node --test tests/channel-identities.test.mjs` 23 tests, 0 failures.
+  - Commands not run: full backend suite; `npm run lint`/`npm run build` (only comment-string wording changed on frontend — no logic change).
+  - Remaining limitations: controlled runtime is Telegram-only this slice; no CustomerContactController integration test added (no existing close pattern to follow without broadening scope).
 - OP-CAP-06A/06B messenger bridge/runtime foundation exists.
 - OP-CAP-06E channel identity operator UX + frontend/API consumption is complete:
   - Route: `/channel-identities` (Next.js App Router, server pre-load + client workspace)
   - `lib/channel-identity-api.ts` — typed API client, all mutations use CHANNEL_IDENTITY_ACTION (not BOT_ACTION)
   - `components/channel-identity-workspace.tsx` — interactive operator workspace with list, detail, link dialog, unlink/block/needs-review with confirmation flows, loading/error states, client-side status filter
   - `components/navigation.ts` — added "Channel Identities" entry adjacent to Messenger Bridge
-  - Backend: `CustomerContactResponse` DTO added to `Stage2Dtos`; `CustomerContactController` added at `GET /api/v1/customers/{customerId}/contacts` (read-only, tenant-scoped, no PII)
+  - Backend: `CustomerContactResponse` DTO added to `Stage2Dtos`; `CustomerContactController` added at `GET /api/v1/customers/{customerId}/contacts` (read-only, tenant-scoped, minimal contact summary; direct contact details (email/phone) excluded)
   - Frontend tests: 23 tests, 0 failures (`node --test tests/channel-identities.test.mjs`)
   - Build: `npm run build` — compiled successfully, `/channel-identities` route generated
   - No auto-linking from inbound messages; no AI/bot direct mutation path

@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * OP-CAP-06E read-only contact listing for the channel identity link flow.
  *
- * <p>Exposes non-PII contact summaries (name, type, preferred flag) scoped to a customer account.
- * Tenant isolation is enforced server-side: the account must belong to the current tenant before
- * contacts are returned. Email and phone fields are intentionally excluded from the response.
+ * <p>Exposes a minimal contact summary (name, type, preferred flag) scoped to a customer account;
+ * direct contact details (email/phone) are excluded. Tenant isolation is enforced server-side: the
+ * account must belong to the current tenant before any contacts are returned.
  */
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/contacts")

@@ -19,8 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
  * OP-CAP-06D Channel Identity operator control and read contract.
  *
  * <p>All mutations are tenant-scoped (tenant resolved server-side from {@code TenantContext}).
- * Permission guard: GET requires {@code ADMIN_SETTINGS_READ}; mutations require {@code BOT_ACTION}
- * (enforced by {@code ApiPermissionInterceptor}).
+ * Permission guard: GET requires {@code ADMIN_SETTINGS_READ}; mutations require
+ * {@code CHANNEL_IDENTITY_ACTION} (enforced by {@code ApiPermissionInterceptor}). {@code BOT_ACTION}
+ * alone never authorizes a channel-identity mutation (OP-CAP-06D.1 hardening).
  */
 @RestController
 @RequestMapping("/api/v1/channel-identities")

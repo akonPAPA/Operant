@@ -24,6 +24,8 @@ import com.orderpilot.domain.bot.BotConversationRepository;
 import com.orderpilot.domain.channel.ChannelConnection;
 import com.orderpilot.domain.channel.ChannelIdentity;
 import com.orderpilot.domain.channel.ChannelProviderType;
+import com.orderpilot.domain.channel.InboundChannelEvent;
+import com.orderpilot.domain.channel.InboundChannelEventRepository;
 import com.orderpilot.domain.customer.CustomerAccount;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
 import com.orderpilot.domain.tenant.Tenant;
@@ -79,6 +81,7 @@ class ChannelBotRuntimeIdentityGatingTest {
   @Autowired private ChannelConnectionService connectionService;
   @Autowired private ChannelIdentityService identityService;
   @Autowired private BotConversationRepository conversationRepository;
+  @Autowired private InboundChannelEventRepository eventRepository;
   @Autowired private AuditEventRepository auditEventRepository;
   @Autowired private TenantRepository tenantRepository;
   @Autowired private CustomerAccountRepository customerAccountRepository;
@@ -130,6 +133,30 @@ class ChannelBotRuntimeIdentityGatingTest {
     assertThat(result.botConversationId()).isNull();
     assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).isEmpty();
     assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_IDENTITY_BLOCKED");
+  }
+
+  @Test void ambiguousIdentityPriceFlowRoutesToReviewAndIsNotTreatedAsLinked() throws Exception {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    ChannelConnection connection = activeTelegramConnection();
+    // Operator flagged the sender for manual review: resolver sees AMBIGUOUS, not RESOLVED.
+    ChannelIdentity identity = identityService.findOrCreateUnlinkedIdentity(ChannelType.TELEGRAM, "chat-ambiguous", null, null, "User");
+    identityService.markNeedsReview(identity.getId(), "operator flagged");
+
+    ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
+        connection.getId(), ChannelProviderType.TELEGRAM, pricePayload("50", "m5", "chat-ambiguous"), headers());
+
+    // An unconfirmed candidate must route to operator review — never be treated as a trusted linked
+    // customer and never reach the controlled price runtime.
+    assertThat(result.bridgeStatus()).isEqualTo("BLOCKED_BY_CONFIG");
+    assertThat(result.requiresHumanReview()).isTrue();
+    assertThat(result.botConversationId()).isNull();
+    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).isEmpty();
+    // Proof it was the ambiguous handoff path, not a generic config block or a resolved customer.
+    InboundChannelEvent event = eventRepository.findById(result.eventId()).orElseThrow();
+    assertThat(event.getBotRuntimeStatus()).isEqualTo("CONFIG_BLOCKED:AMBIGUOUS_CUSTOMER_HANDOFF");
+    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_IDENTITY_RESOLVED");
+    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_BLOCKED_BY_CONFIG");
   }
 
   @Test void unmappedRfqRemainsBackwardCompatible() throws Exception {

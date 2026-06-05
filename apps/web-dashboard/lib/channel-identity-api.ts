@@ -49,7 +49,7 @@ export type CustomerAccountSummary = {
   status: string;
 };
 
-/** Non-PII contact summary for the link flow. Email and phone are excluded. */
+/** Minimal contact summary for the link flow; direct contact details (email/phone) are excluded. */
 export type CustomerContactSummary = {
   id: string;
   customerAccountId: string;
