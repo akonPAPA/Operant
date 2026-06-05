@@ -1,6 +1,7 @@
 package com.orderpilot.api.dto;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -30,6 +31,22 @@ public final class ChannelBotBridgeDtos {
       Instant receivedAt,
       String verificationStatus,
       String externalExecution
+  ) {}
+
+  /**
+   * Operator-facing bridge status summary. Combines the controlled safety contract (which flows the
+   * bridge may run, which actions it can never perform, external execution state) with a bounded,
+   * tenant-scoped recent-window count summary. All counts are derived from the same bounded recent
+   * window that backs the events list, so this endpoint never triggers an unbounded scan.
+   */
+  public record ChannelBotBridgeStatusResponse(
+      String externalExecution,
+      int recentWindowLimit,
+      int recentEventCount,
+      int bridgedToBotCount,
+      int pendingOrUnbridgedCount,
+      List<String> supportedFlows,
+      List<String> forbiddenActions
   ) {}
 
   /** Operator-facing list item linking a normalized channel event to its bot conversation. */

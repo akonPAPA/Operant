@@ -19,10 +19,24 @@ export type ChannelBotEvent = {
   processedAt?: string;
 };
 
+export type ChannelBotBridgeStatus = {
+  externalExecution: string;
+  recentWindowLimit: number;
+  recentEventCount: number;
+  bridgedToBotCount: number;
+  pendingOrUnbridgedCount: number;
+  supportedFlows: string[];
+  forbiddenActions: string[];
+};
+
 export type ChannelBotApiResult<T> = {
   data: T;
   error?: string;
 };
+
+// Default operator read window. The backend independently clamps any limit to a safe maximum,
+// so this is only a request hint and never the security boundary.
+export const DEFAULT_BRIDGE_EVENT_LIMIT = 50;
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -49,6 +63,23 @@ async function getJson<T>(path: string, fallback: T): Promise<ChannelBotApiResul
   }
 }
 
-export function getChannelBotEvents() {
-  return getJson<ChannelBotEvent[]>("/api/v1/channels/bot-events", []);
+export function getChannelBotEvents(limit: number = DEFAULT_BRIDGE_EVENT_LIMIT) {
+  return getJson<ChannelBotEvent[]>(`/api/v1/channels/bot-events?limit=${encodeURIComponent(limit)}`, []);
+}
+
+const EMPTY_BRIDGE_STATUS: ChannelBotBridgeStatus = {
+  externalExecution: "DISABLED",
+  recentWindowLimit: DEFAULT_BRIDGE_EVENT_LIMIT,
+  recentEventCount: 0,
+  bridgedToBotCount: 0,
+  pendingOrUnbridgedCount: 0,
+  supportedFlows: [],
+  forbiddenActions: []
+};
+
+export function getChannelBotBridgeStatus(limit: number = DEFAULT_BRIDGE_EVENT_LIMIT) {
+  return getJson<ChannelBotBridgeStatus>(
+    `/api/v1/channels/bot-bridge/status?limit=${encodeURIComponent(limit)}`,
+    EMPTY_BRIDGE_STATUS
+  );
 }

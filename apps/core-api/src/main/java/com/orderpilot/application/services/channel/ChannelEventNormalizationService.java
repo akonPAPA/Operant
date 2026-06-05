@@ -10,6 +10,7 @@ import java.time.Clock;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,6 +71,15 @@ public class ChannelEventNormalizationService {
   @Transactional(readOnly = true)
   public List<InboundChannelEvent> list() {
     return eventRepository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId());
+  }
+
+  /**
+   * Bounded, tenant-scoped recent inbound events for operator read surfaces. The caller supplies an
+   * already-clamped {@link Limit} so this read path can never load a tenant's entire event history.
+   */
+  @Transactional(readOnly = true)
+  public List<InboundChannelEvent> listRecent(Limit limit) {
+    return eventRepository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId(), limit);
   }
 
   private String toJson(Object payload) {
