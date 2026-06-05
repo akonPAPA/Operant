@@ -1,5 +1,15 @@
 # OrderPilot Core
 
+## License and proprietary notice
+
+OrderPilot is proprietary and confidential software.
+
+Copyright (c) 2026 OrderPilot / [Legal Entity Name]. All rights reserved.
+
+No public open-source license is granted for this repository unless a specific file,
+package, or directory explicitly states otherwise. See LICENSE, NOTICE,
+THIRD_PARTY_NOTICES.md, and docs/legal/ for details.
+
 Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
 
 OrderPilot Core is the Stage 1 foundation for an investor-grade B2B SaaS transaction intelligence platform for auto and industrial parts distributors.
