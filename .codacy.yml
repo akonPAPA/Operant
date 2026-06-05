@@ -18,6 +18,9 @@ engines:
   csslint:
     exclude_paths:
       - "apps/web-dashboard/app/globals.css"
+  prospector:
+    exclude_paths:
+      - "apps/ai-worker/**"
   psscriptanalyzer:
     exclude_paths:
       - "scripts/dev/**"
@@ -33,6 +36,9 @@ engines:
   pylintpython3:
     exclude_paths:
       - "apps/ai-worker/**"
+  stylelint:
+    exclude_paths:
+      - "apps/web-dashboard/app/globals.css"
   remark-lint:
     exclude_paths:
       - "README.md"

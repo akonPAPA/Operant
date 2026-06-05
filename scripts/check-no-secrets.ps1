@@ -31,8 +31,8 @@ foreach ($file in $files) {
   }
 }
 if ($findings.Count -gt 0) {
-  Write-Host "Potential hardcoded secrets found:"
-  $findings | ForEach-Object { Write-Host $_ }
+  Write-Output "Potential hardcoded secrets found:"
+  $findings | ForEach-Object { Write-Output $_ }
   exit 1
 }
-Write-Host "No obvious hardcoded secrets found."
+Write-Output "No obvious hardcoded secrets found."
