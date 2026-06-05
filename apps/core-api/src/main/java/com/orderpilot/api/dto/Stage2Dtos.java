@@ -16,6 +16,8 @@ public final class Stage2Dtos {
 
   public record CustomerRequest(String externalRef, String accountCode, String legalName, String displayName, UUID segmentId, String status, String defaultCurrency, UUID defaultLocationId) {}
   public record CustomerResponse(UUID id, String accountCode, String legalName, String displayName, UUID segmentId, String status, String defaultCurrency) {}
+  /** OP-CAP-06E read-only contact summary for identity link flow. No PII fields (email/phone). */
+  public record CustomerContactResponse(UUID id, UUID customerAccountId, String contactType, String fullName, boolean preferred, boolean active) {}
 
   public record InventorySnapshotRequest(UUID productId, UUID locationId, BigDecimal quantityOnHand, BigDecimal quantityAvailable, BigDecimal quantityReserved, Instant capturedAt, String source, UUID importJobId) {}
   public record InventorySnapshotResponse(UUID id, UUID productId, UUID locationId, BigDecimal quantityOnHand, BigDecimal quantityAvailable, Instant capturedAt) {}

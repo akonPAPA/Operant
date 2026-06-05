@@ -33,9 +33,32 @@ public class BotRuntimePolicyService {
   }
 
   /** Context the bridge can determine without invoking the runtime. */
-  public record Context(boolean customerIdentified) {
+  /**
+   * Identity-aware decision context (OP-CAP-06C). {@code customerIdentified} is true only for a
+   * confirmed (RESOLVED) identity. {@code identityAmbiguous} marks an unconfirmed candidate, and
+   * {@code identityBlocked} marks an explicitly blocked sender. Identity only adds context; it never
+   * relaxes configuration or runtime validation.
+   */
+  public record Context(boolean customerIdentified, boolean identityAmbiguous, boolean identityBlocked) {
+    /** Backward-compatible constructor: identity unknown/ambiguous flags default to false. */
+    public Context(boolean customerIdentified) {
+      this(customerIdentified, false, false);
+    }
+
     public static Context unidentified() {
-      return new Context(false);
+      return new Context(false, false, false);
+    }
+
+    public static Context identified() {
+      return new Context(true, false, false);
+    }
+
+    public static Context ambiguous() {
+      return new Context(false, true, false);
+    }
+
+    public static Context blocked() {
+      return new Context(false, false, true);
     }
   }
 
@@ -50,6 +73,12 @@ public class BotRuntimePolicyService {
     if (!config.isEnabled()) {
       return BotFlowPolicyDecision.blocked(flow, BotFlowPolicyReason.BOT_DISABLED,
           "The bot is disabled for this connection. Routed to operator review.", configId);
+    }
+    // OP-CAP-06C: a blocked sender never receives a business answer (defense-in-depth; the bridge
+    // also short-circuits before reaching policy/runtime).
+    if (context.identityBlocked()) {
+      return BotFlowPolicyDecision.blocked(flow, BotFlowPolicyReason.IDENTITY_BLOCKED,
+          "This sender is blocked. No bot business response was produced.", configId);
     }
     return switch (flow) {
       case GREETING -> config.isGreetingEnabled()
@@ -73,7 +102,7 @@ public class BotRuntimePolicyService {
           "Price is not disclosed by the bot. Routed to operator review.", configId);
     }
     if (!context.customerIdentified()) {
-      return unknownCustomer(BotFlow.PRICE, config, configId);
+      return unknownCustomer(BotFlow.PRICE, config, context, configId);
     }
     return switch (config.getPriceCheckMode()) {
       case OPERATOR_REVIEW_ONLY -> allow(BotFlow.PRICE, BotFlowMode.OPERATOR_REVIEW_ONLY, BotFlowPolicyReason.ALLOWED_OPERATOR_REVIEW_ONLY, true, false, false, false, configId);
@@ -87,7 +116,7 @@ public class BotRuntimePolicyService {
       return BotFlowPolicyDecision.blocked(BotFlow.ORDER_STATUS, BotFlowPolicyReason.FLOW_DISABLED, fallback(config), configId);
     }
     if (!context.customerIdentified()) {
-      return unknownCustomer(BotFlow.ORDER_STATUS, config, configId);
+      return unknownCustomer(BotFlow.ORDER_STATUS, config, context, configId);
     }
     return allow(BotFlow.ORDER_STATUS, BotFlowMode.OPERATOR_REVIEW_ONLY, BotFlowPolicyReason.ALLOWED_OPERATOR_REVIEW_ONLY, true, false, false, false, configId);
   }
@@ -102,7 +131,12 @@ public class BotRuntimePolicyService {
     };
   }
 
-  private BotFlowPolicyDecision unknownCustomer(BotFlow flow, ChannelBotRuntimeConfiguration config, UUID configId) {
+  private BotFlowPolicyDecision unknownCustomer(BotFlow flow, ChannelBotRuntimeConfiguration config, Context context, UUID configId) {
+    // OP-CAP-06C: an unconfirmed candidate (ambiguous) always routes to operator review, never reject.
+    if (context.identityAmbiguous()) {
+      return new BotFlowPolicyDecision(flow, false, BotFlowMode.OPERATOR_REVIEW_ONLY, BotFlowPolicyReason.AMBIGUOUS_CUSTOMER_HANDOFF, true, false, false, false,
+          "Customer identity is an unconfirmed candidate. Routed to operator review.", configId);
+    }
     UnknownCustomerMode mode = config.getUnknownCustomerMode();
     if (mode == UnknownCustomerMode.REJECT) {
       return new BotFlowPolicyDecision(flow, false, BotFlowMode.DISABLED, BotFlowPolicyReason.UNKNOWN_CUSTOMER_REJECTED, false, false, false, false,

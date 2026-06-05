@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.orderpilot.api.dto.BotRuntimeConfigurationDtos.BotRuntimeConfigurationUpdateRequest;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.IntakeValidationService;
@@ -23,9 +22,10 @@ import com.orderpilot.domain.audit.AuditEvent;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.bot.BotConversationRepository;
 import com.orderpilot.domain.channel.ChannelConnection;
+import com.orderpilot.domain.channel.ChannelIdentity;
 import com.orderpilot.domain.channel.ChannelProviderType;
-import com.orderpilot.domain.channel.InboundChannelEvent;
-import com.orderpilot.domain.channel.InboundChannelEventRepository;
+import com.orderpilot.domain.customer.CustomerAccount;
+import com.orderpilot.domain.customer.CustomerAccountRepository;
 import com.orderpilot.domain.tenant.Tenant;
 import com.orderpilot.domain.tenant.TenantRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
@@ -41,9 +41,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * OP-CAP-06B proof that controlled bot runtime configuration actually gates runtime behavior:
- * a disabled flow never reaches {@code BotRuntimeService}, so no bot conversation / RFQ / draft
- * is produced for it, and configuration is strictly tenant-scoped.
+ * OP-CAP-06C proof that identity-aware context gates the bridge safely: unknown senders cannot get
+ * price/status answers, blocked senders never reach the runtime even for otherwise-allowed flows,
+ * a resolved sender reaches the controlled runtime path, and unmapped RFQ stays backward-compatible.
  */
 @DataJpaTest
 @ActiveProfiles("test")
@@ -53,6 +53,7 @@ import org.springframework.test.context.ActiveProfiles;
     BotRuntimeConfigurationService.class,
     BotRuntimePolicyService.class,
     ChannelIdentityResolverService.class,
+    ChannelIdentityService.class,
     ChannelEventNormalizationService.class,
     ChannelConnectionService.class,
     TelegramChannelAdapter.class,
@@ -64,7 +65,6 @@ import org.springframework.test.context.ActiveProfiles;
     BotPolicyService.class,
     BotWebhookSecurityService.class,
     ChannelGatewayService.class,
-    ChannelIdentityService.class,
     IntakeValidationService.class,
     ProcessingJobService.class,
     AuditEventService.class,
@@ -72,97 +72,100 @@ import org.springframework.test.context.ActiveProfiles;
     ObjectMapper.class,
     CoreConfiguration.class
 })
-class ChannelBotRuntimeConfigGatingTest {
+class ChannelBotRuntimeIdentityGatingTest {
   private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
   @Autowired private ChannelBotRuntimeBridgeService bridgeService;
-  @Autowired private BotRuntimeConfigurationService configurationService;
   @Autowired private ChannelConnectionService connectionService;
+  @Autowired private ChannelIdentityService identityService;
   @Autowired private BotConversationRepository conversationRepository;
-  @Autowired private InboundChannelEventRepository eventRepository;
   @Autowired private AuditEventRepository auditEventRepository;
   @Autowired private TenantRepository tenantRepository;
+  @Autowired private CustomerAccountRepository customerAccountRepository;
 
   @AfterEach void clearTenant() { TenantContext.clear(); }
 
-  @Test void disabledRfqFlowBlocksRuntimeAndCreatesNoDraft() throws Exception {
+  @Test void unknownCustomerPriceFlowIsBlockedAndDrivesNoRuntime() throws Exception {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
     ChannelConnection connection = activeTelegramConnection();
-    disableRfq(connection.getId());
 
     ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
-        connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("10", "m1", "chat-1"), headers());
+        connection.getId(), ChannelProviderType.TELEGRAM, pricePayload("10", "m1", "chat-unknown"), headers());
 
     assertThat(result.bridgeStatus()).isEqualTo("BLOCKED_BY_CONFIG");
+    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).isEmpty();
+    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_IDENTITY_RESOLVED");
+  }
+
+  @Test void resolvedCustomerPriceFlowReachesRuntime() throws Exception {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    ChannelConnection connection = activeTelegramConnection();
+    ChannelIdentity identity = identityService.findOrCreateUnlinkedIdentity(ChannelType.TELEGRAM, "chat-known", null, null, "User");
+    UUID accountId = seedCustomerAccount(tenantId);
+    identityService.linkIdentity(identity.getId(), accountId, null, UUID.randomUUID(), "operator linked");
+
+    ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
+        connection.getId(), ChannelProviderType.TELEGRAM, pricePayload("20", "m2", "chat-known"), headers());
+
+    // Resolved identity lets the price flow reach the controlled runtime (which still routes to review).
+    assertThat(result.bridgeStatus()).isNotEqualTo("BLOCKED_BY_CONFIG");
+    assertThat(result.bridgeStatus()).isNotEqualTo("IDENTITY_BLOCKED");
+    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).hasSize(1);
+    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_IDENTITY_RESOLVED");
+  }
+
+  @Test void blockedIdentityDrivesNoRuntimeEvenForOtherwiseAllowedRfq() throws Exception {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    ChannelConnection connection = activeTelegramConnection();
+    ChannelIdentity identity = identityService.findOrCreateUnlinkedIdentity(ChannelType.TELEGRAM, "chat-blocked", null, null, "User");
+    identityService.blockIdentity(identity.getId(), "abuse");
+
+    ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
+        connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("30", "m3", "chat-blocked"), headers());
+
+    assertThat(result.bridgeStatus()).isEqualTo("IDENTITY_BLOCKED");
     assertThat(result.botConversationId()).isNull();
-    assertThat(result.requiresHumanReview()).isTrue();
-    assertThat(result.externalExecution()).isEqualTo("DISABLED");
-    // No controlled bot workflow was created: the runtime was never invoked.
     assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).isEmpty();
-    InboundChannelEvent event = eventRepository.findById(result.eventId()).orElseThrow();
-    assertThat(event.getBotRuntimeStatus()).startsWith("CONFIG_BLOCKED");
-    assertThat(event.getBotConversationId()).isNull();
-    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_BLOCKED_BY_CONFIG");
+    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_IDENTITY_BLOCKED");
   }
 
-  @Test void disabledPriceFlowProducesNoPriceOutput() throws Exception {
+  @Test void unmappedRfqRemainsBackwardCompatible() throws Exception {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
     ChannelConnection connection = activeTelegramConnection();
-    // Disable price entirely; visibility must be NEVER for a valid combination.
-    configurationService.updateForConnection(connection.getId(),
-        new BotRuntimeConfigurationUpdateRequest(null, null, null, "DISABLED", null, null, null, null, null, null, null,
-            null, "NEVER", null, null, null));
 
-    JsonNode pricePayload = objectMapper.readTree(
-        "{\"update_id\":\"20\",\"message\":{\"message_id\":\"m2\",\"chat\":{\"id\":\"chat-2\"},\"text\":\"what is the price of BRK-100\"}}");
     ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
-        connection.getId(), ChannelProviderType.TELEGRAM, pricePayload, headers());
+        connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("40", "m4", "chat-rfq"), headers());
 
-    assertThat(result.bridgeStatus()).isEqualTo("BLOCKED_BY_CONFIG");
-    assertThat(result.detectedIntent()).isEqualTo("PRICE");
-    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).isEmpty();
-    assertThat(auditActions(tenantId)).contains("BOT_CHANNEL_EVENT_BLOCKED_BY_CONFIG");
-  }
-
-  @Test void tenantConfigurationDoesNotAffectAnotherTenantRuntime() throws Exception {
-    // Tenant A disables RFQ.
-    UUID tenantA = seedTenant();
-    TenantContext.setTenantId(tenantA);
-    ChannelConnection connectionA = activeTelegramConnection();
-    disableRfq(connectionA.getId());
-    ChannelBotBridgeResultResponse blockedForA = bridgeService.handleInbound(
-        connectionA.getId(), ChannelProviderType.TELEGRAM, rfqPayload("30", "m3", "chat-3"), headers());
-    assertThat(blockedForA.bridgeStatus()).isEqualTo("BLOCKED_BY_CONFIG");
-    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantA)).isEmpty();
-
-    // Tenant B keeps the safe default (RFQ allowed as review-only) and is unaffected.
-    UUID tenantB = seedTenant();
-    TenantContext.setTenantId(tenantB);
-    ChannelConnection connectionB = activeTelegramConnection();
-    ChannelBotBridgeResultResponse bridgedForB = bridgeService.handleInbound(
-        connectionB.getId(), ChannelProviderType.TELEGRAM, rfqPayload("40", "m4", "chat-4"), headers());
-    assertThat(bridgedForB.bridgeStatus()).isEqualTo("RFQ_DRAFT_REQUIRES_HUMAN_REVIEW");
-    assertThat(bridgedForB.botConversationId()).isNotNull();
-    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantB)).hasSize(1);
+    assertThat(result.bridgeStatus()).isEqualTo("RFQ_DRAFT_REQUIRES_HUMAN_REVIEW");
+    assertThat(result.botConversationId()).isNotNull();
+    assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).hasSize(1);
   }
 
   // --- helpers ---
 
-  private void disableRfq(UUID connectionId) {
-    configurationService.updateForConnection(connectionId,
-        new BotRuntimeConfigurationUpdateRequest(null, null, null, null, "DISABLED", null, null, null, null, null, null,
-            null, null, null, null, null));
+  private UUID seedTenant() {
+    return tenantRepository.save(new Tenant("idg-" + UUID.randomUUID(), "Identity Gating Test", "ACTIVE", Instant.parse("2026-06-04T00:00:00Z"))).getId();
   }
 
-  private UUID seedTenant() {
-    return tenantRepository.save(new Tenant("gate-" + UUID.randomUUID(), "Gating Test", "ACTIVE", Instant.parse("2026-06-04T00:00:00Z"))).getId();
+  private UUID seedCustomerAccount(UUID tenantId) {
+    CustomerAccount account = new CustomerAccount(
+        tenantId, null, "ACC-" + UUID.randomUUID().toString().substring(0, 8),
+        "Test Customer", null, null, "ACTIVE", "USD", null, Instant.parse("2026-06-05T00:00:00Z"));
+    return customerAccountRepository.save(account).getId();
   }
 
   private ChannelConnection activeTelegramConnection() {
     ChannelConnection draft = connectionService.createDraft(ChannelProviderType.TELEGRAM, "Telegram", null, null, null);
     return connectionService.activate(draft.getId());
+  }
+
+  private JsonNode pricePayload(String updateId, String messageId, String chatId) throws Exception {
+    return objectMapper.readTree("{\"update_id\":\"" + updateId + "\",\"message\":{\"message_id\":\"" + messageId
+        + "\",\"chat\":{\"id\":\"" + chatId + "\"},\"text\":\"what is the price of BRK-100\"}}");
   }
 
   private JsonNode rfqPayload(String updateId, String messageId, String chatId) throws Exception {

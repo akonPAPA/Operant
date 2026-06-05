@@ -49,6 +49,7 @@ import org.springframework.test.context.ActiveProfiles;
     ChannelBotRuntimeBridgeService.class,
     BotRuntimeConfigurationService.class,
     com.orderpilot.application.services.bot.BotRuntimePolicyService.class,
+    ChannelIdentityResolverService.class,
     ChannelEventNormalizationService.class,
     ChannelConnectionService.class,
     TelegramChannelAdapter.class,

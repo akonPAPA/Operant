@@ -17,6 +17,7 @@ import com.orderpilot.domain.bot.BotIntent;
 import com.orderpilot.domain.channel.ChannelBotRuntimeConfiguration;
 import com.orderpilot.domain.channel.ChannelConnection;
 import com.orderpilot.domain.channel.ChannelConnectionRepository;
+import com.orderpilot.domain.channel.ChannelIdentityResolutionStatus;
 import com.orderpilot.domain.channel.ChannelProviderType;
 import com.orderpilot.domain.channel.InboundChannelEvent;
 import com.orderpilot.domain.channel.InboundChannelEventRepository;
@@ -58,6 +59,7 @@ public class ChannelBotRuntimeBridgeService {
   private final BotRuntimeService botRuntimeService;
   private final BotRuntimeConfigurationService configurationService;
   private final BotRuntimePolicyService policyService;
+  private final ChannelIdentityResolverService identityResolverService;
   private final RuleBasedBotIntentClassifier intentClassifier;
   private final AuditEventService auditEventService;
   private final ObjectMapper objectMapper;
@@ -70,6 +72,7 @@ public class ChannelBotRuntimeBridgeService {
       BotRuntimeService botRuntimeService,
       BotRuntimeConfigurationService configurationService,
       BotRuntimePolicyService policyService,
+      ChannelIdentityResolverService identityResolverService,
       RuleBasedBotIntentClassifier intentClassifier,
       AuditEventService auditEventService,
       ObjectMapper objectMapper,
@@ -80,6 +83,7 @@ public class ChannelBotRuntimeBridgeService {
     this.botRuntimeService = botRuntimeService;
     this.configurationService = configurationService;
     this.policyService = policyService;
+    this.identityResolverService = identityResolverService;
     this.intentClassifier = intentClassifier;
     this.auditEventService = auditEventService;
     this.objectMapper = objectMapper;
@@ -123,13 +127,24 @@ public class ChannelBotRuntimeBridgeService {
           "Inbound event stored but could not be processed by the controlled bot runtime. Routed for operator review.");
     }
 
+    // OP-CAP-06C: deterministically resolve the verified inbound sender to a known customer/contact
+    // before policy/runtime. Identity is advisory context only; it never bypasses configuration or
+    // runtime validation. A blocked sender never reaches the runtime.
+    ChannelIdentityResolution identity = identityResolverService.resolve(providerType, event.getSourceActorExternalId());
+    auditIdentity(event, connection, identity);
+    if (identity.isBlocked()) {
+      event.markBotNotBridged("IDENTITY_BLOCKED", clock.instant());
+      eventRepository.save(event);
+      return identityBlockedResult(event, connection);
+    }
+
     // OP-CAP-06B: consult the tenant/connection-scoped controlled runtime configuration before
     // driving the runtime. A disabled or policy-blocked flow never reaches the runtime, so no
     // RFQ/draft/price/availability output or bot conversation is produced for it.
     ChannelBotRuntimeConfiguration config = configurationService.getOrCreateDefaultForConnection(connectionId);
     BotIntent intent = intentClassifier.detect(event.getNormalizedText());
     BotFlow flow = BotFlow.fromIntent(intent);
-    BotFlowPolicyDecision decision = policyService.decide(config, flow, BotRuntimePolicyService.Context.unidentified());
+    BotFlowPolicyDecision decision = policyService.decide(config, flow, contextFor(identity));
     if (!decision.allowed()) {
       event.markBotNotBridged("CONFIG_BLOCKED:" + decision.reasonCode().name(), clock.instant());
       eventRepository.save(event);
@@ -225,6 +240,50 @@ public class ChannelBotRuntimeBridgeService {
         event.getReceivedAt(),
         event.getVerificationStatus(),
         EXTERNAL_EXECUTION);
+  }
+
+  private BotRuntimePolicyService.Context contextFor(ChannelIdentityResolution identity) {
+    return switch (identity.status()) {
+      case RESOLVED -> BotRuntimePolicyService.Context.identified();
+      case AMBIGUOUS -> BotRuntimePolicyService.Context.ambiguous();
+      case BLOCKED -> BotRuntimePolicyService.Context.blocked();
+      case UNKNOWN, NOT_APPLICABLE -> BotRuntimePolicyService.Context.unidentified();
+    };
+  }
+
+  private ChannelBotBridgeResultResponse identityBlockedResult(InboundChannelEvent event, ChannelConnection connection) {
+    return new ChannelBotBridgeResultResponse(
+        event.getId(),
+        connection.getId(),
+        connection.getProviderType().name(),
+        event.getExternalEventId(),
+        event.getStatus(),
+        "IDENTITY_BLOCKED",
+        null,
+        null,
+        null,
+        true,
+        null,
+        "This sender is blocked for this tenant. No bot business response was produced; routed for operator review.",
+        event.getReceivedAt(),
+        event.getVerificationStatus(),
+        EXTERNAL_EXECUTION);
+  }
+
+  /** Audit identity resolution with safe identifiers only (no raw sender phone/name, no secrets). */
+  private void auditIdentity(InboundChannelEvent event, ChannelConnection connection, ChannelIdentityResolution identity) {
+    Map<String, Object> metadata = new LinkedHashMap<>();
+    metadata.put("channelConnectionId", str(connection.getId()));
+    metadata.put("providerType", connection.getProviderType().name());
+    metadata.put("inboundChannelEventId", str(event.getId()));
+    metadata.put("identityStatus", identity.status().name());
+    metadata.put("channelIdentityId", str(identity.channelIdentityId()));
+    metadata.put("customerAccountId", str(identity.customerAccountId()));
+    metadata.put("customerContactId", str(identity.customerContactId()));
+    metadata.put("reason", safe(identity.reason()));
+    metadata.put("externalExecution", EXTERNAL_EXECUTION);
+    String action = identity.isBlocked() ? "BOT_CHANNEL_EVENT_IDENTITY_BLOCKED" : "BOT_CHANNEL_EVENT_IDENTITY_RESOLVED";
+    auditEventService.record(action, "INBOUND_CHANNEL_EVENT", event.getId().toString(), null, writeJson(metadata));
   }
 
   /** Audit a configuration-blocked flow with safe metadata only. */

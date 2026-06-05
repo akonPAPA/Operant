@@ -32,6 +32,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Reconciliation", href: "/reconciliation" },
   { label: "Channels", href: "/channels" },
   { label: "Messenger Bridge", href: "/messenger-bridge" },
+  { label: "Channel Identities", href: "/channel-identities" },
   { label: "Bot Runtime", href: "/bot-runtime" },
   { label: "Integrations", href: "/integrations" },
   { label: "Sync Events", href: "/sync-events" },
