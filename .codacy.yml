@@ -1,0 +1,5 @@
+---
+engines:
+  tsqllint:
+    exclude_paths:
+      - "apps/core-api/src/main/resources/db/migration/**"

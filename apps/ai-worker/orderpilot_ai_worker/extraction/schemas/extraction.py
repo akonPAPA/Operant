@@ -1,7 +1,11 @@
+"""Schemas for advisory semantic extraction results."""
+
 from pydantic import BaseModel, Field
 
 
-class SourceEvidence(BaseModel):
+class SourceEvidence(BaseModel):  # pylint: disable=too-few-public-methods
+    """Safe source evidence pointer for extracted fields."""
+
     evidence_type: str
     snippet: str | None = None
     start_offset: int | None = None
@@ -11,7 +15,9 @@ class SourceEvidence(BaseModel):
     channel_event_id: str | None = None
 
 
-class ExtractedField(BaseModel):
+class ExtractedField(BaseModel):  # pylint: disable=too-few-public-methods
+    """Single extracted advisory field with confidence metadata."""
+
     field_name: str
     raw_value: str | None = None
     normalized_value: str | None = None
@@ -20,7 +26,9 @@ class ExtractedField(BaseModel):
     evidence: SourceEvidence | None = None
 
 
-class ExtractedLineItem(BaseModel):
+class ExtractedLineItem(BaseModel):  # pylint: disable=too-few-public-methods
+    """Single advisory RFQ/order line item candidate."""
+
     line_number: int
     raw_sku: str | None = None
     raw_alias: str | None = None
@@ -33,13 +41,17 @@ class ExtractedLineItem(BaseModel):
     evidence: SourceEvidence | None = None
 
 
-class AiSuggestion(BaseModel):
+class AiSuggestion(BaseModel):  # pylint: disable=too-few-public-methods
+    """Advisory warning or suggestion attached to extraction output."""
+
     suggestion_type: str
     suggestion: dict
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-class ExtractionResult(BaseModel):
+class ExtractionResult(BaseModel):  # pylint: disable=too-few-public-methods
+    """Advisory semantic extraction result for validation by core API."""
+
     detected_intent: str
     document_type: str
     overall_confidence: float = Field(ge=0.0, le=1.0)

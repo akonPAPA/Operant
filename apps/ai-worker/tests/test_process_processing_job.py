@@ -1,7 +1,13 @@
-from orderpilot_ai_worker.tasks.process_processing_job import ProcessingJobPayload, process_processing_job
+"""Tests for advisory processing-job task behavior."""
+
+from orderpilot_ai_worker.tasks.process_processing_job import (
+    ProcessingJobPayload,
+    process_processing_job,
+)
 
 
 def test_processing_job_placeholder_is_advisory() -> None:
+    """Processing job placeholder accepts known advisory job types."""
     result = process_processing_job(
         ProcessingJobPayload(
             job_id="job-1",

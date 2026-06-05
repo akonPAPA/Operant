@@ -1,9 +1,13 @@
+"""Pydantic schema for advisory shadow-mode predictions."""
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
-class ShadowModeAdvisoryPayload(BaseModel):
+class ShadowModeAdvisoryPayload(BaseModel):  # pylint: disable=too-few-public-methods
+    """Payload persisted by callers for non-authoritative AI predictions."""
+
     source_type: Literal[
         "INBOUND_DOCUMENT",
         "CHANNEL_MESSAGE",

@@ -1,7 +1,10 @@
+"""Tests for Stage 10B mock shadow-mode advisory payloads."""
+
 from orderpilot_ai_worker.providers.mock_shadow_mode import MockShadowModeProvider
 
 
 def test_mock_shadow_mode_payload_is_advisory_and_mock_only() -> None:
+    """Mock shadow-mode predictions remain advisory and mock-only."""
     payload = MockShadowModeProvider().predict(
         source_type="INBOUND_DOCUMENT",
         source_id="document-1",
@@ -17,6 +20,7 @@ def test_mock_shadow_mode_payload_is_advisory_and_mock_only() -> None:
 
 
 def test_mock_shadow_mode_payload_has_no_provider_secret_requirement() -> None:
+    """Mock shadow-mode payloads do not require or expose provider secrets."""
     payload = MockShadowModeProvider().predict(
         source_type="VALIDATION_CASE",
         source_id="validation-1",
