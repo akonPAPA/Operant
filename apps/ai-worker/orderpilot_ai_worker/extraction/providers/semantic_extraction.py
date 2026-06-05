@@ -31,7 +31,7 @@ class SemanticExtractionProvider(ABC):  # pylint: disable=too-few-public-methods
         """Return advisory structured extraction only."""
 
 
-class MockSemanticExtractionProvider(SemanticExtractionProvider):  # pylint: disable=R0903
+class MockSemanticExtractionProvider(SemanticExtractionProvider):  # pylint: disable=too-few-public-methods
     """Rule-based semantic extractor used for local advisory worker tests."""
 
     def extract(self, text: str, source_channel_context: str | None = None) -> ExtractionResult:
