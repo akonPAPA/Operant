@@ -20,6 +20,6 @@ Changes in the following areas require extra scrutiny: authentication, tenant is
 
 ## Reporting Contact and Scope
 
-Report privately to `[SECURITY_CONTACT_EMAIL]` (or, until that mailbox exists, to the repository owner). Supported versions are limited to the current private development branch; historical stage snapshots are not supported.
+Report privately to `mukhametgaliaqan@gmail.com` (or, until that mailbox exists, to the repository owner). Supported versions are limited to the current private development branch; historical stage snapshots are not supported.
 
 This file is not a public bug bounty program and offers no reward unless such a program is explicitly announced in writing.
