@@ -55,6 +55,9 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/channel-identities") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.CHANNEL_IDENTITY_ACTION;
     }
+    if (path.startsWith("/api/v1/channel-gateway/messages") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.INTAKE_WRITE;
+    }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
     }
