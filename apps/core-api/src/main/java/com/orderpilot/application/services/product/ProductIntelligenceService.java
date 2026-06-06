@@ -166,8 +166,6 @@ public class ProductIntelligenceService {
     return candidates.stream().limit(MAX_SUBSTITUTE_CANDIDATES).toList();
   }
 
-  // --- resolution internals ---
-
   private Resolution resolveCore(UUID tenantId, String rawProductText, String rawSkuOrOem, List<ProductIntelligenceIssue> issues) {
     if (rawSkuOrOem != null && !rawSkuOrOem.isBlank()) {
       return resolveByCode(tenantId, ProductCodeNormalizer.normalize(rawSkuOrOem), issues);
@@ -242,8 +240,6 @@ public class ProductIntelligenceService {
     return new Resolution(ProductMatchType.NONE, null, null, true, false);
   }
 
-  // --- compatibility internals ---
-
   private CompatibilityStatus assessCompatibility(List<ProductCompatibility> rows, VehicleContext vehicle) {
     boolean anyMakeModel = false;
     boolean yearConflict = false;
@@ -285,8 +281,6 @@ public class ProductIntelligenceService {
     return new CompatibilityEvidence(row.getCompatibleType(), row.getMake(), row.getModel(),
         row.getYearFrom(), row.getYearTo(), row.getConfiguration(), row.getRiskLevel(), "PRODUCT_COMPATIBILITY");
   }
-
-  // --- substitute internals ---
 
   private SubstituteCandidate buildCandidate(UUID tenantId, UUID sourceProductId, ProductSubstitute sub, Product product,
       List<CustomerSubstitutionPreference> prefs, UUID locationId, BigDecimal quantity, VehicleContext vehicle) {
@@ -400,8 +394,6 @@ public class ProductIntelligenceService {
     return new StockOutcome("AVAILABLE", available);
   }
 
-  // --- ranking ---
-
   private static final Comparator<SubstituteCandidate> RANKING = Comparator
       .comparingInt((SubstituteCandidate c) -> c.blocked() ? 1 : 0) // not blocked first
       .thenComparingInt(c -> -compatibilityRank(c.compatibilityStatus()))
@@ -459,8 +451,6 @@ public class ProductIntelligenceService {
     return strength;
   }
 
-  // --- helpers ---
-
   private Set<UUID> distinctIds(List<UUID> ids) {
     return new LinkedHashSet<>(ids);
   }
@@ -487,8 +477,6 @@ public class ProductIntelligenceService {
   private ProductIntelligenceIssue notFound(String message) {
     return new ProductIntelligenceIssue(ValidationIssueType.PRODUCT_NOT_FOUND, ValidationSeverity.WARNING, message);
   }
-
-  // --- internal records ---
 
   /** Compatibility status + bounded evidence + advisory issues. */
   public record CompatibilityResult(CompatibilityStatus status, List<CompatibilityEvidence> evidence, List<ProductIntelligenceIssue> issues) {}

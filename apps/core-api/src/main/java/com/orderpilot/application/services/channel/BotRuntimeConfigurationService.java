@@ -90,7 +90,6 @@ public class BotRuntimeConfigurationService {
     return toResponse(getOrCreateDefault(connection), connection);
   }
 
-  /** Used by the channel→bot bridge to resolve (or lazily create) the connection's configuration. */
   @Transactional
   public ChannelBotRuntimeConfiguration getOrCreateDefaultForConnection(UUID connectionId) {
     return getOrCreateDefault(requireConnection(connectionId));

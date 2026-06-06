@@ -71,6 +71,9 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       // OP-CAP-07F: internal trigger that materializes an operator-reviewable handoff work item.
       return ApiPermission.REVIEW_ACTION;
     }
+    if (path.startsWith("/api/v1/ai-validation-handoffs") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
     if (path.startsWith("/api/v1/ai-work") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_WORK_ACTION;
     }

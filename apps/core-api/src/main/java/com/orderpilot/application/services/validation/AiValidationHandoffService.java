@@ -128,8 +128,6 @@ public class AiValidationHandoffService {
     return rows.stream().map(this::toView).toList();
   }
 
-  // --- derivation helpers ---
-
   private AiValidationHandoffStatus statusFor(String routingDecision) {
     try {
       return AiValidationHandoffStatus.valueOf(routingDecision);
@@ -177,8 +175,6 @@ public class AiValidationHandoffService {
     Map<String, Object> payload = asMap(json.parseObject(extraction.getResultJson()).get("extraction"));
     return payload.get("line_items") instanceof List<?> list ? list.size() : 0;
   }
-
-  // --- audit ---
 
   private void audit(AiValidationHandoff handoff, boolean created) {
     Map<String, Object> metadata = new LinkedHashMap<>();

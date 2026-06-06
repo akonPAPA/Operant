@@ -187,8 +187,6 @@ public class ExtractionAdvisoryValidationService {
     return toView(v, rows);
   }
 
-  // --- classification ---
-
   private Outcome classify(List<DerivedIssue> issues, String workerStatus, int signalCount,
       int unknownProductCount, boolean missingLineItems) {
     boolean blocked = issues.stream().anyMatch(i ->
@@ -219,8 +217,6 @@ public class ExtractionAdvisoryValidationService {
     }
     return new Outcome(risk, routing);
   }
-
-  // --- engine adaptation ---
 
   private ValidateExtractedRequestCommand toCommand(
       ExtractionResult extraction, Map<String, Object> payload, String intent, List<String> signals) {
@@ -296,8 +292,6 @@ public class ExtractionAdvisoryValidationService {
     }
     return new ArrayList<>(byKey.values());
   }
-
-  // --- persistence ---
 
   private AiValidationResultView persist(UUID tenantId, ExtractionResult extraction, ExtractionRun run,
       UUID processingJobId, String sourceType, UUID sourceId, List<DerivedIssue> issues, Outcome outcome,
@@ -389,8 +383,6 @@ public class ExtractionAdvisoryValidationService {
         v.getUnknownProductCount(), v.isUnknownCustomer(), true, issues, v.getCreatedAt());
   }
 
-  // --- safe parsing helpers ---
-
   private static String bounded(String value) {
     if (value == null) {
       return "";
@@ -467,8 +459,6 @@ public class ExtractionAdvisoryValidationService {
       return null;
     }
   }
-
-  // --- internal holders ---
 
   private record DerivedIssue(AiValidationIssueCode code, ValidationSeverity severity, Integer lineIndex,
       String fieldName, String message) {}
