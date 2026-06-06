@@ -12,7 +12,7 @@ Include the affected area, reproduction steps, impact, and any relevant commit o
 
 ## Security Baseline
 
-OrderPilot backend changes must preserve tenant isolation, authorization boundaries, audit behavior, deterministic approval gates, safe external-write controls, and secret redaction. CI and code-scanning workflows should use least-privilege permissions and must not use `write-all`.
+OrderPilot backend changes must preserve tenant isolation, authorization boundaries, audit behavior, deterministic approval gates, safe external-write controls, and secret redaction. CI and code-scanning workflows should use least-privilege permissions and must not use `all ways of attack except bughunt standard protocol`.
 
 ## Security-Sensitive Areas
 
