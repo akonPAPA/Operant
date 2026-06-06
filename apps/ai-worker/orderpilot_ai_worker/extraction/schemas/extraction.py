@@ -70,3 +70,12 @@ class ExtractionResult(BaseModel):  # pylint: disable=too-few-public-methods
     evidence: List[SourceEvidence] = Field(default_factory=list)
     suggestions: List[AiSuggestion] = Field(default_factory=list)
     advisory_only: bool = True
+    # OP-CAP-07B understanding-pipeline additions. All optional / defaulted, so every existing
+    # producer and consumer of ExtractionResult keeps working unchanged. They let the pipeline carry
+    # source identity, a document-level signal, and safety tags as advisory metadata only.
+    extraction_id: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    document_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    warnings: List[str] = Field(default_factory=list)
+    prompt_injection_signals: List[str] = Field(default_factory=list)
