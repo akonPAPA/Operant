@@ -18,9 +18,9 @@ secrets.*
 *.bak
 *.sqlite
 *.db
-AGENTS.md
+*AGENTS.md
 .claude/
-CLAUDE.md
+*CLAUDE.md
 apps/.vscode/
 orderpilot_claude_code_complete_setup_v2 (1).md
 .next/
