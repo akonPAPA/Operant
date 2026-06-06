@@ -31,7 +31,7 @@ public class ChannelConnectionController {
   @PostMapping("/connections/{id}/pause") public ChannelConnectionResponse pause(@PathVariable UUID id) { return toResponse(connectionService.pause(id)); }
   @PostMapping("/connections/{id}/disable") public ChannelConnectionResponse disable(@PathVariable UUID id) { return toResponse(connectionService.disable(id)); }
   @PostMapping("/connections/{id}/health-check") public ChannelHealthResponse health(@PathVariable UUID id) { var r = connectionService.recordHealthCheck(id); return new ChannelHealthResponse(r.providerType(), r.healthy(), r.statusCode(), r.message(), r.checkedAt(), r.diagnostics().stream().map(ChannelConnectionController::toDiagnosticResponse).toList()); }
-  @GetMapping("/events") public List<InboundChannelEventResponse> events() { return eventService.list().stream().map(this::toResponse).toList(); }
+  @GetMapping("/events") public List<InboundChannelEventResponse> events(@RequestParam(name = "limit", required = false) Integer limit) { return eventService.listRecent(limit).stream().map(this::toResponse).toList(); }
 
   private ChannelConnectionResponse toResponse(ChannelConnection c) {
     String referenceId = c.getSecretReferenceId() == null ? c.getSecretRef() : c.getSecretReferenceId();

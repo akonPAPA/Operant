@@ -261,9 +261,9 @@ class ChannelBotRuntimeBridgeServiceTest {
 
     // An oversized client limit is clamped to the server-side hard cap.
     ChannelBotBridgeStatusResponse clamped = bridgeService.getBridgeStatus(1_000_000);
-    assertThat(clamped.recentWindowLimit()).isEqualTo(ChannelBotRuntimeBridgeService.MAX_RECENT_LIMIT);
+    assertThat(clamped.recentWindowLimit()).isEqualTo(ChannelEventNormalizationService.MAX_EVENT_LIMIT);
     // A null limit uses the safe default window.
-    assertThat(bridgeService.getBridgeStatus(null).recentWindowLimit()).isEqualTo(ChannelBotRuntimeBridgeService.DEFAULT_RECENT_LIMIT);
+    assertThat(bridgeService.getBridgeStatus(null).recentWindowLimit()).isEqualTo(ChannelEventNormalizationService.DEFAULT_EVENT_LIMIT);
 
     ChannelBotBridgeStatusResponse status = bridgeService.getBridgeStatus(null);
     assertThat(status.externalExecution()).isEqualTo("DISABLED");

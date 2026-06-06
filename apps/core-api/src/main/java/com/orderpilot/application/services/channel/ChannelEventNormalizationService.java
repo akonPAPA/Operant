@@ -16,6 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ChannelEventNormalizationService {
+  /** Default operator read-window size when no explicit limit is requested. */
+  static final int DEFAULT_EVENT_LIMIT = 50;
+  /** Hard cap on the operator read window. A client-supplied limit can never exceed this. */
+  static final int MAX_EVENT_LIMIT = 200;
+
   private final ChannelConnectionRepository connectionRepository;
   private final InboundChannelEventRepository eventRepository;
   private final AuditEventService auditEventService;
@@ -74,11 +79,23 @@ public class ChannelEventNormalizationService {
   }
 
   /**
-   * Bounded, tenant-scoped recent inbound events for operator read surfaces. The caller supplies an
-   * already-clamped {@link Limit} so this read path can never load a tenant's entire event history.
+   * Bounded, tenant-scoped recent inbound events for operator read surfaces. The requested limit is
+   * advisory: it is clamped server-side to {@code [1, MAX_EVENT_LIMIT]} (null/{@literal <}1 falls back
+   * to {@code DEFAULT_EVENT_LIMIT}), so this read path can never load a tenant's full event history.
    */
   @Transactional(readOnly = true)
-  public List<InboundChannelEvent> listRecent(Limit limit) {
+  public List<InboundChannelEvent> listRecent(Integer requestedLimit) {
+    return listRecent(Limit.of(clampLimit(requestedLimit)));
+  }
+
+  static int clampLimit(Integer requestedLimit) {
+    if (requestedLimit == null || requestedLimit < 1) {
+      return DEFAULT_EVENT_LIMIT;
+    }
+    return Math.min(requestedLimit, MAX_EVENT_LIMIT);
+  }
+
+  private List<InboundChannelEvent> listRecent(Limit limit) {
     return eventRepository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId(), limit);
   }
 

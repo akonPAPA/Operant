@@ -35,7 +35,7 @@ test("messenger bridge page surfaces connection-to-conversation linkage and safe
 
 test("messenger bridge page renders empty and error states", () => {
   assert.match(page, /Backend data unavailable/);
-  assert.match(page, /No bridged messenger events yet/);
+  assert.match(page, /No bridged messenger events in the recent window/);
 });
 
 test("messenger bridge page is read-only and exposes no secret values or action handlers", () => {

@@ -27,7 +27,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,11 +53,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ChannelBotRuntimeBridgeService {
   private static final String EXTERNAL_EXECUTION = "DISABLED";
-
-  /** Default operator read-window size when no explicit limit is requested. */
-  static final int DEFAULT_RECENT_LIMIT = 50;
-  /** Hard cap on the operator read window. A client-supplied limit can never exceed this. */
-  static final int MAX_RECENT_LIMIT = 200;
 
   /** Controlled flows the bridge may run. Static safety contract surfaced to the operator. */
   private static final List<String> SUPPORTED_FLOWS = List.of(
@@ -188,12 +182,12 @@ public class ChannelBotRuntimeBridgeService {
 
   /**
    * Bounded, tenant-scoped recent bridged events for the operator dashboard. The client-supplied
-   * limit is advisory only: it is clamped to {@code [1, MAX_RECENT_LIMIT]} and defaults to
-   * {@code DEFAULT_RECENT_LIMIT}, so this read path can never load a tenant's full event history.
+   * limit is advisory only: {@link ChannelEventNormalizationService} centralizes the default and
+   * hard cap, so this read path can never load a tenant's full event history.
    */
   @Transactional(readOnly = true)
   public List<ChannelBotBridgeEventResponse> listRecentBridgedEvents(Integer requestedLimit) {
-    return normalizationService.listRecent(Limit.of(clampLimit(requestedLimit))).stream()
+    return normalizationService.listRecent(requestedLimit).stream()
         .map(ChannelBotRuntimeBridgeService::toEventResponse)
         .toList();
   }
@@ -205,24 +199,17 @@ public class ChannelBotRuntimeBridgeService {
    */
   @Transactional(readOnly = true)
   public ChannelBotBridgeStatusResponse getBridgeStatus(Integer requestedLimit) {
-    int limit = clampLimit(requestedLimit);
-    List<InboundChannelEvent> recent = normalizationService.listRecent(Limit.of(limit));
+    List<InboundChannelEvent> recent = normalizationService.listRecent(requestedLimit);
+    int effectiveLimit = ChannelEventNormalizationService.clampLimit(requestedLimit);
     int bridged = (int) recent.stream().filter(e -> e.getBotConversationId() != null).count();
     return new ChannelBotBridgeStatusResponse(
         EXTERNAL_EXECUTION,
-        limit,
+        effectiveLimit,
         recent.size(),
         bridged,
         recent.size() - bridged,
         SUPPORTED_FLOWS,
         FORBIDDEN_ACTIONS);
-  }
-
-  private static int clampLimit(Integer requestedLimit) {
-    if (requestedLimit == null) {
-      return DEFAULT_RECENT_LIMIT;
-    }
-    return Math.max(1, Math.min(requestedLimit, MAX_RECENT_LIMIT));
   }
 
   private static ChannelBotBridgeEventResponse toEventResponse(InboundChannelEvent e) {
