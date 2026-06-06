@@ -30,7 +30,8 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/audit", ApiPermission.AUDIT_READ),
       Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ),
-      Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ)
+      Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/ai-validation-handoffs", ApiPermission.REVIEW_READ)
   );
 
   public ApiPermissionInterceptor(ApiPermissionGuard guard) {
@@ -65,6 +66,10 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/internal/extractions") && !HttpMethod.GET.matches(method)) {
       // OP-CAP-07E: internal trigger for deterministic validation of an advisory AI extraction result.
       return ApiPermission.VALIDATION_RUN;
+    }
+    if (path.startsWith("/api/v1/internal/ai-validations") && !HttpMethod.GET.matches(method)) {
+      // OP-CAP-07F: internal trigger that materializes an operator-reviewable handoff work item.
+      return ApiPermission.REVIEW_ACTION;
     }
     if (path.startsWith("/api/v1/ai-work") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_WORK_ACTION;

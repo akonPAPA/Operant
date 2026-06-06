@@ -196,6 +196,63 @@ rejected results never enter business validation as valid.
 - No quote/order draft creation, no final business mutation, no connector/ERP/1C write, no analytics,
   no frontend. AI output stays advisory/untrusted; this layer only produces a safe routing decision.
 
+## AI validation decision handoff (OP-CAP-07F)
+
+OP-CAP-07F materializes a deterministic 07E routing decision into ONE tenant-scoped, operator-reviewable
+**handoff work item** — the bridge between an advisory validation decision and a future quote/order
+workspace. It is **not** quote/order creation: it holds no business authority and writes no master
+data.
+
+```text
+AiExtractionValidation (07E routing decision)
+  -> AiValidationHandoffService.generate(validationId)
+  -> upsert one ai_validation_handoff row (per tenant+validationId)
+  -> bounded operator-reviewable summary + draftEligible flag
+```
+
+### Endpoints
+
+- `POST /api/v1/internal/ai-validations/{validationId}/handoff` — internal generate/refresh, guarded by
+  `REVIEW_ACTION`.
+- `GET /api/v1/ai-validation-handoffs/{handoffId}` — read, guarded by `REVIEW_READ`.
+- `GET /api/v1/ai-validation-handoffs?status=&routingDecision=&limit=` — operator queue list, guarded
+  by `REVIEW_READ`.
+
+Tenant is resolved server-side from `TenantContext`; the validation/extraction are fetched
+tenant-scoped and a mismatch (or unknown validationId) fails closed.
+
+### Status / routing mapping (1:1) and draft eligibility
+
+| Routing decision (07E)         | Handoff status                 | `draftEligible` |
+| ------------------------------ | ------------------------------ | --------------- |
+| `READY_FOR_DRAFT_REVIEW`       | `READY_FOR_DRAFT_REVIEW`       | **true**        |
+| `NEEDS_HUMAN_REVIEW`           | `NEEDS_HUMAN_REVIEW`           | false           |
+| `BLOCKED_INVALID_EXTRACTION`   | `BLOCKED_INVALID_EXTRACTION`   | false (visible for review/audit) |
+| `FAILED_VALIDATION`            | `FAILED_VALIDATION`            | false (visible for review/audit) |
+
+Only `READY_FOR_DRAFT_REVIEW` is a future draft-preparation candidate; BLOCKED/FAILED are visible but
+never draft-eligible.
+
+### Persistence, idempotency, audit
+
+- Narrow new table `ai_validation_handoff` (Flyway `V40`), unique on `(tenant_id, validation_id)`;
+  bounded columns only (no JSONB, no raw text). Carries extraction/validation/job correlation, risk/
+  routing/status, intent, a bounded `customer_ref` hint, `line_count`, `issue_count`, a bounded
+  `issue_summary` (issue-code histogram), and counts.
+- **Idempotent**: re-generation refreshes the same row in place — no duplicate handoffs, no duplicate
+  rows.
+- Audit `ai_validation_handoff.created` / `.updated` with bounded metadata (handoffId, validationId,
+  extractionResultId, routingDecision, riskLevel, status, draftEligible, counts). Never the full
+  `result_json`, raw document/message text, secrets, or large line-item arrays.
+
+### Security rule & explicit non-goals (07F)
+
+- A handoff is **NOT** a quote/order. Generation writes only the `ai_validation_handoff` row; it never
+  writes `Product`/`CustomerAccount`/`InventorySnapshot`/`PriceRule`/`DiscountRule`/`MarginRule`, never
+  writes `Quote`/`Order`/`DraftQuote`/`DraftOrder`, and never emits a connector/outbox/ERP/1C command.
+- Out of scope: the quote/order draft-preparation workspace itself, operator decisioning/resolution
+  lifecycle on the handoff, and any frontend page.
+
 ## Known limitations (future work)
 
 - Real OCR/PDF/Excel text extraction (only an inline-text + stub boundary exists today).

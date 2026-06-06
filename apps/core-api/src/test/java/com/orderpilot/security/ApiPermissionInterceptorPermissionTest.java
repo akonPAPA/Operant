@@ -215,6 +215,42 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("EXTRACTION_READ");
   }
 
+  // --- OP-CAP-07F AI validation handoff: generate requires REVIEW_ACTION, reads require REVIEW_READ ---
+
+  @Test
+  void aiValidationHandoffGenerateWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-validations/some-id/handoff");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiValidationHandoffGenerateWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-validations/some-id/handoff");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void aiValidationHandoffReadRequiresReviewRead() throws Exception {
+    MockHttpServletRequest get = new MockHttpServletRequest("GET", "/api/v1/ai-validation-handoffs/some-id");
+
+    assertThatThrownBy(() -> interceptor.preHandle(get, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
+  @Test
+  void aiValidationHandoffListWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest list = new MockHttpServletRequest("GET", "/api/v1/ai-validation-handoffs");
+    list.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(list, new MockHttpServletResponse(), HANDLER));
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
