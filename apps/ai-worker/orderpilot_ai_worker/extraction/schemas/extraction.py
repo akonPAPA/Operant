@@ -1,5 +1,7 @@
 """Schemas for advisory semantic extraction results."""
 
+from typing import List
+
 from pydantic import BaseModel, Field
 
 
@@ -61,10 +63,10 @@ class ExtractionResult(BaseModel):  # pylint: disable=too-few-public-methods
     prompt_version: str = "stage4.prompt.v1"
     schema_version: str = "stage4.v1"
     source_channel_context: str | None = None
-    customer_hints: list[str] = Field(default_factory=list)
+    customer_hints: List[str] = Field(default_factory=list)
     validation_status: str = "needs_review"
-    fields: list[ExtractedField] = Field(default_factory=list)
-    line_items: list[ExtractedLineItem] = Field(default_factory=list)
-    evidence: list[SourceEvidence] = Field(default_factory=list)
-    suggestions: list[AiSuggestion] = Field(default_factory=list)
+    fields: List[ExtractedField] = Field(default_factory=list)
+    line_items: List[ExtractedLineItem] = Field(default_factory=list)
+    evidence: List[SourceEvidence] = Field(default_factory=list)
+    suggestions: List[AiSuggestion] = Field(default_factory=list)
     advisory_only: bool = True
