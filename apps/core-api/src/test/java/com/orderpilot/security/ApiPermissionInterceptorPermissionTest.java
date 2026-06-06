@@ -187,6 +187,34 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("AI_RESULT_INTAKE");
   }
 
+  // --- OP-CAP-07E /api/v1/internal/extractions/{id}/validate requires VALIDATION_RUN ---
+
+  @Test
+  void aiExtractionValidateWithValidationRunSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/extractions/some-id/validate");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_RUN");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiExtractionValidateWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/extractions/some-id/validate");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_RUN");
+  }
+
+  @Test
+  void aiExtractionValidationReadRequiresExtractionRead() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/extractions/some-id/validation");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("EXTRACTION_READ");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

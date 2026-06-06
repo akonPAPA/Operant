@@ -125,9 +125,81 @@ the extraction payload, secrets, or service tokens.
 - Not a production queue/outbox; delivery is a direct internal endpoint call.
 - No HTTP `AiResultSink` on the worker side yet (the worker still publishes via its in-memory port).
 
+## Deterministic validation & risk routing (OP-CAP-07E)
+
+OP-CAP-07E consumes the persisted advisory `ExtractionResult` (07D) and produces deterministic
+validation issues, a risk level and a routing decision — the bridge between untrusted AI output and a
+future operator/draft workflow. It **reuses** the OP-CAP-08A `ValidationEngineService` (stateless,
+read-only) for the heavy customer/product/quantity/UOM/inventory/price resolution, then layers
+AI-advisory gating on top.
+
+```text
+advisory ExtractionResult (07D, untrusted)
+  -> ExtractionAdvisoryValidationService.validate(extractionResultId)
+  -> AI gating (provider-failure / rejected / prompt-injection / missing-intent / missing-line-items)
+     + reused ValidationEngineService deterministic checks
+  -> deterministic issues + risk level + routing decision
+  -> persisted ai_extraction_validation (+ issues) ; processing job status updated
+```
+
+### Endpoints
+
+- `POST /api/v1/internal/extractions/{extractionResultId}/validate` — internal trigger, guarded by
+  `VALIDATION_RUN`.
+- `GET /api/v1/extractions/{extractionResultId}/validation` — read view, guarded by `EXTRACTION_READ`.
+
+Tenant is resolved server-side from `TenantContext`; the result must belong to that tenant or the call
+fails closed. The advisory wrapper must be `advisoryOnly` + `source=AI_WORKER`.
+
+### Issue taxonomy (`AiValidationIssueCode`)
+
+`MISSING_INTENT`, `MISSING_LINE_ITEMS`, `UNKNOWN_CUSTOMER`, `UNKNOWN_PRODUCT`, `INVALID_QUANTITY`,
+`INVALID_UOM`, `LOW_CONFIDENCE_FIELD`, `PROMPT_INJECTION_SIGNAL`, `UNSUPPORTED_SOURCE_TYPE`,
+`PROVIDER_FAILURE`, `EXTRACTION_REJECTED`, `INVENTORY_UNKNOWN`, `PRICE_UNKNOWN`. Severity reuses
+`ValidationSeverity` (INFO/WARNING/ERROR/CRITICAL). Issue messages are bounded — never raw message/
+document text.
+
+### Risk & routing
+
+| Risk (`AiValidationRiskLevel`) | When |
+| ------------------------------ | ---- |
+| `BLOCKED`  | any CRITICAL/ERROR issue, provider failure, rejected extraction, missing line items |
+| `HIGH`     | prompt-injection signals, unsupported source type, or ≥2 unknown products |
+| `MEDIUM`   | any WARNING (unknown customer/product, low confidence, invalid UOM, inventory/price unknown) |
+| `LOW`      | no issues, known customer/product, positive quantity, valid UOM |
+
+| Routing (`AiValidationRoutingDecision`) | When |
+| --------------------------------------- | ---- |
+| `FAILED_VALIDATION`          | worker status FAILED |
+| `BLOCKED_INVALID_EXTRACTION` | any other BLOCKED (rejected / critical issue / missing line items) |
+| `NEEDS_HUMAN_REVIEW`         | risk HIGH or MEDIUM |
+| `READY_FOR_DRAFT_REVIEW`     | risk LOW (NOT a quote/order — only a future draft candidate) |
+
+Prompt injection and low confidence can never reach `READY_FOR_DRAFT_REVIEW`. Provider-failed /
+rejected results never enter business validation as valid.
+
+### Persistence, status, idempotency, audit
+
+- Persisted in narrow new tables `ai_extraction_validation` (one row per tenant+extractionResultId,
+  unique) + `ai_extraction_validation_issue` (Flyway `V39`). No quote/order tables; no master-data
+  mutation.
+- Processing job status: READY→`SUCCEEDED`, NEEDS_HUMAN_REVIEW→`NEEDS_REVIEW`,
+  BLOCKED_INVALID_EXTRACTION→`REJECTED`, FAILED_VALIDATION→`FAILED` (reuses 07D `ProcessingJob` mark
+  methods).
+- Idempotent: re-validation replaces the existing issues and recomputes the header in place — no
+  duplicate issue rows, no conflicting routing.
+- Audit `ai_extraction_validation.completed` with bounded metadata (risk, routing, counts, source
+  correlation) — never raw text, payload, or secrets.
+
+### Explicit non-goals (07E)
+
+- No quote/order draft creation, no final business mutation, no connector/ERP/1C write, no analytics,
+  no frontend. AI output stays advisory/untrusted; this layer only produces a safe routing decision.
+
 ## Known limitations (future work)
 
 - Real OCR/PDF/Excel text extraction (only an inline-text + stub boundary exists today).
 - Real semantic/LLM provider (`FUTURE_SEMANTIC` is a placeholder that fails closed; no LLM call).
 - Production queue/outbox + HTTP-backed `AiResultSink` wired to the 07D intake endpoint.
-- Deterministic validation/risk engine that consumes the persisted advisory `ExtractionResult`.
+- Draft quote/order workflow that consumes a `READY_FOR_DRAFT_REVIEW` routing decision (07E stops at
+  the routing decision; it never creates a draft).

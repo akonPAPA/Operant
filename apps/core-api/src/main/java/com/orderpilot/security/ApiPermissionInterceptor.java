@@ -62,6 +62,10 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/internal/ai-processing-results") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_RESULT_INTAKE;
     }
+    if (path.startsWith("/api/v1/internal/extractions") && !HttpMethod.GET.matches(method)) {
+      // OP-CAP-07E: internal trigger for deterministic validation of an advisory AI extraction result.
+      return ApiPermission.VALIDATION_RUN;
+    }
     if (path.startsWith("/api/v1/ai-work") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_WORK_ACTION;
     }
