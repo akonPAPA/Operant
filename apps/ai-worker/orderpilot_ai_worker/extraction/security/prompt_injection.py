@@ -1,5 +1,7 @@
 """Prompt-injection phrase detection for hostile inbound text."""
 
+from typing import List
+
 SUSPICIOUS_PHRASES = (
     "ignore previous instructions",
     "dump database",
@@ -15,7 +17,7 @@ SUSPICIOUS_PHRASES = (
 )
 
 
-def detect_prompt_injection(text: str) -> list[str]:
+def detect_prompt_injection(text: str) -> List[str]:
     """Return suspicious phrases present in inbound text."""
     lowered = text.lower()
     return [phrase for phrase in SUSPICIOUS_PHRASES if phrase in lowered]

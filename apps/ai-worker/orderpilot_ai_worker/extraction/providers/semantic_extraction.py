@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 import re
-from typing import NamedTuple
+from typing import List, NamedTuple
 
 from orderpilot_ai_worker.extraction.schemas.extraction import (
     AiSuggestion,
@@ -109,8 +109,8 @@ def _source_evidence(text: str) -> SourceEvidence:
 def _build_fields(
     matches: _ExtractionMatches,
     evidence: SourceEvidence,
-) -> list[ExtractedField]:
-    fields: list[ExtractedField] = []
+) -> List[ExtractedField]:
+    fields: List[ExtractedField] = []
     if matches.quantity:
         fields.append(_quantity_field(matches.quantity, evidence))
         if matches.quantity.group(2):
@@ -183,10 +183,10 @@ def _location_field(location: re.Match[str], evidence: SourceEvidence) -> Extrac
 
 def _build_line_items(
     text: str,
-    fields: list[ExtractedField],
+    fields: List[ExtractedField],
     matches: _ExtractionMatches,
     evidence: SourceEvidence,
-) -> list[ExtractedLineItem]:
+) -> List[ExtractedLineItem]:
     if not fields:
         return []
     return [
@@ -211,7 +211,7 @@ def _raw_uom(quantity_match: re.Match[str] | None) -> str:
     return "EA"
 
 
-def _build_suggestions(warnings: list[str]) -> list[AiSuggestion]:
+def _build_suggestions(warnings: List[str]) -> List[AiSuggestion]:
     return [
         AiSuggestion(
             suggestion_type="WARNING",
