@@ -82,6 +82,7 @@ public class ChannelBotRuntimeBridgeService {
   private final BotRuntimePolicyService policyService;
   private final ChannelIdentityResolverService identityResolverService;
   private final RuleBasedBotIntentClassifier intentClassifier;
+  private final ChannelRfqHandoffService rfqHandoffService;
   private final AuditEventService auditEventService;
   private final ObjectMapper objectMapper;
   private final Clock clock;
@@ -95,6 +96,7 @@ public class ChannelBotRuntimeBridgeService {
       BotRuntimePolicyService policyService,
       ChannelIdentityResolverService identityResolverService,
       RuleBasedBotIntentClassifier intentClassifier,
+      ChannelRfqHandoffService rfqHandoffService,
       AuditEventService auditEventService,
       ObjectMapper objectMapper,
       Clock clock) {
@@ -106,6 +108,7 @@ public class ChannelBotRuntimeBridgeService {
     this.policyService = policyService;
     this.identityResolverService = identityResolverService;
     this.intentClassifier = intentClassifier;
+    this.rfqHandoffService = rfqHandoffService;
     this.auditEventService = auditEventService;
     this.objectMapper = objectMapper;
     this.clock = clock;
@@ -165,6 +168,14 @@ public class ChannelBotRuntimeBridgeService {
     ChannelBotRuntimeConfiguration config = configurationService.getOrCreateDefaultForConnection(connectionId);
     BotIntent intent = intentClassifier.detect(event.getNormalizedText());
     BotFlow flow = BotFlow.fromIntent(intent);
+
+    // OP-CAP-06B: an RFQ-like verified message produces a reviewable internal RFQ handoff record
+    // (a draft request, never a quote/order). This is idempotent on the source event, so duplicate
+    // delivery cannot create duplicate handoffs, and it triggers no external write.
+    if (flow == BotFlow.RFQ) {
+      createRfqHandoff(event, connection, identity, intent);
+    }
+
     BotFlowPolicyDecision decision = policyService.decide(config, flow, contextFor(identity));
     if (!decision.allowed()) {
       event.markBotNotBridged("CONFIG_BLOCKED:" + decision.reasonCode().name(), clock.instant());
@@ -288,6 +299,23 @@ public class ChannelBotRuntimeBridgeService {
         event.getReceivedAt(),
         event.getVerificationStatus(),
         EXTERNAL_EXECUTION);
+  }
+
+  /**
+   * Create a reviewable RFQ handoff for a verified RFQ-like channel event. Delegates to the
+   * tenant-scoped, idempotent command service; the bridge never writes the handoff directly.
+   */
+  private void createRfqHandoff(InboundChannelEvent event, ChannelConnection connection, ChannelIdentityResolution identity, BotIntent intent) {
+    rfqHandoffService.createFromChannelEvent(new CreateChannelRfqHandoffCommand(
+        event.getId(),
+        connection.getId(),
+        connection.getProviderType().name(),
+        event.getExternalEventId(),
+        event.getSourceActorExternalId(),
+        identity.customerAccountId(),
+        identity.customerContactId(),
+        event.getNormalizedText(),
+        intent == null ? null : intent.name()));
   }
 
   private BotRuntimePolicyService.Context contextFor(ChannelIdentityResolution identity) {

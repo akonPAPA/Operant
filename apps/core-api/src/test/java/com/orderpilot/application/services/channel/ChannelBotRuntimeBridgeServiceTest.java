@@ -52,6 +52,7 @@ import org.springframework.test.context.ActiveProfiles;
     BotRuntimeConfigurationService.class,
     com.orderpilot.application.services.bot.BotRuntimePolicyService.class,
     ChannelIdentityResolverService.class,
+    ChannelRfqHandoffService.class,
     ChannelEventNormalizationService.class,
     ChannelConnectionService.class,
     TelegramChannelAdapter.class,
@@ -83,6 +84,7 @@ class ChannelBotRuntimeBridgeServiceTest {
   @Autowired private BotMessageRepository messageRepository;
   @Autowired private BotRfqRequestRepository rfqRequestRepository;
   @Autowired private BotHandoffRepository handoffRepository;
+  @Autowired private com.orderpilot.domain.channel.ChannelRfqHandoffRepository rfqHandoffRepository;
   @Autowired private AuditEventRepository auditEventRepository;
   @Autowired private TenantRepository tenantRepository;
 
@@ -274,6 +276,46 @@ class ChannelBotRuntimeBridgeServiceTest {
     // The bridge can never approve or write to trusted/external systems.
     assertThat(status.forbiddenActions())
         .contains("QUOTE_APPROVAL", "ORDER_APPROVAL", "EXTERNAL_ERP_OR_1C_WRITE", "CROSS_TENANT_SEARCH");
+  }
+
+  @Test void rfqTelegramMessageProducesReviewableHandoffAndDuplicateDoesNotDuplicateIt() throws Exception {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    ChannelConnection connection = activeTelegramConnection(null);
+    JsonNode payload = rfqPayload("8001", "rfq-hm1", "rfq-chat-1");
+
+    ChannelBotBridgeResultResponse first = bridgeService.handleInbound(connection.getId(), ChannelProviderType.TELEGRAM, payload, headers());
+
+    // A reviewable RFQ handoff is created from the verified channel message.
+    var handoffs = rfqHandoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    assertThat(handoffs).hasSize(1);
+    assertThat(handoffs.get(0).getStatus())
+        .isEqualTo(com.orderpilot.domain.channel.ChannelRfqHandoffStatus.PENDING_REVIEW);
+    assertThat(handoffs.get(0).getInboundChannelEventId()).isEqualTo(first.eventId());
+    assertThat(handoffs.get(0).getSourceChannel()).isEqualTo("TELEGRAM");
+    assertThat(auditActions(tenantId)).contains("CHANNEL_RFQ_HANDOFF_CREATED");
+
+    // Re-delivery of the identical provider payload must not create a duplicate handoff.
+    bridgeService.handleInbound(connection.getId(), ChannelProviderType.TELEGRAM, payload, headers());
+    assertThat(rfqHandoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)).hasSize(1);
+  }
+
+  @Test void rfqHandoffIsReviewableDraftOnlyAndBotApprovesNothing() throws Exception {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    ChannelConnection connection = activeTelegramConnection(null);
+
+    ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
+        connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("8002", "rfq-hm2", "rfq-chat-2"), headers());
+
+    // Bot path remains safe: external execution disabled, request routed for human review only.
+    assertThat(result.externalExecution()).isEqualTo("DISABLED");
+    assertThat(result.requiresHumanReview()).isTrue();
+    // The handoff is a PENDING_REVIEW draft request, never an approved quote/order.
+    var handoffs = rfqHandoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    assertThat(handoffs).hasSize(1);
+    assertThat(handoffs.get(0).getStatus())
+        .isEqualTo(com.orderpilot.domain.channel.ChannelRfqHandoffStatus.PENDING_REVIEW);
   }
 
   // --- helpers ---
