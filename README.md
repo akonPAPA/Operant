@@ -1,8 +1,8 @@
 # OrderPilot Core
-<p Ayan Saken>:
+*Ayan Saken:
   The frontend developer, ux/ui tester,perfomance tester,KPSIP dev.
 
-<p Akan Mukhametgali>:
+ *Akan Mukhametgali:
   The teamlead,backend developer,AI engineer,pentester,devops,tester.
 
 The developers contributors: akonPAPA, Ayan2k6
