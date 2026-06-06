@@ -4,6 +4,13 @@ import com.orderpilot.domain.channel.ChannelConnection;
 import java.util.Map;
 
 abstract class AbstractProviderWebhookVerifier implements ChannelWebhookVerifier {
+  private static final String[] PROVIDER_SIGNATURE_HEADER_NAMES = {
+      "x-hub-signature-256",
+      "x-telegram-bot-api-secret-token",
+      "x-viber-content-signature",
+      "x-wechat-signature"
+  };
+
   @Override
   public VerificationResult verify(ChannelConnection connection, Map<String, String> headers, String rawPayload) {
     String mode = connection.getWebhookVerificationMode();
@@ -21,7 +28,7 @@ abstract class AbstractProviderWebhookVerifier implements ChannelWebhookVerifier
           : VerificationResult.accepted("Shared secret header present; raw secret is not exposed");
     }
     if ("SIGNATURE_HEADER".equals(mode) || "PROVIDER_SPECIFIC".equals(mode)) {
-      String signature = firstHeader(headers, "x-hub-signature-256", "x-telegram-bot-api-secret-token", "x-viber-content-signature", "x-wechat-signature");
+      String signature = firstHeader(headers, PROVIDER_SIGNATURE_HEADER_NAMES);
       return signature == null || signature.isBlank()
           ? VerificationResult.rejected("Missing provider signature header")
           : VerificationResult.accepted("Provider signature header present; provider adapter-ready verification stub");

@@ -15,32 +15,12 @@ export type BotRuntimeConfigListItem = {
   updatedAt?: string;
 };
 
-export type BotRuntimeConfig = {
+type BotRuntimeConfigIdentity = {
   id: string;
   channelConnectionId: string;
   providerType: string;
   connectionStatus: string;
   connectionVerificationMode: string;
-  enabled: boolean;
-  greetingEnabled: boolean;
-  availabilityCheckEnabled: boolean;
-  priceCheckMode: string;
-  rfqCaptureMode: string;
-  substituteSuggestionMode: string;
-  orderStatusMode: string;
-  unknownCustomerMode: string;
-  humanHandoffEnabled: boolean;
-  handoffQueueKey: string;
-  inventoryFreshnessMaxMinutes: number;
-  inventoryFreshnessPolicy: string;
-  priceVisibilityPolicy: string;
-  safeGreetingTemplate: string;
-  safeFallbackTemplate: string;
-  handoffTemplate: string;
-  revision: number;
-  externalExecution: string;
-  createdAt?: string;
-  updatedAt?: string;
 };
 
 // Mutable, safe subset only. No tenant id, no secrets, no tokens, no credentials.
@@ -62,6 +42,15 @@ export type BotRuntimeConfigUpdate = {
   safeFallbackTemplate: string;
   handoffTemplate: string;
 };
+
+type BotRuntimeConfigAudit = {
+  revision: number;
+  externalExecution: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type BotRuntimeConfig = BotRuntimeConfigIdentity & BotRuntimeConfigUpdate & BotRuntimeConfigAudit;
 
 export type BotRuntimeConfigApiResult<T> = {
   data: T;

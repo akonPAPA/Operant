@@ -31,4 +31,18 @@ class WebhookVerifierTest {
     assertThat(result.accepted()).isFalse();
     assertThat(result.status()).isEqualTo("REJECTED");
   }
+
+  @Test
+  void signatureModeAcceptsProviderSignatureHeaderName() {
+    var connection = new ChannelConnection(UUID.randomUUID(), ChannelProviderType.TELEGRAM, "Telegram", null, null, "vault-ref", Instant.now());
+    connection.configureWebhookVerificationMode("SIGNATURE_HEADER", Instant.now());
+
+    VerificationResult result = new TelegramWebhookVerifier().verify(
+        connection,
+        Map.of("x-telegram-bot-api-secret-token", "present"),
+        "{}");
+
+    assertThat(result.accepted()).isTrue();
+    assertThat(result.status()).isEqualTo("ACCEPTED");
+  }
 }

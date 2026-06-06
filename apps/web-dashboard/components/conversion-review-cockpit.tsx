@@ -21,34 +21,11 @@ export function ConversionReviewList() {
   const [error, setError] = useState("");
 
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      setAttempts(await getQuoteConversionAttempts(tenantId, filter));
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Conversion review failed.");
-      setAttempts([]);
-    } finally {
-      setLoading(false);
-    }
+    await loadConversionState(event, () => getQuoteConversionAttempts(tenantId, filter), setAttempts, setError, setLoading, [], "Conversion review failed.");
   }, [filter, tenantId]);
 
   useEffect(() => {
-    let cancelled = false;
-    getQuoteConversionAttempts(demoTenantId)
-      .then((nextAttempts) => {
-        if (!cancelled) setAttempts(nextAttempts);
-      })
-      .catch((nextError) => {
-        if (!cancelled) setError(nextError instanceof Error ? nextError.message : "Conversion review failed.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    return loadInitialConversionState(() => getQuoteConversionAttempts(demoTenantId), setAttempts, setError, setLoading, "Conversion review failed.");
   }, []);
 
   return (
@@ -103,34 +80,11 @@ export function ConversionReviewDetail({ attemptId, initialTenantId = demoTenant
   const [error, setError] = useState("");
 
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      setDetail(await getQuoteConversionAttemptDetail(tenantId, attemptId));
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Conversion attempt detail failed.");
-      setDetail(null);
-    } finally {
-      setLoading(false);
-    }
+    await loadConversionState(event, () => getQuoteConversionAttemptDetail(tenantId, attemptId), setDetail, setError, setLoading, null, "Conversion attempt detail failed.");
   }, [attemptId, tenantId]);
 
   useEffect(() => {
-    let cancelled = false;
-    getQuoteConversionAttemptDetail(initialTenantId, attemptId)
-      .then((nextDetail) => {
-        if (!cancelled) setDetail(nextDetail);
-      })
-      .catch((nextError) => {
-        if (!cancelled) setError(nextError instanceof Error ? nextError.message : "Conversion attempt detail failed.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    return loadInitialConversionState(() => getQuoteConversionAttemptDetail(initialTenantId, attemptId), setDetail, setError, setLoading, "Conversion attempt detail failed.");
   }, [attemptId, initialTenantId]);
 
   return (
@@ -213,6 +167,51 @@ function ReadOnlyNotice() {
       <p>This surface displays tenant-scoped backend review data only. It does not approve, reject, retry, correct, create quotes, execute connectors, or write to ERP/1C.</p>
     </section>
   );
+}
+
+async function loadConversionState<T>(
+  event: FormEvent<HTMLFormElement> | undefined,
+  loadData: () => Promise<T>,
+  setData: (value: T) => void,
+  setError: (value: string) => void,
+  setLoading: (value: boolean) => void,
+  fallback: T,
+  errorMessage: string
+) {
+  event?.preventDefault();
+  setLoading(true);
+  setError("");
+  try {
+    setData(await loadData());
+  } catch (nextError) {
+    setError(nextError instanceof Error ? nextError.message : errorMessage);
+    setData(fallback);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function loadInitialConversionState<T>(
+  loadData: () => Promise<T>,
+  setData: (value: T) => void,
+  setError: (value: string) => void,
+  setLoading: (value: boolean) => void,
+  errorMessage: string
+) {
+  let cancelled = false;
+  loadData()
+    .then((nextData) => {
+      if (!cancelled) setData(nextData);
+    })
+    .catch((nextError) => {
+      if (!cancelled) setError(nextError instanceof Error ? nextError.message : errorMessage);
+    })
+    .finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+  return () => {
+    cancelled = true;
+  };
 }
 
 function StatusPill({ value }: { value: string }) {

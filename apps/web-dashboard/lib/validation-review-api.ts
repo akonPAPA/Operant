@@ -1,7 +1,4 @@
-export type ApiResult<T> = {
-  data: T;
-  error?: string;
-};
+import type { ApiResult } from "./api-result";
 
 export type ReviewCaseSummary = {
   id: string;
