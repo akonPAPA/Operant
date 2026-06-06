@@ -181,9 +181,9 @@ public class ChannelBotRuntimeBridgeService {
   }
 
   /**
-   * Bounded, tenant-scoped recent bridged events for the operator dashboard.
-   * The limit is advisory: it is clamped server-side by {@link ChannelEventNormalizationService},
-   * so this read path can never load a tenant's full event history.
+   * Bounded, tenant-scoped recent bridged events for the operator dashboard. The client-supplied
+   * limit is advisory only: {@link ChannelEventNormalizationService} centralizes the default and
+   * hard cap, so this read path can never load a tenant's full event history.
    */
   @Transactional(readOnly = true)
   public List<ChannelBotBridgeEventResponse> listRecentBridgedEvents(Integer requestedLimit) {
@@ -193,8 +193,8 @@ public class ChannelBotRuntimeBridgeService {
   }
 
   /**
-   * Tenant-scoped bridge status: the controlled safety contract plus a bounded recent-window
-   * count summary. Counts are derived from the same bounded window as the events list, so this
+   * Tenant-scoped bridge status: the controlled safety contract plus a bounded recent-window count
+   * summary. Counts are derived from the same bounded window that backs the events list, so this
    * never triggers an unbounded scan.
    */
   @Transactional(readOnly = true)

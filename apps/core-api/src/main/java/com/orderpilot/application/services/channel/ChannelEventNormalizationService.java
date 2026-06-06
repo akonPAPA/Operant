@@ -85,8 +85,7 @@ public class ChannelEventNormalizationService {
    */
   @Transactional(readOnly = true)
   public List<InboundChannelEvent> listRecent(Integer requestedLimit) {
-    return eventRepository.findByTenantIdOrderByReceivedAtDesc(
-        TenantContext.requireTenantId(), Limit.of(clampLimit(requestedLimit)));
+    return listRecent(Limit.of(clampLimit(requestedLimit)));
   }
 
   static int clampLimit(Integer requestedLimit) {
@@ -94,6 +93,10 @@ public class ChannelEventNormalizationService {
       return DEFAULT_EVENT_LIMIT;
     }
     return Math.min(requestedLimit, MAX_EVENT_LIMIT);
+  }
+
+  private List<InboundChannelEvent> listRecent(Limit limit) {
+    return eventRepository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId(), limit);
   }
 
   private String toJson(Object payload) {

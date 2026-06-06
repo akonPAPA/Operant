@@ -34,9 +34,10 @@ public final class ChannelBotBridgeDtos {
   ) {}
 
   /**
-   * Operator-facing bridge status summary: the controlled safety contract plus a bounded
-   * recent-window count summary. Counts are derived from the same bounded window as the events
-   * list, so this response never triggers an unbounded scan.
+   * Operator-facing bridge status summary. Combines the controlled safety contract (which flows the
+   * bridge may run, which actions it can never perform, external execution state) with a bounded,
+   * tenant-scoped recent-window count summary. All counts are derived from the same bounded recent
+   * window that backs the events list, so this endpoint never triggers an unbounded scan.
    */
   public record ChannelBotBridgeStatusResponse(
       String externalExecution,
