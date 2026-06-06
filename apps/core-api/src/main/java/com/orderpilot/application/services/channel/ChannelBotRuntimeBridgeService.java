@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeEventResponse;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
+import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeStatusResponse;
 import com.orderpilot.api.dto.Stage7Dtos.BotWebhookAckResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.bot.BotFlowPolicyDecision;
@@ -52,6 +53,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ChannelBotRuntimeBridgeService {
   private static final String EXTERNAL_EXECUTION = "DISABLED";
+
+  /** Controlled flows the bridge may run. Static safety contract surfaced to the operator. */
+  private static final List<String> SUPPORTED_FLOWS = List.of(
+      "NORMALIZE_INBOUND_MESSAGE",
+      "RESOLVE_TENANT_CHANNEL_IDENTITY",
+      "PRODUCT_AVAILABILITY_LOOKUP",
+      "CREATE_REVIEWABLE_RFQ_DRAFT",
+      "HUMAN_HANDOFF_REVIEW",
+      "READ_BRIDGE_STATUS_AND_RECENT_EVENTS");
+
+  /** Actions the bridge can never perform. Static safety contract surfaced to the operator. */
+  private static final List<String> FORBIDDEN_ACTIONS = List.of(
+      "QUOTE_APPROVAL",
+      "ORDER_APPROVAL",
+      "DISCOUNT_APPROVAL",
+      "DIRECT_STOCK_UPDATE",
+      "DIRECT_PRICE_UPDATE",
+      "CUSTOMER_MASTER_UPDATE",
+      "EXTERNAL_ERP_OR_1C_WRITE",
+      "CROSS_TENANT_SEARCH");
 
   private final ChannelConnectionRepository connectionRepository;
   private final ChannelEventNormalizationService normalizationService;
@@ -159,9 +180,36 @@ public class ChannelBotRuntimeBridgeService {
     return resultFromAck(event, connection, ack);
   }
 
+  /**
+   * Bounded, tenant-scoped recent bridged events for the operator dashboard.
+   * The limit is advisory: it is clamped server-side by {@link ChannelEventNormalizationService},
+   * so this read path can never load a tenant's full event history.
+   */
   @Transactional(readOnly = true)
-  public List<ChannelBotBridgeEventResponse> listBridgedEvents() {
-    return normalizationService.list().stream().map(ChannelBotRuntimeBridgeService::toEventResponse).toList();
+  public List<ChannelBotBridgeEventResponse> listRecentBridgedEvents(Integer requestedLimit) {
+    return normalizationService.listRecent(requestedLimit).stream()
+        .map(ChannelBotRuntimeBridgeService::toEventResponse)
+        .toList();
+  }
+
+  /**
+   * Tenant-scoped bridge status: the controlled safety contract plus a bounded recent-window
+   * count summary. Counts are derived from the same bounded window as the events list, so this
+   * never triggers an unbounded scan.
+   */
+  @Transactional(readOnly = true)
+  public ChannelBotBridgeStatusResponse getBridgeStatus(Integer requestedLimit) {
+    List<InboundChannelEvent> recent = normalizationService.listRecent(requestedLimit);
+    int effectiveLimit = ChannelEventNormalizationService.clampLimit(requestedLimit);
+    int bridged = (int) recent.stream().filter(e -> e.getBotConversationId() != null).count();
+    return new ChannelBotBridgeStatusResponse(
+        EXTERNAL_EXECUTION,
+        effectiveLimit,
+        recent.size(),
+        bridged,
+        recent.size() - bridged,
+        SUPPORTED_FLOWS,
+        FORBIDDEN_ACTIONS);
   }
 
   private static ChannelBotBridgeEventResponse toEventResponse(InboundChannelEvent e) {

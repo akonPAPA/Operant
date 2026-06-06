@@ -3,6 +3,7 @@ package com.orderpilot.api.rest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeEventResponse;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
+import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeStatusResponse;
 import com.orderpilot.application.services.channel.ChannelBotRuntimeBridgeService;
 import com.orderpilot.domain.channel.ChannelProviderType;
 import java.util.List;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -40,9 +42,20 @@ public class ChannelBotBridgeController {
     return bridgeService.handleInbound(connectionId, ChannelProviderType.TELEGRAM, payload, headers);
   }
 
-  /** Operator-facing list linking normalized channel events to their bot conversations. */
+  /**
+   * Operator-facing list linking recent normalized channel events to their bot conversations.
+   * Bounded: {@code limit} is advisory and clamped server-side, defaulting to a safe recent window.
+   */
   @GetMapping("/api/v1/channels/bot-events")
-  public List<ChannelBotBridgeEventResponse> bridgedEvents() {
-    return bridgeService.listBridgedEvents();
+  public List<ChannelBotBridgeEventResponse> bridgedEvents(
+      @RequestParam(name = "limit", required = false) Integer limit) {
+    return bridgeService.listRecentBridgedEvents(limit);
+  }
+
+  /** Operator-facing bridge status: controlled safety contract plus a bounded recent-window summary. */
+  @GetMapping("/api/v1/channels/bot-bridge/status")
+  public ChannelBotBridgeStatusResponse bridgeStatus(
+      @RequestParam(name = "limit", required = false) Integer limit) {
+    return bridgeService.getBridgeStatus(limit);
   }
 }
