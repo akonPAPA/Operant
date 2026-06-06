@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeEventResponse;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
+import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeStatusResponse;
 import com.orderpilot.api.dto.Stage7Dtos.BotWebhookAckResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.bot.BotFlowPolicyDecision;
@@ -26,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,31 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ChannelBotRuntimeBridgeService {
   private static final String EXTERNAL_EXECUTION = "DISABLED";
+
+  /** Default operator read-window size when no explicit limit is requested. */
+  static final int DEFAULT_RECENT_LIMIT = 50;
+  /** Hard cap on the operator read window. A client-supplied limit can never exceed this. */
+  static final int MAX_RECENT_LIMIT = 200;
+
+  /** Controlled flows the bridge may run. Static safety contract surfaced to the operator. */
+  private static final List<String> SUPPORTED_FLOWS = List.of(
+      "NORMALIZE_INBOUND_MESSAGE",
+      "RESOLVE_TENANT_CHANNEL_IDENTITY",
+      "PRODUCT_AVAILABILITY_LOOKUP",
+      "CREATE_REVIEWABLE_RFQ_DRAFT",
+      "HUMAN_HANDOFF_REVIEW",
+      "READ_BRIDGE_STATUS_AND_RECENT_EVENTS");
+
+  /** Actions the bridge can never perform. Static safety contract surfaced to the operator. */
+  private static final List<String> FORBIDDEN_ACTIONS = List.of(
+      "QUOTE_APPROVAL",
+      "ORDER_APPROVAL",
+      "DISCOUNT_APPROVAL",
+      "DIRECT_STOCK_UPDATE",
+      "DIRECT_PRICE_UPDATE",
+      "CUSTOMER_MASTER_UPDATE",
+      "EXTERNAL_ERP_OR_1C_WRITE",
+      "CROSS_TENANT_SEARCH");
 
   private final ChannelConnectionRepository connectionRepository;
   private final ChannelEventNormalizationService normalizationService;
@@ -159,9 +186,43 @@ public class ChannelBotRuntimeBridgeService {
     return resultFromAck(event, connection, ack);
   }
 
+  /**
+   * Bounded, tenant-scoped recent bridged events for the operator dashboard. The client-supplied
+   * limit is advisory only: it is clamped to {@code [1, MAX_RECENT_LIMIT]} and defaults to
+   * {@code DEFAULT_RECENT_LIMIT}, so this read path can never load a tenant's full event history.
+   */
   @Transactional(readOnly = true)
-  public List<ChannelBotBridgeEventResponse> listBridgedEvents() {
-    return normalizationService.list().stream().map(ChannelBotRuntimeBridgeService::toEventResponse).toList();
+  public List<ChannelBotBridgeEventResponse> listRecentBridgedEvents(Integer requestedLimit) {
+    return normalizationService.listRecent(Limit.of(clampLimit(requestedLimit))).stream()
+        .map(ChannelBotRuntimeBridgeService::toEventResponse)
+        .toList();
+  }
+
+  /**
+   * Tenant-scoped bridge status: the controlled safety contract plus a bounded recent-window count
+   * summary. Counts are derived from the same bounded window that backs the events list, so this
+   * never triggers an unbounded scan.
+   */
+  @Transactional(readOnly = true)
+  public ChannelBotBridgeStatusResponse getBridgeStatus(Integer requestedLimit) {
+    int limit = clampLimit(requestedLimit);
+    List<InboundChannelEvent> recent = normalizationService.listRecent(Limit.of(limit));
+    int bridged = (int) recent.stream().filter(e -> e.getBotConversationId() != null).count();
+    return new ChannelBotBridgeStatusResponse(
+        EXTERNAL_EXECUTION,
+        limit,
+        recent.size(),
+        bridged,
+        recent.size() - bridged,
+        SUPPORTED_FLOWS,
+        FORBIDDEN_ACTIONS);
+  }
+
+  private static int clampLimit(Integer requestedLimit) {
+    if (requestedLimit == null) {
+      return DEFAULT_RECENT_LIMIT;
+    }
+    return Math.max(1, Math.min(requestedLimit, MAX_RECENT_LIMIT));
   }
 
   private static ChannelBotBridgeEventResponse toEventResponse(InboundChannelEvent e) {

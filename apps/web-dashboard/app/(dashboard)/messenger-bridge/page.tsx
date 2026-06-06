@@ -1,10 +1,15 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getChannelBotEvents } from "@/lib/channel-bot-api";
+import {
+  DEFAULT_BRIDGE_EVENT_LIMIT,
+  getChannelBotBridgeStatus,
+  getChannelBotEvents
+} from "@/lib/channel-bot-api";
 
 // OP-CAP-06A Messenger Chatbot Integration Layer.
 // Read-only operator surface: shows how verified channel intake became a controlled bot
 // conversation / RFQ / handoff. No secrets, raw tokens, or raw provider payloads are shown,
-// and no mutation/send/approve actions are offered.
+// and no mutation/send/approve actions are offered. The events list is bounded to a recent
+// window; the backend independently clamps the limit.
 
 function linkLabel(event: { botConversationId?: string; botRuntimeStatus?: string }) {
   if (event.botConversationId) {
@@ -13,8 +18,15 @@ function linkLabel(event: { botConversationId?: string; botRuntimeStatus?: strin
   return event.botRuntimeStatus ?? "Not bridged";
 }
 
+function flowLabel(value: string) {
+  return value.replace(/_/g, " ").toLowerCase();
+}
+
 export default async function Page() {
-  const { data: events, error } = await getChannelBotEvents();
+  const [{ data: events, error }, { data: status, error: statusError }] = await Promise.all([
+    getChannelBotEvents(DEFAULT_BRIDGE_EVENT_LIMIT),
+    getChannelBotBridgeStatus(DEFAULT_BRIDGE_EVENT_LIMIT)
+  ]);
 
   return (
     <DashboardShell title="Messenger Bridge">
@@ -38,15 +50,46 @@ export default async function Page() {
           </p>
         </section>
 
-        {error ? (
+        {error || statusError ? (
           <section className="empty-state">
             <h2>Backend data unavailable</h2>
-            <p>{error}</p>
+            <p>{error ?? statusError}</p>
           </section>
         ) : null}
 
+        <section className="panel">
+          <h2>Bridge status</h2>
+          <div className="tag-row">
+            <span className="status-pill ok">externalExecution={status.externalExecution}</span>
+            <span className="status-pill">Recent window: {status.recentWindowLimit}</span>
+            <span className="status-pill">Recent events: {status.recentEventCount}</span>
+            <span className="status-pill done">Bridged to bot: {status.bridgedToBotCount}</span>
+            <span className="status-pill warning">Pending / not bridged: {status.pendingOrUnbridgedCount}</span>
+          </div>
+          {status.supportedFlows.length > 0 ? (
+            <>
+              <p className="muted-copy">Supported safe flows</p>
+              <div className="tag-row">
+                {status.supportedFlows.map((flow) => (
+                  <span key={flow} className="status-pill ok">{flowLabel(flow)}</span>
+                ))}
+              </div>
+            </>
+          ) : null}
+          {status.forbiddenActions.length > 0 ? (
+            <>
+              <p className="muted-copy">Never performed by the bridge</p>
+              <div className="tag-row">
+                {status.forbiddenActions.map((action) => (
+                  <span key={action} className="status-pill warning">{flowLabel(action)}</span>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </section>
+
         <section className="panel table-panel">
-          <h2>Channel events bridged to the bot runtime</h2>
+          <h2>Recent channel events bridged to the bot runtime</h2>
           <table className="data-table">
             <thead>
               <tr>
@@ -63,7 +106,7 @@ export default async function Page() {
             <tbody>
               {events.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>No bridged messenger events yet. Verified inbound channel events will appear here once received.</td>
+                  <td colSpan={8}>No bridged messenger events in the recent window. Verified inbound channel events will appear here once received.</td>
                 </tr>
               ) : (
                 events.map((event) => (
@@ -82,8 +125,9 @@ export default async function Page() {
             </tbody>
           </table>
           <p className="risk-note">
-            This view is read-only. It surfaces why a messenger message became an RFQ, draft, or operator handoff.
-            It offers no approve, reject, retry, send, connector, or ERP/1C actions.
+            This view is read-only and shows the most recent {status.recentWindowLimit} events. It surfaces why a
+            messenger message became an RFQ, draft, or operator handoff. It offers no approve, reject, retry, send,
+            connector, or ERP/1C actions.
           </p>
         </section>
       </div>
