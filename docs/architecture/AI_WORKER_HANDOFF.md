@@ -54,17 +54,80 @@ Core API / channel / document
 re-establishes tenant scope (and re-validates) when it consumes the advisory result. The worker has
 no business/master DB or ERP/connector client and no mutation path.
 
-## Core API receiving side
+## Core API receiving side (OP-CAP-07D)
 
-Core API already owns a mature extraction/processing-job subsystem
-(`ProcessingExtractionController`, `ExtractionPipelineService`, `InboundDocumentService`, …). To avoid
-duplicating those domain concepts, OP-CAP-07C defines the worker-side contract and `AiResultSink` port
-rather than adding a parallel receiving endpoint. A future slice can implement an `AiResultSink` that
-posts `AiProcessingJobResult` to an existing Core API extraction-result intake.
+OP-CAP-07D adds the Core API receiving layer that persists AI-worker output as **advisory** data and
+moves the processing job status — without touching any business entity. It reuses the existing
+extraction/processing-job subsystem (`ProcessingJob`, `ExtractionRun`, `ExtractionResult`,
+`AuditEventService`) instead of inventing parallel concepts.
+
+### Endpoint
+
+```text
+POST /api/v1/internal/ai-processing-results
+```
+
+Internal/service-facing (not a public customer UI). Tenant is resolved server-side from
+`TenantContext` (`X-Tenant-Id`). Guarded by `ApiPermissionInterceptor` requiring the
+`AI_RESULT_INTAKE` permission (existing `X-OrderPilot-Permissions` boundary — no secrets hardcoded).
+Thin controller `AiWorkerResultIntakeController` → `AiWorkerResultIntakeService`.
+
+### Request contract
+
+`AiResultIntakeDtos.AiProcessingResultIntakeRequest`: `jobId`, `tenantRef` (correlation only, NOT
+authority), `sourceType`, `sourceId`, `status`, `extractionResult` (advisory map), `warnings`,
+`errors`, `promptInjectionSignals`, `providerMetadata`, `schemaVersion`, `startedAt`, `completedAt`,
+`durationMs`, `safeFailureReason`.
+
+### Trust boundary & fail-closed validation
+
+AI output is **untrusted advisory data**. The intake rejects (HTTP 400, safe reason token) when:
+`jobId`/`sourceId` missing; `sourceType`/`status`/`schemaVersion` unsupported; `tenantRef` disagrees
+with the trusted tenant; the `jobId` is not an existing tenant-scoped `ProcessingJob`; `sourceType` /
+`sourceId` do not match the job's `targetType` / `targetId`; warnings/errors/signals exceed bounds;
+the advisory payload exceeds `MAX_PAYLOAD_CHARS`; or the `extractionResult`/`providerMetadata` carries
+a forbidden top-level action key (`action`, `command`, `approve`, `execute`, `write`, `mutation`,
+`sql`, `erpWrite`, `inventoryUpdate`, `priceUpdate`, `customerUpdate`, `orderCreate`, `quoteApprove`).
+
+### Persistence & status mapping
+
+The advisory result is persisted as an `ExtractionRun` (provider type `AI_WORKER`) + `ExtractionResult`
+whose `result_json` is marked `advisoryOnly` / `untrustedUntilValidation`, linked to the processing job
+and source. Status mapping:
+
+| Worker status  | ProcessingJob | ExtractionRun | ExtractionResult.validationStatus |
+| -------------- | ------------- | ------------- | --------------------------------- |
+| `SUCCEEDED`    | `SUCCEEDED`   | `SUCCEEDED`   | `READY_FOR_VALIDATION`            |
+| `NEEDS_REVIEW` | `NEEDS_REVIEW`| `NEEDS_REVIEW`| `NEEDS_REVIEW`                    |
+| `FAILED`       | `FAILED`      | `FAILED`      | `FAILED`                          |
+| `REJECTED`     | `REJECTED`    | `FAILED`*     | `REJECTED`                        |
+
+\* the extraction-run state machine has no REJECTED; the precise distinction is preserved on the
+result's `validationStatus`. No DB migration is required (`REJECTED` is a String status value).
+
+### Idempotency
+
+At most one `AI_WORKER` `ExtractionRun` is persisted per processing job
+(`findFirstByTenantIdAndProcessingJobIdAndProviderType`). A repeat delivery is a no-op that returns the
+already-persisted record (`duplicate=true`); an older/conflicting result never overwrites it.
+
+### Audit
+
+`AuditEventService` records `ai_processing_result.intake_succeeded` / `intake_duplicate` /
+`intake_rejected` with bounded metadata only (jobId, sourceType, sourceId, resultStatus, schemaVersion,
+providerName, warning/error/promptInjectionSignal counts, durationMs). Never raw document/message text,
+the extraction payload, secrets, or service tokens.
+
+### Explicit non-goals (07D)
+
+- No quote/order creation, no validation/risk engine, no substitution/pricing/inventory/customer
+  mutation, no ERP/1C/connector write — only advisory result persistence + job status.
+- Not a production queue/outbox; delivery is a direct internal endpoint call.
+- No HTTP `AiResultSink` on the worker side yet (the worker still publishes via its in-memory port).
 
 ## Known limitations (future work)
 
 - Real OCR/PDF/Excel text extraction (only an inline-text + stub boundary exists today).
 - Real semantic/LLM provider (`FUTURE_SEMANTIC` is a placeholder that fails closed; no LLM call).
-- Production queue/outbox + HTTP-backed `AiResultSink`.
-- Persisted Core API intake endpoint for `AiProcessingJobResult`.
+- Production queue/outbox + HTTP-backed `AiResultSink` wired to the 07D intake endpoint.
+- Deterministic validation/risk engine that consumes the persisted advisory `ExtractionResult`.

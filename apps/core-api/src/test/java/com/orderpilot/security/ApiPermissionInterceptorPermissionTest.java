@@ -157,6 +157,36 @@ class ApiPermissionInterceptorPermissionTest {
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
+  // --- OP-CAP-07D /api/v1/internal/ai-processing-results requires AI_RESULT_INTAKE ---
+
+  @Test
+  void aiResultIntakePostWithIntakePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-processing-results");
+    req.addHeader("X-OrderPilot-Permissions", "AI_RESULT_INTAKE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiResultIntakePostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-processing-results");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_RESULT_INTAKE");
+  }
+
+  @Test
+  void aiResultIntakeWithReviewReadAloneIsRejected() throws Exception {
+    // A generic read permission must NOT be sufficient for the service intake boundary.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-processing-results");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_RESULT_INTAKE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
