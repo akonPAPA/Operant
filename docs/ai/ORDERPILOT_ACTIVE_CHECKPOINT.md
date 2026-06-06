@@ -26,6 +26,15 @@ Update at the start of a task only when needed:
 ## Completed / Known State
 
 - Stage 14 Root-Cause Merge / CI / CodeQL Stabilization is completed.
+- OP-CAP-08B AI validation handoff operator review backend is complete:
+  - Adds one tenant-scoped `ai_validation_handoff_review` row per 07F handoff, with review status,
+    operator decision, bounded correction metadata, audit events, and `externalExecution=DISABLED`.
+  - Endpoints: `GET /api/v1/ai-validation-handoffs/{handoffId}/review`; `POST .../review/start`;
+    `POST .../review/decision`; `POST .../review/correction`.
+  - Mutations require `REVIEW_ACTION`; `REVIEW_READ` alone is rejected.
+  - `APPROVE_FOR_DRAFT_PREPARATION` is allowed only for already `draftEligible` handoffs and creates
+    no draft, quote, order, connector command, ERP/1C write, or master-data mutation.
+  - Targeted backend verification: 70 tests, 0 failures.
 - OP-CAP-06F messenger bridge end-to-end closeout / runtime integration verification is complete:
   - Scope: integration-contract verification across OP-CAP-06A/B/C/D/D.1/E (no new capability).
   - Contracts verified consistent: permission (CHANNEL_IDENTITY_ACTION required for mutations; BOT_ACTION alone rejected; frontend client + workspace never send BOT_ACTION), identity resolution (no auto-link; linked→RESOLVED, suggested/needs-review→AMBIGUOUS, blocked→BLOCKED, unlinked/none→UNKNOWN; resolver and `ChannelIdentityResolutionMapper` aligned), contact/account (tenant-scoped contact+account validation, contact-only derives account, mismatch + cross-tenant rejected, locked mutation fetch retained), runtime gating (blocked never reaches runtime; ambiguous routes to operator review and is not treated as linked), operator workspace (real API, error surfacing, badge mapping, route present), audit/idempotency (idempotency guards + safe audit metadata preserved).

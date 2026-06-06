@@ -26,6 +26,7 @@ import com.orderpilot.domain.pricing.PriceRuleRepository;
 import com.orderpilot.domain.product.Product;
 import com.orderpilot.domain.product.ProductRepository;
 import com.orderpilot.domain.validation.AiValidationHandoffRepository;
+import com.orderpilot.domain.validation.AiValidationHandoffReviewRepository;
 import com.orderpilot.domain.workspace.DraftOrderRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
@@ -61,12 +62,15 @@ import org.springframework.test.context.ActiveProfiles;
     AuditEventService.class,
     JsonSupport.class,
     CoreConfiguration.class,
+    AiValidationHandoffReviewService.class,
     AiValidationHandoffServiceTest.JacksonTestConfig.class
 })
 class AiValidationHandoffServiceTest {
   @Autowired private AiValidationHandoffService handoffService;
+  @Autowired private AiValidationHandoffReviewService reviewService;
   @Autowired private ExtractionAdvisoryValidationService validationService;
   @Autowired private AiValidationHandoffRepository handoffRepository;
+  @Autowired private AiValidationHandoffReviewRepository handoffReviewRepository;
   @Autowired private ProcessingJobRepository jobRepository;
   @Autowired private ExtractionRunRepository runRepository;
   @Autowired private ExtractionResultRepository resultRepository;
@@ -331,5 +335,103 @@ class AiValidationHandoffServiceTest {
     assertThat(priceRuleRepository.count()).isEqualTo(prices);
     assertThat(draftQuoteRepository.count()).isEqualTo(quotes);
     assertThat(draftOrderRepository.count()).isEqualTo(orders);
+  }
+
+  @Test
+  void operatorCanApproveDraftEligibleHandoffForFutureDraftPreparationOnly() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedKnownCustomer(tenantId, "ACME");
+    seedKnownProductWithStockAndPrice(tenantId, "BP-100");
+    UUID validationId = validate(tenantId, "SUCCEEDED", "ACME", 0.82, List.of(lineItem("BP-100", "20")), List.of());
+    AiValidationHandoffView handoff = handoffService.generate(validationId);
+    long quotes = draftQuoteRepository.count();
+    long orders = draftOrderRepository.count();
+
+    var started = reviewService.startReview(handoff.handoffId(), new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest("operator-1"));
+    var decided = reviewService.decide(handoff.handoffId(),
+        new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
+            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", "bounded note", "operator-1"));
+
+    assertThat(started.reviewStatus()).isEqualTo("IN_REVIEW");
+    assertThat(decided.reviewStatus()).isEqualTo("DRAFT_PREPARATION_READY");
+    assertThat(decided.decision()).isEqualTo("APPROVE_FOR_DRAFT_PREPARATION");
+    assertThat(decided.externalExecution()).isEqualTo("DISABLED");
+    assertThat(handoffReviewRepository.findByTenantIdAndHandoffId(tenantId, handoff.handoffId())).isPresent();
+    assertThat(draftQuoteRepository.count()).isEqualTo(quotes);
+    assertThat(draftOrderRepository.count()).isEqualTo(orders);
+  }
+
+  @Test
+  void operatorCannotApproveNonDraftEligibleHandoffForDraftPreparation() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedKnownProductWithStockAndPrice(tenantId, "BP-100");
+    UUID validationId = validate(tenantId, "SUCCEEDED", "NOPE", 0.82, List.of(lineItem("BP-100", "20")), List.of());
+    AiValidationHandoffView handoff = handoffService.generate(validationId);
+
+    assertThatThrownBy(() -> reviewService.decide(handoff.handoffId(),
+        new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
+            "APPROVE_FOR_DRAFT_PREPARATION", "NOT_READY", "bounded note", "operator-1")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("not draft eligible");
+  }
+
+  @Test
+  void operatorCorrectionIsBoundedTenantScopedReviewMetadataOnly() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedKnownProductWithStockAndPrice(tenantId, "BP-100");
+    UUID validationId = validate(tenantId, "SUCCEEDED", "NOPE", 0.82, List.of(lineItem("BP-100", "20")), List.of());
+    AiValidationHandoffView handoff = handoffService.generate(validationId);
+
+    var review = reviewService.recordCorrection(handoff.handoffId(),
+        new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest(
+            "Customer account should be ACME after operator review",
+            "RFQ",
+            "ACME",
+            1,
+            "operator-1"));
+
+    assertThat(review.reviewStatus()).isEqualTo("CORRECTION_REQUESTED");
+    assertThat(review.correctionSummary()).contains("ACME");
+    assertThat(review.correctedIntent()).isEqualTo("RFQ");
+    assertThat(review.correctedLineCount()).isEqualTo(1);
+    assertThat(countAudits("ai_validation_handoff_review.correction_recorded")).isEqualTo(1);
+  }
+
+  @Test
+  void handoffReviewTenantMismatchFailsClosed() {
+    UUID tenantA = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    seedKnownCustomer(tenantA, "ACME");
+    seedKnownProductWithStockAndPrice(tenantA, "BP-100");
+    UUID validationId = validate(tenantA, "SUCCEEDED", "ACME", 0.82, List.of(lineItem("BP-100", "20")), List.of());
+    AiValidationHandoffView handoff = handoffService.generate(validationId);
+
+    TenantContext.setTenantId(UUID.randomUUID());
+
+    assertThatThrownBy(() -> reviewService.get(handoff.handoffId()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("not found for tenant");
+  }
+
+  @Test
+  void terminalReviewDecisionCannotBeMutatedAgain() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedKnownCustomer(tenantId, "ACME");
+    seedKnownProductWithStockAndPrice(tenantId, "BP-100");
+    UUID validationId = validate(tenantId, "SUCCEEDED", "ACME", 0.82, List.of(lineItem("BP-100", "20")), List.of());
+    AiValidationHandoffView handoff = handoffService.generate(validationId);
+    reviewService.decide(handoff.handoffId(),
+        new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
+            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", null, "operator-1"));
+
+    assertThatThrownBy(() -> reviewService.recordCorrection(handoff.handoffId(),
+        new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest(
+            "later change", null, null, null, "operator-1")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("already terminal");
   }
 }

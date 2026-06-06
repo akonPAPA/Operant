@@ -8,14 +8,6 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * OP-CAP-07E persisted deterministic validation + risk routing header for one advisory AI extraction
- * result.
- *
- * <p>One row per (tenant, extraction_result_id) — re-validation replaces the existing row's issues
- * and recomputes this header in place (idempotent). This record only describes the advisory result's
- * risk/routing; it never represents a quote, order, or any business mutation.
- */
 @Entity
 @Table(name = "ai_extraction_validation")
 public class AiExtractionValidation {

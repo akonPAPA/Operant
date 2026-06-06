@@ -34,4 +34,40 @@ public final class AiValidationHandoffDtos {
       String issueSummary,
       Instant createdAt,
       Instant updatedAt) {}
+
+  public record AiHandoffStartReviewRequest(String reviewedBy) {}
+
+  public record AiHandoffDecisionRequest(
+      String decision,
+      String reasonCode,
+      String note,
+      String reviewedBy) {}
+
+  public record AiHandoffCorrectionRequest(
+      String correctionSummary,
+      String correctedIntent,
+      String correctedCustomerRef,
+      Integer correctedLineCount,
+      String reviewedBy) {}
+
+  public record AiHandoffReviewView(
+      UUID reviewId,
+      UUID handoffId,
+      UUID validationId,
+      String handoffStatus,
+      String routingDecision,
+      String riskLevel,
+      boolean draftEligible,
+      String reviewStatus,
+      String decision,
+      String reasonCode,
+      String note,
+      String correctionSummary,
+      String correctedIntent,
+      String correctedCustomerRef,
+      Integer correctedLineCount,
+      String reviewedBy,
+      String externalExecution,
+      Instant createdAt,
+      Instant updatedAt) {}
 }

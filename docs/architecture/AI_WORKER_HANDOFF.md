@@ -250,13 +250,58 @@ never draft-eligible.
 - A handoff is **NOT** a quote/order. Generation writes only the `ai_validation_handoff` row; it never
   writes `Product`/`CustomerAccount`/`InventorySnapshot`/`PriceRule`/`DiscountRule`/`MarginRule`, never
   writes `Quote`/`Order`/`DraftQuote`/`DraftOrder`, and never emits a connector/outbox/ERP/1C command.
-- Out of scope: the quote/order draft-preparation workspace itself, operator decisioning/resolution
-  lifecycle on the handoff, and any frontend page.
+- Out of scope for 07F itself: the quote/order draft-preparation workspace, operator
+  decisioning/resolution lifecycle on the handoff, and any frontend page. OP-CAP-08B below adds the
+  backend-only operator review lifecycle.
+
+## AI handoff operator review lifecycle (OP-CAP-08B)
+
+OP-CAP-08B adds a narrow backend review lifecycle for the 07F `AiValidationHandoff`. It records
+operator review state and bounded annotations only; it does not consume the handoff into a quote,
+order, draft, connector command, ERP/1C write, or master-data mutation.
+
+```text
+ai_validation_handoff (07F)
+  -> AiValidationHandoffReviewService
+  -> one ai_validation_handoff_review row per tenant+handoff
+  -> review status / operator decision / bounded correction summary
+```
+
+### Endpoints
+
+- `GET /api/v1/ai-validation-handoffs/{handoffId}/review` - read the review state, guarded by
+  `REVIEW_READ`.
+- `POST /api/v1/ai-validation-handoffs/{handoffId}/review/start` - start review, guarded by
+  `REVIEW_ACTION`.
+- `POST /api/v1/ai-validation-handoffs/{handoffId}/review/decision` - record an operator decision,
+  guarded by `REVIEW_ACTION`.
+- `POST /api/v1/ai-validation-handoffs/{handoffId}/review/correction` - record bounded correction
+  metadata, guarded by `REVIEW_ACTION`.
+
+### Review decisions
+
+| Decision | Resulting review status | Business effect |
+| --- | --- | --- |
+| `APPROVE_FOR_DRAFT_PREPARATION` | `DRAFT_PREPARATION_READY` | Allowed only when the 07F handoff is already `draftEligible`; creates no draft. |
+| `REQUEST_CORRECTION` | `CORRECTION_REQUESTED` | Records bounded correction metadata only. |
+| `DISMISS_INVALID` | `DISMISSED` | Terminal review state; no business mutation. |
+| `BLOCK_RISK` | `BLOCKED` | Terminal review state; no business mutation. |
+| `KEEP_FOR_HUMAN_REVIEW` | `IN_REVIEW` | Keeps the handoff in operator review. |
+
+### Persistence, security, and audit
+
+- Narrow table `ai_validation_handoff_review` (Flyway `V41`) with a unique `(tenant_id, handoff_id)`
+  constraint and tenant/status updated-at indexes.
+- Tenant is resolved from `TenantContext`; the handoff must be tenant-owned.
+- Mutations use `REVIEW_ACTION`; `REVIEW_READ` is not sufficient.
+- Audit events record bounded metadata with `externalExecution=DISABLED`; no raw extraction JSON,
+  document/message text, secrets, service tokens, or large line arrays are written.
+- Terminal states cannot be mutated again through this slice.
 
 ## Known limitations (future work)
 
 - Real OCR/PDF/Excel text extraction (only an inline-text + stub boundary exists today).
 - Real semantic/LLM provider (`FUTURE_SEMANTIC` is a placeholder that fails closed; no LLM call).
 - Production queue/outbox + HTTP-backed `AiResultSink` wired to the 07D intake endpoint.
-- Draft quote/order workflow that consumes a `READY_FOR_DRAFT_REVIEW` routing decision (07E stops at
-  the routing decision; it never creates a draft).
+- Draft quote/order workflow that consumes a `DRAFT_PREPARATION_READY` review decision. OP-CAP-08B
+  stops at operator review state; it never creates a draft.

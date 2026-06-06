@@ -251,6 +251,24 @@ class ApiPermissionInterceptorPermissionTest {
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(list, new MockHttpServletResponse(), HANDLER));
   }
 
+  @Test
+  void aiValidationHandoffReviewMutationRequiresReviewAction() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/ai-validation-handoffs/some-id/review/decision");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiValidationHandoffReviewMutationWithReviewReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/ai-validation-handoffs/some-id/review/start");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

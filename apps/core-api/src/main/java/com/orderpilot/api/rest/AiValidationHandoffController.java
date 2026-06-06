@@ -1,12 +1,18 @@
 package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiValidationHandoffView;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewView;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.application.services.validation.AiValidationHandoffService;
+import com.orderpilot.application.services.validation.AiValidationHandoffReviewService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,9 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AiValidationHandoffController {
   private final AiValidationHandoffService service;
+  private final AiValidationHandoffReviewService reviewService;
 
-  public AiValidationHandoffController(AiValidationHandoffService service) {
+  public AiValidationHandoffController(AiValidationHandoffService service, AiValidationHandoffReviewService reviewService) {
     this.service = service;
+    this.reviewService = reviewService;
   }
 
   @PostMapping("/api/v1/internal/ai-validations/{validationId}/handoff")
@@ -44,5 +52,25 @@ public class AiValidationHandoffController {
       @RequestParam(name = "routingDecision", required = false) String routingDecision,
       @RequestParam(name = "limit", required = false) Integer limit) {
     return service.list(status, routingDecision, limit);
+  }
+
+  @GetMapping("/api/v1/ai-validation-handoffs/{handoffId}/review")
+  public AiHandoffReviewView getReview(@PathVariable UUID handoffId) {
+    return reviewService.get(handoffId);
+  }
+
+  @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/start")
+  public AiHandoffReviewView startReview(@PathVariable UUID handoffId, @RequestBody(required = false) AiHandoffStartReviewRequest request) {
+    return reviewService.startReview(handoffId, request);
+  }
+
+  @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/decision")
+  public AiHandoffReviewView decide(@PathVariable UUID handoffId, @RequestBody(required = false) AiHandoffDecisionRequest request) {
+    return reviewService.decide(handoffId, request);
+  }
+
+  @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/correction")
+  public AiHandoffReviewView recordCorrection(@PathVariable UUID handoffId, @RequestBody(required = false) AiHandoffCorrectionRequest request) {
+    return reviewService.recordCorrection(handoffId, request);
   }
 }
