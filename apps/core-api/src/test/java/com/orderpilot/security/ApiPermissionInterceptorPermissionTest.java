@@ -1,8 +1,7 @@
 package com.orderpilot.security;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.orderpilot.security.policy.TenantPolicyException;
 import org.junit.jupiter.api.Test;
@@ -185,6 +184,162 @@ class ApiPermissionInterceptorPermissionTest {
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
         .hasMessageContaining("AI_RESULT_INTAKE");
+  }
+
+  // --- OP-CAP-09D /api/v1/workspace draft review queues + product picker: GET requires REVIEW_READ ---
+
+  @Test
+  void draftQuoteReviewQueueGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-quotes/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void draftQuoteReviewQueueGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-quotes/review-queue");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
+  @Test
+  void draftOrderReviewQueueGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-orders/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceProductSearchGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/products/search?q=brk");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceProductSearchGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/products/search?q=brk");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
+  // --- OP-CAP-09A /api/v1/validation-review: GET requires REVIEW_READ, mutations (incl. prepare-draft) require REVIEW_ACTION ---
+
+  @Test
+  void validationReviewGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/validation-review");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/validation-review");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
+  @Test
+  void validationReviewPrepareDraftWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/validation-review/some-id/prepare-draft");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewPrepareDraftWithReviewReadAloneIsRejected() throws Exception {
+    // Read-only review permission must NOT be sufficient to prepare a draft.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/validation-review/some-id/prepare-draft");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void validationReviewPrepareDraftWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/validation-review/some-id/prepare-draft");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  // --- OP-CAP-09B /api/v1/workspace/draft-quotes|draft-orders: GET requires REVIEW_READ, line PATCH / mark-ready require REVIEW_ACTION ---
+
+  @Test
+  void workspaceDraftQuoteReviewGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-quotes/some-id/review");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceDraftQuoteReviewGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-quotes/some-id/review");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
+  @Test
+  void workspaceDraftQuoteLinePatchWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("PATCH", "/api/v1/workspace/draft-quotes/some-id/lines/line-id");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceDraftQuoteLinePatchWithReviewReadAloneIsRejected() throws Exception {
+    // Read-only permission must NOT be sufficient to correct a draft line.
+    MockHttpServletRequest req = new MockHttpServletRequest("PATCH", "/api/v1/workspace/draft-quotes/some-id/lines/line-id");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void workspaceDraftQuoteMarkReadyWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/workspace/draft-quotes/some-id/mark-ready");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceDraftOrderMarkReadyWithReviewReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/workspace/draft-orders/some-id/mark-ready");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void workspaceDraftOrderLinePatchWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("PATCH", "/api/v1/workspace/draft-orders/some-id/lines/line-id");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
   }
 
   // --- unrelated paths are not affected ---

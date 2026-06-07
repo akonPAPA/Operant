@@ -22,6 +22,10 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/extractions", ApiPermission.EXTRACTION_READ),
       Map.entry("/api/v1/validations", ApiPermission.VALIDATION_READ),
       Map.entry("/api/v1/operator-review", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/validation-review", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/workspace/draft-quotes", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/workspace/draft-orders", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/workspace/products", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/quote-review", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/quotes", ApiPermission.QUOTE_READ),
       Map.entry("/api/v1/quote-transactions", ApiPermission.QUOTE_READ),
@@ -66,6 +70,12 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       return ApiPermission.AI_WORK_ACTION;
     }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    if (path.startsWith("/api/v1/validation-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    if ((path.startsWith("/api/v1/workspace/draft-quotes") || path.startsWith("/api/v1/workspace/draft-orders")) && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
     }
     if (path.startsWith("/api/v1/quote-review") && !HttpMethod.GET.matches(method)) {

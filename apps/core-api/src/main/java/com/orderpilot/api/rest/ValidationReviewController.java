@@ -8,6 +8,7 @@ import com.orderpilot.api.dto.Stage6Dtos.CorrectUomRequest;
 import com.orderpilot.api.dto.Stage6Dtos.IssueDispositionRequest;
 import com.orderpilot.api.dto.Stage6Dtos.MapProductRequest;
 import com.orderpilot.api.dto.Stage6Dtos.DraftPreview;
+import com.orderpilot.api.dto.Stage6Dtos.DraftPreparationResult;
 import com.orderpilot.api.dto.Stage6Dtos.SubstituteDecisionRequest;
 import com.orderpilot.application.services.workspace.DraftCommandPreparationService;
 import com.orderpilot.application.services.workspace.ValidationReviewService;
@@ -105,6 +106,12 @@ public class ValidationReviewController {
   @GetMapping("/api/v1/validation-review/{reviewCaseId}/draft-preview")
   public DraftPreview draftPreview(@PathVariable UUID reviewCaseId, @RequestParam(defaultValue = "QUOTE") String targetType) {
     return draftCommandPreparationService.preview(reviewCaseId, targetType, null);
+  }
+
+  // OP-CAP-09A: intent-driven, idempotent internal draft preparation (REVIEW_ACTION). No external/ERP write; no final quote/order.
+  @PostMapping("/api/v1/validation-review/{reviewCaseId}/prepare-draft")
+  public DraftPreparationResult prepareDraft(@PathVariable UUID reviewCaseId, @RequestBody(required = false) ReviewActionRequest request) {
+    return draftCommandPreparationService.prepareDraft(reviewCaseId, actor(request));
   }
 
   @PostMapping("/api/v1/validation-review/{reviewCaseId}/prepare-draft-order")
