@@ -70,4 +70,49 @@ public final class AiValidationHandoffDtos {
       String externalExecution,
       Instant createdAt,
       Instant updatedAt) {}
+
+  /**
+   * OP-CAP-08B review-queue item. Bounded operator-queue projection of a handoff plus its effective
+   * review status. Never carries raw result JSON, document text, or customer message body.
+   */
+  public record AiHandoffReviewQueueItem(
+      UUID handoffId,
+      UUID validationId,
+      UUID extractionResultId,
+      UUID processingJobId,
+      String routingDecision,
+      String riskLevel,
+      String handoffStatus,
+      String reviewStatus,
+      boolean draftEligible,
+      String intent,
+      String customerRef,
+      int lineCount,
+      int issueCount,
+      String highestSeverity,
+      Instant updatedAt) {}
+
+  /**
+   * OP-CAP-08B draft-preparation candidate contract. This is a CONTRACT/DTO only — it never creates a
+   * quote/order/draft and never triggers an external write. {@code draftPreparationAllowed} is always
+   * true here because the endpoint only succeeds once review status is {@code DRAFT_PREPARATION_READY}.
+   */
+  public record AiHandoffDraftPreparationCandidate(
+      UUID handoffId,
+      UUID validationId,
+      UUID extractionResultId,
+      UUID processingJobId,
+      String intent,
+      String correctedIntent,
+      String customerRef,
+      String correctedCustomerRef,
+      int lineCount,
+      Integer correctedLineCount,
+      String routingDecision,
+      String riskLevel,
+      String reviewDecision,
+      String issueSummary,
+      String correctionSummary,
+      String externalExecution,
+      boolean draftPreparationAllowed) {}
 }

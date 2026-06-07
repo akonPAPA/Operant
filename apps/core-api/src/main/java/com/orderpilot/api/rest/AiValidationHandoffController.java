@@ -3,6 +3,8 @@ package com.orderpilot.api.rest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiValidationHandoffView;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDraftPreparationCandidate;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewQueueItem;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewView;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.application.services.validation.AiValidationHandoffService;
@@ -54,9 +56,24 @@ public class AiValidationHandoffController {
     return service.list(status, routingDecision, limit);
   }
 
+  @GetMapping("/api/v1/ai-validation-handoffs/review-queue")
+  public List<AiHandoffReviewQueueItem> reviewQueue(
+      @RequestParam(name = "reviewStatus", required = false) String reviewStatus,
+      @RequestParam(name = "routingDecision", required = false) String routingDecision,
+      @RequestParam(name = "riskLevel", required = false) String riskLevel,
+      @RequestParam(name = "draftEligible", required = false) Boolean draftEligible,
+      @RequestParam(name = "limit", required = false) Integer limit) {
+    return reviewService.queue(reviewStatus, routingDecision, riskLevel, draftEligible, limit);
+  }
+
   @GetMapping("/api/v1/ai-validation-handoffs/{handoffId}/review")
   public AiHandoffReviewView getReview(@PathVariable UUID handoffId) {
     return reviewService.get(handoffId);
+  }
+
+  @GetMapping("/api/v1/ai-validation-handoffs/{handoffId}/draft-preparation-candidate")
+  public AiHandoffDraftPreparationCandidate draftPreparationCandidate(@PathVariable UUID handoffId) {
+    return reviewService.draftPreparationCandidate(handoffId);
   }
 
   @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/start")

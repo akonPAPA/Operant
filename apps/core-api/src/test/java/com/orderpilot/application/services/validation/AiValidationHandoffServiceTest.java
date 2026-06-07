@@ -363,16 +363,20 @@ class AiValidationHandoffServiceTest {
   }
 
   @Test
-  void operatorCannotApproveNonDraftEligibleHandoffForDraftPreparation() {
+  void operatorCannotApproveBlockedHandoffForDraftPreparationEvenWithReason() {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
+    seedKnownCustomer(tenantId, "ACME");
     seedKnownProductWithStockAndPrice(tenantId, "BP-100");
-    UUID validationId = validate(tenantId, "SUCCEEDED", "NOPE", 0.82, List.of(lineItem("BP-100", "20")), List.of());
+    // Negative quantity routes to BLOCKED_INVALID_EXTRACTION — never draft-preparation-ready, even
+    // with an explicit reason (unlike NEEDS_HUMAN_REVIEW, which is approvable with a reason).
+    UUID validationId = validate(tenantId, "SUCCEEDED", "ACME", 0.82, List.of(lineItem("BP-100", "-5")), List.of());
     AiValidationHandoffView handoff = handoffService.generate(validationId);
+    assertThat(handoff.status()).isEqualTo("BLOCKED_INVALID_EXTRACTION");
 
     assertThatThrownBy(() -> reviewService.decide(handoff.handoffId(),
         new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
-            "APPROVE_FOR_DRAFT_PREPARATION", "NOT_READY", "bounded note", "operator-1")))
+            "APPROVE_FOR_DRAFT_PREPARATION", "OVERRIDE", "bounded note", "operator-1")))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("not draft eligible");
   }

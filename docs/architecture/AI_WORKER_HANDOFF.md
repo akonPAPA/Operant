@@ -269,6 +269,8 @@ ai_validation_handoff (07F)
 
 ### Endpoints
 
+- `GET /api/v1/ai-validation-handoffs/review-queue?reviewStatus=&routingDecision=&riskLevel=&draftEligible=&limit=`
+  - tenant-scoped operator review queue (bounded, most-recent first), guarded by `REVIEW_READ`.
 - `GET /api/v1/ai-validation-handoffs/{handoffId}/review` - read the review state, guarded by
   `REVIEW_READ`.
 - `POST /api/v1/ai-validation-handoffs/{handoffId}/review/start` - start review, guarded by
@@ -277,16 +279,39 @@ ai_validation_handoff (07F)
   guarded by `REVIEW_ACTION`.
 - `POST /api/v1/ai-validation-handoffs/{handoffId}/review/correction` - record bounded correction
   metadata, guarded by `REVIEW_ACTION`.
+- `GET /api/v1/ai-validation-handoffs/{handoffId}/draft-preparation-candidate` - the draft-preparation
+  candidate contract; succeeds only when review status is `DRAFT_PREPARATION_READY`. Guarded by
+  `REVIEW_ACTION` (it is the gate toward draft prep, so even this GET requires the stronger
+  permission). All responses are bounded DTOs — never raw `result_json`, document, or message text.
+
+### Concept ladder (what each layer means)
+
+`validation routing decision` (07E, deterministic) → `handoff` (07F, operator-reviewable projection) →
+`review decision` (08B, recorded operator intent) → `draft-preparation candidate` (08B, a CONTRACT/DTO
+that a future layer may consume) → `quote/order draft` (NOT built here). Each step is advisory until a
+future typed command service creates real business records; 08B never creates a quote/order/draft.
 
 ### Review decisions
 
 | Decision | Resulting review status | Business effect |
 | --- | --- | --- |
-| `APPROVE_FOR_DRAFT_PREPARATION` | `DRAFT_PREPARATION_READY` | Allowed only when the 07F handoff is already `draftEligible`; creates no draft. |
+| `APPROVE_FOR_DRAFT_PREPARATION` | `DRAFT_PREPARATION_READY` | Allowed for `READY_FOR_DRAFT_REVIEW`; allowed for `NEEDS_HUMAN_REVIEW` **only with an explicit bounded reason**; never for `BLOCKED_INVALID_EXTRACTION` / `FAILED_VALIDATION`. Creates no draft. |
 | `REQUEST_CORRECTION` | `CORRECTION_REQUESTED` | Records bounded correction metadata only. |
 | `DISMISS_INVALID` | `DISMISSED` | Terminal review state; no business mutation. |
 | `BLOCK_RISK` | `BLOCKED` | Terminal review state; no business mutation. |
 | `KEEP_FOR_HUMAN_REVIEW` | `IN_REVIEW` | Keeps the handoff in operator review. |
+
+### Review queue & draft-preparation candidate
+
+- The queue derives an effective review status (`PENDING_REVIEW` until a review row exists) and filters
+  tenant-scoped handoffs by review status, routing decision, risk level, and draft eligibility. It is a
+  bounded read; review-status filtering operates over the most-recent `QUEUE_SCAN_CAP` (200)
+  structurally-filtered handoffs.
+- The draft-preparation candidate returns `{ handoffId, validationId, extractionResultId,
+  processingJobId, intent, correctedIntent, customerRef, correctedCustomerRef, lineCount,
+  correctedLineCount, routingDecision, riskLevel, reviewDecision, issueSummary, correctionSummary,
+  externalExecution=DISABLED, draftPreparationAllowed=true }`. It is a contract only — no quote/order/
+  draft row is created and no connector/external write occurs.
 
 ### Persistence, security, and audit
 

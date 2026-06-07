@@ -2,6 +2,8 @@ package com.orderpilot.application.services.validation;
 
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDraftPreparationCandidate;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewQueueItem;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewView;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.application.services.AuditEventService;
@@ -14,10 +16,14 @@ import com.orderpilot.domain.validation.AiValidationHandoffRepository;
 import com.orderpilot.domain.validation.AiValidationHandoffReview;
 import com.orderpilot.domain.validation.AiValidationHandoffReviewRepository;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +43,10 @@ public class AiValidationHandoffReviewService {
   private static final int MAX_CORRECTION_SUMMARY = 500;
   private static final int MAX_INTENT = 120;
   private static final int MAX_CUSTOMER_REF = 160;
+  private static final int DEFAULT_LIST_LIMIT = 50;
+  private static final int MAX_LIST_LIMIT = 200;
+  // Bounded scan window for the in-memory review-status derivation in the queue.
+  private static final int QUEUE_SCAN_CAP = 200;
 
   private final AiValidationHandoffRepository handoffRepository;
   private final AiValidationHandoffReviewRepository reviewRepository;
@@ -64,11 +74,92 @@ public class AiValidationHandoffReviewService {
     return toView(handoff, reviewRepository.findByTenantIdAndHandoffId(tenantId, handoffId).orElse(null));
   }
 
+  /**
+   * OP-CAP-08B operator review queue. Tenant-scoped, bounded, most-recently-updated first. Filters by
+   * review status (effective: PENDING_REVIEW until a review row exists), routing decision, risk level,
+   * and draft eligibility. DTO only — never raw result JSON / document text / customer message body.
+   */
+  @Transactional(readOnly = true)
+  public List<AiHandoffReviewQueueItem> queue(
+      String reviewStatus, String routingDecision, String riskLevel, Boolean draftEligible, Integer limit) {
+    UUID tenantId = TenantContext.requireTenantId();
+    int max = clampLimit(limit);
+    List<AiValidationHandoff> handoffs =
+        handoffRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId, PageRequest.of(0, QUEUE_SCAN_CAP));
+    List<UUID> ids = handoffs.stream().map(AiValidationHandoff::getId).toList();
+    Map<UUID, AiValidationHandoffReview> reviews = ids.isEmpty() ? Map.of()
+        : reviewRepository.findByTenantIdAndHandoffIdIn(tenantId, ids).stream()
+            .collect(Collectors.toMap(AiValidationHandoffReview::getHandoffId, r -> r, (a, b) -> a));
+
+    String routingFilter = upper(routingDecision);
+    String riskFilter = upper(riskLevel);
+    String reviewFilter = upper(reviewStatus);
+    List<AiHandoffReviewQueueItem> out = new ArrayList<>();
+    for (AiValidationHandoff h : handoffs) {
+      if (routingFilter != null && !routingFilter.equals(h.getRoutingDecision())) {
+        continue;
+      }
+      if (riskFilter != null && !riskFilter.equals(h.getRiskLevel())) {
+        continue;
+      }
+      if (draftEligible != null && draftEligible != h.isDraftEligible()) {
+        continue;
+      }
+      String effective = effectiveReviewStatus(reviews.get(h.getId()));
+      if (reviewFilter != null && !reviewFilter.equals(effective)) {
+        continue;
+      }
+      out.add(toQueueItem(h, effective));
+      if (out.size() >= max) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * OP-CAP-08B draft-preparation candidate contract. Succeeds only once the review status is
+   * {@code DRAFT_PREPARATION_READY}. This is a CONTRACT/DTO only: it creates no quote/order/draft row
+   * and triggers no connector/external write.
+   */
+  @Transactional(readOnly = true)
+  public AiHandoffDraftPreparationCandidate draftPreparationCandidate(UUID handoffId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    AiValidationHandoff handoff = requireHandoff(tenantId, handoffId);
+    AiValidationHandoffReview review = reviewRepository.findByTenantIdAndHandoffId(tenantId, handoffId)
+        .orElseThrow(() -> new IllegalArgumentException("AI validation handoff is not draft-preparation-ready"));
+    if (!AiHandoffReviewStatus.DRAFT_PREPARATION_READY.name().equals(review.getReviewStatus())) {
+      throw new IllegalArgumentException("AI validation handoff is not draft-preparation-ready");
+    }
+    return new AiHandoffDraftPreparationCandidate(
+        handoff.getId(),
+        handoff.getValidationId(),
+        handoff.getExtractionResultId(),
+        handoff.getProcessingJobId(),
+        handoff.getIntent(),
+        review.getCorrectedIntent(),
+        handoff.getCustomerRef(),
+        review.getCorrectedCustomerRef(),
+        handoff.getLineCount(),
+        review.getCorrectedLineCount(),
+        handoff.getRoutingDecision(),
+        handoff.getRiskLevel(),
+        review.getDecision(),
+        handoff.getIssueSummary(),
+        review.getCorrectionSummary(),
+        EXTERNAL_EXECUTION,
+        true);
+  }
+
   @Transactional
   public AiHandoffReviewView startReview(UUID handoffId, AiHandoffStartReviewRequest request) {
     UUID tenantId = TenantContext.requireTenantId();
     AiValidationHandoff handoff = requireHandoff(tenantId, handoffId);
     AiValidationHandoffReview review = getOrCreateReview(tenantId, handoffId);
+    if (statusOf(review) == AiHandoffReviewStatus.IN_REVIEW) {
+      // Idempotent: already in review — no state change, no duplicate audit.
+      return toView(handoff, review);
+    }
     if (statusOf(review).isTerminal()) {
       throw new IllegalArgumentException("AI handoff review is already terminal");
     }
@@ -87,12 +178,14 @@ public class AiValidationHandoffReviewService {
       throw new IllegalArgumentException("AI handoff review is already terminal");
     }
     AiHandoffReviewDecision decision = parseDecision(request == null ? null : request.decision());
-    AiHandoffReviewStatus next = statusForDecision(handoff, decision);
+    String reasonCode = bounded(request == null ? null : request.reasonCode(), MAX_REASON_CODE);
+    String note = bounded(request == null ? null : request.note(), MAX_NOTE);
+    AiHandoffReviewStatus next = statusForDecision(handoff, decision, reasonCode, note);
     review.recordDecision(
         next,
         decision,
-        bounded(request == null ? null : request.reasonCode(), MAX_REASON_CODE),
-        bounded(request == null ? null : request.note(), MAX_NOTE),
+        reasonCode,
+        note,
         bounded(request == null ? null : request.reviewedBy(), MAX_ACTOR),
         clock.instant());
     review = reviewRepository.save(review);
@@ -143,13 +236,32 @@ public class AiValidationHandoffReviewService {
     }
   }
 
-  private AiHandoffReviewStatus statusForDecision(AiValidationHandoff handoff, AiHandoffReviewDecision decision) {
+  /**
+   * Decision → next review status. Approval rules (OP-CAP-08B req #7):
+   * <ul>
+   *   <li>{@code READY_FOR_DRAFT_REVIEW} (draft-eligible) → approvable.</li>
+   *   <li>{@code NEEDS_HUMAN_REVIEW} → approvable ONLY with an explicit bounded reason/note.</li>
+   *   <li>{@code BLOCKED_INVALID_EXTRACTION} / {@code FAILED_VALIDATION} → never approvable.</li>
+   * </ul>
+   * Approval never creates a quote/order/draft; it only marks the handoff draft-preparation-ready.
+   */
+  private AiHandoffReviewStatus statusForDecision(
+      AiValidationHandoff handoff, AiHandoffReviewDecision decision, String reasonCode, String note) {
     return switch (decision) {
       case APPROVE_FOR_DRAFT_PREPARATION -> {
-        if (!handoff.isDraftEligible()) {
-          throw new IllegalArgumentException("AI validation handoff is not draft eligible");
+        String routing = handoff.getRoutingDecision();
+        if (handoff.isDraftEligible() || "READY_FOR_DRAFT_REVIEW".equals(routing)) {
+          yield AiHandoffReviewStatus.DRAFT_PREPARATION_READY;
         }
-        yield AiHandoffReviewStatus.DRAFT_PREPARATION_READY;
+        if ("NEEDS_HUMAN_REVIEW".equals(routing)) {
+          if (isBlank(reasonCode) && isBlank(note)) {
+            throw new IllegalArgumentException(
+                "An explicit reason is required to approve a needs-human-review handoff for draft preparation");
+          }
+          yield AiHandoffReviewStatus.DRAFT_PREPARATION_READY;
+        }
+        // BLOCKED_INVALID_EXTRACTION / FAILED_VALIDATION cannot become draft-preparation-ready.
+        throw new IllegalArgumentException("AI validation handoff is not draft eligible");
       }
       case REQUEST_CORRECTION -> AiHandoffReviewStatus.CORRECTION_REQUESTED;
       case DISMISS_INVALID -> AiHandoffReviewStatus.DISMISSED;
@@ -206,6 +318,33 @@ public class AiValidationHandoffReviewService {
         EXTERNAL_EXECUTION,
         review == null ? null : review.getCreatedAt(),
         review == null ? null : review.getUpdatedAt());
+  }
+
+  private String effectiveReviewStatus(AiValidationHandoffReview review) {
+    return review == null ? AiHandoffReviewStatus.PENDING_REVIEW.name() : review.getReviewStatus();
+  }
+
+  private AiHandoffReviewQueueItem toQueueItem(AiValidationHandoff h, String reviewStatus) {
+    return new AiHandoffReviewQueueItem(
+        h.getId(), h.getValidationId(), h.getExtractionResultId(), h.getProcessingJobId(),
+        h.getRoutingDecision(), h.getRiskLevel(), h.getStatus(), reviewStatus, h.isDraftEligible(),
+        h.getIntent(), h.getCustomerRef(), h.getLineCount(), h.getIssueCount(), h.getHighestSeverity(),
+        h.getUpdatedAt());
+  }
+
+  private int clampLimit(Integer limit) {
+    if (limit == null || limit <= 0) {
+      return DEFAULT_LIST_LIMIT;
+    }
+    return Math.min(limit, MAX_LIST_LIMIT);
+  }
+
+  private static String upper(String value) {
+    return value == null || value.isBlank() ? null : value.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private static boolean isBlank(String value) {
+    return value == null || value.isBlank();
   }
 
   private static String bounded(String value, int max) {

@@ -269,6 +269,27 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("REVIEW_ACTION");
   }
 
+  @Test
+  void aiValidationHandoffReviewQueueWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/ai-validation-handoffs/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiValidationDraftPreparationCandidateRequiresReviewActionEvenOnGet() throws Exception {
+    MockHttpServletRequest ok = new MockHttpServletRequest("GET", "/api/v1/ai-validation-handoffs/some-id/draft-preparation-candidate");
+    ok.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(ok, new MockHttpServletResponse(), HANDLER));
+
+    MockHttpServletRequest readOnly = new MockHttpServletRequest("GET", "/api/v1/ai-validation-handoffs/some-id/draft-preparation-candidate");
+    readOnly.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+    assertThatThrownBy(() -> interceptor.preHandle(readOnly, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

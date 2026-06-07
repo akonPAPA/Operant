@@ -74,6 +74,11 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/ai-validation-handoffs") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
     }
+    if (path.startsWith("/api/v1/ai-validation-handoffs") && path.endsWith("/draft-preparation-candidate")) {
+      // OP-CAP-08B: the draft-preparation candidate is the gate toward draft prep, so even this GET
+      // requires the stronger REVIEW_ACTION permission.
+      return ApiPermission.REVIEW_ACTION;
+    }
     if (path.startsWith("/api/v1/ai-work") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_WORK_ACTION;
     }
