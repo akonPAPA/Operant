@@ -26,13 +26,31 @@ from orderpilot_ai_worker.extraction.providers.rule_based import RuleBasedExtrac
 from orderpilot_ai_worker.extraction.providers.semantic_extraction import (
     SemanticExtractionProvider,
 )
-from orderpilot_ai_worker.extraction.schemas.extraction import AiSuggestion, ExtractionResult
+from orderpilot_ai_worker.extraction.schemas.extraction import (
+    AiSuggestion,
+    ExtractionResult,
+    ModelMetadata,
+    RiskSignals,
+)
 from orderpilot_ai_worker.extraction.security.output_sanitizer import sanitize_text
 from orderpilot_ai_worker.extraction.security.prompt_injection import detect_prompt_injection
 
 # Bound the inbound text the pipeline will process so a hostile/huge payload cannot exhaust memory
 # or end up echoed wholesale into results. Snippets are bounded again inside the provider.
 MAX_INPUT_CHARS = 20_000
+
+# Advisory model provenance for pipeline-level controlled-failure results (no provider ran, or the
+# provider's output was rejected). Mirrors the default rule-based provider identity.
+_FAILED_MODEL_METADATA = ModelMetadata(
+    provider="rule-based-understanding",
+    model="rule-based-v1",
+    prompt_version="op-cap-12a.prompt.v1",
+    schema_version="stage4.v1",
+)
+
+# Hostile-phrase fragments that indicate an attempt to exfiltrate system/customer data, used only to
+# set an advisory risk flag. They are never executed and never alter behavior beyond forcing review.
+_EXFIL_MARKERS = ("export", "dump", "leak", "reveal", "system prompt", "customer data", "secret")
 
 # Normalize caller source types to a stable advisory document_type. Unknown types are accepted but
 # tagged, never crashed on.
@@ -109,6 +127,9 @@ class SemanticExtractionPipeline:  # pylint: disable=too-few-public-methods
         result.source_id = payload.source_id
         result.document_type = document_type
         result.warnings = warnings + list(result.warnings)
+        fixture_key = payload.source_metadata.get("fixture_source_key")
+        if isinstance(fixture_key, str) and fixture_key.strip():
+            result.fixture_source_key = fixture_key.strip()[:120]
 
         if injection_signals:
             _apply_injection_tagging(result, injection_signals)
@@ -143,6 +164,18 @@ def _apply_injection_tagging(result: ExtractionResult, signals: list[str]) -> No
         result.document_confidence = min(result.document_confidence, 0.25)
     else:
         result.document_confidence = result.overall_confidence
+    # Reflect the hostile content as advisory risk flags. These force review; they never become a
+    # command — the worker has no mutation path and the schema has no executable action surface.
+    risk = result.risk_signals or RiskSignals()
+    risk.prompt_injection_suspected = True
+    risk.unsafe_instruction = True
+    risk.low_confidence = True
+    if any(marker in s for s in signals for marker in _EXFIL_MARKERS):
+        risk.possible_data_exfiltration = True
+    for token in ("prompt_injection_suspected", "unsafe_instruction"):
+        if token not in risk.details:
+            risk.details.append(token)
+    result.risk_signals = risk
     result.suggestions = list(result.suggestions) + [
         AiSuggestion(
             suggestion_type="PROMPT_INJECTION_SIGNAL",
@@ -170,4 +203,8 @@ def _failed_result(
         source_id=payload.source_id,
         warnings=[reason],
         advisory_only=True,
+        language="en",
+        risk_signals=RiskSignals(low_confidence=True, details=[reason]),
+        operator_summary=f"Extraction failed ({reason}); advisory only — no business state.",
+        model_metadata=_FAILED_MODEL_METADATA,
     )
