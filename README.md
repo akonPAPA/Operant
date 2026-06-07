@@ -29,13 +29,13 @@ AI, frontend, chatbot, and connector components must never directly write truste
 ## Local quick start
 
 ```powershell
-cd "C:\OrderPilot\OrderPilot-Core"
-Copy-Item ".env.example" ".env"
-docker compose -f "infra/docker/docker-compose.yml" up -d postgres redis
-docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot
+cd "C:\OrderPilot\OrderPilot-Core\infra\docker"
+docker compose up -d postgres redis
+Test-NetConnection localhost -Port 55432
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_local
 ```
 
-For the full Windows local setup, use `docs/runbooks/local-development.md`. The primary Compose entrypoint is `infra/docker/docker-compose.yml` from the repo root. The local Postgres role/database is `orderpilot/orderpilot`; do not use `postgres/postgres` unless you intentionally created that role outside this repo.
+For the full Windows local setup, use `docs/runbooks/local-development.md`. The primary Compose entrypoint is `infra/docker/docker-compose.yml` from `C:\OrderPilot\OrderPilot-Core\infra\docker`. Host tools use `localhost:55432`; containers use Docker service DNS `postgres:5432`. The default local app role/database is `orderpilot_local_user/orderpilot_local`; do not use `postgres/postgres` unless you intentionally created that role outside this repo.
 
 Local parity check:
 

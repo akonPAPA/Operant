@@ -3,15 +3,19 @@ services:
     image: postgres:16-alpine
     container_name: orderpilot-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-orderpilot}
-      POSTGRES_USER: ${POSTGRES_USER:-orderpilot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orderpilot_dev_password}
+      POSTGRES_DB: ${ORDERPILOT_DB_NAME:-orderpilot_local}
+      POSTGRES_USER: ${ORDERPILOT_DB_USER:-orderpilot_local_user}
+      POSTGRES_PASSWORD: ${ORDERPILOT_DB_PASSWORD:-change-me-local-dev-only}
+      ORDERPILOT_TEST_DB_NAME: ${ORDERPILOT_TEST_DB_NAME:-orderpilot_test}
+      ORDERPILOT_TEST_DB_USER: ${ORDERPILOT_TEST_DB_USER:-orderpilot_local_user}
+      ORDERPILOT_TEST_DB_PASSWORD: ${ORDERPILOT_TEST_DB_PASSWORD:-change-me-local-dev-only}
     ports:
-      - "${POSTGRES_PORT:-55432}:5432"
+      - "${ORDERPILOT_DB_HOST_PORT:-55432}:5432"
     volumes:
       - orderpilot_postgres:/var/lib/postgresql/data
+      - ./postgres/init-local-test-db.sh:/docker-entrypoint-initdb.d/20-init-local-test-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "PGPASSWORD=$${POSTGRES_PASSWORD} psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -c 'select 1' >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,9 +36,12 @@ services:
     build:
       context: ../../apps/core-api
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-orderpilot}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-orderpilot}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-orderpilot_dev_password}
+      ORDERPILOT_DB_NAME: ${ORDERPILOT_DB_NAME:-orderpilot_local}
+      ORDERPILOT_DB_USER: ${ORDERPILOT_DB_USER:-orderpilot_local_user}
+      ORDERPILOT_DB_PASSWORD: ${ORDERPILOT_DB_PASSWORD:-change-me-local-dev-only}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${ORDERPILOT_DB_NAME:-orderpilot_local}
+      SPRING_DATASOURCE_USERNAME: ${ORDERPILOT_DB_USER:-orderpilot_local_user}
+      SPRING_DATASOURCE_PASSWORD: ${ORDERPILOT_DB_PASSWORD:-change-me-local-dev-only}
       SERVER_PORT: 8080
     ports:
       - "${CORE_API_PORT:-8080}:8080"
