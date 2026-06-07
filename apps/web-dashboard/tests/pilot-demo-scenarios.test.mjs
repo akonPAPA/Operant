@@ -41,6 +41,15 @@ test("demo scenarios page renders status, capabilities, evidence, gaps, and safe
   assert.doesNotMatch(page, /predictionPayloadJson|beforePayloadJson|afterPayloadJson/);
 });
 
+test("demo scenarios page surfaces the OP-CAP-11I scripted demo dataset and safety note", () => {
+  assert.match(page, /Scripted demo dataset/);
+  assert.match(page, /Demo data only/);
+  assert.match(page, /PILOT_SCRIPTED_DEMO_DATASET\.md/);
+  assert.match(page, /scripted-scenarios-demo\.json/);
+  // Static, display-only dataset summary — no dangerous HTML injection.
+  assert.doesNotMatch(page, /dangerouslySetInnerHTML/);
+});
+
 test("navigation and pilot-readiness link to demo scenarios", () => {
   assert.match(nav, /\/pilot-readiness\/demo-scenarios/);
   assert.match(readinessPage, /\/pilot-readiness\/demo-scenarios/);
