@@ -652,3 +652,23 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* OP-CAP-11G: print-friendly pilot evidence report (browser Print -> PDF). */
+@media print {
+  .sidebar,
+  .topbar,
+  .no-print {
+    display: none !important;
+  }
+
+  .main,
+  .content {
+    margin: 0;
+    padding: 0;
+  }
+
+  .report-print-area {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+}

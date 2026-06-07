@@ -36,6 +36,33 @@ export type PilotExceptionBreakdown = {
   categories: ExceptionCategory[];
 };
 
+export type PilotReadinessSignal = {
+  label: string;
+  value: string;
+  assessment: string;
+};
+
+// OP-CAP-11G evidence report pack: structured, non-raw composition of pilot metrics.
+export type PilotEvidenceReport = {
+  reportGeneratedAt: string;
+  tenantId: string;
+  totalShadowRuns: number;
+  totalHumanCorrections: number;
+  averageManualBaselineMinutes: number;
+  averageAssistedProcessingMinutes: number;
+  estimatedMinutesSaved: number;
+  estimatedCostSaved: number;
+  currency: string;
+  automationCandidateCount: number;
+  reviewRequiredCount: number;
+  humanCorrectionRate: number;
+  exceptionBreakdown: ExceptionCategory[];
+  topExceptionCategories: ExceptionCategory[];
+  readinessSignals: PilotReadinessSignal[];
+  limitations: string[];
+  safetyStatement: string;
+};
+
 export type PilotApiResult<T> = {
   data: T;
   error?: string;
@@ -111,4 +138,28 @@ export function getPilotMetrics() {
 
 export function getPilotExceptionBreakdown() {
   return read<PilotExceptionBreakdown>("/api/v1/pilot/metrics/exceptions", { totalCategorized: 0, categories: [] });
+}
+
+const EMPTY_EVIDENCE_REPORT: PilotEvidenceReport = {
+  reportGeneratedAt: "",
+  tenantId: "",
+  totalShadowRuns: 0,
+  totalHumanCorrections: 0,
+  averageManualBaselineMinutes: 0,
+  averageAssistedProcessingMinutes: 0,
+  estimatedMinutesSaved: 0,
+  estimatedCostSaved: 0,
+  currency: "USD",
+  automationCandidateCount: 0,
+  reviewRequiredCount: 0,
+  humanCorrectionRate: 0,
+  exceptionBreakdown: [],
+  topExceptionCategories: [],
+  readinessSignals: [],
+  limitations: [],
+  safetyStatement: ""
+};
+
+export function getPilotEvidenceReport() {
+  return read<PilotEvidenceReport>("/api/v1/pilot/evidence-report", EMPTY_EVIDENCE_REPORT);
 }

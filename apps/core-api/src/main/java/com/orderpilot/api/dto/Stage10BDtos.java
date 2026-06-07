@@ -87,4 +87,30 @@ public final class Stage10BDtos {
   public record PilotExceptionBreakdownResponse(
       long totalCategorized,
       List<ExceptionCategoryResponse> categories) {}
+
+  // OP-CAP-11G pilot evidence report pack. Structured, non-raw, tenant-scoped composition of
+  // existing pilot metrics. Never carries raw prediction/correction payloads or object-storage internals.
+  public record PilotReadinessSignal(
+      String label,
+      String value,
+      String assessment) {}
+
+  public record PilotEvidenceReport(
+      Instant reportGeneratedAt,
+      UUID tenantId,
+      long totalShadowRuns,
+      long totalHumanCorrections,
+      BigDecimal averageManualBaselineMinutes,
+      BigDecimal averageAssistedProcessingMinutes,
+      BigDecimal estimatedMinutesSaved,
+      BigDecimal estimatedCostSaved,
+      String currency,
+      long automationCandidateCount,
+      long reviewRequiredCount,
+      BigDecimal humanCorrectionRate,
+      List<ExceptionCategoryResponse> exceptionBreakdown,
+      List<ExceptionCategoryResponse> topExceptionCategories,
+      List<PilotReadinessSignal> readinessSignals,
+      List<String> limitations,
+      String safetyStatement) {}
 }

@@ -114,6 +114,55 @@ public class PilotShadowModeService {
         automationCandidateCount, reviewRequiredCount, averageManualBaselineMinutes, averageAssistedMinutes, estimatedMinutesSaved, estimatedCostSaved, roi.defaultCurrency());
   }
 
+  // OP-CAP-11G: design-partner evidence report. Composes the existing tenant-scoped pilot
+  // metrics and exception breakdown into a structured, non-raw report. No new metric logic.
+  static final String SAFETY_STATEMENT =
+      "AI suggests, rules validate, humans approve, the backend writes, audit records. "
+          + "Shadow-mode results are advisory (MOCK_ONLY) and never auto-approve quotes/orders or trigger "
+          + "ERP/1C/connector writes. All figures are tenant-scoped.";
+  static final List<String> REPORT_LIMITATIONS = List.of(
+      "Shadow-mode predictions are advisory (MOCK_ONLY); no real AI provider is invoked.",
+      "Estimated minutes and cost saved are modeled from the tenant's ROI assumptions, not measured billing.",
+      "This is evidence of shadow-mode and pilot readiness, not a guarantee of production ROI.",
+      "Raw prediction payloads and correction before/after payloads are intentionally excluded.",
+      "CSV export is not provided in this slice (no existing safe CSV export convention).");
+
+  @Transactional(readOnly = true)
+  public EvidenceReport evidenceReport() {
+    UUID tenantId = TenantContext.requireTenantId();
+    PilotMetrics metrics = metrics();
+    List<ExceptionCategorySlice> breakdown = exceptionBreakdown();
+    long totalCorrections = humanCorrectionRepository.countByTenantId(tenantId);
+    List<ExceptionCategorySlice> topCategories = breakdown.stream()
+        .sorted(java.util.Comparator.comparingLong(ExceptionCategorySlice::count).reversed()
+            .thenComparing(ExceptionCategorySlice::category))
+        .limit(3)
+        .toList();
+    return new EvidenceReport(clock.instant(), tenantId, metrics, totalCorrections, breakdown, topCategories,
+        readinessSignals(metrics), REPORT_LIMITATIONS, SAFETY_STATEMENT);
+  }
+
+  private static List<ReadinessSignal> readinessSignals(PilotMetrics metrics) {
+    List<ReadinessSignal> signals = new ArrayList<>();
+    long total = metrics.totalShadowRuns();
+    signals.add(new ReadinessSignal("Sample size", total + " shadow runs",
+        total == 0 ? "NO_DATA" : total >= 20 ? "ADEQUATE_SAMPLE" : "LIMITED_SAMPLE"));
+    signals.add(new ReadinessSignal("Human correction rate", formatPercent(metrics.humanCorrectionRate()),
+        metrics.reviewedShadowRuns() == 0 ? "NO_DATA"
+            : metrics.humanCorrectionRate().compareTo(new BigDecimal("0.20")) <= 0 ? "STRONG"
+            : metrics.humanCorrectionRate().compareTo(new BigDecimal("0.40")) <= 0 ? "MODERATE" : "NEEDS_IMPROVEMENT"));
+    signals.add(new ReadinessSignal("Automation candidates", metrics.automationCandidateCount() + " runs",
+        total == 0 ? "NO_DATA" : metrics.automationCandidateCount() > 0 ? "CANDIDATES_PRESENT" : "NONE_YET"));
+    signals.add(new ReadinessSignal("Review workload", metrics.reviewRequiredCount() + " runs require review", "INFORMATIONAL"));
+    signals.add(new ReadinessSignal("Estimated time saved", metrics.estimatedMinutesSaved() + " minutes",
+        metrics.estimatedMinutesSaved().compareTo(BigDecimal.ZERO) > 0 ? "POSITIVE" : "NO_DATA"));
+    return signals;
+  }
+
+  private static String formatPercent(BigDecimal rate) {
+    return rate.multiply(BigDecimal.valueOf(100)).setScale(1, RoundingMode.HALF_UP).toPlainString() + "%";
+  }
+
   @Transactional(readOnly = true)
   public List<ExceptionCategorySlice> exceptionBreakdown() {
     UUID tenantId = TenantContext.requireTenantId();
@@ -223,4 +272,17 @@ public class PilotShadowModeService {
       String costCurrency) {}
 
   public record ExceptionCategorySlice(String category, long count, BigDecimal percentage) {}
+
+  public record ReadinessSignal(String label, String value, String assessment) {}
+
+  public record EvidenceReport(
+      java.time.Instant reportGeneratedAt,
+      UUID tenantId,
+      PilotMetrics metrics,
+      long totalHumanCorrections,
+      List<ExceptionCategorySlice> exceptionBreakdown,
+      List<ExceptionCategorySlice> topExceptionCategories,
+      List<ReadinessSignal> readinessSignals,
+      List<String> limitations,
+      String safetyStatement) {}
 }

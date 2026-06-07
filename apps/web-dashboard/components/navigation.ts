@@ -33,6 +33,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Draft Orders", href: "/orders" },
   { label: "Analytics", href: "/analytics" },
   { label: "Pilot Readiness", href: "/pilot-readiness" },
+  { label: "Pilot Evidence Report", href: "/pilot-readiness/evidence-report" },
   { label: "Reconciliation", href: "/reconciliation" },
   { label: "Channels", href: "/channels" },
   { label: "Messenger Bridge", href: "/messenger-bridge" },
