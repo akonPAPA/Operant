@@ -157,6 +157,50 @@ class ApiPermissionInterceptorPermissionTest {
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
+  // --- OP-CAP-09D /api/v1/workspace draft review queues + product picker: GET requires REVIEW_READ ---
+
+  @Test
+  void draftQuoteReviewQueueGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-quotes/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void draftQuoteReviewQueueGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-quotes/review-queue");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
+  @Test
+  void draftOrderReviewQueueGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/draft-orders/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceProductSearchGetWithReviewReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/products/search?q=brk");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workspaceProductSearchGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/workspace/products/search?q=brk");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_READ");
+  }
+
   // --- OP-CAP-09A /api/v1/validation-review: GET requires REVIEW_READ, mutations (incl. prepare-draft) require REVIEW_ACTION ---
 
   @Test

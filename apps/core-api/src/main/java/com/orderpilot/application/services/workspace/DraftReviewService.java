@@ -5,6 +5,8 @@ import com.orderpilot.api.dto.Stage6Dtos.DraftOrderDetail;
 import com.orderpilot.api.dto.Stage6Dtos.DraftOrderLineView;
 import com.orderpilot.api.dto.Stage6Dtos.DraftQuoteDetail;
 import com.orderpilot.api.dto.Stage6Dtos.DraftQuoteLineView;
+import com.orderpilot.api.dto.Stage6Dtos.DraftReviewSummary;
+import com.orderpilot.api.dto.Stage6Dtos.ProductPickerItem;
 import com.orderpilot.api.dto.Stage6Dtos.ReviewActionRequest;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.product.ProductRepository;
@@ -18,9 +20,12 @@ import com.orderpilot.domain.workspace.DraftQuoteLineRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +45,14 @@ public class DraftReviewService {
   private static final Set<String> TERMINAL_STATUSES = Set.of("APPROVED_INTERNAL", "APPROVED", "REJECTED", "CANCELLED", "REMOVED");
   private static final int MAX_UOM_LENGTH = 16;
   private static final int MAX_TEXT_LENGTH = 512;
+  // OP-CAP-09D queue/picker bounds.
+  private static final String NEXT_ACTION = "REVIEW_LINES";
+  private static final Set<String> QUEUE_STATUS_ALLOWLIST = Set.of("DRAFT", "NEEDS_REVIEW", "WAITING_APPROVAL", "APPROVED_INTERNAL", "REJECTED", "CANCELLED");
+  private static final int DEFAULT_QUEUE_LIMIT = 25;
+  private static final int MAX_QUEUE_LIMIT = 100;
+  private static final int DEFAULT_PRODUCT_LIMIT = 10;
+  private static final int MAX_PRODUCT_LIMIT = 25;
+  private static final String ACTIVE_STATUS = "ACTIVE";
 
   private final DraftQuoteRepository quoteRepository;
   private final DraftQuoteLineRepository quoteLineRepository;
@@ -152,6 +165,92 @@ public class DraftReviewService {
     orderRepository.save(order);
     actionService.record(actorId, "DRAFT_ORDER", draftOrderId, "DRAFT_ORDER_MARKED_READY", "Draft order marked ready for internal approval", transitionMetadata(from, READY_STATUS, request));
     return orderDetail(order, tenantId);
+  }
+
+  // --- OP-CAP-09D: bounded review queues + read-only product picker ---
+
+  @Transactional(readOnly = true)
+  public List<DraftReviewSummary> quoteReviewQueue(String status, UUID sourceReviewCaseId, String customerRef, int limit) {
+    UUID tenantId = TenantContext.requireTenantId();
+    List<DraftQuote> quotes = quoteRepository.searchReviewQueue(tenantId, normalizeStatusFilter(status), sourceReviewCaseId, blankToNull(customerRef), PageRequest.of(0, clampQueueLimit(limit)));
+    Map<UUID, Long> counts = quoteLineCounts(tenantId, quotes.stream().map(DraftQuote::getId).toList());
+    return quotes.stream()
+        .map(q -> new DraftReviewSummary(q.getId(), "QUOTE", q.getStatus(), q.getSourceExceptionCaseId(), q.getSourceValidationRunId(), q.getCustomerAccountId(), q.getCustomerDisplayName(), counts.getOrDefault(q.getId(), 0L).intValue(), q.getSubtotalAmount(), q.getTotalAmount(), q.getCurrency(), q.getCreatedAt(), q.getUpdatedAt(), EXTERNAL_EXECUTION, NEXT_ACTION))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<DraftReviewSummary> orderReviewQueue(String status, UUID sourceReviewCaseId, String customerRef, int limit) {
+    UUID tenantId = TenantContext.requireTenantId();
+    // Draft orders have no denormalized customer name column; customerRef name search is quote-only (documented).
+    List<DraftOrder> orders = orderRepository.searchReviewQueue(tenantId, normalizeStatusFilter(status), sourceReviewCaseId, PageRequest.of(0, clampQueueLimit(limit)));
+    Map<UUID, Long> counts = orderLineCounts(tenantId, orders.stream().map(DraftOrder::getId).toList());
+    return orders.stream()
+        .map(o -> new DraftReviewSummary(o.getId(), "ORDER", o.getStatus(), o.getSourceExceptionCaseId(), o.getSourceValidationRunId(), o.getCustomerAccountId(), null, counts.getOrDefault(o.getId(), 0L).intValue(), o.getSubtotalAmount(), o.getTotalAmount(), o.getCurrency(), o.getCreatedAt(), o.getUpdatedAt(), EXTERNAL_EXECUTION, NEXT_ACTION))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<ProductPickerItem> searchProducts(String q, int limit) {
+    UUID tenantId = TenantContext.requireTenantId();
+    String term = blankToNull(q);
+    if (term == null) {
+      return List.of(); // require a search term; never run an unbounded product scan
+    }
+    int clamped = clampProductLimit(limit);
+    return productRepository
+        .findTop25ByTenantIdAndDeletedAtIsNullAndSkuContainingIgnoreCaseOrTenantIdAndDeletedAtIsNullAndNameContainingIgnoreCase(tenantId, term, tenantId, term)
+        .stream()
+        .filter(product -> ACTIVE_STATUS.equals(product.getStatus()))
+        .limit(clamped)
+        .map(product -> new ProductPickerItem(product.getId(), product.getSku(), product.getName(), product.getNormalizedSku(), product.getStatus()))
+        .toList();
+  }
+
+  private Map<UUID, Long> quoteLineCounts(UUID tenantId, List<UUID> ids) {
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, Long> counts = new HashMap<>();
+    for (Object[] row : quoteLineRepository.countByDraftQuoteIds(tenantId, ids)) {
+      counts.put((UUID) row[0], (Long) row[1]);
+    }
+    return counts;
+  }
+
+  private Map<UUID, Long> orderLineCounts(UUID tenantId, List<UUID> ids) {
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, Long> counts = new HashMap<>();
+    for (Object[] row : orderLineRepository.countByDraftOrderIds(tenantId, ids)) {
+      counts.put((UUID) row[0], (Long) row[1]);
+    }
+    return counts;
+  }
+
+  private String normalizeStatusFilter(String status) {
+    String value = blankToNull(status);
+    if (value == null) {
+      return null;
+    }
+    String upper = value.toUpperCase();
+    if (!QUEUE_STATUS_ALLOWLIST.contains(upper)) {
+      throw new IllegalArgumentException("Unsupported draft status filter: " + status);
+    }
+    return upper;
+  }
+
+  private int clampQueueLimit(int limit) {
+    return Math.max(1, Math.min(limit <= 0 ? DEFAULT_QUEUE_LIMIT : limit, MAX_QUEUE_LIMIT));
+  }
+
+  private int clampProductLimit(int limit) {
+    return Math.max(1, Math.min(limit <= 0 ? DEFAULT_PRODUCT_LIMIT : limit, MAX_PRODUCT_LIMIT));
+  }
+
+  private String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
   }
 
   // --- validation / guards ---

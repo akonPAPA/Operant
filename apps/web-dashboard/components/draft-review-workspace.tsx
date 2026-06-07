@@ -6,11 +6,13 @@ import {
   getDraftQuoteReview,
   markDraftOrderReady,
   markDraftQuoteReady,
+  searchWorkspaceProducts,
   updateDraftOrderLine,
   updateDraftQuoteLine,
   type DraftLineCorrection,
   type DraftReviewDetail,
-  type DraftReviewLine
+  type DraftReviewLine,
+  type ProductPickerItem
 } from "@/lib/draft-review-api";
 
 // Exact backend status tokens — do not rename.
@@ -108,6 +110,11 @@ export function DraftReviewWorkspace({
     status: initialError ? "error" : "idle",
     message: initialError ?? ""
   });
+  // OP-CAP-09D read-only product picker state for the correction form.
+  const [productQuery, setProductQuery] = useState("");
+  const [productResults, setProductResults] = useState<ProductPickerItem[]>([]);
+  const [productSearching, setProductSearching] = useState(false);
+  const [productError, setProductError] = useState("");
 
   const isOrder = draftType === "ORDER";
   const typeLabel = isOrder ? "Order" : "Quote";
@@ -136,6 +143,36 @@ export function DraftReviewWorkspace({
   function cancelEdit() {
     setEditingLineId(null);
     setForm(emptyForm());
+    setProductQuery("");
+    setProductResults([]);
+    setProductError("");
+  }
+
+  // Read-only, tenant-scoped product search to help the operator pick a valid productId. Never mutates master data.
+  async function runProductSearch() {
+    const term = productQuery.trim();
+    if (!term) {
+      setProductError("Enter a SKU or product name to search.");
+      setProductResults([]);
+      return;
+    }
+    setProductSearching(true);
+    setProductError("");
+    const result = await searchWorkspaceProducts(term);
+    setProductSearching(false);
+    if (result.error) {
+      setProductError(result.error);
+      setProductResults([]);
+      return;
+    }
+    setProductResults(result.data);
+    if (result.data.length === 0) {
+      setProductError("No matching tenant products.");
+    }
+  }
+
+  function selectProduct(item: ProductPickerItem) {
+    setForm({ ...form, productId: item.productId });
   }
 
   async function submitCorrection(lineId: string) {
@@ -371,6 +408,46 @@ export function DraftReviewWorkspace({
               disabled={busy}
               onChange={(e) => setForm({ ...form, unitPrice: e.target.value })}
             />
+
+            <label className="field-label" htmlFor="dr-product-search">Find product (optional)</label>
+            <div>
+              <div className="button-row">
+                <input
+                  id="dr-product-search"
+                  className="form-input"
+                  type="text"
+                  placeholder="search SKU or name"
+                  value={productQuery}
+                  disabled={busy}
+                  onChange={(e) => setProductQuery(e.target.value)}
+                />
+                <button className="button" type="button" disabled={busy || productSearching} onClick={() => void runProductSearch()}>
+                  {productSearching ? "Searching…" : "Search products"}
+                </button>
+              </div>
+              {productError ? <p className="form-message error">{productError}</p> : null}
+              {productResults.length > 0 ? (
+                <table className="data-table">
+                  <thead>
+                    <tr><th>SKU</th><th>Name</th><th>Status</th><th>Select</th></tr>
+                  </thead>
+                  <tbody>
+                    {productResults.map((item) => (
+                      <tr key={item.productId} className={form.productId === item.productId ? "selected-row" : ""}>
+                        <td>{item.sku}</td>
+                        <td>{item.name}</td>
+                        <td>{item.status ?? "—"}</td>
+                        <td>
+                          <button className="button" type="button" disabled={busy} onClick={() => selectProduct(item)}>
+                            Use
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+            </div>
 
             <label className="field-label" htmlFor="dr-product-id">Product id (optional)</label>
             <input

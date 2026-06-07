@@ -50,4 +50,8 @@ public final class Stage6Dtos {
   public record DraftLineCorrectionRequest(BigDecimal quantity, String uom, String description, BigDecimal unitPrice, UUID productId, String correctionReason, UUID actorUserId) {
     public boolean hasAnyField() { return quantity != null || uom != null || description != null || unitPrice != null || productId != null; }
   }
+  // OP-CAP-09D: bounded draft review queue summary (no full line arrays, no raw AI/document/message payloads).
+  public record DraftReviewSummary(UUID draftId, String draftType, String status, UUID sourceReviewCaseId, UUID sourceValidationRunId, UUID customerAccountId, String customerName, int lineCount, BigDecimal subtotalAmount, BigDecimal totalAmount, String currency, Instant createdAt, Instant updatedAt, String externalExecution, String nextAction) {}
+  // OP-CAP-09D: read-only product picker item. No cost / margin / supplier / inventory-private fields.
+  public record ProductPickerItem(UUID productId, String sku, String name, String normalizedSku, String status) {}
 }

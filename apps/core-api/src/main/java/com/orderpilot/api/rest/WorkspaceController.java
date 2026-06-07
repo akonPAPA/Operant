@@ -29,6 +29,7 @@ public class WorkspaceController {
   @PostMapping("/suggested-fixes/{id}/accept") public SuggestedFix acceptFix(@PathVariable UUID id){return fixService.accept(id);}
   @PostMapping("/suggested-fixes/{id}/reject") public SuggestedFix rejectFix(@PathVariable UUID id){return fixService.reject(id);}
 
+  @GetMapping("/draft-quotes/review-queue") public List<DraftReviewSummary> quoteReviewQueue(@RequestParam(required = false) String status, @RequestParam(required = false) UUID sourceReviewCaseId, @RequestParam(required = false) String customerRef, @RequestParam(defaultValue = "25") int limit){return draftReviewService.quoteReviewQueue(status, sourceReviewCaseId, customerRef, limit);}
   @PostMapping("/draft-quotes/from-validation/{validationRunId}") public DraftQuote createQuote(@PathVariable UUID validationRunId){return quoteService.createFromValidation(validationRunId);}
   @GetMapping("/draft-quotes") public List<DraftQuote> quotes(){return quoteService.list();}
   @GetMapping("/draft-quotes/{id}") public DraftQuote quote(@PathVariable UUID id){return quoteService.get(id);}
@@ -40,6 +41,7 @@ public class WorkspaceController {
   @PostMapping("/draft-quotes/{id}/reject") public DraftQuote rejectQuote(@PathVariable UUID id){return quoteService.reject(id);}
   @PostMapping("/draft-quotes/{id}/cancel") public DraftQuote cancelQuote(@PathVariable UUID id){return quoteService.cancel(id);}
 
+  @GetMapping("/draft-orders/review-queue") public List<DraftReviewSummary> orderReviewQueue(@RequestParam(required = false) String status, @RequestParam(required = false) UUID sourceReviewCaseId, @RequestParam(required = false) String customerRef, @RequestParam(defaultValue = "25") int limit){return draftReviewService.orderReviewQueue(status, sourceReviewCaseId, customerRef, limit);}
   @PostMapping("/draft-orders/from-validation/{validationRunId}") public DraftOrder createOrder(@PathVariable UUID validationRunId){return orderService.createFromValidation(validationRunId);}
   @GetMapping("/draft-orders") public List<DraftOrder> orders(){return orderService.list();}
   @GetMapping("/draft-orders/{id}") public DraftOrder order(@PathVariable UUID id){return orderService.get(id);}
@@ -57,4 +59,7 @@ public class WorkspaceController {
   @PostMapping("/notes") public WorkspaceNote addNote(@RequestBody NoteRequest request){return noteService.add(request.targetType(), request.targetId(), request.noteText(), request.createdBy());}
   @GetMapping("/notes") public List<WorkspaceNote> notes(@RequestParam String targetType, @RequestParam UUID targetId){return noteService.list(targetType, targetId);}
   @GetMapping("/summary") public WorkspaceSummaryService.WorkspaceSummary summary(){return summaryService.summary();}
+
+  // OP-CAP-09D: read-only, tenant-scoped product picker for line correction. No cost/margin/secret fields.
+  @GetMapping("/products/search") public List<ProductPickerItem> searchProducts(@RequestParam(required = false) String q, @RequestParam(defaultValue = "10") int limit){return draftReviewService.searchProducts(q, limit);}
 }

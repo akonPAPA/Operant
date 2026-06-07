@@ -25,6 +25,13 @@ Update at the start of a task only when needed:
 
 ## Completed / Known State
 
+- OP-CAP-09D Draft Review Queue, Navigation & Product Picker is complete:
+  - Backend (extends existing `WorkspaceController`/`DraftReviewService`; no new subsystem): `GET /api/v1/workspace/draft-quotes/review-queue`, `GET /api/v1/workspace/draft-orders/review-queue`, `GET /api/v1/workspace/products/search`. All `REVIEW_READ` (queue auto-covered by existing `/workspace/draft-*` prefix; added `/api/v1/workspace/products`→REVIEW_READ).
+  - Bounded `DraftReviewSummary` (no full line arrays — `lineCount` via one grouped count query; no raw AI/document/message payload). Filters: status allowlist (fail-closed 400 on unknown), exact sourceReviewCaseId, quote-only customerRef name-contains, limit clamp (default 25/max 100), createdAt-desc, cursor deferred. Tenant-scoped via `@Query` + `Pageable`.
+  - Product picker reuses existing tenant-scoped `ProductRepository` SKU/name search (deleted excluded) + ACTIVE filter, requires non-blank q (else `[]`), limit clamp (default 10/max 25). `ProductPickerItem` = productId/sku/name/normalizedSku/status only — no cost/margin/supplier. Read-only.
+  - Entity additions (no migration): `DraftQuote.getUpdatedAt()`, `DraftOrder.getUpdatedAt()`. Repo additions: `searchReviewQueue` (quote/order), grouped `countByDraft{Quote,Order}Ids`.
+  - Frontend: server list pages `/workspace/draft-quotes`, `/workspace/draft-orders` (GET filter form + Link rows to 09C detail); nav entries "Draft Quote Review"/"Draft Order Review" (distinct from existing `/quotes`,`/orders`); API helpers `getDraftQuoteReviewQueue`/`getDraftOrderReviewQueue`/`searchWorkspaceProducts`; product picker integrated into `draft-review-workspace.tsx` correction form (read-only search → sets productId).
+  - Tests: backend `DraftReviewQueueStage9DTest` (11), `ApiPermissionInterceptorPermissionTest` (+5 → 33); 09A/09B/controller tests still green (8/14/3/2). Frontend `tests/draft-review-queue.test.mjs` (11); full FE suite 124/124; `npm run lint` clean; `npm run build` OK (4 `/workspace/draft-*` routes). No external write / final approval / master-data mutation.
 - OP-CAP-09C Operator Draft Review UI is complete (frontend-only; no backend change needed — 09B DTOs sufficed):
   - Routes: `app/(dashboard)/workspace/draft-quotes/[id]/page.tsx`, `app/(dashboard)/workspace/draft-orders/[id]/page.tsx` (server components fetching the bounded 09B review DTO).
   - `lib/draft-review-api.ts` — tenant-scoped typed client: `getDraftQuoteReview`/`updateDraftQuoteLine`/`markDraftQuoteReady` + order equivalents; `X-Tenant-Id`; only the bounded 09B fields; strips undefined PATCH fields; 403→permission message.

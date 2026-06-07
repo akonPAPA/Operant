@@ -25,6 +25,7 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/validation-review", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/workspace/draft-quotes", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/workspace/draft-orders", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/workspace/products", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/quote-review", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/quotes", ApiPermission.QUOTE_READ),
       Map.entry("/api/v1/quote-transactions", ApiPermission.QUOTE_READ),

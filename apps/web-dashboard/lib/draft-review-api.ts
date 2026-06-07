@@ -57,6 +57,41 @@ export type DraftLineCorrection = {
   correctionReason?: string;
 };
 
+// OP-CAP-09D bounded queue summary (no full line arrays, no raw AI/document/message payloads).
+export type DraftReviewSummary = {
+  draftId: string;
+  draftType: string;
+  status: string;
+  sourceReviewCaseId?: string;
+  sourceValidationRunId?: string;
+  customerAccountId?: string;
+  customerName?: string;
+  lineCount: number;
+  subtotalAmount?: number | string;
+  totalAmount?: number | string;
+  currency?: string;
+  createdAt: string;
+  updatedAt?: string;
+  externalExecution: string;
+  nextAction: string;
+};
+
+export type DraftReviewQueueParams = {
+  status?: string;
+  sourceReviewCaseId?: string;
+  customerRef?: string;
+  limit?: number;
+};
+
+// OP-CAP-09D read-only product picker item. No cost/margin/supplier/private fields.
+export type ProductPickerItem = {
+  productId: string;
+  sku: string;
+  name: string;
+  normalizedSku?: string;
+  status?: string;
+};
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const draftReviewConfig = {
@@ -153,4 +188,28 @@ export function markDraftOrderReady(draftOrderId: string, reason?: string) {
     method: "POST",
     body: JSON.stringify(reason ? { reason } : {})
   });
+}
+
+// --- OP-CAP-09D: bounded review queues + read-only product picker ---
+
+function queueQuery(params: DraftReviewQueueParams): string {
+  const search = new URLSearchParams();
+  if (params.status) search.set("status", params.status);
+  if (params.sourceReviewCaseId) search.set("sourceReviewCaseId", params.sourceReviewCaseId);
+  if (params.customerRef) search.set("customerRef", params.customerRef);
+  if (params.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export function getDraftQuoteReviewQueue(params: DraftReviewQueueParams = {}) {
+  return requestJson<DraftReviewSummary[]>(`/api/v1/workspace/draft-quotes/review-queue${queueQuery(params)}`, { method: "GET" }, []);
+}
+
+export function getDraftOrderReviewQueue(params: DraftReviewQueueParams = {}) {
+  return requestJson<DraftReviewSummary[]>(`/api/v1/workspace/draft-orders/review-queue${queueQuery(params)}`, { method: "GET" }, []);
+}
+
+export function searchWorkspaceProducts(q: string, limit = 10) {
+  return requestJson<ProductPickerItem[]>(`/api/v1/workspace/products/search?q=${encodeURIComponent(q)}&limit=${limit}`, { method: "GET" }, []);
 }
