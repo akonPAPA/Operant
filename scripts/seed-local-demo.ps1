@@ -24,8 +24,20 @@ $DemoSubstituteBId = "66666666-6666-4666-8666-666666666666"
 $DemoFilterProductId = "77777777-7777-4777-8777-777777777777"
 $DemoOilProductId = "88888888-8888-4888-8888-888888888888"
 
+function Get-EnvOrDefault([string]$Name, [string]$DefaultValue) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ($value) { return $value }
+  return $DefaultValue
+}
+
+function Get-DefaultDatasourceUrl() {
+  $hostPort = Get-EnvOrDefault "ORDERPILOT_DB_HOST_PORT" "55432"
+  $databaseName = Get-EnvOrDefault "ORDERPILOT_DB_NAME" "orderpilot_local"
+  return "jdbc:postgresql://localhost:${hostPort}/${databaseName}"
+}
+
 function Convert-JdbcToPsql([string]$Url) {
-  if (-not $Url) { $Url = "jdbc:postgresql://localhost:55432/orderpilot" }
+  if (-not $Url) { $Url = Get-DefaultDatasourceUrl }
   $match = [regex]::Match($Url, "^jdbc:postgresql://(?<host>[^:/]+)(:(?<port>\d+))?/(?<db>[^?]+)")
   if (-not $match.Success) {
     throw "Unsupported PostgreSQL JDBC URL: $Url"
@@ -101,7 +113,7 @@ function Invoke-SeedWithDockerComposePsql([string]$ComposePath, [hashtable]$Conn
 $resolvedRoot = (Resolve-Path $RepoRoot).Path
 $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
 $connection = Convert-JdbcToPsql $DatasourceUrl
-if (-not $Username) { $Username = "orderpilot" }
+if (-not $Username) { $Username = Get-EnvOrDefault "ORDERPILOT_DB_USER" "orderpilot_local_user" }
 $activeProfile = if ($env:SPRING_PROFILES_ACTIVE) { $env:SPRING_PROFILES_ACTIVE } else { "(default)" }
 
 Write-Host "OrderPilot local demo seed"

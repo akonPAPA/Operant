@@ -3,16 +3,16 @@ services:
     image: postgres:16-alpine
     container_name: orderpilot-postgres-test
     environment:
-      POSTGRES_DB: ${POSTGRES_TEST_DB:-orderpilot_test}
-      POSTGRES_USER: ${POSTGRES_TEST_USER:-orderpilot_test}
-      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD:-orderpilot_test}
+      POSTGRES_DB: ${ORDERPILOT_TEST_DB_NAME:-orderpilot_test}
+      POSTGRES_USER: ${ORDERPILOT_TEST_DB_USER:-orderpilot_local_user}
+      POSTGRES_PASSWORD: ${ORDERPILOT_TEST_DB_PASSWORD:-change-me-local-dev-only}
     ports:
-      - "${POSTGRES_TEST_PORT:-5433}:5432"
+      - "${ORDERPILOT_TEST_DB_HOST_PORT:-55432}:5432"
     volumes:
       - orderpilot_test_postgres:/var/lib/postgresql/data
       - ./postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "PGPASSWORD=$${POSTGRES_PASSWORD} psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -c 'select 1' >/dev/null"]
       interval: 5s
       timeout: 5s
       retries: 12

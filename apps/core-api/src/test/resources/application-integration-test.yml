@@ -3,9 +3,9 @@ spring:
     database:
       replace: none
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/orderpilot_test}
-    username: ${SPRING_DATASOURCE_USERNAME:orderpilot_test}
-    password: ${SPRING_DATASOURCE_PASSWORD:orderpilot_test}
+    url: "${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:${ORDERPILOT_TEST_DB_HOST_PORT:${ORDERPILOT_DB_HOST_PORT:55432}}/${ORDERPILOT_TEST_DB_NAME:orderpilot_test}}"
+    username: "${SPRING_DATASOURCE_USERNAME:${ORDERPILOT_TEST_DB_USER:${ORDERPILOT_DB_USER:orderpilot_local_user}}}"
+    password: "${SPRING_DATASOURCE_PASSWORD:${ORDERPILOT_TEST_DB_PASSWORD:${ORDERPILOT_DB_PASSWORD:change-me-local-dev-only}}}"
   flyway:
     enabled: true
     clean-disabled: true
@@ -33,5 +33,5 @@ orderpilot:
   bot:
     outbound-enabled: false
   test-database:
-    name: orderpilot_test
+    name: ${ORDERPILOT_TEST_DB_NAME:orderpilot_test}
     externalExecution: DISABLED

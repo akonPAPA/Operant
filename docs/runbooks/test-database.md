@@ -8,28 +8,31 @@ The existing `test` profile remains H2-backed for legacy unit and slice tests. P
 
 ## Services
 
-The test harness is defined in `infra/docker/docker-compose.test.yml`.
+The default local test database is created by the main Compose `postgres` service in `infra/docker/docker-compose.yml`.
 
-- PostgreSQL: `localhost:5433`
+- PostgreSQL: `localhost:55432`
 - Redis: `localhost:6380`
 - Database: `orderpilot_test`
-- Username: `orderpilot_test`
-- Password: `orderpilot_test`
+- Username: `orderpilot_local_user`
+- Password: `change-me-local-dev-only`
 
-These are test-only credentials and must not be reused for production, demo, ERP, or connector databases.
+These are local-only credentials and must not be reused for production, ERP, connector, customer, or payment databases. The test database is separate from `orderpilot_local`; test cleanup truncates test tables and must not target the app/demo database.
 
 ## Commands
 
-From the repository root:
+From the Compose directory:
 
 ```powershell
-.\scripts\test-db\start-test-db.ps1
+cd "C:\OrderPilot\OrderPilot-Core\infra\docker"
+docker compose up -d postgres redis
+Test-NetConnection localhost -Port 55432
 ```
 
-Equivalent Docker Compose command:
+The optional `infra/docker/docker-compose.test.yml` file is only for starting an isolated test database stack when the main Compose stack is not being used. If you use it, keep `ORDERPILOT_TEST_DB_HOST_PORT` aligned with the Maven environment for that shell.
 
 ```powershell
-docker compose -f infra\docker\docker-compose.test.yml up -d
+cd "C:\OrderPilot\OrderPilot-Core"
+.\scripts\test-db\start-test-db.ps1
 ```
 
 Reset the test database volume:
@@ -63,10 +66,16 @@ mvn test "-Dspring.profiles.active=integration-test" "-Dtest=*IntegrationTest"
 The `integration-test` profile reads:
 
 ```text
-jdbc:postgresql://localhost:5433/orderpilot_test
+jdbc:postgresql://localhost:55432/orderpilot_test
 ```
 
-Environment overrides are available through `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
+Environment overrides are available through `ORDERPILOT_TEST_DB_NAME`, `ORDERPILOT_TEST_DB_USER`, `ORDERPILOT_TEST_DB_PASSWORD`, `ORDERPILOT_TEST_DB_HOST_PORT`, or through explicit `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
+
+Do not debug Maven integration-test failures until the expected PostgreSQL port is reachable:
+
+```powershell
+Test-NetConnection localhost -Port 55432
+```
 
 ## Fixtures
 
@@ -95,3 +104,4 @@ Known limitations:
 - Docker Compose must be available before PostgreSQL integration tests can run.
 - Existing `@ActiveProfiles("test")` tests continue using H2 unless they are explicitly moved to `integration-test`.
 - The Redis service is present for future integration parity, but the Stage 6.1 verification tests focus on PostgreSQL.
+- Existing local Docker volumes initialized before this contract may need the documented local reset path before `orderpilot_test` exists in the main `postgres` container.

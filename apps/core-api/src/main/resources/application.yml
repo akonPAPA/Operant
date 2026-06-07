@@ -3,9 +3,9 @@ spring:
   application:
     name: orderpilot-core-api
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/orderpilot}
-    username: ${SPRING_DATASOURCE_USERNAME:orderpilot}
-    password: ${SPRING_DATASOURCE_PASSWORD:orderpilot_dev_password}
+    url: "${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:${ORDERPILOT_DB_HOST_PORT:55432}/${ORDERPILOT_DB_NAME:orderpilot_local}}"
+    username: "${SPRING_DATASOURCE_USERNAME:${ORDERPILOT_DB_USER:orderpilot_local_user}}"
+    password: "${SPRING_DATASOURCE_PASSWORD:${ORDERPILOT_DB_PASSWORD:change-me-local-dev-only}}"
   flyway:
     enabled: true
   jpa:
