@@ -1,6 +1,9 @@
 package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.Stage10BDtos.*;
+import com.orderpilot.application.services.pilot.PilotDemoScenarioService;
+import com.orderpilot.application.services.pilot.PilotDemoScenarioService.DemoScenario;
+import com.orderpilot.application.services.pilot.PilotDemoScenarioService.DemoScenarioPack;
 import com.orderpilot.application.services.pilot.PilotShadowModeService;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.EvidenceReport;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.ExceptionCategorySlice;
@@ -15,9 +18,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/pilot")
 public class PilotController {
   private final PilotShadowModeService service;
+  private final PilotDemoScenarioService demoScenarioService;
 
-  public PilotController(PilotShadowModeService service) {
+  public PilotController(PilotShadowModeService service, PilotDemoScenarioService demoScenarioService) {
     this.service = service;
+    this.demoScenarioService = demoScenarioService;
   }
 
   @PostMapping("/shadow-runs")
@@ -75,6 +80,30 @@ public class PilotController {
     return slices.stream()
         .map(slice -> new ExceptionCategoryResponse(slice.category(), slice.count(), slice.percentage()))
         .toList();
+  }
+
+  @GetMapping("/demo-scenarios")
+  public PilotDemoScenarioPackResponse demoScenarios() {
+    DemoScenarioPack pack = demoScenarioService.demoScenarios();
+    List<PilotDemoScenarioResponse> scenarios = pack.scenarios().stream().map(PilotController::toScenario).toList();
+    return new PilotDemoScenarioPackResponse(
+        pack.reportGeneratedAt(), pack.tenantId(), pack.tenantHasPilotEvidence(), scenarios, pack.packLimitations(), pack.safetyStatement());
+  }
+
+  private static PilotDemoScenarioResponse toScenario(DemoScenario scenario) {
+    List<PilotDemoScenarioCapabilityResponse> capabilities = scenario.requiredCapabilities().stream()
+        .map(c -> new PilotDemoScenarioCapabilityResponse(c.name(), c.available(), c.note()))
+        .toList();
+    List<PilotDemoScenarioEvidenceResponse> evidence = scenario.evidenceSignals().stream()
+        .map(e -> new PilotDemoScenarioEvidenceResponse(e.label(), e.value()))
+        .toList();
+    List<PilotDemoScenarioSafetyBoundaryResponse> boundaries = scenario.safetyBoundaries().stream()
+        .map(b -> new PilotDemoScenarioSafetyBoundaryResponse(b.statement()))
+        .toList();
+    return new PilotDemoScenarioResponse(
+        scenario.code(), scenario.title(), scenario.businessObjective(), scenario.primaryActorRole(), scenario.channelSourceType(),
+        scenario.readiness().name(), scenario.readinessScore(), capabilities, evidence, scenario.missingCapabilities(),
+        boundaries, scenario.suggestedDemoRoute(), scenario.relatedReportLinks(), scenario.operatorTalkingPoints());
   }
 
   private ShadowRunResponse toShadowRun(ShadowRun run) {

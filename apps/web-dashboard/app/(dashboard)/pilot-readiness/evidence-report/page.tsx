@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { DashboardShell } from "@/components/dashboard-shell";
 import { getPilotEvidenceReport } from "@/lib/pilot-metrics-api";
 
@@ -16,6 +18,7 @@ export default async function Page() {
         <p>Design-partner / investor-ready summary of tenant-scoped pilot shadow-mode readiness.</p>
         <p className="risk-note">Shadow-mode metrics are advisory and do not execute external writes. This report is evidence of shadow-mode and pilot readiness, not a guarantee of production ROI.</p>
         {report.reportGeneratedAt ? <p className="muted">Generated {new Date(report.reportGeneratedAt).toLocaleString()}</p> : null}
+        <p className="no-print"><Link className="button" href="/pilot-readiness/demo-scenarios">View demo scenarios</Link></p>
       </section>
 
       {error ? <section className="panel"><p className="form-message error">{error}</p></section> : null}

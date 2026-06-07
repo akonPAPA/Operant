@@ -113,4 +113,42 @@ public final class Stage10BDtos {
       List<PilotReadinessSignal> readinessSignals,
       List<String> limitations,
       String safetyStatement) {}
+
+  // OP-CAP-11H pilot demo scenario pack. Read-only, structured, non-raw composition of the
+  // evidence report into honest demo-readiness scenarios. No raw payloads/secrets/object-storage internals.
+  public record PilotDemoScenarioCapabilityResponse(
+      String name,
+      boolean available,
+      String note) {}
+
+  public record PilotDemoScenarioEvidenceResponse(
+      String label,
+      String value) {}
+
+  public record PilotDemoScenarioSafetyBoundaryResponse(
+      String statement) {}
+
+  public record PilotDemoScenarioResponse(
+      String code,
+      String title,
+      String businessObjective,
+      String primaryActorRole,
+      String channelSourceType,
+      String readiness,
+      int readinessScore,
+      List<PilotDemoScenarioCapabilityResponse> requiredCapabilities,
+      List<PilotDemoScenarioEvidenceResponse> evidenceSignals,
+      List<String> missingCapabilities,
+      List<PilotDemoScenarioSafetyBoundaryResponse> safetyBoundaries,
+      String suggestedDemoRoute,
+      List<String> relatedReportLinks,
+      List<String> operatorTalkingPoints) {}
+
+  public record PilotDemoScenarioPackResponse(
+      Instant reportGeneratedAt,
+      UUID tenantId,
+      boolean tenantHasPilotEvidence,
+      List<PilotDemoScenarioResponse> scenarios,
+      List<String> packLimitations,
+      String safetyStatement) {}
 }
