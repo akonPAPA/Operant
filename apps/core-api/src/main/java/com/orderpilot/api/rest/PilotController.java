@@ -2,6 +2,7 @@ package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.Stage10BDtos.*;
 import com.orderpilot.application.services.pilot.PilotShadowModeService;
+import com.orderpilot.application.services.pilot.PilotShadowModeService.EvidenceReport;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.ExceptionCategorySlice;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.PilotMetrics;
 import com.orderpilot.domain.pilot.HumanCorrection;
@@ -52,10 +53,28 @@ public class PilotController {
   public PilotExceptionBreakdownResponse exceptions() {
     List<ExceptionCategorySlice> slices = service.exceptionBreakdown();
     long totalCategorized = slices.stream().mapToLong(ExceptionCategorySlice::count).sum();
-    List<ExceptionCategoryResponse> categories = slices.stream()
+    return new PilotExceptionBreakdownResponse(totalCategorized, toCategoryResponses(slices));
+  }
+
+  @GetMapping("/evidence-report")
+  public PilotEvidenceReport evidenceReport() {
+    EvidenceReport report = service.evidenceReport();
+    PilotMetrics m = report.metrics();
+    List<PilotReadinessSignal> signals = report.readinessSignals().stream()
+        .map(signal -> new PilotReadinessSignal(signal.label(), signal.value(), signal.assessment()))
+        .toList();
+    return new PilotEvidenceReport(
+        report.reportGeneratedAt(), report.tenantId(), m.totalShadowRuns(), report.totalHumanCorrections(),
+        m.averageManualBaselineMinutes(), m.averageAssistedMinutes(), m.estimatedMinutesSaved(), m.estimatedCostSaved(), m.costCurrency(),
+        m.automationCandidateCount(), m.reviewRequiredCount(), m.humanCorrectionRate(),
+        toCategoryResponses(report.exceptionBreakdown()), toCategoryResponses(report.topExceptionCategories()),
+        signals, report.limitations(), report.safetyStatement());
+  }
+
+  private static List<ExceptionCategoryResponse> toCategoryResponses(List<ExceptionCategorySlice> slices) {
+    return slices.stream()
         .map(slice -> new ExceptionCategoryResponse(slice.category(), slice.count(), slice.percentage()))
         .toList();
-    return new PilotExceptionBreakdownResponse(totalCategorized, categories);
   }
 
   private ShadowRunResponse toShadowRun(ShadowRun run) {

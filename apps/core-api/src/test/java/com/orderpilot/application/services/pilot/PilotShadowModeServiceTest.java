@@ -160,6 +160,80 @@ class PilotShadowModeServiceTest {
     });
   }
 
+  // --- OP-CAP-11G pilot evidence report pack ---
+
+  @Test
+  void evidenceReportComposesDeterministicRoiCycleTimeAndTopExceptions() {
+    TenantContext.setTenantId(UUID.randomUUID());
+    // baseline 12 / assisted 3 -> saved 9; automation candidate.
+    service.recordShadowRun("INBOUND_DOCUMENT", UUID.randomUUID(), "EXTRACTION", "fix", "{}", new BigDecimal("0.9000"),
+        null, new BigDecimal("12.00"), new BigDecimal("3.00"), true, false);
+    // baseline 8 / assisted 5 -> saved 3; margin violation; corrected below.
+    ShadowRun corrected = service.recordShadowRun("CHANNEL_MESSAGE", UUID.randomUUID(), "EXTRACTION", "fix", "{}", new BigDecimal("0.5000"),
+        "MARGIN_VIOLATION", new BigDecimal("8.00"), new BigDecimal("5.00"), false, true);
+    service.recordShadowRun("DRAFT_QUOTE", UUID.randomUUID(), "VALIDATION", "fix", "{}", null, "MARGIN_VIOLATION", null, null, false, true);
+    service.recordShadowRun("DRAFT_QUOTE", UUID.randomUUID(), "SUBSTITUTION", "fix", "{}", null, "OUT_OF_STOCK_SUBSTITUTE", null, null, false, true);
+    service.recordCorrection(corrected.getId(), null, "FIELD_CORRECTED", "{}", "{}", "Adjusted margin");
+
+    PilotShadowModeService.EvidenceReport report = service.evidenceReport();
+
+    assertThat(report.reportGeneratedAt()).isNotNull();
+    assertThat(report.metrics().totalShadowRuns()).isEqualTo(4);
+    assertThat(report.totalHumanCorrections()).isEqualTo(1);
+    assertThat(report.metrics().estimatedMinutesSaved()).isEqualByComparingTo("12.00");
+    assertThat(report.metrics().estimatedCostSaved()).isEqualByComparingTo("9.00");
+    assertThat(report.metrics().costCurrency()).isEqualTo("USD");
+    assertThat(report.metrics().automationCandidateCount()).isEqualTo(1);
+    // Top exception category is the most frequent one (MARGIN_VIOLATION = 2), deterministically first.
+    assertThat(report.topExceptionCategories()).isNotEmpty();
+    assertThat(report.topExceptionCategories().getFirst().category()).isEqualTo("MARGIN_VIOLATION");
+    assertThat(report.topExceptionCategories().getFirst().count()).isEqualTo(2);
+    // Readiness signals are present and deterministic.
+    assertThat(report.readinessSignals()).anySatisfy(signal -> {
+      assertThat(signal.label()).isEqualTo("Sample size");
+      assertThat(signal.assessment()).isEqualTo("LIMITED_SAMPLE");
+    });
+    assertThat(report.limitations()).isNotEmpty();
+    assertThat(report.safetyStatement()).contains("advisory");
+  }
+
+  @Test
+  void evidenceReportHandlesEmptyTenantData() {
+    TenantContext.setTenantId(UUID.randomUUID());
+
+    PilotShadowModeService.EvidenceReport report = service.evidenceReport();
+
+    assertThat(report.metrics().totalShadowRuns()).isZero();
+    assertThat(report.totalHumanCorrections()).isZero();
+    assertThat(report.metrics().estimatedMinutesSaved()).isEqualByComparingTo("0.00");
+    assertThat(report.exceptionBreakdown()).isEmpty();
+    assertThat(report.topExceptionCategories()).isEmpty();
+    assertThat(report.readinessSignals()).anySatisfy(signal -> {
+      assertThat(signal.label()).isEqualTo("Sample size");
+      assertThat(signal.assessment()).isEqualTo("NO_DATA");
+    });
+    // Limitations and the safety statement are always present, even with no data.
+    assertThat(report.limitations()).isNotEmpty();
+    assertThat(report.safetyStatement()).isNotBlank();
+  }
+
+  @Test
+  void evidenceReportIsTenantIsolated() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    service.recordShadowRun("INBOUND_DOCUMENT", UUID.randomUUID(), "EXTRACTION", "fix", "{}", new BigDecimal("0.9000"),
+        "MARGIN_VIOLATION", new BigDecimal("10.00"), new BigDecimal("2.00"), true, false);
+
+    TenantContext.setTenantId(tenantB);
+    PilotShadowModeService.EvidenceReport report = service.evidenceReport();
+
+    assertThat(report.tenantId()).isEqualTo(tenantB);
+    assertThat(report.metrics().totalShadowRuns()).isZero();
+    assertThat(report.metrics().estimatedMinutesSaved()).isEqualByComparingTo("0.00");
+    assertThat(report.exceptionBreakdown()).isEmpty();
+  }
+
   @Test
   void pilotMetricsAreTenantScoped() {
     UUID tenantA = UUID.randomUUID();

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { DashboardShell } from "@/components/dashboard-shell";
 import { getPilotExceptionBreakdown, getPilotMetrics } from "@/lib/pilot-metrics-api";
 
@@ -27,6 +29,7 @@ export default async function Page() {
         <h2>Shadow-Mode ROI Readiness</h2>
         <p>Tenant-scoped pilot evidence from advisory shadow-mode predictions and human corrections.</p>
         <p className="risk-note">Shadow-mode metrics are advisory and do not execute external writes. Predictions never approve quotes/orders; humans remain authoritative.</p>
+        <p><Link className="button" href="/pilot-readiness/evidence-report">Open evidence report</Link></p>
       </section>
 
       {error ? <section className="panel"><p className="form-message error">{error}</p></section> : null}
