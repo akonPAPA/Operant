@@ -3,6 +3,16 @@ import Link from "next/link";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { getPilotDemoScenarios } from "@/lib/pilot-metrics-api";
 
+// OP-CAP-11I scripted demo dataset summary (static, display-only). Mirrors
+// apps/core-api/src/test/resources/demo/core-v1-demo/scripted-scenarios-demo.json.
+const SCRIPTED_DEMO_DATASET = [
+  { code: "TELEGRAM_RFQ_SUBSTITUTION", inputSample: "Telegram RFQ: 2 EA brake pads for Toyota Camry 2018 (original out of stock, accepted substitute exists)." },
+  { code: "PDF_PO_EXCEPTION", inputSample: "Purchase order with an ambiguous SKU line and an unsupported unit-of-measure line." },
+  { code: "DISCOUNT_MARGIN_GUARDRAIL", inputSample: "Discount request that drops line margin below the threshold and requires manager approval." },
+  { code: "INVENTORY_MISMATCH", inputSample: "Expected stock 116 vs actual count 100 (mismatch -16) opening a reconciliation discrepancy." },
+  { code: "BAD_AI_OUTPUT_REJECTED", inputSample: "Prompt-injection-like text and malformed model output, kept as untrusted data and rejected." },
+] as const;
+
 export default async function Page() {
   const { data: pack, error } = await getPilotDemoScenarios();
   const hasScenarios = pack.scenarios.length > 0;
@@ -18,6 +28,24 @@ export default async function Page() {
           <Link className="button" href="/pilot-readiness/evidence-report">Open evidence report</Link>
         </p>
         {pack.reportGeneratedAt ? <p className="muted">Generated {new Date(pack.reportGeneratedAt).toLocaleString()} · evidence present: {String(pack.tenantHasPilotEvidence)}</p> : null}
+      </section>
+
+      <section className="panel">
+        <h2>Scripted demo dataset</h2>
+        <p>These scenarios are backed by a deterministic, fake demo dataset (OP-CAP-11I) so the pack and evidence report look realistic during investor / design-partner demos without using production data.</p>
+        <p className="risk-note">Demo data only. The seed is local/demo/test scoped, uses no real customers, secrets, or credentials, makes no external/AI/ERP calls, and is never loaded in production.</p>
+        <table className="data-table">
+          <thead><tr><th>Scenario</th><th>Scripted input sample</th></tr></thead>
+          <tbody>
+            {SCRIPTED_DEMO_DATASET.map((row) => (
+              <tr key={row.code}><td>{row.code}</td><td>{row.inputSample}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted">
+          Fixtures: <code>apps/core-api/src/test/resources/demo/core-v1-demo/</code> · dataset doc:{" "}
+          <code>docs/pilot/PILOT_SCRIPTED_DEMO_DATASET.md</code>
+        </p>
       </section>
 
       {error ? <section className="panel"><p className="form-message error">{error}</p></section> : null}
