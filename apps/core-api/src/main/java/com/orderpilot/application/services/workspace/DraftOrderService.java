@@ -18,9 +18,13 @@ public class DraftOrderService {
   public DraftOrderService(ValidationRunRepository runRepository, ExtractedLineItemRepository lineRepository, CustomerMatchResultRepository customerRepository, ProductMatchResultRepository productRepository, PriceCheckResultRepository priceRepository, UomNormalizationResultRepository uomRepository, MarginCheckResultRepository marginRepository, InventoryCheckResultRepository inventoryRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, DraftOrderRepository orderRepository, DraftOrderLineRepository lineOutRepository, OperatorActionService actionService, Clock clock){this.runRepository=runRepository;this.lineRepository=lineRepository;this.customerRepository=customerRepository;this.productRepository=productRepository;this.priceRepository=priceRepository;this.uomRepository=uomRepository;this.marginRepository=marginRepository;this.inventoryRepository=inventoryRepository;this.issueRepository=issueRepository;this.approvalRepository=approvalRepository;this.orderRepository=orderRepository;this.lineOutRepository=lineOutRepository;this.actionService=actionService;this.clock=clock;}
   @Transactional
   public DraftOrder createFromValidation(UUID validationRunId) {
+    return createFromValidation(validationRunId, null);
+  }
+  @Transactional
+  public DraftOrder createFromValidation(UUID validationRunId, UUID sourceExceptionCaseId) {
     UUID tenantId = TenantContext.requireTenantId(); ValidationRun run = runRepository.findByIdAndTenantId(validationRunId, tenantId).orElseThrow(); String status = workflowStatus(tenantId, validationRunId);
     UUID customerId = customerRepository.findFirstByTenantIdAndValidationRunId(tenantId, validationRunId).map(CustomerMatchResult::getMatchedCustomerAccountId).orElse(null);
-    DraftOrder order = orderRepository.save(new DraftOrder(tenantId, "DO-" + clock.instant().toEpochMilli(), customerId, run.getExtractionResultId(), validationRunId, null, status, null, null, clock.instant()));
+    DraftOrder order = orderRepository.save(new DraftOrder(tenantId, "DO-" + clock.instant().toEpochMilli(), customerId, run.getExtractionResultId(), validationRunId, sourceExceptionCaseId, status, null, null, clock.instant()));
     Map<UUID, ProductMatchResult> products = productRepository.findByTenantIdAndValidationRunId(tenantId, validationRunId).stream().collect(Collectors.toMap(ProductMatchResult::getExtractedLineItemId, Function.identity(), (a,b)->a));
     Map<UUID, PriceCheckResult> prices = priceRepository.findByTenantIdAndValidationRunId(tenantId, validationRunId).stream().collect(Collectors.toMap(PriceCheckResult::getExtractedLineItemId, Function.identity(), (a,b)->a));
     Map<UUID, UomNormalizationResult> uoms = uomRepository.findByTenantIdAndValidationRunId(tenantId, validationRunId).stream().collect(Collectors.toMap(UomNormalizationResult::getExtractedLineItemId, Function.identity(), (a,b)->a));
