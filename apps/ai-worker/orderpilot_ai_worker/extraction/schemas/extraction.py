@@ -108,6 +108,11 @@ class ModelMetadata(BaseModel):  # pylint: disable=too-few-public-methods
     model: str
     prompt_version: str
     schema_version: str
+    # OP-CAP-12B additive, optional local-runtime provenance. Host is the bounded endpoint
+    # host[:port] only (never credentials/keys/auth headers/raw URL); parse_status is a bounded token
+    # describing how the model output was parsed. Both default None for all existing producers.
+    endpoint_host: str | None = None
+    parse_status: str | None = None
 
 
 class AiSuggestion(BaseModel):  # pylint: disable=too-few-public-methods
