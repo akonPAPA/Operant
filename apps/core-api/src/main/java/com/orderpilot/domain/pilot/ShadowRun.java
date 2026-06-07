@@ -20,12 +20,24 @@ public class ShadowRun {
   @JdbcTypeCode(SqlTypes.JSON) @Column(name = "prediction_payload_json", columnDefinition = "jsonb", nullable = false) private String predictionPayloadJson;
   @Column(name = "confidence_score", precision = 5, scale = 4) private BigDecimal confidenceScore;
   @Column(nullable = false) private String status;
+  // OP-CAP-11F pilot ROI readiness: structured (non-raw) pilot evidence fields. Nullable so
+  // pre-existing Stage 10B shadow runs remain valid; never holds raw document/message/AI text.
+  @Column(name = "exception_category") private String exceptionCategory;
+  @Column(name = "manual_baseline_minutes", precision = 8, scale = 2) private BigDecimal manualBaselineMinutes;
+  @Column(name = "assisted_processing_minutes", precision = 8, scale = 2) private BigDecimal assistedProcessingMinutes;
+  @Column(name = "automation_candidate", nullable = false) private boolean automationCandidate;
+  @Column(name = "review_required", nullable = false) private boolean reviewRequired;
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "reviewed_at") private Instant reviewedAt;
 
   protected ShadowRun() {}
 
   public ShadowRun(UUID tenantId, String sourceType, UUID sourceId, String predictionType, String providerLabel, String predictionPayloadJson, BigDecimal confidenceScore, Instant now) {
+    this(tenantId, sourceType, sourceId, predictionType, providerLabel, predictionPayloadJson, confidenceScore, null, null, null, false, false, now);
+  }
+
+  public ShadowRun(UUID tenantId, String sourceType, UUID sourceId, String predictionType, String providerLabel, String predictionPayloadJson, BigDecimal confidenceScore,
+      String exceptionCategory, BigDecimal manualBaselineMinutes, BigDecimal assistedProcessingMinutes, boolean automationCandidate, boolean reviewRequired, Instant now) {
     this.tenantId = tenantId;
     this.sourceType = sourceType;
     this.sourceId = sourceId;
@@ -35,6 +47,11 @@ public class ShadowRun {
     this.predictionPayloadJson = predictionPayloadJson == null || predictionPayloadJson.isBlank() ? "{}" : predictionPayloadJson;
     this.confidenceScore = confidenceScore;
     this.status = "RECORDED";
+    this.exceptionCategory = exceptionCategory == null || exceptionCategory.isBlank() ? null : exceptionCategory;
+    this.manualBaselineMinutes = manualBaselineMinutes;
+    this.assistedProcessingMinutes = assistedProcessingMinutes;
+    this.automationCandidate = automationCandidate;
+    this.reviewRequired = reviewRequired;
     this.createdAt = now;
   }
 
@@ -53,6 +70,11 @@ public class ShadowRun {
   public String getPredictionPayloadJson() { return predictionPayloadJson; }
   public BigDecimal getConfidenceScore() { return confidenceScore; }
   public String getStatus() { return status; }
+  public String getExceptionCategory() { return exceptionCategory; }
+  public BigDecimal getManualBaselineMinutes() { return manualBaselineMinutes; }
+  public BigDecimal getAssistedProcessingMinutes() { return assistedProcessingMinutes; }
+  public boolean isAutomationCandidate() { return automationCandidate; }
+  public boolean isReviewRequired() { return reviewRequired; }
   public Instant getCreatedAt() { return createdAt; }
   public Instant getReviewedAt() { return reviewedAt; }
 }

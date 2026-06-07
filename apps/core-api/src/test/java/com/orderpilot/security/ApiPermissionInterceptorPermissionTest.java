@@ -342,6 +342,53 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("REVIEW_ACTION");
   }
 
+  // --- OP-CAP-11F /api/v1/pilot: GET requires ANALYTICS_READ, mutations require REVIEW_ACTION ---
+
+  @Test
+  void pilotMetricsGetWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/pilot/metrics");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void pilotExceptionsGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/pilot/metrics/exceptions");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("ANALYTICS_READ");
+  }
+
+  @Test
+  void pilotShadowRunPostWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/pilot/shadow-runs");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void pilotShadowRunPostWithAnalyticsReadAloneIsRejected() throws Exception {
+    // Read permission must NOT be sufficient to record a shadow run.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/pilot/shadow-runs");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void pilotCorrectionPostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/pilot/shadow-runs/some-id/corrections");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

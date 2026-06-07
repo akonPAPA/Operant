@@ -2,6 +2,7 @@ package com.orderpilot.api.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,8 +15,16 @@ public final class Stage10BDtos {
       String predictionType,
       String providerLabel,
       String predictionPayloadJson,
-      BigDecimal confidenceScore) {}
+      BigDecimal confidenceScore,
+      // OP-CAP-11F pilot ROI readiness (all optional): structured evidence, never raw text.
+      String exceptionCategory,
+      BigDecimal manualBaselineMinutes,
+      BigDecimal assistedProcessingMinutes,
+      Boolean automationCandidate,
+      Boolean reviewRequired) {}
 
+  // OP-CAP-11F: responses never echo raw prediction/correction payloads or AI output.
+  // Presence is surfaced as a boolean flag only.
   public record ShadowRunResponse(
       UUID id,
       String sourceType,
@@ -23,9 +32,14 @@ public final class Stage10BDtos {
       String predictionType,
       String providerMode,
       String providerLabel,
-      String predictionPayloadJson,
+      boolean hasPredictionPayload,
       BigDecimal confidenceScore,
       String status,
+      String exceptionCategory,
+      BigDecimal manualBaselineMinutes,
+      BigDecimal assistedProcessingMinutes,
+      boolean automationCandidate,
+      boolean reviewRequired,
       Instant createdAt,
       Instant reviewedAt) {}
 
@@ -41,8 +55,8 @@ public final class Stage10BDtos {
       UUID shadowRunId,
       UUID correctedByUserId,
       String correctionType,
-      String beforePayloadJson,
-      String afterPayloadJson,
+      boolean hasBeforePayload,
+      boolean hasAfterPayload,
       String correctionReason,
       Instant createdAt) {}
 
@@ -56,5 +70,21 @@ public final class Stage10BDtos {
       BigDecimal averageConfidence,
       Map<String, Long> exceptionCategoryCounts,
       Map<String, Long> predictionTypeBreakdown,
-      Map<String, Long> correctionTypeBreakdown) {}
+      Map<String, Long> correctionTypeBreakdown,
+      long automationCandidateCount,
+      long reviewRequiredCount,
+      BigDecimal averageManualBaselineMinutes,
+      BigDecimal averageAssistedMinutes,
+      BigDecimal estimatedMinutesSaved,
+      BigDecimal estimatedCostSaved,
+      String costCurrency) {}
+
+  public record ExceptionCategoryResponse(
+      String category,
+      long count,
+      BigDecimal percentage) {}
+
+  public record PilotExceptionBreakdownResponse(
+      long totalCategorized,
+      List<ExceptionCategoryResponse> categories) {}
 }

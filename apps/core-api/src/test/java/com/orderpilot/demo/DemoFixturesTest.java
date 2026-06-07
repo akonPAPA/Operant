@@ -94,6 +94,27 @@ class DemoFixturesTest {
         .contains("Spring profile:");
   }
 
+  @Test
+  void pilotShadowDemoFixtureCoversScenariosAndStaysPayloadFree() {
+    String pilotFixture = demoDataService.fixtureText("pilot-shadow-demo.json");
+
+    // The five required pilot scenarios are present.
+    assertThat(pilotFixture)
+        .contains("Telegram RFQ prediction corrected by human")
+        .contains("PDF purchase-order extraction with low-confidence correction")
+        .contains("Out-of-stock item compatible substitute reviewed")
+        .contains("Discount/margin violation requiring manager approval")
+        .contains("Clean low-risk prediction accepted as-is");
+    // Advisory MOCK_ONLY only; structured evidence carries no raw payloads or secrets.
+    assertThat(pilotFixture).contains("\"providerMode\": \"MOCK_ONLY\"");
+    assertThat(pilotFixture)
+        .doesNotContain("apiKey")
+        .doesNotContain("api_key")
+        .doesNotContain("secret")
+        .doesNotContain("token")
+        .doesNotContain("password");
+  }
+
   @TestConfiguration
   static class JsonConfig {
     @Bean

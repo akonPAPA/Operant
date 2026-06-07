@@ -32,6 +32,7 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/bot-runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/bot/runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/audit", ApiPermission.AUDIT_READ),
+      Map.entry("/api/v1/pilot", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ)
@@ -73,6 +74,11 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       return ApiPermission.REVIEW_ACTION;
     }
     if (path.startsWith("/api/v1/validation-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    // OP-CAP-11F: pilot shadow-mode reads require ANALYTICS_READ; recording shadow runs and
+    // human corrections is a review-significant action and requires REVIEW_ACTION.
+    if (path.startsWith("/api/v1/pilot") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
     }
     if ((path.startsWith("/api/v1/workspace/draft-quotes") || path.startsWith("/api/v1/workspace/draft-orders")) && !HttpMethod.GET.matches(method)) {

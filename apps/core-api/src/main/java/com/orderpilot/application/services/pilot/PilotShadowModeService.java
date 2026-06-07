@@ -1,12 +1,15 @@
 package com.orderpilot.application.services.pilot;
 
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.analytics.RoiAssumptionsService;
+import com.orderpilot.api.dto.Stage8Dtos.RoiAssumptionsResponse;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.pilot.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,22 +24,31 @@ public class PilotShadowModeService {
   private final ShadowRunRepository shadowRunRepository;
   private final HumanCorrectionRepository humanCorrectionRepository;
   private final AuditEventService auditEventService;
+  private final RoiAssumptionsService roiAssumptionsService;
   private final Clock clock;
 
-  public PilotShadowModeService(ShadowRunRepository shadowRunRepository, HumanCorrectionRepository humanCorrectionRepository, AuditEventService auditEventService, Clock clock) {
+  public PilotShadowModeService(ShadowRunRepository shadowRunRepository, HumanCorrectionRepository humanCorrectionRepository, AuditEventService auditEventService, RoiAssumptionsService roiAssumptionsService, Clock clock) {
     this.shadowRunRepository = shadowRunRepository;
     this.humanCorrectionRepository = humanCorrectionRepository;
     this.auditEventService = auditEventService;
+    this.roiAssumptionsService = roiAssumptionsService;
     this.clock = clock;
   }
 
   @Transactional
   public ShadowRun recordShadowRun(String sourceType, UUID sourceId, String predictionType, String providerLabel, String predictionPayloadJson, BigDecimal confidenceScore) {
+    return recordShadowRun(sourceType, sourceId, predictionType, providerLabel, predictionPayloadJson, confidenceScore, null, null, null, false, false);
+  }
+
+  @Transactional
+  public ShadowRun recordShadowRun(String sourceType, UUID sourceId, String predictionType, String providerLabel, String predictionPayloadJson, BigDecimal confidenceScore,
+      String exceptionCategory, BigDecimal manualBaselineMinutes, BigDecimal assistedProcessingMinutes, boolean automationCandidate, boolean reviewRequired) {
     UUID tenantId = TenantContext.requireTenantId();
     requireValue(sourceType, "sourceType");
     requireValue(sourceId, "sourceId");
     requireValue(predictionType, "predictionType");
-    ShadowRun run = shadowRunRepository.save(new ShadowRun(tenantId, sourceType, sourceId, predictionType, providerLabel, predictionPayloadJson, confidenceScore, clock.instant()));
+    ShadowRun run = shadowRunRepository.save(new ShadowRun(tenantId, sourceType, sourceId, predictionType, providerLabel, predictionPayloadJson, confidenceScore,
+        normalizeCategory(exceptionCategory), nonNegativeOrNull(manualBaselineMinutes), nonNegativeOrNull(assistedProcessingMinutes), automationCandidate, reviewRequired, clock.instant()));
     auditEventService.record("PILOT_SHADOW_RUN_RECORDED", "SHADOW_RUN", run.getId().toString(), null, "{\"providerMode\":\"MOCK_ONLY\"}");
     return run;
   }
@@ -80,10 +92,85 @@ public class PilotShadowModeService {
     long accepted = runs.stream().filter(run -> "ACCEPTED".equals(run.getStatus())).count();
     long corrected = runs.stream().filter(run -> "CORRECTED".equals(run.getStatus())).count();
     long rejected = runs.stream().filter(run -> "REJECTED".equals(run.getStatus())).count();
-    long reviewed = runs.stream().filter(run -> run.getReviewedAt() != null || "REVIEWED".equals(run.getStatus()) || "ACCEPTED".equals(run.getStatus()) || "CORRECTED".equals(run.getStatus()) || "REJECTED".equals(run.getStatus())).count();
+    long reviewed = runs.stream().filter(PilotShadowModeService::isReviewed).count();
     BigDecimal averageConfidence = averageConfidence(runs);
     BigDecimal correctionRate = reviewed == 0 ? BigDecimal.ZERO : BigDecimal.valueOf(corrected).divide(BigDecimal.valueOf(reviewed), 4, RoundingMode.HALF_UP);
-    return new PilotMetrics(total, reviewed, accepted, corrected, rejected, correctionRate, averageConfidence, Map.of(), countBy(runs, ShadowRun::getPredictionType), countBy(corrections, HumanCorrection::getCorrectionType));
+
+    long automationCandidateCount = runs.stream().filter(ShadowRun::isAutomationCandidate).count();
+    long reviewRequiredCount = runs.stream().filter(ShadowRun::isReviewRequired).count();
+    BigDecimal averageManualBaselineMinutes = averageOf(runs, ShadowRun::getManualBaselineMinutes);
+    BigDecimal averageAssistedMinutes = averageOf(runs, ShadowRun::getAssistedProcessingMinutes);
+    BigDecimal estimatedMinutesSaved = estimatedMinutesSaved(runs);
+
+    // Estimated cost saved uses the tenant's safe local/demo ROI assumptions (no external calls).
+    RoiAssumptionsResponse roi = roiAssumptionsService.currentForTenant(tenantId);
+    BigDecimal estimatedCostSaved = estimatedMinutesSaved
+        .divide(BigDecimal.valueOf(60), 6, RoundingMode.HALF_UP)
+        .multiply(roi.averageFullyLoadedOperatorHourlyCost())
+        .setScale(2, RoundingMode.HALF_UP);
+
+    return new PilotMetrics(total, reviewed, accepted, corrected, rejected, correctionRate, averageConfidence,
+        exceptionCategoryCounts(runs), countBy(runs, ShadowRun::getPredictionType), countBy(corrections, HumanCorrection::getCorrectionType),
+        automationCandidateCount, reviewRequiredCount, averageManualBaselineMinutes, averageAssistedMinutes, estimatedMinutesSaved, estimatedCostSaved, roi.defaultCurrency());
+  }
+
+  @Transactional(readOnly = true)
+  public List<ExceptionCategorySlice> exceptionBreakdown() {
+    UUID tenantId = TenantContext.requireTenantId();
+    List<ShadowRun> runs = shadowRunRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    Map<String, Long> counts = exceptionCategoryCounts(runs);
+    long categorized = counts.values().stream().mapToLong(Long::longValue).sum();
+    List<ExceptionCategorySlice> slices = new ArrayList<>();
+    for (Map.Entry<String, Long> entry : counts.entrySet()) {
+      BigDecimal percentage = categorized == 0 ? BigDecimal.ZERO
+          : BigDecimal.valueOf(entry.getValue()).divide(BigDecimal.valueOf(categorized), 4, RoundingMode.HALF_UP);
+      slices.add(new ExceptionCategorySlice(entry.getKey(), entry.getValue(), percentage));
+    }
+    return slices;
+  }
+
+  private static boolean isReviewed(ShadowRun run) {
+    return run.getReviewedAt() != null || "REVIEWED".equals(run.getStatus()) || "ACCEPTED".equals(run.getStatus()) || "CORRECTED".equals(run.getStatus()) || "REJECTED".equals(run.getStatus());
+  }
+
+  private static Map<String, Long> exceptionCategoryCounts(List<ShadowRun> runs) {
+    return countBy(runs, ShadowRun::getExceptionCategory);
+  }
+
+  private static BigDecimal estimatedMinutesSaved(List<ShadowRun> runs) {
+    BigDecimal saved = BigDecimal.ZERO;
+    for (ShadowRun run : runs) {
+      BigDecimal baseline = run.getManualBaselineMinutes();
+      if (baseline == null) {
+        continue;
+      }
+      BigDecimal assisted = run.getAssistedProcessingMinutes() == null ? BigDecimal.ZERO : run.getAssistedProcessingMinutes();
+      BigDecimal delta = baseline.subtract(assisted);
+      if (delta.compareTo(BigDecimal.ZERO) > 0) {
+        saved = saved.add(delta);
+      }
+    }
+    return saved.setScale(2, RoundingMode.HALF_UP);
+  }
+
+  private static BigDecimal averageOf(List<ShadowRun> runs, Function<ShadowRun, BigDecimal> accessor) {
+    List<BigDecimal> values = runs.stream().map(accessor).filter(value -> value != null).toList();
+    if (values.isEmpty()) {
+      return BigDecimal.ZERO;
+    }
+    BigDecimal total = values.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    return total.divide(BigDecimal.valueOf(values.size()), 2, RoundingMode.HALF_UP);
+  }
+
+  private static BigDecimal nonNegativeOrNull(BigDecimal value) {
+    if (value == null) {
+      return null;
+    }
+    return value.compareTo(BigDecimal.ZERO) < 0 ? null : value;
+  }
+
+  private static String normalizeCategory(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
   }
 
   private static void requireValue(Object value, String label) {
@@ -126,5 +213,14 @@ public class PilotShadowModeService {
       BigDecimal averageConfidence,
       Map<String, Long> exceptionCategoryCounts,
       Map<String, Long> predictionTypeBreakdown,
-      Map<String, Long> correctionTypeBreakdown) {}
+      Map<String, Long> correctionTypeBreakdown,
+      long automationCandidateCount,
+      long reviewRequiredCount,
+      BigDecimal averageManualBaselineMinutes,
+      BigDecimal averageAssistedMinutes,
+      BigDecimal estimatedMinutesSaved,
+      BigDecimal estimatedCostSaved,
+      String costCurrency) {}
+
+  public record ExceptionCategorySlice(String category, long count, BigDecimal percentage) {}
 }
