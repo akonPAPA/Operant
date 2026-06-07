@@ -1,0 +1,51 @@
+{
+  "description": "OP-CAP-11I plain-text purchase-order source fixture standing in for a PDF upload. Deterministic, fake, non-production. No binary PDF is loaded; this is the textual content a demo PDF would carry. Used to script the PDF_PO_EXCEPTION scenario: one ambiguous SKU line and one unsupported unit-of-measure line must raise validation exceptions for operator review.",
+  "providerMode": "MOCK_ONLY",
+  "sourceFormat": "PLAIN_TEXT_STANDIN_FOR_PDF",
+  "purchaseOrder": {
+    "buyer": "Steppe Logistics LLP",
+    "buyerCode": "CUST-001",
+    "poNumber": "DEMO-PO-2026-0042",
+    "shipTo": "Almaty Main Warehouse (WH-ALM)",
+    "currency": "USD",
+    "lines": [
+      {
+        "lineNo": 1,
+        "rawSku": "PAD-OE-04465",
+        "rawDescription": "Toyota Camry 2018 OEM front brake pad set",
+        "quantity": 2,
+        "uom": "EA",
+        "expectedOutcome": "RESOLVES_CLEANLY"
+      },
+      {
+        "lineNo": 2,
+        "rawSku": "CAMRY PADS",
+        "rawDescription": "camry pads, front",
+        "quantity": 4,
+        "uom": "EA",
+        "expectedOutcome": "AMBIGUOUS_SKU_NEEDS_REVIEW"
+      },
+      {
+        "lineNo": 3,
+        "rawSku": "OIL-FLT-STD",
+        "rawDescription": "standard oil filter",
+        "quantity": 6,
+        "uom": "BX",
+        "expectedOutcome": "UNSUPPORTED_UOM_NEEDS_REVIEW"
+      },
+      {
+        "lineNo": 4,
+        "rawSku": "AIR-FLT-STD",
+        "rawDescription": "standard air filter",
+        "quantity": 3,
+        "uom": "EA",
+        "expectedOutcome": "RESOLVES_CLEANLY"
+      }
+    ]
+  },
+  "expectedExceptions": [
+    "Line 2 raises an ambiguous-SKU validation exception ('CAMRY PADS' has no single confident match).",
+    "Line 3 raises an unsupported unit-of-measure validation exception ('BX' is not a recognized UOM)."
+  ],
+  "expectedHandling": "Both exception lines route to operator review; the draft cannot advance until resolved; no auto-approval and no external write."
+}

@@ -1,0 +1,82 @@
+{
+  "description": "OP-CAP-11I scripted demo scenario pack. Deterministic, fake, non-production. Each entry is a scripted story keyed to an OP-CAP-11H demo scenario code and references the realistic-but-fake seed dataset (tenant-demo.json, customers-demo.json, products-demo.json, inventory-movements-demo.json, reconciliation-demo.json, telegram-rfq-demo.json, pdf-po-exception-demo.json, bad-ai-output-demo.json, pilot-shadow-demo.json). This file carries no credentials, no real customers, and no executable instructions; all input samples are data only.",
+  "providerMode": "MOCK_ONLY",
+  "tenantSlug": "orderpilot-demo-parts-distributor",
+  "scenarios": [
+    {
+      "code": "TELEGRAM_RFQ_SUBSTITUTION",
+      "title": "Telegram RFQ with substitution",
+      "actor": "Sales operator / reviewer",
+      "channel": "TELEGRAM",
+      "inputFixture": "telegram-rfq-demo.json",
+      "inputSample": "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.",
+      "expectedInterpretation": "Resolve customer alias 'brake pads for Toyota Camry 2018' to SKU PAD-OE-04465; PAD-OE-04465 is out of stock (snapshot DEMO-STAGE11C-ORIGINAL-UNAVAILABLE, available 0); compatible substitute PAD-SUB-ADV is in stock and accepted for this customer.",
+      "expectedValidationResult": "Draft/RFQ review case created with a suggested compatible substitute; PAD-SUB-ECON remains a blocked substitute for this customer.",
+      "expectedExceptionOrApproval": "Human reviews and confirms the substitute; the bot never approves a quote or order.",
+      "safetyBoundary": "Advisory only. Substitute is a suggestion; no outbound production Telegram send; no business write by the bot.",
+      "demoRoute": "/bot-conversations",
+      "evidenceImpact": "Maps to pilot-shadow-demo.json 'Out-of-stock item compatible substitute reviewed' (predictionType SUBSTITUTION, exceptionCategory OUT_OF_STOCK_SUBSTITUTE), moving TELEGRAM_RFQ_SUBSTITUTION from PARTIAL to READY_FOR_SCRIPTED_DEMO.",
+      "knownLimitation": "Telegram intake is local/dev and mock-extraction only; no production outbound messaging."
+    },
+    {
+      "code": "PDF_PO_EXCEPTION",
+      "title": "PDF purchase order with validation/exception handling",
+      "actor": "Validation reviewer",
+      "channel": "FILE_UPLOAD",
+      "inputFixture": "pdf-po-exception-demo.json",
+      "inputSample": "Plain-text purchase-order source standing in for a PDF upload (no binary PDF is loaded): 4 line items, one with an ambiguous SKU and one with an unsupported unit of measure.",
+      "expectedInterpretation": "Extract 4 lines; PAD-OE-04465 resolves cleanly; 'CAMRY PADS' is an ambiguous alias; 'BX' is an unrecognized unit of measure.",
+      "expectedValidationResult": "Deterministic validation raises exceptions on the ambiguous SKU line and the unit-of-measure line and routes them to operator review.",
+      "expectedExceptionOrApproval": "Operator resolves the ambiguous SKU and UOM before the draft can advance; no auto-approval.",
+      "safetyBoundary": "AI extraction is advisory; deterministic validation is the controlled gate; no ERP/1C/connector write.",
+      "demoRoute": "/validation-review",
+      "evidenceImpact": "Maps to pilot-shadow-demo.json 'PDF purchase-order extraction with low-confidence correction' (predictionType EXTRACTION, exceptionCategory LOW_CONFIDENCE_EXTRACTION), moving PDF_PO_EXCEPTION from PARTIAL to READY_FOR_SCRIPTED_DEMO.",
+      "knownLimitation": "Production OCR/LLM extraction is not enabled; the source fixture is plain text, not a binary PDF."
+    },
+    {
+      "code": "DISCOUNT_MARGIN_GUARDRAIL",
+      "title": "Discount/margin guardrail requiring approval",
+      "actor": "Sales manager / approver",
+      "channel": "INTERNAL",
+      "inputFixture": null,
+      "inputSample": "Operator requests a 35% discount on PAD-SUB-ADV (cost 25.00) that drops the line margin below the demo margin threshold.",
+      "expectedInterpretation": "Discount lowers margin under the configured threshold for this tenant.",
+      "expectedValidationResult": "Guardrail flags a margin breach; the line is marked as requiring manager approval.",
+      "expectedExceptionOrApproval": "Explicit manager approval is required before the discount can proceed; no auto-approval.",
+      "safetyBoundary": "Risky margin/discount changes never auto-approve; the decision is deterministic and audit-oriented.",
+      "demoRoute": "/pilot-readiness/evidence-report",
+      "evidenceImpact": "Maps to pilot-shadow-demo.json 'Discount/margin violation requiring manager approval' (predictionType VALIDATION, exceptionCategory MARGIN_VIOLATION), moving DISCOUNT_MARGIN_GUARDRAIL from PARTIAL to READY_FOR_SCRIPTED_DEMO.",
+      "knownLimitation": "The discount request is a scripted internal action; the concrete threshold value is tenant configuration, not a fixture constant."
+    },
+    {
+      "code": "INVENTORY_MISMATCH",
+      "title": "Inventory mismatch / reconciliation discrepancy",
+      "actor": "Operations / reconciliation reviewer",
+      "channel": "INTERNAL",
+      "inputFixture": "reconciliation-demo.json",
+      "inputSample": "PAD-OE-04465 at WH-ALM: opening 150, sale 34, expected 116, actual count 100 (mismatch -16).",
+      "expectedInterpretation": "Expected stock (116) differs from the actual count (100) by -16 units.",
+      "expectedValidationResult": "A reconciliation discrepancy case opens with HIGH severity for review.",
+      "expectedExceptionOrApproval": "Reconciliation surfaces the discrepancy for human review; it performs no ERP write-back.",
+      "safetyBoundary": "Severity and case creation are deterministic and audited; no external write.",
+      "demoRoute": "/reconciliation",
+      "evidenceImpact": "Reconciliation runs are not yet composed into the pilot evidence report; this scenario stays honestly PARTIAL and is demonstrated live via the /reconciliation workspace.",
+      "knownLimitation": "Reconciliation outcomes are not yet recorded as pilot shadow evidence, so readiness does not advance from seeded evidence alone."
+    },
+    {
+      "code": "BAD_AI_OUTPUT_REJECTED",
+      "title": "Bad AI output / unsafe input rejection",
+      "actor": "Security reviewer / operator",
+      "channel": "INTERNAL",
+      "inputFixture": "bad-ai-output-demo.json",
+      "inputSample": "Prompt-injection-like customer text plus a structurally malformed model output (both are TEST DATA only).",
+      "expectedInterpretation": "Customer/document text is treated as hostile input; the override attempt is ignored; the malformed extraction fails schema validation.",
+      "expectedValidationResult": "The unsafe output is rejected/sanitized and kept as untrusted data; nothing is interpreted as a system instruction.",
+      "expectedExceptionOrApproval": "No business write occurs; the input is quarantined for review, not executed.",
+      "safetyBoundary": "AI output is advisory and must pass deterministic validation; injected text never becomes code, SQL, a template, or an executable behavior.",
+      "demoRoute": "/pilot-readiness",
+      "evidenceImpact": "Code-level safety demonstration backed by ExtractionSchemaValidator, PromptInjectionGuardService, AiOutputSanitizer and the pilot DTO safety tests; READY_FOR_SCRIPTED_DEMO with no seeded data needed.",
+      "knownLimitation": "This is a deterministic safety demonstration; it does not invoke a real AI provider."
+    }
+  ]
+}
