@@ -63,6 +63,48 @@ export type PilotEvidenceReport = {
   safetyStatement: string;
 };
 
+// OP-CAP-11H demo scenario pack: read-only, honest demo-readiness composition.
+export type PilotDemoScenarioCapability = {
+  name: string;
+  available: boolean;
+  note: string;
+};
+
+export type PilotDemoScenarioEvidence = {
+  label: string;
+  value: string;
+};
+
+export type PilotDemoScenarioSafetyBoundary = {
+  statement: string;
+};
+
+export type PilotDemoScenario = {
+  code: string;
+  title: string;
+  businessObjective: string;
+  primaryActorRole: string;
+  channelSourceType: string;
+  readiness: string;
+  readinessScore: number;
+  requiredCapabilities: PilotDemoScenarioCapability[];
+  evidenceSignals: PilotDemoScenarioEvidence[];
+  missingCapabilities: string[];
+  safetyBoundaries: PilotDemoScenarioSafetyBoundary[];
+  suggestedDemoRoute: string;
+  relatedReportLinks: string[];
+  operatorTalkingPoints: string[];
+};
+
+export type PilotDemoScenarioPack = {
+  reportGeneratedAt: string;
+  tenantId: string;
+  tenantHasPilotEvidence: boolean;
+  scenarios: PilotDemoScenario[];
+  packLimitations: string[];
+  safetyStatement: string;
+};
+
 export type PilotApiResult<T> = {
   data: T;
   error?: string;
@@ -162,4 +204,17 @@ const EMPTY_EVIDENCE_REPORT: PilotEvidenceReport = {
 
 export function getPilotEvidenceReport() {
   return read<PilotEvidenceReport>("/api/v1/pilot/evidence-report", EMPTY_EVIDENCE_REPORT);
+}
+
+const EMPTY_DEMO_SCENARIO_PACK: PilotDemoScenarioPack = {
+  reportGeneratedAt: "",
+  tenantId: "",
+  tenantHasPilotEvidence: false,
+  scenarios: [],
+  packLimitations: [],
+  safetyStatement: ""
+};
+
+export function getPilotDemoScenarios() {
+  return read<PilotDemoScenarioPack>("/api/v1/pilot/demo-scenarios", EMPTY_DEMO_SCENARIO_PACK);
 }

@@ -2,6 +2,11 @@ package com.orderpilot.api.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.orderpilot.api.dto.Stage10BDtos.PilotDemoScenarioCapabilityResponse;
+import com.orderpilot.api.dto.Stage10BDtos.PilotDemoScenarioEvidenceResponse;
+import com.orderpilot.api.dto.Stage10BDtos.PilotDemoScenarioPackResponse;
+import com.orderpilot.api.dto.Stage10BDtos.PilotDemoScenarioResponse;
+import com.orderpilot.api.dto.Stage10BDtos.PilotDemoScenarioSafetyBoundaryResponse;
 import com.orderpilot.api.dto.Stage10BDtos.PilotEvidenceReport;
 import com.orderpilot.api.dto.Stage10BDtos.PilotReadinessSignal;
 import java.lang.reflect.RecordComponent;
@@ -34,6 +39,16 @@ class PilotEvidenceReportDtoSafetyTest {
           .as("DTO %s exposes forbidden field '%s'", recordType.getSimpleName(), component.getName())
           .isFalse();
     }
+  }
+
+  @Test
+  void demoScenarioPackExposesNoRawPayloadOrSecretFields() {
+    assertThat(PilotDemoScenarioPackResponse.class.isRecord()).isTrue();
+    assertNoForbiddenComponents(PilotDemoScenarioPackResponse.class);
+    assertNoForbiddenComponents(PilotDemoScenarioResponse.class);
+    assertNoForbiddenComponents(PilotDemoScenarioCapabilityResponse.class);
+    assertNoForbiddenComponents(PilotDemoScenarioEvidenceResponse.class);
+    assertNoForbiddenComponents(PilotDemoScenarioSafetyBoundaryResponse.class);
   }
 
   @Test

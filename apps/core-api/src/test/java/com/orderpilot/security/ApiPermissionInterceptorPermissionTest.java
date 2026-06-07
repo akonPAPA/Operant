@@ -379,6 +379,23 @@ class ApiPermissionInterceptorPermissionTest {
   }
 
   @Test
+  void pilotDemoScenariosGetWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/pilot/demo-scenarios");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void pilotDemoScenariosGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/pilot/demo-scenarios");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("ANALYTICS_READ");
+  }
+
+  @Test
   void pilotShadowRunPostWithReviewActionSucceeds() throws Exception {
     MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/pilot/shadow-runs");
     req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
