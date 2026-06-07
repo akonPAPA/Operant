@@ -71,6 +71,18 @@ ExtractionResult`. They support transaction extraction from text, optional summa
 | `RuleBasedExtractionProvider` | none | yes | Deterministic understanding extractor |
 | `MockExtractionProvider` | none | tests/CI | Rule-based + OP-CAP-11I scenario provenance |
 | `ConfigurableLlmExtractionProvider` | none in CI | **disabled** | Future real-LLM seam, fails closed |
+| `LocalOllamaExtractionProvider` | none in CI | **disabled** | Local open-source model runtime (OP-CAP-12B), fails closed |
+
+### Local open-source model runtime (OP-CAP-12B)
+
+`LocalOllamaExtractionProvider` adds a **local open-source model runtime** seam — it calls a locally
+running model through an Ollama-compatible local HTTP endpoint (e.g. `http://localhost:11434`). This
+is **not** a paid API and **not** OpenAI/Anthropic/Azure. It is disabled and fail-closed by default,
+uses an **injected transport** (tests never hit the network), and treats the local model as untrusted:
+output is bounded, parsed, scanned for unsafe/command-like keys, forced `advisory_only=True`, and
+re-validated through the same `ExtractionResult` schema. See
+[`LOCAL_MODEL_RUNTIME.md`](LOCAL_MODEL_RUNTIME.md) for configuration, request/response handling, and
+fail-closed cases.
 
 ### Mock vs real provider behavior
 
@@ -177,9 +189,13 @@ approves nothing; the deterministic engine and human approval remain the authori
 
 ## Next steps for production LLM/OCR
 
-1. Implement a concrete `transport` for `ConfigurableLlmExtractionProvider` (HTTPS + service-managed
-   key, out of band) behind the existing fail-closed config.
-2. Add real OCR/PDF text extraction feeding the same pipeline input.
-3. Strengthen schema validation/repair for real-model output and add provider/version telemetry.
-4. Expand deterministic SKU/alias/fitment intelligence in Core API for AI candidate resolution.
-5. Add rate limits/quotas and audit around any controlled processing-job trigger.
+1. Wire provider selection (job `ProviderMode` / config) to `LocalOllamaExtractionProvider` and
+   `ConfigurableLlmExtractionProvider`, supplying config + transport at construction (deferred to a
+   later slice to avoid broad job-orchestration changes). Both already fail closed.
+2. For a paid/hosted provider, implement a concrete `transport` for
+   `ConfigurableLlmExtractionProvider` (HTTPS + service-managed key, out of band) behind its
+   fail-closed config.
+3. Add real OCR/PDF text extraction feeding the same pipeline input.
+4. Strengthen schema validation/repair for real-model output and add provider/version telemetry.
+5. Expand deterministic SKU/alias/fitment intelligence in Core API for AI candidate resolution.
+6. Add rate limits/quotas and audit around any controlled processing-job trigger.
