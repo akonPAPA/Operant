@@ -85,8 +85,15 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   ResponseEntity<ApiErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
-    log.error("Unhandled API exception at {}", request.getRequestURI(), ex);
+    log.error("Unhandled API exception at {}", sanitizeForLog(request.getRequestURI()), ex);
     return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected server error", request, List.of());
+  }
+
+  private String sanitizeForLog(String value) {
+    if (value == null) {
+      return null;
+    }
+    return value.replace('\r', '_').replace('\n', '_');
   }
 
   private ApiErrorResponse.FieldViolation toViolation(FieldError error) {
