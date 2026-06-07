@@ -1,0 +1,331 @@
+package com.orderpilot.application.services.channel;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.orderpilot.api.dto.ChannelRfqHandoffDtos.ChannelRfqHandoffResponse;
+import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.common.errors.NotFoundException;
+import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.audit.AuditEvent;
+import com.orderpilot.domain.audit.AuditEventRepository;
+import com.orderpilot.domain.channel.ChannelProviderType;
+import com.orderpilot.domain.channel.ChannelRfqHandoffRepository;
+import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
+import com.orderpilot.domain.channel.InboundChannelEvent;
+import com.orderpilot.domain.channel.InboundChannelEventRepository;
+import com.orderpilot.domain.tenant.Tenant;
+import com.orderpilot.domain.tenant.TenantRepository;
+import com.orderpilot.infrastructure.config.CoreConfiguration;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.context.ActiveProfiles;
+
+@DataJpaTest
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import({
+    ChannelRfqHandoffService.class,
+    AuditEventService.class,
+    ObjectMapper.class,
+    CoreConfiguration.class
+})
+class ChannelRfqHandoffServiceTest {
+
+  @Autowired private ChannelRfqHandoffService handoffService;
+  @Autowired private ChannelRfqHandoffRepository handoffRepository;
+  @Autowired private InboundChannelEventRepository eventRepository;
+  @Autowired private AuditEventRepository auditEventRepository;
+  @Autowired private TenantRepository tenantRepository;
+
+  @AfterEach void clearTenant() { TenantContext.clear(); }
+
+  @Test void createsReviewableRfqHandoffFromChannelEvent() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    InboundChannelEvent event = seedEvent(tenantId, "evt-1", "Please quote 10 of BRK-100");
+
+    ChannelRfqHandoffResponse response = handoffService.createFromChannelEvent(commandFor(event));
+
+    assertThat(response.id()).isNotNull();
+    assertThat(response.status()).isEqualTo("PENDING_REVIEW");
+    assertThat(response.inboundChannelEventId()).isEqualTo(event.getId());
+    assertThat(response.sourceChannel()).isEqualTo("TELEGRAM");
+    assertThat(response.sourceExternalEventId()).isEqualTo("evt-1");
+    assertThat(response.requestText()).isEqualTo("Please quote 10 of BRK-100");
+    assertThat(response.detectedIntent()).isEqualTo("RFQ_REQUEST");
+    assertThat(handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)).hasSize(1);
+  }
+
+  @Test void duplicateSourceEventReturnsExistingHandoffWithoutInsertingDuplicate() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    InboundChannelEvent event = seedEvent(tenantId, "evt-dup", "quote 5 of FLT-22");
+
+    ChannelRfqHandoffResponse first = handoffService.createFromChannelEvent(commandFor(event));
+    ChannelRfqHandoffResponse second = handoffService.createFromChannelEvent(commandFor(event));
+
+    assertThat(second.id()).isEqualTo(first.id());
+    assertThat(handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)).hasSize(1);
+  }
+
+  @Test void uniqueConstraintBlocksDuplicateSourceEventAtPersistenceLayer() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    InboundChannelEvent event = seedEvent(tenantId, "evt-uniq", "quote please");
+    Instant now = Instant.parse("2026-06-04T00:00:00Z");
+
+    handoffRepository.saveAndFlush(new com.orderpilot.domain.channel.ChannelRfqHandoff(
+        tenantId, event.getId(), UUID.randomUUID(), "TELEGRAM", "evt-uniq", null, null, null, "x", "RFQ_REQUEST", now));
+
+    assertThatThrownBy(() -> handoffRepository.saveAndFlush(new com.orderpilot.domain.channel.ChannelRfqHandoff(
+        tenantId, event.getId(), UUID.randomUUID(), "TELEGRAM", "evt-uniq", null, null, null, "y", "RFQ_REQUEST", now)))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test void tenantCannotReadAnotherTenantsHandoff() {
+    UUID tenantA = seedTenant();
+    TenantContext.setTenantId(tenantA);
+    InboundChannelEvent eventA = seedEvent(tenantA, "evt-a", "quote for A");
+    ChannelRfqHandoffResponse handoffA = handoffService.createFromChannelEvent(commandFor(eventA));
+
+    UUID tenantB = seedTenant();
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(() -> handoffService.get(handoffA.id())).isInstanceOf(NotFoundException.class);
+    assertThat(handoffService.list(null)).isEmpty();
+  }
+
+  @Test void auditEventIsEmittedWhenHandoffIsCreated() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    InboundChannelEvent event = seedEvent(tenantId, "evt-audit", "rfq");
+
+    handoffService.createFromChannelEvent(commandFor(event));
+
+    List<AuditEvent> audits = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId);
+    assertThat(audits).anyMatch(a -> "CHANNEL_RFQ_HANDOFF_CREATED".equals(a.getAction()));
+    String metadata = audits.stream()
+        .filter(a -> "CHANNEL_RFQ_HANDOFF_CREATED".equals(a.getAction()))
+        .map(AuditEvent::getMetadata).findFirst().orElse("");
+    assertThat(metadata).contains("\"externalExecution\":\"DISABLED\"");
+    assertThat(metadata).contains(event.getId().toString());
+  }
+
+  @Test void missingSourceEventReferenceIsRejected() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+
+    assertThatThrownBy(() -> handoffService.createFromChannelEvent(new CreateChannelRfqHandoffCommand(
+        null, UUID.randomUUID(), "TELEGRAM", "x", null, null, null, "rfq", "RFQ_REQUEST")))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test void crossTenantSourceEventIsRejected() {
+    UUID tenantA = seedTenant();
+    TenantContext.setTenantId(tenantA);
+    InboundChannelEvent eventA = seedEvent(tenantA, "evt-x", "rfq");
+
+    UUID tenantB = seedTenant();
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(() -> handoffService.createFromChannelEvent(commandFor(eventA)))
+        .isInstanceOf(NotFoundException.class);
+    assertThat(handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantB)).isEmpty();
+  }
+
+  @Test void listFiltersByTenantAndStatus() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    InboundChannelEvent event = seedEvent(tenantId, "evt-list", "rfq");
+    handoffService.createFromChannelEvent(commandFor(event));
+
+    assertThat(handoffService.list(ChannelRfqHandoffStatus.PENDING_REVIEW)).hasSize(1);
+    assertThat(handoffService.list(ChannelRfqHandoffStatus.CONVERTED)).isEmpty();
+    assertThat(handoffRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, ChannelRfqHandoffStatus.PENDING_REVIEW)).hasSize(1);
+  }
+
+  // --- OP-CAP-06C operator workflow ---
+
+  @Test void startReviewFromPendingSucceeds() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-sr", "rfq");
+    UUID reviewer = UUID.randomUUID();
+
+    ChannelRfqHandoffResponse response = handoffService.startReview(id, reviewer);
+
+    assertThat(response.status()).isEqualTo("IN_REVIEW");
+    assertThat(response.reviewerUserId()).isEqualTo(reviewer);
+    assertThat(response.reviewStartedAt()).isNotNull();
+  }
+
+  @Test void startReviewFromDismissedFails() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-srd", "rfq");
+    handoffService.dismiss(id, "not a real request", null);
+
+    assertThatThrownBy(() -> handoffService.startReview(id, null)).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test void startReviewFromConvertedFails() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-src", "rfq");
+    handoffService.markConverted(id, null, null);
+
+    assertThatThrownBy(() -> handoffService.startReview(id, null)).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test void dismissFromPendingSucceedsWithReason() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-dp", "rfq");
+
+    ChannelRfqHandoffResponse response = handoffService.dismiss(id, "  spam  ", null);
+
+    assertThat(response.status()).isEqualTo("DISMISSED");
+    assertThat(response.dismissReason()).isEqualTo("spam");
+    assertThat(response.dismissedAt()).isNotNull();
+  }
+
+  @Test void dismissFromInReviewSucceedsWithReason() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-dir", "rfq");
+    handoffService.startReview(id, UUID.randomUUID());
+
+    ChannelRfqHandoffResponse response = handoffService.dismiss(id, "duplicate of another request", null);
+
+    assertThat(response.status()).isEqualTo("DISMISSED");
+    assertThat(response.dismissReason()).isEqualTo("duplicate of another request");
+  }
+
+  @Test void dismissWithBlankReasonFails() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-db", "rfq");
+
+    assertThatThrownBy(() -> handoffService.dismiss(id, "   ", null)).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> handoffService.dismiss(id, null, null)).isInstanceOf(IllegalArgumentException.class);
+    // Status is unchanged after a rejected dismiss.
+    assertThat(handoffService.get(id).status()).isEqualTo("PENDING_REVIEW");
+  }
+
+  @Test void markConvertedFromPendingSucceedsWithoutCreatingQuoteOrOrder() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-mcp", "rfq");
+
+    ChannelRfqHandoffResponse response = handoffService.markConverted(id, "ready for manual quote", null);
+
+    assertThat(response.status()).isEqualTo("CONVERTED");
+    assertThat(response.convertedAt()).isNotNull();
+    assertThat(response.conversionNote()).isEqualTo("ready for manual quote");
+    // Placeholder only: no business identifiers are mutated, no quote/order field is populated.
+    assertThat(response.customerAccountId()).isNull();
+    assertThat(response.customerContactId()).isNull();
+  }
+
+  @Test void markConvertedFromInReviewSucceeds() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-mcir", "rfq");
+    handoffService.startReview(id, UUID.randomUUID());
+
+    ChannelRfqHandoffResponse response = handoffService.markConverted(id, null, null);
+
+    assertThat(response.status()).isEqualTo("CONVERTED");
+    assertThat(response.conversionNote()).isNull();
+  }
+
+  @Test void markConvertedFromDismissedFails() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-mcd", "rfq");
+    handoffService.dismiss(id, "invalid", null);
+
+    assertThatThrownBy(() -> handoffService.markConverted(id, null, null)).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test void crossTenantTransitionIsRejected() {
+    UUID tenantA = seedTenant();
+    TenantContext.setTenantId(tenantA);
+    UUID idA = createHandoff(tenantA, "evt-ct", "rfq");
+
+    UUID tenantB = seedTenant();
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(() -> handoffService.startReview(idA, null)).isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> handoffService.dismiss(idA, "x", null)).isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> handoffService.markConverted(idA, null, null)).isInstanceOf(NotFoundException.class);
+
+    // Tenant A's handoff is untouched.
+    TenantContext.setTenantId(tenantA);
+    assertThat(handoffService.get(idA).status()).isEqualTo("PENDING_REVIEW");
+  }
+
+  @Test void auditEmittedForEachTransition() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID reviewId = createHandoff(tenantId, "evt-a1", "rfq");
+    handoffService.startReview(reviewId, UUID.randomUUID());
+    UUID convertId = createHandoff(tenantId, "evt-a2", "rfq");
+    handoffService.markConverted(convertId, "note", null);
+    UUID dismissId = createHandoff(tenantId, "evt-a3", "rfq");
+    handoffService.dismiss(dismissId, "invalid", null);
+
+    List<String> actions = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId).stream()
+        .map(AuditEvent::getAction).toList();
+    assertThat(actions)
+        .contains("CHANNEL_RFQ_HANDOFF_REVIEW_STARTED", "CHANNEL_RFQ_HANDOFF_CONVERTED", "CHANNEL_RFQ_HANDOFF_DISMISSED");
+    String dismissMeta = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId).stream()
+        .filter(a -> "CHANNEL_RFQ_HANDOFF_DISMISSED".equals(a.getAction()))
+        .map(AuditEvent::getMetadata).findFirst().orElse("");
+    assertThat(dismissMeta).contains("\"previousStatus\":\"PENDING_REVIEW\"");
+    assertThat(dismissMeta).contains("\"newStatus\":\"DISMISSED\"");
+    assertThat(dismissMeta).contains("\"externalExecution\":\"DISABLED\"");
+  }
+
+  @Test void listReflectsStatusAfterTransition() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-lt", "rfq");
+    handoffService.startReview(id, null);
+
+    assertThat(handoffService.list(ChannelRfqHandoffStatus.PENDING_REVIEW)).isEmpty();
+    assertThat(handoffService.list(ChannelRfqHandoffStatus.IN_REVIEW)).hasSize(1);
+  }
+
+  // --- helpers ---
+
+  private UUID createHandoff(UUID tenantId, String externalEventId, String text) {
+    InboundChannelEvent event = seedEvent(tenantId, externalEventId, text);
+    return handoffService.createFromChannelEvent(commandFor(event)).id();
+  }
+
+  private UUID seedTenant() {
+    return tenantRepository.save(new Tenant("rfq-" + UUID.randomUUID(), "RFQ Test", "ACTIVE", Instant.parse("2026-06-04T00:00:00Z"))).getId();
+  }
+
+  private InboundChannelEvent seedEvent(UUID tenantId, String externalEventId, String text) {
+    InboundChannelEvent event = new InboundChannelEvent(
+        tenantId, UUID.randomUUID(), ChannelProviderType.TELEGRAM, externalEventId,
+        "CUSTOMER", "sender-" + externalEventId, text, "hash-" + externalEventId, "{}",
+        Instant.parse("2026-06-04T00:00:00Z"));
+    return eventRepository.save(event);
+  }
+
+  private CreateChannelRfqHandoffCommand commandFor(InboundChannelEvent event) {
+    return new CreateChannelRfqHandoffCommand(
+        event.getId(), UUID.randomUUID(), "TELEGRAM", event.getExternalEventId(),
+        event.getSourceActorExternalId(), null, null, event.getNormalizedText(), "RFQ_REQUEST");
+  }
+}

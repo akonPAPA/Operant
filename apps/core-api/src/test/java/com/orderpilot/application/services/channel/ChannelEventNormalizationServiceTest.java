@@ -52,6 +52,37 @@ class ChannelEventNormalizationServiceTest {
     assertThat(event.getNormalizedText()).isEqualTo("Need OEM 123");
   }
 
+  @Test void listRecentHonorsRequestedLimitAndIsTenantScoped() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    var connection = serviceConnection(ChannelProviderType.TELEGRAM);
+    for (int i = 1; i <= 3; i++) {
+      var payload = new ObjectMapper().readTree(
+          "{\"message\":{\"message_id\":\"lr-" + i + "\",\"chat\":{\"id\":\"c-" + i + "\"},\"text\":\"need part " + i + "\"}}");
+      normalizationService.normalize(connection.getId(), ChannelProviderType.TELEGRAM, payload);
+    }
+    // A smaller requested limit is honored.
+    assertThat(normalizationService.listRecent(2)).hasSize(2);
+    // null falls back to the safe default window (>= the 3 seeded events).
+    assertThat(normalizationService.listRecent(null)).hasSize(3);
+
+    // A different tenant has its own (empty) recent window.
+    TenantContext.setTenantId(UUID.randomUUID());
+    assertThat(normalizationService.listRecent(null)).isEmpty();
+  }
+
+  @Test void clampLimitFallsBackToDefaultAndCapsAtMax() {
+    assertThat(ChannelEventNormalizationService.clampLimit(null))
+        .isEqualTo(ChannelEventNormalizationService.DEFAULT_EVENT_LIMIT);
+    assertThat(ChannelEventNormalizationService.clampLimit(0))
+        .isEqualTo(ChannelEventNormalizationService.DEFAULT_EVENT_LIMIT);
+    assertThat(ChannelEventNormalizationService.clampLimit(-5))
+        .isEqualTo(ChannelEventNormalizationService.DEFAULT_EVENT_LIMIT);
+    assertThat(ChannelEventNormalizationService.clampLimit(10)).isEqualTo(10);
+    assertThat(ChannelEventNormalizationService.clampLimit(1_000_000))
+        .isEqualTo(ChannelEventNormalizationService.MAX_EVENT_LIMIT);
+  }
+
   private com.orderpilot.domain.channel.ChannelConnection serviceConnection(ChannelProviderType providerType) {
     var c = connectionService.createDraft(providerType, providerType.name(), null, null, null);
     return connectionService.activate(c.getId());

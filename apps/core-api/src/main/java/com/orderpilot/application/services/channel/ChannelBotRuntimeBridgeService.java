@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeEventResponse;
 import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeResultResponse;
+import com.orderpilot.api.dto.ChannelBotBridgeDtos.ChannelBotBridgeStatusResponse;
 import com.orderpilot.api.dto.Stage7Dtos.BotWebhookAckResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.bot.BotFlowPolicyDecision;
@@ -53,6 +54,26 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChannelBotRuntimeBridgeService {
   private static final String EXTERNAL_EXECUTION = "DISABLED";
 
+  /** Controlled flows the bridge may run. Static safety contract surfaced to the operator. */
+  private static final List<String> SUPPORTED_FLOWS = List.of(
+      "NORMALIZE_INBOUND_MESSAGE",
+      "RESOLVE_TENANT_CHANNEL_IDENTITY",
+      "PRODUCT_AVAILABILITY_LOOKUP",
+      "CREATE_REVIEWABLE_RFQ_DRAFT",
+      "HUMAN_HANDOFF_REVIEW",
+      "READ_BRIDGE_STATUS_AND_RECENT_EVENTS");
+
+  /** Actions the bridge can never perform. Static safety contract surfaced to the operator. */
+  private static final List<String> FORBIDDEN_ACTIONS = List.of(
+      "QUOTE_APPROVAL",
+      "ORDER_APPROVAL",
+      "DISCOUNT_APPROVAL",
+      "DIRECT_STOCK_UPDATE",
+      "DIRECT_PRICE_UPDATE",
+      "CUSTOMER_MASTER_UPDATE",
+      "EXTERNAL_ERP_OR_1C_WRITE",
+      "CROSS_TENANT_SEARCH");
+
   private final ChannelConnectionRepository connectionRepository;
   private final ChannelEventNormalizationService normalizationService;
   private final InboundChannelEventRepository eventRepository;
@@ -61,6 +82,7 @@ public class ChannelBotRuntimeBridgeService {
   private final BotRuntimePolicyService policyService;
   private final ChannelIdentityResolverService identityResolverService;
   private final RuleBasedBotIntentClassifier intentClassifier;
+  private final ChannelRfqHandoffService rfqHandoffService;
   private final AuditEventService auditEventService;
   private final ObjectMapper objectMapper;
   private final Clock clock;
@@ -74,6 +96,7 @@ public class ChannelBotRuntimeBridgeService {
       BotRuntimePolicyService policyService,
       ChannelIdentityResolverService identityResolverService,
       RuleBasedBotIntentClassifier intentClassifier,
+      ChannelRfqHandoffService rfqHandoffService,
       AuditEventService auditEventService,
       ObjectMapper objectMapper,
       Clock clock) {
@@ -85,6 +108,7 @@ public class ChannelBotRuntimeBridgeService {
     this.policyService = policyService;
     this.identityResolverService = identityResolverService;
     this.intentClassifier = intentClassifier;
+    this.rfqHandoffService = rfqHandoffService;
     this.auditEventService = auditEventService;
     this.objectMapper = objectMapper;
     this.clock = clock;
@@ -144,6 +168,14 @@ public class ChannelBotRuntimeBridgeService {
     ChannelBotRuntimeConfiguration config = configurationService.getOrCreateDefaultForConnection(connectionId);
     BotIntent intent = intentClassifier.detect(event.getNormalizedText());
     BotFlow flow = BotFlow.fromIntent(intent);
+
+    // OP-CAP-06B: an RFQ-like verified message produces a reviewable internal RFQ handoff record
+    // (a draft request, never a quote/order). This is idempotent on the source event, so duplicate
+    // delivery cannot create duplicate handoffs, and it triggers no external write.
+    if (flow == BotFlow.RFQ) {
+      createRfqHandoff(event, connection, identity, intent);
+    }
+
     BotFlowPolicyDecision decision = policyService.decide(config, flow, contextFor(identity));
     if (!decision.allowed()) {
       event.markBotNotBridged("CONFIG_BLOCKED:" + decision.reasonCode().name(), clock.instant());
@@ -159,9 +191,36 @@ public class ChannelBotRuntimeBridgeService {
     return resultFromAck(event, connection, ack);
   }
 
+  /**
+   * Bounded, tenant-scoped recent bridged events for the operator dashboard. The client-supplied
+   * limit is advisory only: {@link ChannelEventNormalizationService} centralizes the default and
+   * hard cap, so this read path can never load a tenant's full event history.
+   */
   @Transactional(readOnly = true)
-  public List<ChannelBotBridgeEventResponse> listBridgedEvents() {
-    return normalizationService.list().stream().map(ChannelBotRuntimeBridgeService::toEventResponse).toList();
+  public List<ChannelBotBridgeEventResponse> listRecentBridgedEvents(Integer requestedLimit) {
+    return normalizationService.listRecent(requestedLimit).stream()
+        .map(ChannelBotRuntimeBridgeService::toEventResponse)
+        .toList();
+  }
+
+  /**
+   * Tenant-scoped bridge status: the controlled safety contract plus a bounded recent-window count
+   * summary. Counts are derived from the same bounded window that backs the events list, so this
+   * never triggers an unbounded scan.
+   */
+  @Transactional(readOnly = true)
+  public ChannelBotBridgeStatusResponse getBridgeStatus(Integer requestedLimit) {
+    List<InboundChannelEvent> recent = normalizationService.listRecent(requestedLimit);
+    int effectiveLimit = ChannelEventNormalizationService.clampLimit(requestedLimit);
+    int bridged = (int) recent.stream().filter(e -> e.getBotConversationId() != null).count();
+    return new ChannelBotBridgeStatusResponse(
+        EXTERNAL_EXECUTION,
+        effectiveLimit,
+        recent.size(),
+        bridged,
+        recent.size() - bridged,
+        SUPPORTED_FLOWS,
+        FORBIDDEN_ACTIONS);
   }
 
   private static ChannelBotBridgeEventResponse toEventResponse(InboundChannelEvent e) {
@@ -240,6 +299,23 @@ public class ChannelBotRuntimeBridgeService {
         event.getReceivedAt(),
         event.getVerificationStatus(),
         EXTERNAL_EXECUTION);
+  }
+
+  /**
+   * Create a reviewable RFQ handoff for a verified RFQ-like channel event. Delegates to the
+   * tenant-scoped, idempotent command service; the bridge never writes the handoff directly.
+   */
+  private void createRfqHandoff(InboundChannelEvent event, ChannelConnection connection, ChannelIdentityResolution identity, BotIntent intent) {
+    rfqHandoffService.createFromChannelEvent(new CreateChannelRfqHandoffCommand(
+        event.getId(),
+        connection.getId(),
+        connection.getProviderType().name(),
+        event.getExternalEventId(),
+        event.getSourceActorExternalId(),
+        identity.customerAccountId(),
+        identity.customerContactId(),
+        event.getNormalizedText(),
+        intent == null ? null : intent.name()));
   }
 
   private BotRuntimePolicyService.Context contextFor(ChannelIdentityResolution identity) {

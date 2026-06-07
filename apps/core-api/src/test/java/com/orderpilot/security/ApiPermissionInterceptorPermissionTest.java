@@ -1,8 +1,7 @@
 package com.orderpilot.security;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.orderpilot.security.policy.TenantPolicyException;
 import org.junit.jupiter.api.Test;
@@ -155,6 +154,36 @@ class ApiPermissionInterceptorPermissionTest {
     req.addHeader("X-OrderPilot-Permissions", "AI_WORK_ACTION");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  // --- OP-CAP-07D /api/v1/internal/ai-processing-results requires AI_RESULT_INTAKE ---
+
+  @Test
+  void aiResultIntakePostWithIntakePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-processing-results");
+    req.addHeader("X-OrderPilot-Permissions", "AI_RESULT_INTAKE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiResultIntakePostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-processing-results");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_RESULT_INTAKE");
+  }
+
+  @Test
+  void aiResultIntakeWithReviewReadAloneIsRejected() throws Exception {
+    // A generic read permission must NOT be sufficient for the service intake boundary.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/ai-processing-results");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_RESULT_INTAKE");
   }
 
   // --- OP-CAP-09D /api/v1/workspace draft review queues + product picker: GET requires REVIEW_READ ---

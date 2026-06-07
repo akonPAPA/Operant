@@ -5,5 +5,8 @@ public enum ProcessingJobStatus {
   PROCESSING,
   SUCCEEDED,
   FAILED,
-  NEEDS_REVIEW
+  NEEDS_REVIEW,
+  // OP-CAP-07D: terminal status for an AI-worker result the worker itself rejected (malformed/unsafe
+  // input per worker-local checks). Stored as a String column, so no migration is required.
+  REJECTED
 }

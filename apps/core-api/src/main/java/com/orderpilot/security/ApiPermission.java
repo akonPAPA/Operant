@@ -17,5 +17,7 @@ public enum ApiPermission {
   AUDIT_READ,
   ADMIN_SETTINGS_READ,
   CHANNEL_IDENTITY_ACTION,
-  AI_WORK_ACTION
+  AI_WORK_ACTION,
+  // OP-CAP-07D: internal/service permission for the AI-worker result intake endpoint.
+  AI_RESULT_INTAKE
 }
