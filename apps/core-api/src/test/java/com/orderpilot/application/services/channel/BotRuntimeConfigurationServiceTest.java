@@ -45,6 +45,7 @@ import org.springframework.test.context.ActiveProfiles;
     BotRuntimeConfigurationService.class,
     BotRuntimePolicyService.class,
     ChannelBotRuntimeBridgeService.class,
+    ChannelRfqHandoffService.class,
     ChannelIdentityResolverService.class,
     ChannelEventNormalizationService.class,
     ChannelConnectionService.class,

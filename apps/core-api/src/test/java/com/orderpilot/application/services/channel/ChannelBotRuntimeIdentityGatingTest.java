@@ -52,6 +52,7 @@ import org.springframework.test.context.ActiveProfiles;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
     ChannelBotRuntimeBridgeService.class,
+    ChannelRfqHandoffService.class,
     BotRuntimeConfigurationService.class,
     BotRuntimePolicyService.class,
     ChannelIdentityResolverService.class,

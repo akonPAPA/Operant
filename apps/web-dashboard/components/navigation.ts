@@ -35,6 +35,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Reconciliation", href: "/reconciliation" },
   { label: "Channels", href: "/channels" },
   { label: "Messenger Bridge", href: "/messenger-bridge" },
+  { label: "RFQ Handoffs", href: "/channels/rfq-handoffs" },
   { label: "Channel Identities", href: "/channel-identities" },
   { label: "Bot Runtime", href: "/bot-runtime" },
   { label: "Integrations", href: "/integrations" },
