@@ -81,7 +81,7 @@ powershell -ExecutionPolicy Bypass -File C:\OrderPilot\OrderPilot-Core\scripts\c
 
 Backend build/test success and backend runtime readiness are different checks:
 
-- `mvn clean test` uses the test profile and an in-memory H2 database. It proves the backend code and tests pass.
+- `mvn clean test` runs the backend test suite. H2-backed slice tests use the `test` profile, and PostgreSQL integration tests use `orderpilot_test` on the documented local host port.
 - `mvn spring-boot:run` uses normal runtime configuration. It requires reachable local PostgreSQL.
 - `npm run build` proves the frontend compiles and renders static routes.
 - Full demo readiness requires backend runtime on `localhost:8080`, frontend runtime on `localhost:3000`, local Postgres reachable, `.env.local` filled with seeded demo IDs, and `check-local-demo.ps1` passing.
@@ -89,9 +89,9 @@ Backend build/test success and backend runtime readiness are different checks:
 Runtime database variables:
 
 ```powershell
-$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:55432/orderpilot"
-$env:SPRING_DATASOURCE_USERNAME="orderpilot"
-$env:SPRING_DATASOURCE_PASSWORD="orderpilot_dev_password"
+$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:55432/orderpilot_local"
+$env:SPRING_DATASOURCE_USERNAME="orderpilot_local_user"
+$env:SPRING_DATASOURCE_PASSWORD="change-me-local-dev-only"
 $env:SERVER_PORT="8080"
 ```
 
@@ -100,7 +100,7 @@ $env:SERVER_PORT="8080"
 Verify Postgres TCP reachability before starting the backend:
 
 ```powershell
-Test-NetConnection localhost -Port 5432
+Test-NetConnection localhost -Port 55432
 ```
 
 If this fails, start local Postgres or correct `SPRING_DATASOURCE_URL`. Do not treat passing backend tests as proof that runtime Postgres is ready.
