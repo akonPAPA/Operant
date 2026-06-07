@@ -1,0 +1,76 @@
+{
+  "description": "OP-CAP-11F synthetic pilot shadow-mode ROI readiness fixture. MOCK_ONLY, advisory-only. Carries only structured pilot evidence (no raw document/message text and no sensitive values). Each entry mirrors the POST /api/v1/pilot/shadow-runs request shape plus the recorded human correction outcome.",
+  "providerMode": "MOCK_ONLY",
+  "scenarios": [
+    {
+      "label": "Telegram RFQ prediction corrected by human",
+      "sourceType": "CHANNEL_MESSAGE",
+      "predictionType": "EXTRACTION",
+      "providerLabel": "orderpilot-mock-shadow-v1",
+      "predictionPayloadJson": "{}",
+      "confidenceScore": 0.6400,
+      "exceptionCategory": null,
+      "manualBaselineMinutes": 12.00,
+      "assistedProcessingMinutes": 4.00,
+      "automationCandidate": false,
+      "reviewRequired": true,
+      "correctionType": "FIELD_CORRECTED"
+    },
+    {
+      "label": "PDF purchase-order extraction with low-confidence correction",
+      "sourceType": "INBOUND_DOCUMENT",
+      "predictionType": "EXTRACTION",
+      "providerLabel": "orderpilot-mock-shadow-v1",
+      "predictionPayloadJson": "{}",
+      "confidenceScore": 0.4200,
+      "exceptionCategory": "LOW_CONFIDENCE_EXTRACTION",
+      "manualBaselineMinutes": 15.00,
+      "assistedProcessingMinutes": 6.00,
+      "automationCandidate": false,
+      "reviewRequired": true,
+      "correctionType": "FIELD_CORRECTED"
+    },
+    {
+      "label": "Out-of-stock item compatible substitute reviewed",
+      "sourceType": "DRAFT_QUOTE",
+      "predictionType": "SUBSTITUTION",
+      "providerLabel": "orderpilot-mock-shadow-v1",
+      "predictionPayloadJson": "{}",
+      "confidenceScore": 0.7800,
+      "exceptionCategory": "OUT_OF_STOCK_SUBSTITUTE",
+      "manualBaselineMinutes": 10.00,
+      "assistedProcessingMinutes": 3.00,
+      "automationCandidate": false,
+      "reviewRequired": true,
+      "correctionType": "SUBSTITUTION_ACCEPTED"
+    },
+    {
+      "label": "Discount/margin violation requiring manager approval",
+      "sourceType": "VALIDATION_CASE",
+      "predictionType": "VALIDATION",
+      "providerLabel": "orderpilot-mock-shadow-v1",
+      "predictionPayloadJson": "{}",
+      "confidenceScore": 0.5500,
+      "exceptionCategory": "MARGIN_VIOLATION",
+      "manualBaselineMinutes": 14.00,
+      "assistedProcessingMinutes": 7.00,
+      "automationCandidate": false,
+      "reviewRequired": true,
+      "correctionType": "REJECTED"
+    },
+    {
+      "label": "Clean low-risk prediction accepted as-is",
+      "sourceType": "INBOUND_DOCUMENT",
+      "predictionType": "EXTRACTION",
+      "providerLabel": "orderpilot-mock-shadow-v1",
+      "predictionPayloadJson": "{}",
+      "confidenceScore": 0.9500,
+      "exceptionCategory": null,
+      "manualBaselineMinutes": 12.00,
+      "assistedProcessingMinutes": 2.00,
+      "automationCandidate": true,
+      "reviewRequired": false,
+      "correctionType": "ACCEPTED"
+    }
+  ]
+}
