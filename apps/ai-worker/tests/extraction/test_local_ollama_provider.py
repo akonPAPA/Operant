@@ -7,15 +7,20 @@ paid API and NO real model here — every transport is a deterministic in-proces
 """
 
 import json
+import urllib.error
+import urllib.request
 
 import pytest
 
 from orderpilot_ai_worker.extraction.providers.configurable_llm import ProviderDisabledError
 from orderpilot_ai_worker.extraction.providers.local_ollama import (
+    DEFAULT_TIMEOUT_SECONDS,
     LocalModelConfig,
     LocalModelError,
     LocalOllamaExtractionProvider,
     LocalRuntimeResponse,
+    _validate_local_ollama_url,
+    build_urllib_transport,
     build_local_extraction_prompt,
 )
 
@@ -59,6 +64,21 @@ def _boom_transport():
         raise AssertionError("transport must not be called when the provider fails closed")
 
     return transport
+
+
+class _FakeUrlopenResponse:
+    def __init__(self, body: str, status: int = 200) -> None:
+        self._body = body.encode("utf-8")
+        self.status = status
+
+    def __enter__(self) -> "_FakeUrlopenResponse":
+        return self
+
+    def __exit__(self, _exc_type, _exc, _traceback) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
 
 
 # --- A. disabled provider fails closed (no network call) ---------------------------------------
@@ -137,6 +157,140 @@ def test_successful_extraction_from_direct_json_object() -> None:
     provider = LocalOllamaExtractionProvider(config=_ready_config(), transport=transport)
     result = provider.extract("Need 2 EA PAD-OE-04465")
     assert result.detected_intent == "RFQ" and result.advisory_only is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:11434/api/generate",
+        "http://localhost:11434/api/generate",
+        "http://[::1]:11434/api/generate",
+    ],
+)
+def test_local_ollama_url_validator_accepts_loopback_http_urls(url: str) -> None:
+    _validate_local_ollama_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///etc/passwd",
+        "ftp://127.0.0.1:11434/api/generate",
+        "gopher://127.0.0.1:11434/api/generate",
+        "http://example.com/api/generate",
+        "http://ollama.internal:11434/api/generate",
+        "http://0.0.0.0:11434/api/generate",
+        "http://169.254.169.254/latest/meta-data",
+        "http://user:pass@127.0.0.1:11434/api/generate",
+        "http:///api/generate",
+        "http://:11434/api/generate",
+        "http://localhost:bad/api/generate",
+        "not a url",
+    ],
+)
+def test_local_ollama_url_validator_rejects_unsafe_urls(url: str) -> None:
+    with pytest.raises(LocalModelError):
+        _validate_local_ollama_url(url)
+
+
+def test_urllib_transport_posts_to_valid_local_url_and_parses_response(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_urlopen(request: urllib.request.Request, timeout: float):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return _FakeUrlopenResponse(_ollama_envelope(json.dumps(_VALID_EXTRACTION)))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    provider = LocalOllamaExtractionProvider(
+        config=_ready_config(endpoint_url="http://127.0.0.1:11434"),
+        transport=build_urllib_transport(),
+    )
+
+    result = provider.extract("Need 2 EA PAD-OE-04465")
+
+    assert result.detected_intent == "RFQ"
+    assert result.advisory_only is True
+    assert captured["timeout"] == DEFAULT_TIMEOUT_SECONDS
+    request = captured["request"]
+    assert request.full_url == "http://127.0.0.1:11434/api/generate"
+    assert request.get_method() == "POST"
+    assert request.get_header("Content-type") == "application/json"
+    body = json.loads(request.data.decode("utf-8"))
+    assert body["model"] == _MODEL
+    assert body["stream"] is False
+
+
+def test_provider_rejects_unsafe_url_before_transport() -> None:
+    called = False
+
+    def transport(url: str, payload: dict, timeout: float) -> LocalRuntimeResponse:
+        nonlocal called
+        called = True
+        return LocalRuntimeResponse(status_code=200, body=json.dumps(_VALID_EXTRACTION))
+
+    provider = LocalOllamaExtractionProvider(
+        config=_ready_config(endpoint_url="http://example.com"),
+        transport=transport,
+    )
+
+    with pytest.raises(LocalModelError) as exc:
+        provider.extract("Need 2 EA PAD-OE-04465")
+
+    assert exc.value.reason == "local_endpoint_url_host_not_loopback"
+    assert called is False
+
+
+def test_urllib_transport_rejects_unsafe_url_before_urlopen(monkeypatch) -> None:
+    called = False
+
+    def fake_urlopen(_request: urllib.request.Request, timeout: float):
+        nonlocal called
+        called = True
+        raise AssertionError("urlopen must not be called for unsafe local runtime URLs")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    transport = build_urllib_transport()
+
+    with pytest.raises(LocalModelError) as exc:
+        transport("file:///etc/passwd", {"model": _MODEL}, DEFAULT_TIMEOUT_SECONDS)
+
+    assert exc.value.reason == "local_endpoint_url_scheme_not_allowed"
+    assert called is False
+
+
+def test_urllib_transport_timeout_behavior_is_unchanged(monkeypatch) -> None:
+    def fake_urlopen(_request: urllib.request.Request, timeout: float):
+        raise TimeoutError("slow local model")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    provider = LocalOllamaExtractionProvider(
+        config=_ready_config(endpoint_url="http://localhost:11434"),
+        transport=build_urllib_transport(),
+    )
+
+    with pytest.raises(LocalModelError) as exc:
+        provider.extract("Need 2 EA PAD-OE-04465")
+
+    assert exc.value.reason == "local_runtime_timeout"
+
+
+def test_urllib_transport_http_error_behavior_is_unchanged(monkeypatch) -> None:
+    def fake_urlopen(_request: urllib.request.Request, timeout: float):
+        raise urllib.error.HTTPError(
+            "http://localhost:11434/api/generate", 500, "server error", hdrs=None, fp=None
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    provider = LocalOllamaExtractionProvider(
+        config=_ready_config(endpoint_url="http://localhost:11434"),
+        transport=build_urllib_transport(),
+    )
+
+    with pytest.raises(LocalModelError) as exc:
+        provider.extract("Need 2 EA PAD-OE-04465")
+
+    assert exc.value.reason == "local_runtime_http_error"
 
 
 # --- D. JSON code fence + surrounding text ------------------------------------------------------
@@ -260,29 +414,31 @@ def test_non_2xx_fails_closed() -> None:
 
 # --- J. secret / log safety --------------------------------------------------------------------
 
-def test_endpoint_credentials_never_leak() -> None:
+def test_endpoint_credentials_are_rejected_before_transport_and_never_leak() -> None:
     secret = "DUMMY-LOCAL-CREDENTIAL"
     cfg = _ready_config(endpoint_url=f"http://user:{secret}@localhost:11434")
-    transport = _fake_transport(_ollama_envelope(json.dumps(_VALID_EXTRACTION)))
-    provider = LocalOllamaExtractionProvider(config=cfg, transport=transport)
+    provider = LocalOllamaExtractionProvider(config=cfg, transport=_boom_transport())
 
-    result = provider.extract("Need 2 EA PAD-OE-04465")
+    with pytest.raises(LocalModelError) as exc:
+        provider.extract("Need 2 EA PAD-OE-04465")
 
-    # Host-only provenance, no userinfo/credentials anywhere it can be logged or serialized.
+    assert exc.value.reason == "local_endpoint_url_credentials_not_allowed"
+    assert secret not in str(exc.value)
+    # Host-only provenance, no userinfo/credentials anywhere it can be logged.
     assert cfg.endpoint_host() == "localhost:11434"
     assert secret not in json.dumps(cfg.safe_metadata())
-    assert secret not in result.model_dump_json()
-    assert result.model_metadata.endpoint_host == "localhost:11434"
 
 
 def test_error_reason_carries_no_payload_or_endpoint() -> None:
-    cfg = _ready_config(endpoint_url="http://user:DUMMY-LOCAL-CREDENTIAL@localhost:11434")
+    secret = "DUMMY-CUSTOMER-SECRET"
+    cfg = _ready_config(endpoint_url="http://localhost:11434")
     transport = _fake_transport(_ollama_envelope("not json {{{"))
     provider = LocalOllamaExtractionProvider(config=cfg, transport=transport)
     with pytest.raises(LocalModelError) as exc:
-        provider.extract("Need 2 EA PAD-OE-04465")
+        provider.extract(f"Need 2 EA PAD-OE-04465. {secret}")
     assert exc.value.reason == "local_output_unparseable"
-    assert "DUMMY-LOCAL-CREDENTIAL" not in str(exc.value)
+    assert secret not in str(exc.value)
+    assert _ENDPOINT not in str(exc.value)
 
 
 # --- prompt builder safety ---------------------------------------------------------------------

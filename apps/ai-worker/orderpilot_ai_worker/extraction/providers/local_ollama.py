@@ -40,6 +40,8 @@ RUNTIME_NAME = "local_ollama"
 PROMPT_VERSION = "op-cap-12b.prompt.v1"
 SCHEMA_VERSION = "stage4.v1"
 GENERATE_PATH = "/api/generate"
+_ALLOWED_LOCAL_SCHEMES = frozenset({"http", "https"})
+_ALLOWED_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 # Conservative defaults. The model name is intentionally NOT defaulted: a local model must be chosen
 # explicitly via config/env, never silently assumed.
@@ -212,10 +214,14 @@ class LocalOllamaExtractionProvider(SemanticExtractionProvider):  # pylint: disa
             raise ProviderDisabledError("local_transport_not_configured")
 
     def _call_transport(self, payload: dict) -> LocalRuntimeResponse:
+        url = self._config.generate_url()
+        _validate_local_ollama_url(url)
         try:
             response = self._transport(  # type: ignore[misc]
-                self._config.generate_url(), payload, self._config.timeout_seconds
+                url, payload, self._config.timeout_seconds
             )
+        except LocalModelError:
+            raise
         except TimeoutError as exc:
             raise LocalModelError("local_runtime_timeout") from exc
         except Exception as exc:  # noqa: BLE001 - never leak transport internals/endpoint/secrets
@@ -307,18 +313,44 @@ def build_urllib_transport() -> LocalModelTransport:
         import urllib.error
         import urllib.request
 
+        _validate_local_ollama_url(url)
         data = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             url, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as resp:  # noqa: S310 - local URL
+            # B310/S310: the URL is restricted to credential-free HTTP(S) loopback above.
+            with urllib.request.urlopen(  # nosec B310  # noqa: S310
+                request, timeout=timeout
+            ) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
                 return LocalRuntimeResponse(status_code=resp.status, body=body)
         except urllib.error.HTTPError as exc:
             return LocalRuntimeResponse(status_code=exc.code, body="")
 
     return _transport
+
+
+def _validate_local_ollama_url(url: str) -> None:
+    """Allow only credential-free HTTP(S) URLs targeting the local Ollama runtime."""
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError) as exc:
+        raise LocalModelError("local_endpoint_url_malformed") from exc
+
+    if parsed.scheme.lower() not in _ALLOWED_LOCAL_SCHEMES:
+        raise LocalModelError("local_endpoint_url_scheme_not_allowed")
+    if parsed.username is not None or parsed.password is not None:
+        raise LocalModelError("local_endpoint_url_credentials_not_allowed")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise LocalModelError("local_endpoint_url_host_missing")
+    if hostname.lower() not in _ALLOWED_LOCAL_HOSTS:
+        raise LocalModelError("local_endpoint_url_host_not_loopback")
+    # Force urllib.parse to validate malformed ports before urllib opens anything.
+    _ = port
 
 
 def _parse_runtime_body(body: str, max_response_chars: int) -> dict:
