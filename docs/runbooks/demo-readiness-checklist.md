@@ -74,6 +74,10 @@ For local/demo environments:
 - Restore into a clean database and rerun backend smoke tests before claiming restore confidence.
 - Keep object-storage demo payloads alongside database backups when raw payload references are needed.
 
+For concrete local PostgreSQL dump/restore steps, object-storage handling, the
+post-restore verification checklist, and failure/rollback notes, see
+`docs/runbooks/backup-restore-local.md`.
+
 Production backup/restore, WORM audit storage, and disaster recovery drills are future hardening tasks.
 
 ## Non-Scope Reminder
