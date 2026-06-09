@@ -122,6 +122,46 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("VALIDATION_RUN");
   }
 
+  // --- OP-CAP-14A /api/v1/validations review GET requires VALIDATION_READ ---
+
+  @Test
+  void validationRunReviewGetWithValidationReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationRunReviewGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
+  @Test
+  void validationExtractionReviewGetWithValidationReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/extractions/123e4567-e89b-12d3-a456-426614174000/review");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationExtractionReviewGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/extractions/123e4567-e89b-12d3-a456-426614174000/review");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
   // --- OP-CAP-07A /api/v1/ai-work: GET requires REVIEW_READ, mutations require AI_WORK_ACTION ---
 
   @Test
