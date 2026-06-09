@@ -93,6 +93,12 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/extractions") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.EXTRACTION_RUN;
     }
+    // OP-CAP-14C: operator validation-review commands (corrections, issue resolutions, approval
+    // requests) are review-significant actions, not validation-engine triggers — they require
+    // REVIEW_ACTION. Must be checked before the generic VALIDATION_RUN rule below.
+    if (path.startsWith("/api/v1/validations/") && path.contains("/review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
     if (path.startsWith("/api/v1/validations") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.VALIDATION_RUN;
     }

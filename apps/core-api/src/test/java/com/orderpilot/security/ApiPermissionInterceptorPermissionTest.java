@@ -162,6 +162,70 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("VALIDATION_READ");
   }
 
+  // --- OP-CAP-14C /api/v1/validations/{id}/review commands require REVIEW_ACTION (not VALIDATION_RUN) ---
+
+  @Test
+  void validationReviewCorrectionWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/corrections");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewCorrectionWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/corrections");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void validationReviewCorrectionWithValidationRunAloneIsRejected() throws Exception {
+    // VALIDATION_RUN triggers the engine; it must NOT be sufficient for an operator review command.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/corrections");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_RUN");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void validationReviewIssueResolutionWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/issues/abc/resolution");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewApprovalRequestWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/approval-requests");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void validationEngineTriggerStillRequiresValidationRunNotReviewAction() throws Exception {
+    // A non-review validations mutation (advisory handoff) must remain VALIDATION_RUN-guarded.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/advisory-handoff/123e4567-e89b-12d3-a456-426614174000");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_RUN");
+  }
+
   // --- OP-CAP-07A /api/v1/ai-work: GET requires REVIEW_READ, mutations require AI_WORK_ACTION ---
 
   @Test

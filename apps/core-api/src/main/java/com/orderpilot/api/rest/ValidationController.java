@@ -3,6 +3,10 @@ package com.orderpilot.api.rest;
 import com.orderpilot.api.dto.AdvisoryValidationHandoffDtos.AdvisoryValidationHandoffResult;
 import com.orderpilot.api.dto.Stage5Dtos.*;
 import com.orderpilot.api.dto.ValidationReviewDtos.ValidationReviewDetailResponse;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationApprovalRequestCommand;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationIssueResolutionRequest;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewActionResult;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewCorrectionRequest;
 import com.orderpilot.application.services.validation.*;
 import com.orderpilot.domain.validation.*;
 import java.util.List;
@@ -26,9 +30,34 @@ public class ValidationController {
   private final ExtractionValidationService extractionValidationService;
   private final AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService;
   private final ValidationReviewQueryService validationReviewQueryService;
+  private final ValidationReviewCommandService validationReviewCommandService;
 
-  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService, ValidationReviewQueryService validationReviewQueryService) {
-    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService; this.advisoryValidationHandoffService=advisoryValidationHandoffService; this.validationReviewQueryService=validationReviewQueryService;
+  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService, ValidationReviewQueryService validationReviewQueryService, ValidationReviewCommandService validationReviewCommandService) {
+    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService; this.advisoryValidationHandoffService=advisoryValidationHandoffService; this.validationReviewQueryService=validationReviewQueryService; this.validationReviewCommandService=validationReviewCommandService;
+  }
+
+  /**
+   * OP-CAP-14C — operator correction command. Submits a bounded correction for an advisory extracted
+   * field or line item belonging to {@code validationRunId}. Tenant resolved server-side; non-GET under
+   * {@code /api/v1/validations/{id}/review} requires {@code REVIEW_ACTION}. Mutates advisory extraction
+   * rows + review/audit state only — no quote/order/ERP/connector/master-data write. Returns a bounded
+   * action result (no raw payload).
+   */
+  @PostMapping("/{validationRunId}/review/corrections")
+  public ValidationReviewActionResult submitCorrection(@PathVariable UUID validationRunId, @RequestBody ValidationReviewCorrectionRequest request) {
+    return validationReviewCommandService.submitCorrection(validationRunId, request);
+  }
+
+  /** OP-CAP-14C — resolve / ignore / escalate a validation issue (tenant-scoped, state-checked, audited). */
+  @PostMapping("/{validationRunId}/review/issues/{issueId}/resolution")
+  public ValidationReviewActionResult resolveIssue(@PathVariable UUID validationRunId, @PathVariable UUID issueId, @RequestBody ValidationIssueResolutionRequest request) {
+    return validationReviewCommandService.resolveIssue(validationRunId, issueId, request);
+  }
+
+  /** OP-CAP-14C — raise a minimal pending approval request (reuses existing approval infrastructure). */
+  @PostMapping("/{validationRunId}/review/approval-requests")
+  public ValidationReviewActionResult requestApproval(@PathVariable UUID validationRunId, @RequestBody ValidationApprovalRequestCommand request) {
+    return validationReviewCommandService.requestApproval(validationRunId, request);
   }
 
   /**
