@@ -33,11 +33,11 @@ $coreApi     = Join-Path $repoRoot "apps\core-api"
 $env:ORDERPILOT_DB_HOST_PORT      = "$HostPort"
 $env:ORDERPILOT_TEST_DB_HOST_PORT = "$HostPort"
 
-Write-Host "== 1. List OrderPilot Compose resources (scoped, read-only) ==" -ForegroundColor Cyan
+Write-Output "== 1. List OrderPilot Compose resources (scoped, read-only) =="
 docker compose -f $composeFile ps
 docker volume ls --filter "name=orderpilot" --format "  volume: {{.Name}}"
 
-Write-Host "`n== 2. Stop ONLY OrderPilot Compose services + remove ITS orphans ==" -ForegroundColor Cyan
+Write-Output "`n== 2. Stop ONLY OrderPilot Compose services + remove ITS orphans =="
 if ($DestroyVolume) {
   Write-Warning "DestroyVolume set: this removes the local OrderPilot DB volume (LOCAL DB DATA LOSS, OrderPilot only)."
   docker compose -f $composeFile down --remove-orphans --volumes
@@ -45,31 +45,31 @@ if ($DestroyVolume) {
   docker compose -f $composeFile down --remove-orphans
 }
 
-Write-Host "`n== 3. Start ONLY Postgres on host port $HostPort ==" -ForegroundColor Cyan
+Write-Output "`n== 3. Start ONLY Postgres on host port $HostPort =="
 docker compose -f $composeFile up -d postgres
 docker ps --format "table {{.Names}}`t{{.Ports}}" | Select-String "orderpilot-postgres"
 
-Write-Host "`n== 4. Wait for Postgres health ==" -ForegroundColor Cyan
+Write-Output "`n== 4. Wait for Postgres health =="
 for ($i = 0; $i -lt 30; $i++) {
   $health = (docker inspect --format "{{.State.Health.Status}}" $Container) 2>$null
-  if ($health -eq "healthy") { Write-Host "  postgres healthy"; break }
+  if ($health -eq "healthy") { Write-Output "  postgres healthy"; break }
   Start-Sleep -Seconds 2
 }
 
-Write-Host "`n== 5. Verify host port $HostPort is reachable ==" -ForegroundColor Cyan
+Write-Output "`n== 5. Verify host port $HostPort is reachable =="
 $tc = Test-NetConnection localhost -Port $HostPort
 "  TcpTestSucceeded : $($tc.TcpTestSucceeded)"
 
-Write-Host "`n== 6. Reset ONLY $TestDbName (drop + recreate; no other DB touched) ==" -ForegroundColor Cyan
+Write-Output "`n== 6. Reset ONLY $TestDbName (drop + recreate; no other DB touched) =="
 docker exec -i $Container psql -U $DbAdminUser -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$TestDbName';" | Out-Null
 docker exec -i $Container psql -U $DbAdminUser -d postgres -c "DROP DATABASE IF EXISTS $TestDbName;"
 docker exec -i $Container psql -U $DbAdminUser -d postgres -c "CREATE DATABASE $TestDbName OWNER $DbUser;"
 docker exec -i $Container psql -U $DbAdminUser -d $TestDbName -c "ALTER SCHEMA public OWNER TO $DbUser; GRANT USAGE, CREATE ON SCHEMA public TO $DbUser;"
 docker exec -i $Container psql -U $DbUser -d $TestDbName -c "CREATE TABLE __permission_probe(id int); DROP TABLE __permission_probe;"
 
-if ($SkipTest) { Write-Host "`nDone (test skipped)."; return }
+if ($SkipTest) { Write-Output "`nDone (test skipped)."; return }
 
-Write-Host "`n== 7. Run one targeted integration test ($TestClass) ==" -ForegroundColor Cyan
+Write-Output "`n== 7. Run one targeted integration test ($TestClass) =="
 $env:SPRING_DATASOURCE_URL = "jdbc:postgresql://localhost:$HostPort/$TestDbName"
 Push-Location $coreApi
 try {

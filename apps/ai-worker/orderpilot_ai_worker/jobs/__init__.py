@@ -30,6 +30,12 @@ from orderpilot_ai_worker.jobs.models import (
     JobSecurityContext,
     ProviderMetadata,
     ProviderMode,
+    provider_mode_from_env,
+)
+from orderpilot_ai_worker.jobs.provider_factory import (
+    ProviderResolutionError,
+    ResolvedProvider,
+    build_extraction_provider,
 )
 
 __all__ = [
@@ -45,4 +51,8 @@ __all__ = [
     "JobSecurityContext",
     "ProviderMetadata",
     "ProviderMode",
+    "provider_mode_from_env",
+    "ProviderResolutionError",
+    "ResolvedProvider",
+    "build_extraction_provider",
 ]
