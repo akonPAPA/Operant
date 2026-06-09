@@ -1,5 +1,6 @@
 package com.orderpilot.api.rest;
 
+import com.orderpilot.api.dto.AdvisoryValidationHandoffDtos.AdvisoryValidationHandoffResult;
 import com.orderpilot.api.dto.Stage5Dtos.*;
 import com.orderpilot.application.services.validation.*;
 import com.orderpilot.domain.validation.*;
@@ -22,9 +23,23 @@ public class ValidationController {
   private final SubstitutionEngineService substitutionEngineService;
   private final ApprovalRequirementService approvalRequirementService;
   private final ExtractionValidationService extractionValidationService;
+  private final AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService;
 
-  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService) {
-    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService;
+  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService) {
+    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService; this.advisoryValidationHandoffService=advisoryValidationHandoffService;
+  }
+
+  /**
+   * OP-CAP-13B — guarded operator/admin trigger to (re-)run the advisory→deterministic validation
+   * handoff for a persisted AI-worker advisory extraction result. Tenant is resolved server-side
+   * ({@code X-Tenant-Id}); a foreign-tenant result is not found and fails closed. Non-GET under
+   * {@code /api/v1/validations} requires {@code VALIDATION_RUN} via {@code ApiPermissionInterceptor}.
+   * Safe to call repeatedly — the handoff is idempotent. Returns the bounded handoff DTO only (no raw
+   * advisory payload, document text, secrets, or stack traces).
+   */
+  @PostMapping("/advisory-handoff/{extractionResultId}")
+  public AdvisoryValidationHandoffResult advisoryHandoff(@PathVariable UUID extractionResultId) {
+    return advisoryValidationHandoffService.handoff(extractionResultId);
   }
 
   @PostMapping("/runs")

@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +47,11 @@ public class AiWorkerResultIntakeService {
 
   static final Set<String> SUPPORTED_SCHEMA_VERSIONS = Set.of("op-cap-07c.v1");
   static final Set<String> SUPPORTED_STATUSES = Set.of("SUCCEEDED", "NEEDS_REVIEW", "FAILED", "REJECTED");
+
+  // OP-CAP-13B: worker statuses whose persisted advisory result is structurally usable and is
+  // auto-handed-off into deterministic validation. FAILED/REJECTED are intentionally excluded —
+  // they never decompose into business candidates and never run deterministic validation.
+  static final Set<String> HANDOFF_TRIGGER_STATUSES = Set.of("SUCCEEDED", "NEEDS_REVIEW");
   static final Set<String> SUPPORTED_SOURCE_TYPES = Set.of(
       "CHANNEL_MESSAGE", "INBOUND_DOCUMENT", "EMAIL_BODY", "PDF_TEXT", "EXCEL_TEXT", "CSV_TEXT",
       "API_UPLOAD_TEXT", "UNKNOWN");
@@ -59,6 +65,7 @@ public class AiWorkerResultIntakeService {
   private final ProcessingJobRepository processingJobRepository;
   private final ExtractionRunRepository runRepository;
   private final ExtractionResultRepository resultRepository;
+  private final ApplicationEventPublisher eventPublisher;
   private final AuditEventService auditEventService;
   private final JsonSupport json;
   private final Clock clock;
@@ -67,12 +74,14 @@ public class AiWorkerResultIntakeService {
       ProcessingJobRepository processingJobRepository,
       ExtractionRunRepository runRepository,
       ExtractionResultRepository resultRepository,
+      ApplicationEventPublisher eventPublisher,
       AuditEventService auditEventService,
       JsonSupport json,
       Clock clock) {
     this.processingJobRepository = processingJobRepository;
     this.runRepository = runRepository;
     this.resultRepository = resultRepository;
+    this.eventPublisher = eventPublisher;
     this.auditEventService = auditEventService;
     this.json = json;
     this.clock = clock;
@@ -124,6 +133,17 @@ public class AiWorkerResultIntakeService {
 
     auditEventService.record("ai_processing_result.intake_succeeded", "extraction_run",
         run.getId().toString(), null, auditMetadata(request, status));
+
+    // OP-CAP-13B: auto-trigger the advisory→deterministic validation handoff for structurally usable
+    // results. Published as a transaction-bound event so the handoff runs only AFTER this intake
+    // transaction commits (see AdvisoryValidationHandoffTrigger). That keeps the handoff failure
+    // isolated — it can never roll back or corrupt the already-persisted advisory result — and lets
+    // the deterministic validation run read the committed extraction row. FAILED/REJECTED are skipped
+    // (no decomposition, no run); the downstream handoff also independently fails those closed.
+    if (HANDOFF_TRIGGER_STATUSES.contains(status)) {
+      eventPublisher.publishEvent(
+          new AdvisoryValidationHandoffRequested(tenantId, result.getId(), job.getId(), status));
+    }
 
     return new AiProcessingResultIntakeResponse(
         job.getId(), run.getId(), result.getId(), job.getStatus(), run.getStatus(), false, true, now);
