@@ -52,7 +52,7 @@ _SOURCE_TYPE_TO_PIPELINE = {
     AiJobSourceType.UNKNOWN: "unknown",
 }
 
-# ``_PROVIDERS`` is the same dict the provider factory resolves the deterministic (no-arg) modes from,
+# ``_PROVIDERS`` is the same dict the provider factory resolves the deterministic (no-arg) modes from
 # re-exported here so existing job tests can monkeypatch a single mode in place. Provider selection
 # (including the local Ollama runtime, which needs config + transport) goes through
 # ``build_extraction_provider``; see ``jobs.provider_factory``.
