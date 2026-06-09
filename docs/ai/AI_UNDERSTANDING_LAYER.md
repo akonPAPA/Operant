@@ -184,6 +184,17 @@ data**. Core API re-establishes tenant scope and runs deterministic validation: 
 customer/account checks, price/stock/margin guardrails, and substitution rules. AI confidence alone
 approves nothing; the deterministic engine and human approval remain the authority.
 
+## Provider evaluation harness (OP-CAP-12D)
+
+An offline, fixture-driven evaluation/safety harness lives in
+`apps/ai-worker/orderpilot_ai_worker/evaluation/`. It reuses the existing provider factory, pipeline,
+and `ExtractionResult` schema (no second pipeline) to assert — across deterministic and `LOCAL_OLLAMA`
+(fake-transport) cases — that output is schema-valid and advisory-only, that bad/disabled/misconfigured
+providers fail closed with **no partial business data**, that unknown modes refuse to resolve, and that
+prompt injection stays a guarded risk signal. It is **not** a model accuracy benchmark, uses no real
+network / installed model / paid key, and creates no business writes. See
+[`AI_EVALUATION_HARNESS.md`](AI_EVALUATION_HARNESS.md).
+
 ## Safety boundary: AI cannot write business data
 
 - No AI direct writes to quote/order/inventory/customer/price/discount/margin/business tables.

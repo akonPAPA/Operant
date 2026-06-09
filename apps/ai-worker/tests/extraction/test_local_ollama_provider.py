@@ -360,6 +360,27 @@ def test_unsafe_command_like_output_fails_closed() -> None:
     assert exc.value.reason == "local_unsafe_output"
 
 
+@pytest.mark.parametrize(
+    "business_action_key",
+    [
+        "create_order", "approve_quote", "approve_order", "update_inventory", "update_stock",
+        "update_price", "discount_approval", "external_write", "change_request", "place_order",
+    ],
+)
+def test_business_action_key_in_output_fails_closed(business_action_key: str) -> None:
+    """A local model emitting any structured business-mutation key fails closed (OP-CAP-12-FINAL).
+
+    The key may appear at any depth; the worker has no executable business surface, so the attempt is
+    treated as unsafe output rather than silently dropped by schema validation.
+    """
+    unsafe = dict(_VALID_EXTRACTION, suggestions=[{"suggestion_type": "x", business_action_key: {}}])
+    transport = _fake_transport(_ollama_envelope(json.dumps(unsafe)))
+    provider = LocalOllamaExtractionProvider(config=_ready_config(), transport=transport)
+    with pytest.raises(LocalModelError) as exc:
+        provider.extract("Need 2 EA PAD-OE-04465")
+    assert exc.value.reason == "local_unsafe_output"
+
+
 # --- H. prompt injection inside customer text remains a risk signal -----------------------------
 
 def test_prompt_injection_in_input_is_flagged_not_obeyed() -> None:
