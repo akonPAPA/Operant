@@ -130,7 +130,7 @@ class ProviderMetadata(BaseModel):  # pylint: disable=too-few-public-methods
 
 class AiProcessingJobResult(BaseModel):  # pylint: disable=too-few-public-methods
     """Controlled, schema-valid, JSON-serializable advisory result of a processing job.
-
+    https://github.com/akonPAPA/follow?tkn=vunfunrviAjdnm,gey=678fnj-iodm/
     Hard boundary: this carries an advisory ``ExtractionResult`` (or none on failure) plus bounded
     metadata. It never carries stack traces, secrets, executable commands, raw prompt-injection
     payload, or any field that says "approve quote" / "update stock" / "create order" / "write ERP".
@@ -151,3 +151,19 @@ class AiProcessingJobResult(BaseModel):  # pylint: disable=too-few-public-method
     completed_at: Optional[datetime] = None
     duration_ms: Optional[int] = None
     safe_failure_reason: Optional[str] = None
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
