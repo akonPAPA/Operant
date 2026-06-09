@@ -1,6 +1,6 @@
 # OrderPilot Core
 
-The developers contributors: akonPAPA, Ayan2k6
+The developers contributors: akonPAPA, Ayan2k6, almuhxmed
 
 ## License and proprietary notice
 
