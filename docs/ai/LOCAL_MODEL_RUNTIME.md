@@ -107,10 +107,54 @@ advisory failure result) when:
 - the parsed output contains unsafe command/tool/mutation keys (`local_unsafe_output`);
 - the output fails `ExtractionResult` schema validation (`local_output_schema_invalid`).
 
-## Example local configuration (placeholders only — never commit secrets)
+## Provider-mode wiring (OP-CAP-12C)
+
+OP-CAP-12B built the provider but left it unwired. OP-CAP-12C wires it into the AI worker's
+provider selection / job orchestration path **as an explicit opt-in mode**, without changing the
+default. Selection is one fail-closed point:
+
+`apps/ai-worker/orderpilot_ai_worker/jobs/provider_factory.py`
+
+- `ProviderMode` (in `jobs/models.py`) gains `LOCAL_OLLAMA`. `RULE_BASED` stays the default.
+- `provider_mode_from_env()` reads `ORDERPILOT_AI_PROVIDER_MODE`; unknown/blank falls back to
+  `RULE_BASED`. The worker never silently upgrades itself to a model-backed mode.
+- `build_extraction_provider(mode, *, local_config=None, local_transport=None) -> ResolvedProvider`
+  resolves: `RULE_BASED` → `RuleBasedExtractionProvider`, `MOCK_SEMANTIC` →
+  `MockSemanticExtractionProvider`, `LOCAL_OLLAMA` → `LocalOllamaExtractionProvider` built from
+  `LocalModelConfig`. Any unknown/unrunnable mode (e.g. `FUTURE_SEMANTIC`) raises a typed
+  `ProviderResolutionError("unsupported_provider_mode")` — it never guesses or reaches the network.
+- The job security envelope (`jobs/security.py`) allows `LOCAL_OLLAMA` but still rejects
+  `FUTURE_SEMANTIC`.
+
+### How a local runtime is actually reached (double-gated)
+
+Selecting `LOCAL_OLLAMA` is **necessary but not sufficient**:
+
+1. The mode must be selected (env default or per-job `requested_pipeline`).
+2. `LocalModelConfig` must be **ready** — `ORDERPILOT_AI_LOCAL_MODEL_ENABLED=true` **and** an endpoint
+   **and** a model. Only then does the factory build `build_urllib_transport()`.
+
+If the config is not ready, the factory builds the provider with **no transport**, and the provider
+fails closed (`ProviderDisabledError`) at extract time — no network client is ever constructed. The
+pipeline converts that into a controlled advisory failure result (`status = FAILED`,
+`safe_failure_reason = "provider_error"`); no quote/order/business state is created. Tests inject a
+fake transport; production injects the urllib transport. There is **no paid API and no key** on this
+path.
+
+## Example configuration (placeholders only — never commit secrets)
+
+Safe default (deterministic, offline, no network):
 
 ```
+ORDERPILOT_AI_PROVIDER_MODE=RULE_BASED
 ORDERPILOT_AI_LOCAL_MODEL_ENABLED=false
+```
+
+Explicit local opt-in (requires a separately running Ollama-compatible server):
+
+```
+ORDERPILOT_AI_PROVIDER_MODE=LOCAL_OLLAMA
+ORDERPILOT_AI_LOCAL_MODEL_ENABLED=true
 ORDERPILOT_AI_LOCAL_MODEL_ENDPOINT=http://localhost:11434
 ORDERPILOT_AI_LOCAL_MODEL_NAME=<local-model-name>
 ORDERPILOT_AI_LOCAL_MODEL_TIMEOUT_SECONDS=30
@@ -126,17 +170,25 @@ config.
 
 ## Tests
 
-`apps/ai-worker/tests/extraction/test_local_ollama_provider.py` — all use a deterministic in-process
-fake transport (no real network, no installed model): disabled/missing-config fail-closed, successful
-envelope/direct/fenced/noisy parsing, invalid/multiple/oversized/schema-invalid/unsafe output fail
-closed, `advisory_only=false` overridden, prompt-injection-as-risk, timeout/non-2xx fail closed, and
-secret/credential non-leakage (no realistic secret prefixes used).
+`apps/ai-worker/tests/extraction/test_local_ollama_provider.py` (12B) — all use a deterministic
+in-process fake transport (no real network, no installed model): disabled/missing-config fail-closed,
+successful envelope/direct/fenced/noisy parsing, invalid/multiple/oversized/schema-invalid/unsafe
+output fail closed, `advisory_only=false` overridden, prompt-injection-as-risk, timeout/non-2xx fail
+closed, and secret/credential non-leakage (no realistic secret prefixes used).
+
+`apps/ai-worker/tests/extraction/test_local_provider_mode_wiring.py` (12C) — the wiring path: default
+stays `RULE_BASED`/offline; `LOCAL_OLLAMA` disabled / missing endpoint / missing model fail closed
+without any transport call; `LOCAL_OLLAMA` with a fake transport succeeds through both the factory and
+the `process_ai_extraction_job` job path; invalid/`FUTURE_SEMANTIC` modes fail closed without network;
+prompt-injection and schema-invalid output stay safe through the wired path; no paid key / no
+Authorization header; endpoint-userinfo credentials never leak through factory provenance.
 
 ## Known limitations
 
 - The local model is **untrusted** and advisory only; confidence ≠ business approval.
-- Provider selection is **not yet wired** into job orchestration (deferred to a later slice); use the
-  provider directly or construct it with config + transport. It is disabled/fail-closed by default.
+- Provider selection is wired at the factory + `process_ai_extraction_job` level. Broader scheduling
+  (queue routing, per-tenant model policy) is out of scope for this slice; the mode is opt-in and
+  disabled/fail-closed by default.
 - No real model is exercised in CI; production needs a running local runtime and an injected transport
   (`build_urllib_transport()` or a deployment-specific client).
 - OCR/PDF remains text-input based; semantic SKU/fitment matching is advisory — deterministic Core API

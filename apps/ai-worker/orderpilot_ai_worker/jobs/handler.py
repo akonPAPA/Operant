@@ -18,11 +18,6 @@ import time
 from datetime import datetime, timezone
 
 from orderpilot_ai_worker.extraction.pipeline import ExtractionInput, SemanticExtractionPipeline
-from orderpilot_ai_worker.extraction.providers.rule_based import RuleBasedExtractionProvider
-from orderpilot_ai_worker.extraction.providers.semantic_extraction import (
-    MockSemanticExtractionProvider,
-    SemanticExtractionProvider,
-)
 from orderpilot_ai_worker.extraction.schemas.extraction import ExtractionResult
 from orderpilot_ai_worker.jobs.models import (
     AiJobSourceType,
@@ -30,8 +25,12 @@ from orderpilot_ai_worker.jobs.models import (
     AiProcessingJobRequest,
     AiProcessingJobResult,
     ProviderMetadata,
-    ProviderMode,
 )
+from orderpilot_ai_worker.jobs.provider_factory import (
+    ProviderResolutionError,
+    build_extraction_provider,
+)
+from orderpilot_ai_worker.jobs.provider_factory import _SIMPLE_PROVIDERS as _PROVIDERS
 from orderpilot_ai_worker.jobs.security import JobRejected, validate_job_envelope
 
 _LOGGER = logging.getLogger("orderpilot.ai_worker.jobs")
@@ -53,10 +52,10 @@ _SOURCE_TYPE_TO_PIPELINE = {
     AiJobSourceType.UNKNOWN: "unknown",
 }
 
-_PROVIDERS: dict[ProviderMode, tuple[type[SemanticExtractionProvider], str, str]] = {
-    ProviderMode.RULE_BASED: (RuleBasedExtractionProvider, "rule-based-understanding", "rule-based-v1"),
-    ProviderMode.MOCK_SEMANTIC: (MockSemanticExtractionProvider, "mock-semantic", "mock-v1"),
-}
+# ``_PROVIDERS`` is the same dict the provider factory resolves the deterministic (no-arg) modes from,
+# re-exported here so existing job tests can monkeypatch a single mode in place. Provider selection
+# (including the local Ollama runtime, which needs config + transport) goes through
+# ``build_extraction_provider``; see ``jobs.provider_factory``.
 
 
 def process_ai_extraction_job(request: AiProcessingJobRequest) -> AiProcessingJobResult:
@@ -74,8 +73,16 @@ def process_ai_extraction_job(request: AiProcessingJobRequest) -> AiProcessingJo
             safe_failure_reason=rejected.reason,
         )
 
-    provider_cls, provider_name, provider_version = _PROVIDERS[request.requested_pipeline]
-    pipeline = SemanticExtractionPipeline(provider=provider_cls())
+    # Resolve the requested provider mode to a constructed advisory provider. The envelope check above
+    # already rejects modes the worker cannot run; this is defense-in-depth and fails closed safely if
+    # a mode is somehow unresolvable (e.g. a future placeholder), without reaching any network.
+    try:
+        resolved = build_extraction_provider(request.requested_pipeline)
+    except ProviderResolutionError as unresolved:
+        result = _base_result(request, AiJobStatus.FAILED, started_at)
+        return _finalize(result, started_perf, warnings=[], safe_failure_reason=unresolved.reason)
+
+    pipeline = SemanticExtractionPipeline(provider=resolved.provider)
 
     pipeline_input = ExtractionInput(
         source_type=_SOURCE_TYPE_TO_PIPELINE[request.source_type],
@@ -98,8 +105,8 @@ def process_ai_extraction_job(request: AiProcessingJobRequest) -> AiProcessingJo
     result.extraction_result = extraction
     result.prompt_injection_signals = list(extraction.prompt_injection_signals)
     result.provider_metadata = ProviderMetadata(
-        provider_name=provider_name,
-        provider_version=provider_version,
+        provider_name=resolved.provider_name,
+        provider_version=resolved.provider_version,
         schema_version=extraction.schema_version,
         mode=request.requested_pipeline,
     )

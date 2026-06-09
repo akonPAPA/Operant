@@ -84,6 +84,24 @@ re-validated through the same `ExtractionResult` schema. See
 [`LOCAL_MODEL_RUNTIME.md`](LOCAL_MODEL_RUNTIME.md) for configuration, request/response handling, and
 fail-closed cases.
 
+### Provider-mode selection (OP-CAP-12C)
+
+Provider selection is one fail-closed point — `jobs/provider_factory.build_extraction_provider(mode)`
+— used by `process_ai_extraction_job`. `ProviderMode` (`jobs/models.py`) is
+`RULE_BASED` (default), `MOCK_SEMANTIC`, and `LOCAL_OLLAMA`; `FUTURE_SEMANTIC` stays a non-runnable
+placeholder rejected by the security envelope. The worker default comes from
+`provider_mode_from_env()` reading `ORDERPILOT_AI_PROVIDER_MODE`, falling back to `RULE_BASED` for
+unknown/blank — it never silently upgrades to a model-backed mode.
+
+`LOCAL_OLLAMA` is **explicit opt-in and double-gated**: the mode must be chosen *and*
+`LocalModelConfig` must be ready (`ORDERPILOT_AI_LOCAL_MODEL_ENABLED=true` + endpoint + model) before
+the factory builds the urllib transport. Otherwise the provider is constructed with no transport and
+fails closed (`ProviderDisabledError`) with no network client built; the pipeline turns that into a
+controlled `FAILED`/`provider_error` advisory result — no business state is created. An unknown mode
+raises a typed `ProviderResolutionError` rather than reaching the network. No paid API or key is
+involved. This wiring does **not** change Core API deterministic-validation authority. See
+[`LOCAL_MODEL_RUNTIME.md`](LOCAL_MODEL_RUNTIME.md#provider-mode-wiring-op-cap-12c).
+
 ### Mock vs real provider behavior
 
 - **Mock / rule-based:** fully deterministic, no network, no key. Recognizes OP-CAP-11I scripted
@@ -189,9 +207,10 @@ approves nothing; the deterministic engine and human approval remain the authori
 
 ## Next steps for production LLM/OCR
 
-1. Wire provider selection (job `ProviderMode` / config) to `LocalOllamaExtractionProvider` and
-   `ConfigurableLlmExtractionProvider`, supplying config + transport at construction (deferred to a
-   later slice to avoid broad job-orchestration changes). Both already fail closed.
+1. Provider selection for `LocalOllamaExtractionProvider` is wired (OP-CAP-12C):
+   `ProviderMode.LOCAL_OLLAMA` via `jobs/provider_factory.build_extraction_provider`, opt-in and
+   fail-closed. `ConfigurableLlmExtractionProvider` remains an unwired fail-closed seam; wiring it (if
+   ever) would follow the same factory pattern with config + injected transport.
 2. For a paid/hosted provider, implement a concrete `transport` for
    `ConfigurableLlmExtractionProvider` (HTTPS + service-managed key, out of band) behind its
    fail-closed config.
