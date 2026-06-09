@@ -37,6 +37,13 @@ _SCHEMA_INVALID_LOCAL = {
     "line_items": "should-be-a-list",
 }
 
+# A structured business-mutation key the model must never be able to surface as an executable action.
+_ACTION_SURFACE_LOCAL = {
+    "detected_intent": "RFQ",
+    "overall_confidence": 0.6,
+    "suggestions": [{"suggestion_type": "x", "create_order": {"sku": "PAD-OE-04465"}}],
+}
+
 
 def default_evaluation_cases() -> List[EvaluationCase]:
     """Return the deterministic offline evaluation suite."""
@@ -130,6 +137,20 @@ def default_evaluation_cases() -> List[EvaluationCase]:
             local_endpoint=_LOCAL_ENDPOINT,
             local_model=_LOCAL_MODEL,
             local_response_body=_ollama_envelope(_SCHEMA_INVALID_LOCAL),
+            expected=ExpectedExtraction(
+                expect_controlled_failure=True, expect_transport_called=True
+            ),
+        ),
+        EvaluationCase(
+            case_id="local_business_action_surface_rejected",
+            description="LOCAL_OLLAMA emits a structured business-action key -> fail closed, no surface.",
+            source_type="message",
+            raw_text="Need 2 EA PAD-OE-04465",
+            provider_mode=ProviderMode.LOCAL_OLLAMA,
+            local_enabled=True,
+            local_endpoint=_LOCAL_ENDPOINT,
+            local_model=_LOCAL_MODEL,
+            local_response_body=_ollama_envelope(_ACTION_SURFACE_LOCAL),
             expected=ExpectedExtraction(
                 expect_controlled_failure=True, expect_transport_called=True
             ),

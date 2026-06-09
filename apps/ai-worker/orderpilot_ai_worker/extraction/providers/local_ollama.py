@@ -51,11 +51,16 @@ DEFAULT_MAX_PROMPT_CHARS = 20_000
 DEFAULT_MAX_RESPONSE_CHARS = 200_000
 
 # Keys that must never appear (at any depth) in untrusted model output. Mirrors the handoff guard's
-# forbidden surface: the model may describe, never command/execute/mutate.
+# forbidden surface: the model may describe, never command/execute/mutate. OP-CAP-12-FINAL adds the
+# explicit business-mutation keys so a local model that tries to emit a structured order/quote/stock/
+# price/ERP action fails closed rather than having the key silently dropped by schema validation.
 _UNSAFE_KEYS = frozenset(
     {
         "action", "command", "approve", "approved", "execute", "write", "mutation", "sql",
         "erp_write", "tool", "tool_call", "tool_calls", "function_call", "shell", "exec",
+        "create_order", "create_quote", "approve_order", "approve_quote", "place_order",
+        "update_inventory", "update_stock", "update_price", "change_price", "discount_approval",
+        "external_write", "change_request",
     }
 )
 

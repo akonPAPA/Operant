@@ -32,10 +32,14 @@ from orderpilot_ai_worker.jobs.provider_factory import (
 
 # JSON *key* tokens that would indicate an executable/command/tool/mutation surface leaking into an
 # advisory result. The ExtractionResult schema has no such fields by design; this is a defense-in-depth
-# regression check so a future provider/schema change cannot silently introduce one.
+# regression check so a future provider/schema change cannot silently introduce one. Kept in sync with
+# the local provider's pre-validation denylist (local_ollama._UNSAFE_KEYS) for the business-action keys.
 _FORBIDDEN_ACTION_KEYS = (
     '"action"', '"command"', '"approve"', '"approved"', '"execute"', '"erp_write"',
     '"sql"', '"tool_call"', '"tool_calls"', '"function_call"', '"shell"', '"exec"',
+    '"create_order"', '"create_quote"', '"approve_order"', '"approve_quote"', '"place_order"',
+    '"update_inventory"', '"update_stock"', '"update_price"', '"discount_approval"',
+    '"external_write"', '"change_request"',
 )
 
 
