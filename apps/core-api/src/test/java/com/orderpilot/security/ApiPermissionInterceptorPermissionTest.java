@@ -101,6 +101,27 @@ class ApiPermissionInterceptorPermissionTest {
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
+  // --- OP-CAP-13B /api/v1/validations advisory handoff trigger requires VALIDATION_RUN ---
+
+  @Test
+  void advisoryHandoffPostWithValidationRunSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/advisory-handoff/123e4567-e89b-12d3-a456-426614174000");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_RUN");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void advisoryHandoffPostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/advisory-handoff/123e4567-e89b-12d3-a456-426614174000");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_RUN");
+  }
+
   // --- OP-CAP-07A /api/v1/ai-work: GET requires REVIEW_READ, mutations require AI_WORK_ACTION ---
 
   @Test
