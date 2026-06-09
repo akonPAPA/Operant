@@ -1,5 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { ValidationReviewDetailView } from "@/components/validation-review-detail";
+import { ValidationReviewActionsClient } from "@/components/validation-review-actions";
 import { getValidationReviewByRun } from "@/lib/validation-review-detail-api";
 
 // OP-CAP-14B — read-only operator validation review workspace.
@@ -18,7 +19,10 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
         </section>
       ) : null}
       {review.data ? (
-        <ValidationReviewDetailView detail={review.data} />
+        <>
+          <ValidationReviewDetailView detail={review.data} />
+          <ValidationReviewActionsClient detail={review.data} />
+        </>
       ) : !review.error ? (
         <section className="panel">
           <p className="muted-copy">No validation review is available for run {id}.</p>
