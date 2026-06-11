@@ -7,6 +7,7 @@ public interface DraftQuoteRepository extends JpaRepository<DraftQuote, UUID> {
   @Lock(LockModeType.PESSIMISTIC_WRITE) Optional<DraftQuote> findWithLockByIdAndTenantId(UUID id, UUID tenantId);
   Optional<DraftQuote> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
   Optional<DraftQuote> findFirstByTenantIdAndSourceExceptionCaseIdOrderByCreatedAtAsc(UUID tenantId, UUID sourceExceptionCaseId);
+  Optional<DraftQuote> findFirstByTenantIdAndSourceValidationRunIdOrderByCreatedAtAsc(UUID tenantId, UUID sourceValidationRunId);
   List<DraftQuote> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, String status);
   List<DraftQuote> findByTenantIdAndSourceTypeOrderByCreatedAtDesc(UUID tenantId, String sourceType);
   List<DraftQuote> findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDesc(UUID tenantId, String status, String sourceType);

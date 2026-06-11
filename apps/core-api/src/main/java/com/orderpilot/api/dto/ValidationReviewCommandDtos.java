@@ -1,6 +1,7 @@
 package com.orderpilot.api.dto;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -78,6 +79,80 @@ public final class ValidationReviewCommandDtos {
       String requirementType,
       String reason,
       UUID actorUserId) {}
+
+  /** Maximum length of an operator note attached at draft creation. */
+  public static final int MAX_OPERATOR_NOTE = 1000;
+
+  /**
+   * OP-CAP-15B — bounded request for creating an internal draft from a validation review.
+   *
+   * @param actorUserId optional actor (audit metadata)
+   * @param selectedLineIds optional subset of extracted line item ids; {@code null}/omitted = all
+   *     eligible validated lines (OP-CAP-15A behavior); an explicit empty list is rejected (400)
+   * @param operatorNote optional bounded operator note (trimmed, max {@value #MAX_OPERATOR_NOTE})
+   */
+  public record ValidationReviewDraftRequest(
+      UUID actorUserId,
+      List<UUID> selectedLineIds,
+      String operatorNote) {}
+
+  /**
+   * OP-CAP-15B — bounded read-only draft visibility for a validation review. Internal draft only.
+   *
+   * @param exists whether a draft already exists for this validation run
+   * @param draftType QUOTE / ORDER / null
+   * @param draftId the existing draft id, or null
+   * @param workspacePath frontend route to the existing draft, or null
+   * @param sourceValidationRunId the validation run this status was queried for
+   * @param sourceExceptionCaseId the source case behind the draft, or null
+   * @param lineCount draft line count when a draft exists, else 0
+   * @param createdAt draft creation timestamp, or null
+   * @param externalExecution always DISABLED
+   */
+  public record ValidationReviewDraftStatus(
+      boolean exists,
+      String draftType,
+      UUID draftId,
+      String workspacePath,
+      UUID sourceValidationRunId,
+      UUID sourceExceptionCaseId,
+      int lineCount,
+      Instant createdAt,
+      String externalExecution) {}
+
+  /**
+   * OP-CAP-15A — bounded result of creating an internal Draft Quote / Draft Order from a validation
+   * review. Internal draft only: never a final/approved order, never an ERP/1C/connector write.
+   * {@code externalExecution} is always {@code DISABLED}.
+   *
+   * @param draftId the created (or idempotently existing) internal draft id
+   * @param draftType QUOTE or ORDER
+   * @param draftStatus bounded draft status token
+   * @param sourceReviewId the source validation run the draft was prepared from
+   * @param createdLineCount number of draft lines built from the validated review
+   * @param unresolvedBlockingIssueCount open CRITICAL/ERROR validation issues on the run
+   * @param unresolvedWarningIssueCount open WARNING validation issues on the run
+   * @param approvalRequired true when an open approval requirement exists on the run
+   * @param created true when this call created the draft
+   * @param alreadyExisted true when an idempotent replay returned the existing draft
+   * @param externalExecution always DISABLED
+   * @param nextAction declarative next-action hint
+   * @param nextRoute frontend route to the created draft, when one exists
+   */
+  public record ValidationReviewDraftResult(
+      UUID draftId,
+      String draftType,
+      String draftStatus,
+      UUID sourceReviewId,
+      int createdLineCount,
+      int unresolvedBlockingIssueCount,
+      int unresolvedWarningIssueCount,
+      boolean approvalRequired,
+      boolean created,
+      boolean alreadyExisted,
+      String externalExecution,
+      String nextAction,
+      String nextRoute) {}
 
   /**
    * Bounded result of a validation-review command. Carries ids, action/decision status, approval flag
