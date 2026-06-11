@@ -105,10 +105,32 @@ public class DraftCommandPreparationService {
    */
   @Transactional
   public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId) {
+    return prepareDraft(reviewCaseId, actorId, null);
+  }
+
+  /**
+   * OP-CAP-15A: same idempotent, readiness-gated, audited internal draft preparation, but with an
+   * operator-chosen target type ({@code QUOTE}/{@code ORDER}). A null/blank {@code requestedType}
+   * falls back to the conservative document-intent mapping used by OP-CAP-09A. No final/approved
+   * order, no external/ERP write.
+   */
+  @Transactional
+  public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId, String requestedType) {
+    return prepareDraft(reviewCaseId, actorId, requestedType, null, null);
+  }
+
+  /**
+   * OP-CAP-15B: same idempotent, readiness-gated, audited preparation, with an optional selected-line
+   * subset (by extracted line item id; null = all eligible lines, validated by the caller) and a bounded
+   * operator note. Selection narrows the included lines but never relaxes run-level readiness gating.
+   */
+  @Transactional
+  public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId, String requestedType, Set<UUID> selectedLineIds, String operatorNote) {
     UUID tenantId = TenantContext.requireTenantId();
     ExceptionCase reviewCase = caseRepository.findByIdAndTenantId(reviewCaseId, tenantId).orElseThrow();
 
-    // Idempotency: a single internal draft per (tenant, source handoff). Return the existing draft without re-creating.
+    // Idempotency: a single internal draft per (tenant, source handoff). Return the existing draft without re-creating
+    // (selected lines / operator note of a replay are ignored — the original draft is authoritative).
     Optional<DraftQuote> existingQuote = draftQuoteRepository.findFirstByTenantIdAndSourceExceptionCaseIdOrderByCreatedAtAsc(tenantId, reviewCaseId);
     if (existingQuote.isPresent()) {
       return alreadyPrepared("QUOTE", existingQuote.get().getId(), existingQuote.get().getStatus(), reviewCase, actorId);
@@ -118,17 +140,31 @@ public class DraftCommandPreparationService {
       return alreadyPrepared("ORDER", existingOrder.get().getId(), existingOrder.get().getStatus(), reviewCase, actorId);
     }
 
-    // Conservative intent mapping (fail closed on unknown/unsupported intent).
-    String draftType = resolveDraftType(reviewCase, tenantId);
+    // Operator-chosen type when provided; otherwise conservative intent mapping (fail closed on unknown/unsupported intent).
+    String draftType = normalizeRequestedDraftType(requestedType);
+    if (draftType == null) {
+      draftType = resolveDraftType(reviewCase, tenantId);
+    }
     // Reuse the validation/review readiness gate (DRAFT_PREPARATION_READY analog; BLOCKED/FAILED fail closed).
     ensureAllowed(reviewCase, actorId, "QUOTE".equals(draftType) ? "DRAFT_QUOTE" : "DRAFT_ORDER");
 
     if ("QUOTE".equals(draftType)) {
-      DraftQuote quote = draftQuoteService.createFromValidation(reviewCase.getValidationRunId(), reviewCase.getId());
+      DraftQuote quote = draftQuoteService.createFromValidation(reviewCase.getValidationRunId(), reviewCase.getId(), selectedLineIds, operatorNote);
       return prepared("QUOTE", quote.getId(), quote.getStatus(), reviewCase, actorId);
     }
-    DraftOrder order = draftOrderService.createFromValidation(reviewCase.getValidationRunId(), reviewCase.getId());
+    DraftOrder order = draftOrderService.createFromValidation(reviewCase.getValidationRunId(), reviewCase.getId(), selectedLineIds, operatorNote);
     return prepared("ORDER", order.getId(), order.getStatus(), reviewCase, actorId);
+  }
+
+  private String normalizeRequestedDraftType(String requestedType) {
+    if (requestedType == null || requestedType.isBlank()) {
+      return null;
+    }
+    String type = requestedType.trim().toUpperCase(java.util.Locale.ROOT);
+    if (!"QUOTE".equals(type) && !"ORDER".equals(type)) {
+      throw new IllegalArgumentException("Unsupported draft target type: " + requestedType);
+    }
+    return type;
   }
 
   private String resolveDraftType(ExceptionCase reviewCase, UUID tenantId) {

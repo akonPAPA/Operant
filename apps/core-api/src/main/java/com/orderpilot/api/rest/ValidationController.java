@@ -7,6 +7,9 @@ import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationApprovalRequ
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationIssueResolutionRequest;
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewActionResult;
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewCorrectionRequest;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftResult;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftRequest;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftStatus;
 import com.orderpilot.application.services.validation.*;
 import com.orderpilot.domain.validation.*;
 import java.util.List;
@@ -31,9 +34,50 @@ public class ValidationController {
   private final AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService;
   private final ValidationReviewQueryService validationReviewQueryService;
   private final ValidationReviewCommandService validationReviewCommandService;
+  private final ValidationReviewDraftCommandService validationReviewDraftCommandService;
 
-  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService, ValidationReviewQueryService validationReviewQueryService, ValidationReviewCommandService validationReviewCommandService) {
-    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService; this.advisoryValidationHandoffService=advisoryValidationHandoffService; this.validationReviewQueryService=validationReviewQueryService; this.validationReviewCommandService=validationReviewCommandService;
+  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService, ValidationReviewQueryService validationReviewQueryService, ValidationReviewCommandService validationReviewCommandService, ValidationReviewDraftCommandService validationReviewDraftCommandService) {
+    this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService; this.advisoryValidationHandoffService=advisoryValidationHandoffService; this.validationReviewQueryService=validationReviewQueryService; this.validationReviewCommandService=validationReviewCommandService; this.validationReviewDraftCommandService=validationReviewDraftCommandService;
+  }
+
+  /**
+   * OP-CAP-15A/15B — create an internal Draft Quote from a validation run review. Tenant resolved
+   * server-side; non-GET under {@code /api/v1/validations/{id}/review} requires {@code REVIEW_ACTION}.
+   * Readiness-gated (open blocking issues fail closed with 409), idempotent per source review, audited.
+   * Optional {@code selectedLineIds} (subset of validated lines) and bounded {@code operatorNote}.
+   * Creates an internal draft only — no final/approved order and no ERP/1C/connector write.
+   */
+  @PostMapping("/{validationRunId}/review/draft-quote")
+  public ValidationReviewDraftResult createDraftQuote(@PathVariable UUID validationRunId, @RequestBody(required = false) ValidationReviewDraftRequest request) {
+    return validationReviewDraftCommandService.createDraftQuote(validationRunId, actor(request), selectedLines(request), note(request));
+  }
+
+  /** OP-CAP-15A/15B — create an internal Draft Order from a validation run review (same gates/idempotency/audit). */
+  @PostMapping("/{validationRunId}/review/draft-order")
+  public ValidationReviewDraftResult createDraftOrder(@PathVariable UUID validationRunId, @RequestBody(required = false) ValidationReviewDraftRequest request) {
+    return validationReviewDraftCommandService.createDraftOrder(validationRunId, actor(request), selectedLines(request), note(request));
+  }
+
+  /**
+   * OP-CAP-15B — read-only draft visibility for the validation review surface. GET under
+   * {@code /api/v1/validations} requires {@code VALIDATION_READ}. Tenant-scoped; a foreign-tenant run
+   * returns 404. Returns whether a draft already exists with a bounded link/type/id (no write, no audit).
+   */
+  @GetMapping("/{validationRunId}/review/draft-status")
+  public ValidationReviewDraftStatus draftStatus(@PathVariable UUID validationRunId) {
+    return validationReviewDraftCommandService.draftStatus(validationRunId);
+  }
+
+  private UUID actor(ValidationReviewDraftRequest request) {
+    return request == null ? null : request.actorUserId();
+  }
+
+  private java.util.List<UUID> selectedLines(ValidationReviewDraftRequest request) {
+    return request == null ? null : request.selectedLineIds();
+  }
+
+  private String note(ValidationReviewDraftRequest request) {
+    return request == null ? null : request.operatorNote();
   }
 
   /**

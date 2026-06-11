@@ -215,6 +215,57 @@ class ApiPermissionInterceptorPermissionTest {
   }
 
   @Test
+  void validationReviewDraftQuoteWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draft-quote");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewDraftOrderWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draft-order");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void validationReviewDraftStatusGetWithValidationReadSucceeds() throws Exception {
+    // OP-CAP-15B: draft-status is a read — GET under /api/v1/validations requires VALIDATION_READ.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draft-status");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewDraftStatusGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draft-status");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
+  @Test
+  void validationReviewDraftQuoteWithValidationRunAloneIsRejected() throws Exception {
+    // VALIDATION_RUN (engine trigger) must NOT be sufficient to create a draft from a review.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draft-quote");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_RUN");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
   void validationEngineTriggerStillRequiresValidationRunNotReviewAction() throws Exception {
     // A non-review validations mutation (advisory handoff) must remain VALIDATION_RUN-guarded.
     MockHttpServletRequest req = new MockHttpServletRequest(
