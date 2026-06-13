@@ -8,7 +8,7 @@
 // no faked local completion. No raw AI payload / document body / prompt / secret is rendered or edited.
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ValidationReviewDetail } from "@/lib/validation-review-detail-api";
 import {
   requestValidationReviewApproval,
@@ -34,17 +34,48 @@ export function ValidationReviewActionsClient({ detail }: Readonly<{ detail: Val
   const router = useRouter();
   const validationRunId = detail.validationRun.validationRunId;
 
+  // OP-CAP-15E — deep-target preselection from a remediation link's search params. Ids are advisory UX
+  // only: they are accepted ONLY when they match a row already present in the tenant-scoped review detail,
+  // so a malformed or foreign id simply does not preselect (no crash, no bypass). The backend command stays
+  // the final authority on every submit.
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const rawIssueId = searchParams.get("reviewActionIssueId");
+  const rawLineItemId = searchParams.get("reviewActionLineItemId");
+  const reviewActionType = searchParams.get("reviewActionType");
+  const targetIssueId = rawIssueId && detail.issues.some((i) => i.issueId === rawIssueId) ? rawIssueId : null;
+  const targetLineItemId = rawLineItemId && detail.lineItems.some((l) => l.lineItemId === rawLineItemId) ? rawLineItemId : null;
+
+  // OP-CAP-15F — post-remediation continuity. After a successful action that was deep-targeted at a line
+  // (15E), put a narrow return-to-draft marker in the URL (search params carry metadata; the hash only
+  // scrolls back to the draft controls) and keep the existing router.refresh() so review data and
+  // draftability reload from the backend. With no deep-target line, behavior is exactly as before.
+  function applied() {
+    if (targetLineItemId) {
+      const params = new URLSearchParams();
+      params.set("reviewReturnToDraft", "1");
+      params.set("reviewReturnLineItemId", targetLineItemId);
+      params.set("reviewReturnReason", "remediation-completed");
+      router.replace(`${pathname}?${params.toString()}#validation-review-draft-controls`);
+    }
+    router.refresh();
+  }
+
   return (
-    <section className="panel action-panel">
+    // id anchor lets OP-CAP-15D/15E draftability remediation links jump straight to these existing controls.
+    <section className="panel action-panel" id="operator-review-actions">
       <h2>Operator review actions</h2>
       <p className="risk-note">
         Actions are applied through the permissioned Core command service (REVIEW_ACTION). They correct
         advisory extraction rows and review state only — no quote/order, ERP/1C, connector or master-data
         write. The view refreshes from the backend after each accepted action.
       </p>
-      <CorrectionForm detail={detail} validationRunId={validationRunId} onApplied={() => router.refresh()} />
-      <IssueResolutionControls detail={detail} validationRunId={validationRunId} onApplied={() => router.refresh()} />
-      <ApprovalRequestControl detail={detail} validationRunId={validationRunId} onApplied={() => router.refresh()} />
+      {/* OP-CAP-15E — keying on the deep-target re-mounts the control with the preselected target when a
+          new remediation link is clicked (idiomatic "reset uncontrolled state via key"); with no target the
+          key is stable so manual operator selection persists. */}
+      <CorrectionForm key={`corr-${reviewActionType ?? ""}-${targetLineItemId ?? ""}`} detail={detail} validationRunId={validationRunId} onApplied={applied} targetLineItemId={targetLineItemId} reviewActionType={reviewActionType} />
+      <IssueResolutionControls key={`issue-${targetIssueId ?? ""}`} detail={detail} validationRunId={validationRunId} onApplied={applied} targetIssueId={targetIssueId} />
+      <ApprovalRequestControl key={`appr-${reviewActionType ?? ""}-${targetLineItemId ?? ""}`} detail={detail} validationRunId={validationRunId} onApplied={applied} targetLineItemId={targetLineItemId} reviewActionType={reviewActionType} />
     </section>
   );
 }
@@ -52,10 +83,14 @@ export function ValidationReviewActionsClient({ detail }: Readonly<{ detail: Val
 function CorrectionForm({
   detail,
   validationRunId,
-  onApplied
-}: Readonly<{ detail: ValidationReviewDetail; validationRunId: string; onApplied: () => void }>) {
-  const [targetType, setTargetType] = useState<"FIELD" | "LINE_ITEM">("FIELD");
-  const [targetId, setTargetId] = useState("");
+  onApplied,
+  targetLineItemId,
+  reviewActionType
+}: Readonly<{ detail: ValidationReviewDetail; validationRunId: string; onApplied: () => void; targetLineItemId?: string | null; reviewActionType?: string | null }>) {
+  // OP-CAP-15E — a CORRECT_LINE remediation deep-link preselects the line-item target here.
+  const lineTargeted = reviewActionType === "CORRECT_LINE" && !!targetLineItemId;
+  const [targetType, setTargetType] = useState<"FIELD" | "LINE_ITEM">(lineTargeted ? "LINE_ITEM" : "FIELD");
+  const [targetId, setTargetId] = useState(lineTargeted ? targetLineItemId! : "");
   const [correctedValue, setCorrectedValue] = useState("");
   const [correctedQuantity, setCorrectedQuantity] = useState("");
   const [correctedUom, setCorrectedUom] = useState("");
@@ -159,9 +194,11 @@ function CorrectionForm({
 function IssueResolutionControls({
   detail,
   validationRunId,
-  onApplied
-}: Readonly<{ detail: ValidationReviewDetail; validationRunId: string; onApplied: () => void }>) {
-  const [issueId, setIssueId] = useState("");
+  onApplied,
+  targetIssueId
+}: Readonly<{ detail: ValidationReviewDetail; validationRunId: string; onApplied: () => void; targetIssueId?: string | null }>) {
+  // OP-CAP-15E — a RESOLVE_ISSUE / VIEW_ISSUE remediation deep-link preselects the issue target here.
+  const [issueId, setIssueId] = useState(targetIssueId ?? "");
   const [reason, setReason] = useState("");
   const [state, setState] = useState<ActionState>(IDLE);
   const submitting = state.status === "loading";
@@ -221,9 +258,13 @@ function IssueResolutionControls({
 function ApprovalRequestControl({
   detail,
   validationRunId,
-  onApplied
-}: Readonly<{ detail: ValidationReviewDetail; validationRunId: string; onApplied: () => void }>) {
-  const [lineItemId, setLineItemId] = useState("");
+  onApplied,
+  targetLineItemId,
+  reviewActionType
+}: Readonly<{ detail: ValidationReviewDetail; validationRunId: string; onApplied: () => void; targetLineItemId?: string | null; reviewActionType?: string | null }>) {
+  // OP-CAP-15E — a REQUEST_APPROVAL remediation deep-link preselects the (optional) line target here.
+  const approvalTargeted = reviewActionType === "REQUEST_APPROVAL" && !!targetLineItemId;
+  const [lineItemId, setLineItemId] = useState(approvalTargeted ? targetLineItemId! : "");
   const [reason, setReason] = useState("");
   const [state, setState] = useState<ActionState>(IDLE);
   const submitting = state.status === "loading";
