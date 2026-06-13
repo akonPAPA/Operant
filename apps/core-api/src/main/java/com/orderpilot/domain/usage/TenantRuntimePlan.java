@@ -62,6 +62,28 @@ public class TenantRuntimePlan {
     this.updatedAt = now;
   }
 
+  /**
+   * OP-CAP-16I/16J: controlled in-place update of the mutable fields (status + effective window).
+   * Null {@code status}/{@code effectiveFrom} are ignored (leave-unchanged partial update). The
+   * effective-until edge uses explicit patch semantics: when {@code setEffectiveUntil} is {@code
+   * true} the field is assigned the given value (a {@code null} value clears it back to open-ended);
+   * when {@code false} the existing value is left unchanged. Identity, tenant, plan code and creation
+   * timestamp are immutable.
+   */
+  public void applyUpdate(
+      TenantRuntimePlanStatus status, Instant effectiveFrom, boolean setEffectiveUntil, Instant effectiveUntil, Instant now) {
+    if (status != null) {
+      this.status = status;
+    }
+    if (effectiveFrom != null) {
+      this.effectiveFrom = effectiveFrom;
+    }
+    if (setEffectiveUntil) {
+      this.effectiveUntil = effectiveUntil;
+    }
+    this.updatedAt = now;
+  }
+
   /** Active = ACTIVE status and {@code now} within {@code [effectiveFrom, effectiveUntil)}. */
   public boolean isActiveAt(Instant now) {
     if (status != TenantRuntimePlanStatus.ACTIVE) {

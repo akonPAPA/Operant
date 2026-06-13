@@ -35,7 +35,8 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/pilot", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ),
-      Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ)
+      Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ),
+      Map.entry("/api/v1/runtime", ApiPermission.RUNTIME_ENTITLEMENT_READ)
   );
 
   public ApiPermissionInterceptor(ApiPermissionGuard guard) {
@@ -69,6 +70,11 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     }
     if (path.startsWith("/api/v1/ai-work") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_WORK_ACTION;
+    }
+    // OP-CAP-16I: runtime governance commands (plan/feature mutations) require the dedicated manage
+    // permission; reads fall through to RUNTIME_ENTITLEMENT_READ via the prefix map below.
+    if (path.startsWith("/api/v1/runtime") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.RUNTIME_ENTITLEMENT_MANAGE;
     }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;

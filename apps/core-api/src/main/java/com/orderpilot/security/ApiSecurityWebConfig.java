@@ -27,7 +27,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
     registry.addMapping("/api/**")
         .allowedOrigins("http://localhost:3000", "http://127.0.0.1:3000")
         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-        .allowedHeaders("Content-Type", "Authorization", "X-Tenant-Id", "X-Request-Id", "Idempotency-Key", "X-OrderPilot-Permissions")
+        .allowedHeaders("Content-Type", "Authorization", "X-Tenant-Id", "X-Request-Id", "Idempotency-Key", "X-OrderPilot-Permissions", "X-OrderPilot-Actor-Id", "X-OrderPilot-Actor-Signature", "X-OrderPilot-Actor-Timestamp")
         .maxAge(3600);
   }
 }

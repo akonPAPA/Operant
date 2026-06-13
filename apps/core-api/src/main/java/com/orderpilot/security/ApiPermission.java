@@ -19,5 +19,10 @@ public enum ApiPermission {
   CHANNEL_IDENTITY_ACTION,
   AI_WORK_ACTION,
   // OP-CAP-07D: internal/service permission for the AI-worker result intake endpoint.
-  AI_RESULT_INTAKE
+  AI_RESULT_INTAKE,
+  // OP-CAP-16I: platform/admin runtime governance — read tenant plan/feature entitlement status.
+  RUNTIME_ENTITLEMENT_READ,
+  // OP-CAP-16I: platform/admin runtime governance — create/update plans and feature entitlements.
+  // Not for general operators.
+  RUNTIME_ENTITLEMENT_MANAGE
 }

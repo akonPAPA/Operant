@@ -20,7 +20,9 @@ public class InMemoryRateLimitStore implements RateLimitStore {
   private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
 
   @Override
-  public long addAndGet(String key, long windowStartEpochSeconds, long weight) {
+  public long addAndGet(String key, long windowStartEpochSeconds, long windowSeconds, long weight) {
+    // windowSeconds is only relevant to distributed (TTL-based) stores; the in-memory store keys by
+    // windowStart and resets when it advances, so behavior is unchanged from 16C.
     long safeWeight = UsageMath.clampNonNegative(weight);
     Window updated =
         windows.compute(

@@ -13,4 +13,10 @@ public interface FeatureEntitlementRepository extends JpaRepository<FeatureEntit
    */
   List<FeatureEntitlement> findByTenantIdAndPlanIdAndFeatureType(
       UUID tenantId, UUID planId, String featureType);
+
+  /**
+   * OP-CAP-16I: all entitlement rows for a tenant's plan (tenant- and plan-scoped). Used by the admin
+   * read surface to project current feature state; bounded by the small per-plan feature set.
+   */
+  List<FeatureEntitlement> findByTenantIdAndPlanId(UUID tenantId, UUID planId);
 }
