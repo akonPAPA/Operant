@@ -24,5 +24,7 @@ public enum ApiPermission {
   RUNTIME_ENTITLEMENT_READ,
   // OP-CAP-16I: platform/admin runtime governance — create/update plans and feature entitlements.
   // Not for general operators.
-  RUNTIME_ENTITLEMENT_MANAGE
+  RUNTIME_ENTITLEMENT_MANAGE,
+  // OP-CAP-17A: read-only access to deterministic document trust runs/signals.
+  TRUST_READ
 }
