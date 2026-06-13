@@ -47,6 +47,49 @@ export type CreateDraftOptions = {
   operatorNote?: string;
 };
 
+// OP-CAP-15D advisory remediation step — maps a reason to an EXISTING OP-CAP-14C action. Ids only, no command.
+export type ValidationReviewLineRemediation = {
+  reasonCode: string;
+  remediationType: "RESOLVE_ISSUE" | "CORRECT_LINE" | "CORRECT_FIELD" | "REQUEST_APPROVAL" | "VIEW_ISSUE" | "NONE";
+  targetIssueId?: string | null;
+  targetLineItemId?: string | null;
+  recommendedAction: string;
+};
+
+// OP-CAP-15C advisory per-line draftability hints (read-only). The backend create endpoint stays authoritative.
+export type ValidationReviewLineDraftability = {
+  lineItemId: string;
+  lineNumber: number;
+  draftable: boolean;
+  severity: "OK" | "WARNING" | "BLOCKED";
+  reasons: string[];
+  normalizedSku?: string | null;
+  normalizedQuantity?: number | string | null;
+  normalizedUom?: string | null;
+  hasBlockingIssue: boolean;
+  hasWarningIssue: boolean;
+  alreadyDrafted: boolean;
+  sourceValidationRunId: string;
+  sourceExceptionCaseId?: string | null;
+  remediations: ValidationReviewLineRemediation[];
+};
+
+export type ValidationReviewDraftabilityResponse = {
+  sourceValidationRunId: string;
+  sourceExceptionCaseId?: string | null;
+  draftExists: boolean;
+  existingDraftType?: "QUOTE" | "ORDER" | null;
+  existingDraftId?: string | null;
+  existingWorkspacePath?: string | null;
+  caseDraftable: boolean;
+  overallSeverity: "OK" | "WARNING" | "BLOCKED";
+  caseBlockingReasons: string[];
+  lineCount: number;
+  draftableLineCount: number;
+  lines: ValidationReviewLineDraftability[];
+  externalExecution: string;
+};
+
 type BlockingReason = { issueCode?: string; reason?: string };
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -131,6 +174,33 @@ export async function getValidationReviewDraftStatus(validationRunId: string): P
     if (!response.ok) {
       if (response.status === 403) {
         return { data: null, error: "You do not have permission to read draft status (VALIDATION_READ required)." };
+      }
+      if (response.status === 404) {
+        return { data: null, error: "This validation review is no longer available." };
+      }
+      return { data: null, error: `Core API returned ${response.status}.` };
+    }
+    return { data };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+  }
+}
+
+// OP-CAP-15C read-only advisory draftability hints for the validation review surface.
+export async function getValidationReviewDraftability(validationRunId: string): Promise<ApiResult<ValidationReviewDraftabilityResponse>> {
+  if (!validationReviewDraftConfig.tenantId) {
+    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped draftability hints." };
+  }
+  try {
+    const response = await fetch(
+      `${validationReviewDraftConfig.baseUrl}/api/v1/validations/${validationRunId}/review/draftability`,
+      { method: "GET", cache: "no-store", headers: headers() }
+    );
+    const text = await response.text();
+    const data = text ? (JSON.parse(text) as ValidationReviewDraftabilityResponse) : null;
+    if (!response.ok) {
+      if (response.status === 403) {
+        return { data: null, error: "You do not have permission to read draftability hints (VALIDATION_READ required)." };
       }
       if (response.status === 404) {
         return { data: null, error: "This validation review is no longer available." };
