@@ -51,6 +51,7 @@ public class DocumentTrustService {
   private final DocumentTrustDecisionPolicy policy;
   private final AuditEventRepository auditEvents;
   private final JsonSupport jsonSupport;
+  private final CounterpartyTrustProfileService counterpartyTrustProfileService;
   private final Clock clock;
 
   public DocumentTrustService(
@@ -60,6 +61,7 @@ public class DocumentTrustService {
       DocumentTrustDecisionPolicy policy,
       AuditEventRepository auditEvents,
       JsonSupport jsonSupport,
+      CounterpartyTrustProfileService counterpartyTrustProfileService,
       Clock clock) {
     this.fingerprintService = fingerprintService;
     this.runs = runs;
@@ -67,6 +69,7 @@ public class DocumentTrustService {
     this.policy = policy;
     this.auditEvents = auditEvents;
     this.jsonSupport = jsonSupport;
+    this.counterpartyTrustProfileService = counterpartyTrustProfileService;
     this.clock = clock;
   }
 
@@ -76,8 +79,20 @@ public class DocumentTrustService {
    * {@code tenantId}. Idempotent: a repeat for the same tenant + source document + content (or
    * idempotency key) returns the existing active run without creating a duplicate.
    */
-  @Transactional
   public DocumentTrustRun evaluate(UUID tenantId, UUID sourceDocumentId, UUID validationRunId, DocumentTrustCandidate candidate) {
+    return evaluate(tenantId, sourceDocumentId, validationRunId, null, candidate);
+  }
+
+  /**
+   * OP-CAP-17B: same deterministic document trust evaluation, plus — when a tenant-scoped counterparty
+   * ({@code customerAccountId}) is known — feeds the newly created run into the counterparty trust
+   * profile. The profile update runs in the same bounded transaction; if no counterparty is known the
+   * profile is left untouched (no global/unscoped profile is created). Idempotent repeats neither
+   * recreate the run nor re-apply the profile.
+   */
+  @Transactional
+  public DocumentTrustRun evaluate(UUID tenantId, UUID sourceDocumentId, UUID validationRunId,
+      UUID customerAccountId, DocumentTrustCandidate candidate) {
     if (tenantId == null) {
       throw new IllegalArgumentException("tenantId is required");
     }
@@ -126,6 +141,12 @@ public class DocumentTrustService {
     // HIGH/CRITICAL trust decisions are audit-significant.
     if (run.getRiskLevel().atLeast(TrustRiskLevel.HIGH)) {
       recordAudit(tenantId, run);
+    }
+
+    // OP-CAP-17B: accumulate counterparty trust context when the counterparty is known.
+    if (customerAccountId != null) {
+      counterpartyTrustProfileService.applyDocumentTrustResult(
+          tenantId, customerAccountId, run, specs.stream().map(TrustSignalSpec::code).toList());
     }
     return run;
   }

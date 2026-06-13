@@ -599,6 +599,25 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("REVIEW_ACTION");
   }
 
+  // --- OP-CAP-17B counterparty trust reads require TRUST_READ (shared /api/v1/trust prefix) ---
+
+  @Test
+  void counterpartyTrustProfileGetWithTrustReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/counterparties/some-id");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void counterpartyTrustProfileGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/counterparties/some-id/signals");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_READ");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

@@ -39,4 +39,46 @@ public final class TrustDtos {
       Integer pageCount,
       Instant createdAt,
       List<DocumentTrustSignalView> signals) {}
+
+  // ---------------------------------------------------------------------------
+  // OP-CAP-17B Counterparty Trust Profile Foundation — read-only views.
+  // Never expose bank fingerprint/hash, raw evidence, account numbers, or internal notes.
+  // ---------------------------------------------------------------------------
+
+  public record CounterpartyTrustCounts(
+      long totalDocumentCount,
+      long highRiskDocumentCount,
+      long criticalRiskDocumentCount,
+      long manualReviewCount,
+      long approvedOverrideCount,
+      long rejectedDocumentCount,
+      long disputedCount,
+      long bankAccountChangeCount) {}
+
+  public record CounterpartyTrustSignalView(
+      String signalCode,
+      String severity,
+      String explanation,
+      String sourceType,
+      Instant createdAt) {}
+
+  public record CounterpartyTrustSnapshotView(
+      int trustScore,
+      String trustTier,
+      String riskLevel,
+      String reasonSummary,
+      String sourceType,
+      Instant createdAt) {}
+
+  public record CounterpartyTrustProfileView(
+      UUID counterpartyId,
+      int trustScore,
+      String trustTier,
+      int documentReliabilityScore,
+      int paymentReliabilityScore,
+      int orderPatternScore,
+      String lastRiskLevel,
+      CounterpartyTrustCounts counts,
+      List<CounterpartyTrustSignalView> recentSignals,
+      List<CounterpartyTrustSnapshotView> recentSnapshots) {}
 }
