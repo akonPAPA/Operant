@@ -48,7 +48,10 @@ class RuntimeGuardServiceStage16CTest {
     clock = new MutableClock(Instant.ofEpochSecond(1000));
     QuotaGuard quotaGuard = new QuotaGuard(usageMeterService);
     RateLimitService rateLimitService = new RateLimitService(new InMemoryRateLimitStore(), clock);
-    guard = new RuntimeGuardService(quotaGuard, rateLimitService);
+    // Permissive feature policy preserves 16C behavior (no feature gate on the no-feature API).
+    FeatureEntitlementGuard featureGuard =
+        new FeatureEntitlementGuard(new PermissiveRuntimeFeaturePolicy());
+    guard = new RuntimeGuardService(quotaGuard, rateLimitService, featureGuard);
   }
 
   // ---------------------------------------------------------------------------------------------

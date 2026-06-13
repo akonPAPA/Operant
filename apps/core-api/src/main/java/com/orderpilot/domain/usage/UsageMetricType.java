@@ -20,5 +20,7 @@ public enum UsageMetricType {
   /** Count of reconciliation runs. */
   RECONCILIATION_RUN,
   /** Count of integration/connector syncs. */
-  INTEGRATION_SYNC
+  INTEGRATION_SYNC,
+  /** OP-CAP-16G: count of report/export generations (the quota dimension for REPORT_GENERATED). */
+  REPORT_GENERATED
 }

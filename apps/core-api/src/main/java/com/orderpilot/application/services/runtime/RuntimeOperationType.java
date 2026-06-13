@@ -14,5 +14,8 @@ public enum RuntimeOperationType {
   BULK_IMPORT,
   RECONCILIATION_RUN,
   SEARCH_QUERY,
-  REPORT_GENERATED
+  REPORT_GENERATED,
+  // OP-CAP-16G: gated at the advisory AI explanation/summary generation boundary
+  // (AiWorkService.createSuggestion, immediately before the provider call).
+  AI_VALIDATION_EXPLANATION
 }

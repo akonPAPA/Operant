@@ -32,7 +32,10 @@ public final class EndpointWeightPolicy {
           RuntimeOperationType.DOCUMENT_UPLOAD, 5,
           RuntimeOperationType.RECONCILIATION_RUN, 6,
           RuntimeOperationType.AI_DOCUMENT_EXTRACTION, 8,
-          RuntimeOperationType.BULK_IMPORT, 10);
+          RuntimeOperationType.BULK_IMPORT, 10,
+          // OP-CAP-16G: AI explanation/summary generation is an AI/provider call (heavier than a read,
+          // lighter than full document extraction).
+          RuntimeOperationType.AI_VALIDATION_EXPLANATION, 4);
 
   // Per-window weighted budget per tenant+operation. Heavier operations carry a smaller budget so
   // their effective call allowance is stricter.
@@ -45,7 +48,9 @@ public final class EndpointWeightPolicy {
           RuntimeOperationType.DOCUMENT_UPLOAD, 50L,
           RuntimeOperationType.RECONCILIATION_RUN, 60L,
           RuntimeOperationType.AI_DOCUMENT_EXTRACTION, 40L,
-          RuntimeOperationType.BULK_IMPORT, 30L);
+          RuntimeOperationType.BULK_IMPORT, 30L,
+          // OP-CAP-16G: AI explanation budget.
+          RuntimeOperationType.AI_VALIDATION_EXPLANATION, 60L);
 
   // Default quota metric per operation. null → the operation has no quota dimension (allow by NO_POLICY).
   private static final Map<RuntimeOperationType, UsageMetricType> DEFAULT_METRICS =
@@ -55,7 +60,11 @@ public final class EndpointWeightPolicy {
           RuntimeOperationType.BULK_IMPORT, UsageMetricType.AI_INPUT_UNITS,
           RuntimeOperationType.DOCUMENT_UPLOAD, UsageMetricType.DOCUMENT_UPLOAD,
           RuntimeOperationType.CHANNEL_MESSAGE_RECEIVED, UsageMetricType.CHANNEL_MESSAGE,
-          RuntimeOperationType.RECONCILIATION_RUN, UsageMetricType.RECONCILIATION_RUN);
+          RuntimeOperationType.RECONCILIATION_RUN, UsageMetricType.RECONCILIATION_RUN,
+          // OP-CAP-16G: AI explanation consumes the same AI input units metric as extraction.
+          RuntimeOperationType.AI_VALIDATION_EXPLANATION, UsageMetricType.AI_INPUT_UNITS,
+          // OP-CAP-16G: report/export generation has its own quota dimension.
+          RuntimeOperationType.REPORT_GENERATED, UsageMetricType.REPORT_GENERATED);
 
   /** Cost weight for an operation (defaults to 1 for an unknown/cheap operation). */
   public static int weightFor(RuntimeOperationType operationType) {
