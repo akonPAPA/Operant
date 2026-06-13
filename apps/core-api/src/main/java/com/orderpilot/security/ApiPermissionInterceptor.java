@@ -36,7 +36,9 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ),
-      Map.entry("/api/v1/runtime", ApiPermission.RUNTIME_ENTITLEMENT_READ)
+      Map.entry("/api/v1/runtime", ApiPermission.RUNTIME_ENTITLEMENT_READ),
+      // OP-CAP-17A: document trust is read-only this stage; reads require TRUST_READ.
+      Map.entry("/api/v1/trust", ApiPermission.TRUST_READ)
   );
 
   public ApiPermissionInterceptor(ApiPermissionGuard guard) {
