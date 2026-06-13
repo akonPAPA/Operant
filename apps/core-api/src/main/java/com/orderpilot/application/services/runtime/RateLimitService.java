@@ -41,7 +41,7 @@ public class RateLimitService {
     String key = tenantId + ":" + operationType.name();
     String bucket = key + "@" + windowStart;
 
-    long windowUsed = store.addAndGet(key, windowStart, weight);
+    long windowUsed = store.addAndGet(key, windowStart, rule.windowSeconds(), weight);
     boolean allowed = windowUsed <= rule.maxWeight();
     long retryAfter =
         allowed ? 0L : RetryAfterPolicy.retryAfterSeconds(nowEpoch, windowStart, rule.windowSeconds());

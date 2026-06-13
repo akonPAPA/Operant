@@ -8,6 +8,7 @@ import com.orderpilot.common.tenant.TenantContextMissingException;
 import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
+import com.orderpilot.security.ActorVerificationException;
 import com.orderpilot.security.policy.TenantPolicyException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +92,11 @@ public class GlobalExceptionHandler {
     return build(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request, List.of());
   }
 
+  @ExceptionHandler(ConflictException.class)
+  ResponseEntity<ApiErrorResponse> handleConflict(ConflictException ex, HttpServletRequest request) {
+    return build(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), request, List.of());
+  }
+
   @ExceptionHandler(TenantContextMissingException.class)
   ResponseEntity<ApiErrorResponse> handleMissingTenant(TenantContextMissingException ex, HttpServletRequest request) {
     return build(HttpStatus.BAD_REQUEST, "TENANT_REQUIRED", "Missing tenant header X-Tenant-Id", request, List.of());
@@ -99,6 +105,13 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(TenantPolicyException.class)
   ResponseEntity<ApiErrorResponse> handleTenantPolicy(TenantPolicyException ex, HttpServletRequest request) {
     return build(HttpStatus.FORBIDDEN, "TENANT_POLICY_DENIED", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(ActorVerificationException.class)
+  ResponseEntity<ApiErrorResponse> handleActorVerification(ActorVerificationException ex, HttpServletRequest request) {
+    // OP-CAP-16K: signed actor verification failed (missing/invalid/stale signature). Stable 401; the
+    // message never contains the expected signature or the signing secret.
+    return build(HttpStatus.UNAUTHORIZED, "ACTOR_VERIFICATION_FAILED", ex.getMessage(), request, List.of());
   }
 
   @ExceptionHandler(Exception.class)

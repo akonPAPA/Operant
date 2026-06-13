@@ -70,6 +70,22 @@ public class FeatureEntitlement {
     this.updatedAt = now;
   }
 
+  /**
+   * OP-CAP-16I: controlled in-place update of an existing entitlement row (enabled flag, reason code
+   * and effective window). {@code effectiveFrom} is only moved when a non-null value is supplied;
+   * {@code effectiveUntil} is set as given (including back to {@code null} for open-ended). Identity,
+   * tenant, plan and creation timestamp are immutable.
+   */
+  public void apply(boolean enabled, String reasonCode, Instant effectiveFrom, Instant effectiveUntil, Instant now) {
+    this.enabled = enabled;
+    this.reasonCode = reasonCode;
+    if (effectiveFrom != null) {
+      this.effectiveFrom = effectiveFrom;
+    }
+    this.effectiveUntil = effectiveUntil;
+    this.updatedAt = now;
+  }
+
   /** Effective = {@code now} within {@code [effectiveFrom, effectiveUntil)}. */
   public boolean isEffectiveAt(Instant now) {
     if (effectiveFrom != null && effectiveFrom.isAfter(now)) {

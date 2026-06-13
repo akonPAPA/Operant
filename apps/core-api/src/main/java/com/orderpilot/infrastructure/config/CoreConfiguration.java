@@ -14,6 +14,7 @@ import com.orderpilot.domain.usage.TenantRuntimePlanRepository;
 import java.time.Clock;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -30,10 +31,13 @@ public class CoreConfiguration {
     return new LocalDevelopmentSecretVaultService(clock);
   }
 
-  // OP-CAP-16C: in-process rate-limit store by default. A distributed (e.g. Redis) RateLimitStore
-  // bean, if introduced later, replaces this without changing RateLimitService.
+  // OP-CAP-16C/16K: in-process rate-limit store — the default for single-node/dev/test. It is gated to
+  // orderpilot.runtime.rate.store=in-memory (default when unset) so it is mutually exclusive with the
+  // Redis store wired by RuntimeRateRedisConfiguration (store=redis); @ConditionalOnMissingBean still
+  // lets a test substitute its own RateLimitStore.
   @Bean
   @ConditionalOnMissingBean(RateLimitStore.class)
+  @ConditionalOnProperty(name = "orderpilot.runtime.rate.store", havingValue = "in-memory", matchIfMissing = true)
   RateLimitStore rateLimitStore() {
     return new InMemoryRateLimitStore();
   }
