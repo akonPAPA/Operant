@@ -1,1 +1,26 @@
 ﻿* @akonPAPA
+# Global fallback
+* @akonPAPA
+
+# Backend critical areas
+/apps/core-api/src/main/java/com/orderpilot/common/ @akonPAPA
+/apps/core-api/src/main/java/com/orderpilot/application/services/runtime/ @akonPAPA
+/apps/core-api/src/main/java/com/orderpilot/infrastructure/config/ @akonPAPA
+
+# Security / auth / tenant
+/apps/core-api/src/main/java/com/orderpilot/common/security/ @akonPAPA
+/apps/core-api/src/main/java/com/orderpilot/common/tenant/ @akonPAPA
+/apps/core-api/src/main/java/com/orderpilot/common/errors/ @akonPAPA
+
+# AI worker
+/apps/ai-worker/ @akonPAPA
+
+# Frontend dashboard
+/apps/web-dashboard/ @akonPAPA
+
+# CI/CD
+.gitlab-ci.yml @akonPAPA
+/.gitlab/ @akonPAPA
+
+# Runtime docs
+/docs/runtime/ @akonPAPA

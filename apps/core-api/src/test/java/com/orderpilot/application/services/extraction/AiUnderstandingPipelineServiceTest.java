@@ -12,6 +12,11 @@ import com.orderpilot.domain.workspace.DraftOrderRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.JsonSupport;
+import com.orderpilot.application.services.runtime.FeatureEntitlementGuard;
+import com.orderpilot.application.services.runtime.QuotaGuard;
+import com.orderpilot.application.services.runtime.RateLimitService;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.time.Instant;
@@ -43,6 +48,12 @@ import org.springframework.test.context.ActiveProfiles;
     AuditEventService.class,
     JsonSupport.class,
     CoreConfiguration.class,
+    // OP-CAP-16D: ExtractionPipelineService now depends on the runtime guard chain.
+    RuntimeGuardService.class,
+    QuotaGuard.class,
+    RateLimitService.class,
+    FeatureEntitlementGuard.class,
+    UsageMeterService.class,
     AiUnderstandingPipelineServiceTest.JacksonTestConfig.class
 })
 class AiUnderstandingPipelineServiceTest {

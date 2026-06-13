@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import com.orderpilot.common.tenant.TenantContextMissingException;
+import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
 import com.orderpilot.security.policy.TenantPolicyException;
@@ -61,6 +62,23 @@ public class GlobalExceptionHandler {
         "path", request.getRequestURI(),
         "timestamp", clock.instant()
     ));
+  }
+
+  @ExceptionHandler(RuntimeLimitException.class)
+  ResponseEntity<ApiErrorResponse> handleRuntimeLimit(RuntimeLimitException ex, HttpServletRequest request) {
+    // OP-CAP-16C: stable runtime guard denials — 403 RUNTIME_QUOTA_EXCEEDED / 429 RUNTIME_RATE_LIMITED.
+    HttpStatus status = HttpStatus.valueOf(ex.getHttpStatus());
+    ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
+    if (ex.getRetryAfterSeconds() > 0) {
+      builder.header("Retry-After", Long.toString(ex.getRetryAfterSeconds()));
+    }
+    return builder.body(new ApiErrorResponse(
+        ex.getErrorCode(),
+        ex.getMessage(),
+        status.value(),
+        request.getRequestURI(),
+        clock.instant(),
+        List.of()));
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)

@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.runtime.FeatureEntitlementGuard;
+import com.orderpilot.application.services.runtime.QuotaGuard;
+import com.orderpilot.application.services.runtime.RateLimitService;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkSuggestion;
@@ -27,7 +32,8 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({AiWorkService.class, DeterministicAiWorkProvider.class, AuditEventService.class, CoreConfiguration.class})
+@Import({AiWorkService.class, DeterministicAiWorkProvider.class, AuditEventService.class, CoreConfiguration.class,
+  RuntimeGuardService.class, QuotaGuard.class, RateLimitService.class, FeatureEntitlementGuard.class, UsageMeterService.class})
 class AiWorkServiceTest {
   @Autowired private AiWorkService service;
   @Autowired private AiWorkSuggestionRepository repository;

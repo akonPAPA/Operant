@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.analytics.RoiAssumptionsService;
+import com.orderpilot.application.services.runtime.FeatureEntitlementGuard;
+import com.orderpilot.application.services.runtime.QuotaGuard;
+import com.orderpilot.application.services.runtime.RateLimitService;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.common.tenant.TenantContextMissingException;
 import com.orderpilot.domain.audit.AuditEventRepository;
@@ -27,7 +32,8 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({PilotShadowModeService.class, AuditEventService.class, RoiAssumptionsService.class, CoreConfiguration.class})
+@Import({PilotShadowModeService.class, AuditEventService.class, RoiAssumptionsService.class, CoreConfiguration.class,
+  RuntimeGuardService.class, QuotaGuard.class, RateLimitService.class, FeatureEntitlementGuard.class, UsageMeterService.class})
 class PilotShadowModeServiceTest {
   @Autowired private PilotShadowModeService service;
   @Autowired private ShadowRunRepository shadowRunRepository;
