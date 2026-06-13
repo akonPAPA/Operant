@@ -90,9 +90,13 @@ public class ValidationReviewDraftQueryService {
     String type = normalizeDraftType(draftTypeFilter);
     String status = statusFilter == null || statusFilter.isBlank() ? null : statusFilter.trim();
     int lim = clampLimit(limit);
-    int off = offset == null || offset < 0 ? 0 : offset;
+    int maxQueueLimit = ValidationReviewCommandDtos.MAX_DRAFT_QUEUE_LIMIT;
+    int maxSafeOffset = Integer.MAX_VALUE - maxQueueLimit;
+    int off = offset == null || offset < 0 ? 0 : Math.min(offset, maxSafeOffset);
     // Fetch enough from each source to satisfy the requested page after the unified sort/skip.
-    int fetch = Math.min(off + lim, off + ValidationReviewCommandDtos.MAX_DRAFT_QUEUE_LIMIT);
+    long requestedFetch = (long) off + lim;
+    long cappedFetch = (long) off + maxQueueLimit;
+    int fetch = (int) Math.min(Math.min(requestedFetch, cappedFetch), Integer.MAX_VALUE);
     PageRequest page = PageRequest.of(0, Math.max(fetch, 1));
 
     List<DraftQuote> quotes = type == null || "QUOTE".equals(type)
