@@ -174,6 +174,63 @@ public class CounterpartyTrustProfileService {
     return profile;
   }
 
+  /**
+   * OP-CAP-17C narrow hook: applies a payment-obligation-derived counterparty signal. Optionally bumps
+   * the overdue/disputed behaviour counters, records an explainable {@code PAYMENT_SIGNAL}-sourced
+   * signal, recomputes the deterministic score (so a critical/high payment signal can never be masked
+   * by historical trust), appends an evidence snapshot, and audits. When {@code customerAccountId} is
+   * null no global/unscoped profile is created — the call is safely skipped. Runs in the caller's
+   * transaction so an obligation + trust update commit or roll back together.
+   */
+  @Transactional
+  public CounterpartyTrustProfile applyPaymentObligationSignal(
+      UUID tenantId, UUID customerAccountId, CounterpartySignalCode code, TrustRiskLevel severity,
+      int weight, UUID sourceRefId, String explanation, boolean incrementOverdue, boolean incrementDisputed) {
+    if (customerAccountId == null) {
+      return null;
+    }
+    Instant now = clock.instant();
+    CounterpartyTrustProfile profile = getOrCreateProfile(tenantId, customerAccountId);
+    if (incrementOverdue) {
+      profile.incrementOverduePayment(now);
+    }
+    if (incrementDisputed) {
+      profile.incrementDisputed(now);
+    }
+    if (code != null) {
+      saveSignal(tenantId, customerAccountId, code, severity, weight,
+          CounterpartyTrustSourceType.PAYMENT_SIGNAL, sourceRefId, bounded(explanation), now);
+      profile.noteRiskLevel(severity, now);
+    }
+    recomputeAndSnapshot(profile, severity, CounterpartyTrustSourceType.PAYMENT_SIGNAL, sourceRefId,
+        "Payment obligation signal" + (code == null ? "" : " " + code.name()), now);
+    recordAudit(tenantId, profile, "COUNTERPARTY_TRUST_PROFILE_UPDATED", severity);
+    if (severity != null && severity.atLeast(TrustRiskLevel.HIGH)) {
+      recordAudit(tenantId, profile, "COUNTERPARTY_HIGH_RISK_SIGNAL_RECORDED", severity);
+    }
+    return profile;
+  }
+
+  /**
+   * OP-CAP-17C narrow hook: records the latest payment activity instant on the profile and recomputes
+   * the deterministic payment reliability/score, appending an evidence snapshot. No signal is created —
+   * receiving a payment is positive/neutral behaviour. Safely skipped for a null counterparty.
+   */
+  @Transactional
+  public CounterpartyTrustProfile recordPaymentReliabilityUpdate(
+      UUID tenantId, UUID customerAccountId, Instant paymentReceivedAt) {
+    if (customerAccountId == null) {
+      return null;
+    }
+    Instant now = clock.instant();
+    CounterpartyTrustProfile profile = getOrCreateProfile(tenantId, customerAccountId);
+    profile.recordPaymentActivity(paymentReceivedAt, now);
+    recomputeAndSnapshot(profile, profile.getLastRiskLevel(), CounterpartyTrustSourceType.PAYMENT_SIGNAL, null,
+        "Payment received", now);
+    recordAudit(tenantId, profile, "COUNTERPARTY_TRUST_PROFILE_UPDATED", profile.getLastRiskLevel());
+    return profile;
+  }
+
   /** Deterministic, cheap recompute using profile counters only (no historical scan). */
   @Transactional
   public CounterpartyTrustProfile recomputeProfile(UUID tenantId, UUID customerAccountId) {

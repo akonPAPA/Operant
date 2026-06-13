@@ -118,6 +118,9 @@ public class CounterpartyTrustProfile {
   public void recordCompletedOrder(Instant now) { this.completedOrderCount += 1; this.lastOrderAt = now; this.updatedAt = now; }
   public void incrementOverduePayment(Instant now) { this.overduePaymentCount += 1; this.updatedAt = now; }
 
+  /** OP-CAP-17C: records the most recent payment activity instant (drives payment reliability). */
+  public void recordPaymentActivity(Instant paymentAt, Instant now) { this.lastPaymentAt = paymentAt; this.updatedAt = now; }
+
   public void noteRiskLevel(TrustRiskLevel level, Instant now) {
     this.lastRiskLevel = level;
     this.lastTrustSignalAt = now;
