@@ -743,6 +743,56 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_RISK_OVERRIDE");
   }
 
+  // --- OP-CAP-17E trust analytics: GET reads require TRUST_ANALYTICS_READ, the bounded rebuild
+  //     requires the stronger TRUST_ANALYTICS_REBUILD (and not the generic TRUST_READ prefix) ---
+
+  @Test
+  void trustAnalyticsReviewQueueGetWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/analytics/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustAnalyticsGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/analytics/risk-distribution");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_ANALYTICS_READ");
+  }
+
+  @Test
+  void trustAnalyticsReadWithGenericTrustReadAloneIsRejected() throws Exception {
+    // The generic TRUST_READ must NOT satisfy the dedicated analytics read permission.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/analytics/outstanding-debt");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_ANALYTICS_READ");
+  }
+
+  @Test
+  void trustAnalyticsRebuildWithRebuildPermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/analytics/rebuild");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_ANALYTICS_REBUILD");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustAnalyticsRebuildWithAnalyticsReadAloneIsRejected() throws Exception {
+    // Read must NOT be sufficient to trigger a rebuild (rebuild is the stronger permission).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/analytics/rebuild");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_ANALYTICS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_ANALYTICS_REBUILD");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

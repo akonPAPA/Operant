@@ -31,5 +31,11 @@ public enum ApiPermission {
   TRUST_RISK_EVALUATE,
   // OP-CAP-17D: manually override a trust risk decision — stronger than evaluate. Not for general
   // operators; a CRITICAL decision can never be silently downgraded.
-  TRUST_RISK_OVERRIDE
+  TRUST_RISK_OVERRIDE,
+  // OP-CAP-17E: read-only access to derived trust analytics read models (review queue, counterparty
+  // dashboard, outstanding debt, document anomaly trends, risk distribution).
+  TRUST_ANALYTICS_READ,
+  // OP-CAP-17E: trigger a bounded tenant rebuild of the trust analytics read models — stronger than
+  // read. Not for general operators (an admin/maintenance action).
+  TRUST_ANALYTICS_REBUILD
 }
