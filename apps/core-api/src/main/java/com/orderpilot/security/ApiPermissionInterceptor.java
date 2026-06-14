@@ -14,6 +14,8 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/analytics", ApiPermission.ANALYTICS_READ),
       // OP-CAP-21: command center read models are read-only analytics projections.
       Map.entry("/api/v1/command-center", ApiPermission.ANALYTICS_READ),
+      // OP-CAP-22: order journey reads are tenant-scoped analytics-style projections.
+      Map.entry("/api/v1/order-journeys", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/v1/analytics/commerce", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage8/analytics", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage8/reconciliation", ApiPermission.ANALYTICS_READ),
@@ -81,6 +83,11 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       return ApiPermission.RUNTIME_ENTITLEMENT_MANAGE;
     }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    // OP-CAP-22: recording an internal fulfillment signal is an audited operator action (no external
+    // write); reads fall through to ANALYTICS_READ via the prefix map.
+    if (path.startsWith("/api/v1/order-journeys") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
     }
     if (path.startsWith("/api/v1/validation-review") && !HttpMethod.GET.matches(method)) {

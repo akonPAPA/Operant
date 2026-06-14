@@ -1201,6 +1201,43 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("ANALYTICS_READ");
   }
 
+  // --- OP-CAP-22: order journey reads require ANALYTICS_READ, signal ingest requires REVIEW_ACTION ---
+
+  @Test
+  void orderJourneyListGetWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/order-journeys");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void orderJourneyGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/order-journeys/attention");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("ANALYTICS_READ");
+  }
+
+  @Test
+  void orderJourneySignalPostRequiresReviewAction() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/some-id/signals");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void orderJourneySignalPostWithAnalyticsReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/some-id/signals");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
