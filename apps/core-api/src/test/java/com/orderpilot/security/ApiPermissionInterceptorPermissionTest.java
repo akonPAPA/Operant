@@ -793,6 +793,100 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_ANALYTICS_REBUILD");
   }
 
+  // --- OP-CAP-17F AI memory governance: read/write/invalidate have distinct permissions; generic
+  //     TRUST_READ is insufficient for write/invalidate. Runtime traces have dedicated read/write. ---
+
+  @Test
+  void aiMemoryGetWithMemoryReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory?namespace=PRODUCT_ALIAS_HINT");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiMemoryGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory/some-id");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+  }
+
+  @Test
+  void aiMemoryCreateWithMemoryWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiMemoryCreateWithTrustReadAloneIsRejected() throws Exception {
+    // Generic TRUST_READ must NOT be sufficient to write AI memory.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_WRITE");
+  }
+
+  @Test
+  void aiMemoryInvalidateWithInvalidatePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/some-id/invalidate");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_INVALIDATE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiMemoryInvalidateWithMemoryWriteAloneIsRejected() throws Exception {
+    // Write must NOT be sufficient to invalidate (invalidate is its own governance permission).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/some-id/invalidate");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_INVALIDATE");
+  }
+
+  @Test
+  void aiRuntimeTraceWriteWithTraceWritePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-runtime/traces");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_RUNTIME_TRACE_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiRuntimeTraceWriteWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-runtime/traces");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_RUNTIME_TRACE_WRITE");
+  }
+
+  @Test
+  void aiRuntimeTraceGetWithTraceReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-runtime/traces");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_RUNTIME_TRACE_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiRuntimeTraceWriteWithMemoryWriteAloneIsRejected() throws Exception {
+    // AI memory write must NOT be sufficient for the runtime-trace write boundary.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-runtime/traces");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_RUNTIME_TRACE_WRITE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

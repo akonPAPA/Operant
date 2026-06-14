@@ -37,5 +37,15 @@ public enum ApiPermission {
   TRUST_ANALYTICS_READ,
   // OP-CAP-17E: trigger a bounded tenant rebuild of the trust analytics read models — stronger than
   // read. Not for general operators (an admin/maintenance action).
-  TRUST_ANALYTICS_REBUILD
+  TRUST_ANALYTICS_REBUILD,
+  // OP-CAP-17F: read-only access to tenant-scoped advisory AI memory records/evidence/invalidations.
+  TRUST_AI_MEMORY_READ,
+  // OP-CAP-17F: create/supersede AI memory records — stronger than read. Generic TRUST_READ never grants it.
+  TRUST_AI_MEMORY_WRITE,
+  // OP-CAP-17F: invalidate an AI memory record — a dedicated governance action.
+  TRUST_AI_MEMORY_INVALIDATE,
+  // OP-CAP-17F: read AI runtime trace metadata.
+  TRUST_AI_RUNTIME_TRACE_READ,
+  // OP-CAP-17F: record AI runtime trace metadata — a narrow write boundary.
+  TRUST_AI_RUNTIME_TRACE_WRITE
 }
