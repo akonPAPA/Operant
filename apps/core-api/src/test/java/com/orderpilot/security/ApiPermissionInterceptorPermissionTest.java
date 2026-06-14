@@ -887,6 +887,123 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_AI_RUNTIME_TRACE_WRITE");
   }
 
+  // --- OP-CAP-18 trust/AI event projector runtime: GET reads require TRUST_AI_EVENT_READ, processing
+  //     (any non-GET) requires the stronger TRUST_AI_EVENT_PROCESS; generic TRUST_READ is insufficient ---
+
+  @Test
+  void aiEventsGetWithEventReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-events?status=PENDING");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_EVENT_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiEventsGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-events/some-id");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_EVENT_READ");
+  }
+
+  @Test
+  void aiEventsProcessWithProcessPermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-events/process");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_EVENT_PROCESS");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiEventsProcessWithEventReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-events/some-id/process");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_EVENT_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_EVENT_PROCESS");
+  }
+
+  @Test
+  void aiEventsProcessWithGenericTrustReadIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-events/process");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_EVENT_PROCESS");
+  }
+
+  // --- OP-CAP-18 operator correction learning: read/write/approve/reject have distinct permissions ---
+
+  @Test
+  void operatorCorrectionsGetWithReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/operator-corrections");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_OPERATOR_CORRECTION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void operatorCorrectionsRecordWithWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/operator-corrections");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_OPERATOR_CORRECTION_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void operatorCorrectionsRecordWithReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/operator-corrections");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_OPERATOR_CORRECTION_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_OPERATOR_CORRECTION_WRITE");
+  }
+
+  @Test
+  void operatorCorrectionApproveWithApprovePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/operator-corrections/some-id/approve-learning");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_OPERATOR_CORRECTION_APPROVE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void operatorCorrectionApproveWithWriteAloneIsRejected() throws Exception {
+    // Write must NOT be sufficient to approve learning (approval is its own permission).
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/operator-corrections/some-id/approve-learning");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_OPERATOR_CORRECTION_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_OPERATOR_CORRECTION_APPROVE");
+  }
+
+  @Test
+  void operatorCorrectionRejectWithRejectPermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/operator-corrections/some-id/reject-learning");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_OPERATOR_CORRECTION_REJECT");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void operatorCorrectionApproveWithGenericTrustReadIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/operator-corrections/some-id/approve-learning");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_OPERATOR_CORRECTION_APPROVE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

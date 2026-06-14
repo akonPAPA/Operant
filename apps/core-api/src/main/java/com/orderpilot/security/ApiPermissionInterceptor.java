@@ -113,6 +113,31 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/intake") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.INTAKE_WRITE;
     }
+    // OP-CAP-18: trust/AI event projector runtime. Processing (any non-GET) requires the stronger
+    // TRUST_AI_EVENT_PROCESS; reads require TRUST_AI_EVENT_READ. Checked before the generic
+    // /api/v1/trust -> TRUST_READ prefix mapping below.
+    if (path.startsWith("/api/v1/trust/ai-events") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_AI_EVENT_PROCESS;
+    }
+    if (path.startsWith("/api/v1/trust/ai-events")) {
+      return ApiPermission.TRUST_AI_EVENT_READ;
+    }
+    // OP-CAP-18: operator correction learning loop. Approve/reject are dedicated permissions; other
+    // writes require WRITE; reads require READ.
+    if (path.startsWith("/api/v1/trust/operator-corrections") && path.endsWith("/approve-learning")
+        && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_OPERATOR_CORRECTION_APPROVE;
+    }
+    if (path.startsWith("/api/v1/trust/operator-corrections") && path.endsWith("/reject-learning")
+        && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_OPERATOR_CORRECTION_REJECT;
+    }
+    if (path.startsWith("/api/v1/trust/operator-corrections") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_OPERATOR_CORRECTION_WRITE;
+    }
+    if (path.startsWith("/api/v1/trust/operator-corrections")) {
+      return ApiPermission.TRUST_OPERATOR_CORRECTION_READ;
+    }
     // OP-CAP-17F: AI memory governance. Invalidate is its own permission; create/supersede require
     // WRITE; reads require READ. AI runtime traces have dedicated read/write permissions. All checked
     // before the generic /api/v1/trust -> TRUST_READ prefix mapping below (these also share that prefix).

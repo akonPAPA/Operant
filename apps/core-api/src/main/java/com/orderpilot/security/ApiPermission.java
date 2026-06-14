@@ -47,5 +47,17 @@ public enum ApiPermission {
   // OP-CAP-17F: read AI runtime trace metadata.
   TRUST_AI_RUNTIME_TRACE_READ,
   // OP-CAP-17F: record AI runtime trace metadata — a narrow write boundary.
-  TRUST_AI_RUNTIME_TRACE_WRITE
+  TRUST_AI_RUNTIME_TRACE_WRITE,
+  // OP-CAP-18: read trust/AI domain events and projection checkpoints/dead-letter.
+  TRUST_AI_EVENT_READ,
+  // OP-CAP-18: trigger projector processing of trust/AI events — stronger than read.
+  TRUST_AI_EVENT_PROCESS,
+  // OP-CAP-18: read operator correction learning records.
+  TRUST_OPERATOR_CORRECTION_READ,
+  // OP-CAP-18: record an operator correction learning record.
+  TRUST_OPERATOR_CORRECTION_WRITE,
+  // OP-CAP-18: approve an operator correction for governed AI-memory learning (gate to HUMAN_APPROVED).
+  TRUST_OPERATOR_CORRECTION_APPROVE,
+  // OP-CAP-18: reject an operator correction for learning.
+  TRUST_OPERATOR_CORRECTION_REJECT
 }
