@@ -235,7 +235,7 @@ public class ImportJobService {
       case "PRODUCT_SUBSTITUTES", "SUBSTITUTES" -> activateProductSubstitutes(job, rows);
       case "COMPATIBILITY", "PRODUCT_COMPATIBILITY" -> activateCompatibility(job, rows);
       case "DISCOUNT_RULES" -> activateDiscountRules(job, rows);
-      case "MARGIN_RULES" -> activateMarginRules(job, rows);//returned XI{%Sh get asshole as mfx After getter setter}
+      case "MARGIN_RULES" -> activateMarginRules(job, rows);
       default -> throw new IllegalArgumentException("Activation is not supported for import type: " + job.getImportType());
     };
     job.markApplied(clock.instant());

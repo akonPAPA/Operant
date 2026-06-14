@@ -743,6 +743,150 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_RISK_OVERRIDE");
   }
 
+  // --- OP-CAP-17E trust analytics: GET reads require TRUST_ANALYTICS_READ, the bounded rebuild
+  //     requires the stronger TRUST_ANALYTICS_REBUILD (and not the generic TRUST_READ prefix) ---
+
+  @Test
+  void trustAnalyticsReviewQueueGetWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/analytics/review-queue");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustAnalyticsGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/analytics/risk-distribution");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_ANALYTICS_READ");
+  }
+
+  @Test
+  void trustAnalyticsReadWithGenericTrustReadAloneIsRejected() throws Exception {
+    // The generic TRUST_READ must NOT satisfy the dedicated analytics read permission.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/analytics/outstanding-debt");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_ANALYTICS_READ");
+  }
+
+  @Test
+  void trustAnalyticsRebuildWithRebuildPermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/analytics/rebuild");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_ANALYTICS_REBUILD");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustAnalyticsRebuildWithAnalyticsReadAloneIsRejected() throws Exception {
+    // Read must NOT be sufficient to trigger a rebuild (rebuild is the stronger permission).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/analytics/rebuild");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_ANALYTICS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_ANALYTICS_REBUILD");
+  }
+
+  // --- OP-CAP-17F AI memory governance: read/write/invalidate have distinct permissions; generic
+  //     TRUST_READ is insufficient for write/invalidate. Runtime traces have dedicated read/write. ---
+
+  @Test
+  void aiMemoryGetWithMemoryReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory?namespace=PRODUCT_ALIAS_HINT");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiMemoryGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory/some-id");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+  }
+
+  @Test
+  void aiMemoryCreateWithMemoryWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiMemoryCreateWithTrustReadAloneIsRejected() throws Exception {
+    // Generic TRUST_READ must NOT be sufficient to write AI memory.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_WRITE");
+  }
+
+  @Test
+  void aiMemoryInvalidateWithInvalidatePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/some-id/invalidate");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_INVALIDATE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiMemoryInvalidateWithMemoryWriteAloneIsRejected() throws Exception {
+    // Write must NOT be sufficient to invalidate (invalidate is its own governance permission).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/some-id/invalidate");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_INVALIDATE");
+  }
+
+  @Test
+  void aiRuntimeTraceWriteWithTraceWritePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-runtime/traces");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_RUNTIME_TRACE_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiRuntimeTraceWriteWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-runtime/traces");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_RUNTIME_TRACE_WRITE");
+  }
+
+  @Test
+  void aiRuntimeTraceGetWithTraceReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-runtime/traces");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_RUNTIME_TRACE_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void aiRuntimeTraceWriteWithMemoryWriteAloneIsRejected() throws Exception {
+    // AI memory write must NOT be sufficient for the runtime-trace write boundary.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-runtime/traces");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_RUNTIME_TRACE_WRITE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
