@@ -34,7 +34,8 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({OrderJourneyService.class, OrderJourneyReadService.class, AuditEventService.class, CoreConfiguration.class})
+@Import({OrderJourneyService.class, OrderJourneyReadService.class, OrderJourneyProjectionPublisher.class,
+    AuditEventService.class, CoreConfiguration.class})
 class OrderJourneyServiceTest {
   @Autowired private OrderJourneyService service;
   @Autowired private OrderJourneyReadService readService;

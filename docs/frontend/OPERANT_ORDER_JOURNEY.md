@@ -111,3 +111,18 @@ ANALYTICS_READ) returning bounded counts (pending / failed / dead-lettered / fai
 processed). No projector control buttons, no fake GPS/carrier/payment copy, and no journey status is
 invented on the client — status authority remains the backend. The Operant shell, grouped nav, and the
 list/detail surfaces are unchanged.
+
+## OP-CAP-24 — event-backed projections (frontend impact)
+
+With OP-CAP-24 source-mutation hooks, `projectionSource=READY` now means the projection was prepared by the
+event/outbox projector from a **real backend business event** (draft quote/order created, validation review
+registered, reconciliation case created/updated, fulfillment signal recorded) — not materialized on read.
+The detail screen's "Projection" row reflects this honestly:
+
+- `READY` -> "Prepared by projector (event-backed)"
+- `ON_READ_FALLBACK` -> "Refreshed on read (projector pending)" (backward-compatible fallback only)
+
+No new controls, no fake payment/carrier/GPS copy, and **no direct AI connection** from the frontend: the
+dashboard reads only backend-owned bounded read models over the Core API. AI is advisory only and never
+authors journey status; status authority remains the backend. Operant shell, grouped nav, and the
+list/detail surfaces are unchanged.

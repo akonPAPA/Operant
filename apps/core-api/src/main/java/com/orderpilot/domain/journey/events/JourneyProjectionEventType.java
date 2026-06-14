@@ -15,7 +15,9 @@ public enum JourneyProjectionEventType {
   DRAFT_ORDER_CREATED,
   /** A validation review case was registered and its journey should be (re)projected. */
   VALIDATION_REVIEW_REGISTERED,
-  /** A reconciliation case was created/updated and its journey should be (re)projected. */
+  /** A reconciliation case was created and its journey should be (re)projected. */
+  RECONCILIATION_CASE_CREATED,
+  /** A reconciliation case was updated and its journey should be (re)projected. */
   RECONCILIATION_CASE_UPDATED,
   /** An internal fulfillment signal was recorded; the journey projection should refresh. */
   FULFILLMENT_SIGNAL_RECORDED,

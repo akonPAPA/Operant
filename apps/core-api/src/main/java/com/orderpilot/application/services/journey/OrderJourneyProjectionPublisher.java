@@ -75,6 +75,33 @@ public class OrderJourneyProjectionPublisher {
         "Projection refresh requested", null));
   }
 
+  /**
+   * OP-CAP-24 — idempotent publish for a business source-mutation hook. The deterministic key folds
+   * tenant + event type + source + an optional transition discriminator, so duplicate triggers/retries
+   * collapse to one durable event while distinct meaningful transitions (e.g. successive reconciliation
+   * updates, or different fulfillment signals) each get their own event. Publishes inside the caller's
+   * transaction (outbox-in-same-tx): a publish failure follows the caller's transaction/error convention.
+   */
+  @Transactional
+  public OrderJourneyProjectionEvent publishSourceEvent(UUID tenantId, JourneyProjectionEventType eventType,
+      JourneySourceType sourceType, UUID sourceId, String transitionDiscriminator) {
+    String key = sourceEventIdempotencyKey(tenantId, eventType, sourceType, sourceId, transitionDiscriminator);
+    return publish(new PublishCommand(tenantId, eventType, sourceType, sourceId, eventType == null ? null
+        : eventType.name(), null, null, key, "Source mutation hook", null));
+  }
+
+  /**
+   * Stable, bounded idempotency key for a source-mutation hook event:
+   * {@code journey:{tenantId}:{eventType}:{sourceType}:{sourceId}[:{discriminator}]}. The discriminator
+   * distinguishes repeated meaningful transitions of the same source; it must never carry raw payload.
+   */
+  public static String sourceEventIdempotencyKey(UUID tenantId, JourneyProjectionEventType eventType,
+      JourneySourceType sourceType, UUID sourceId, String discriminator) {
+    String key = "journey:" + tenantId + ":" + eventType + ":" + sourceType + ":" + sourceId
+        + (discriminator != null && !discriminator.isBlank() ? ":" + discriminator.strip() : "");
+    return key.length() <= MAX_IDEMPOTENCY_KEY ? key : key.substring(0, MAX_IDEMPOTENCY_KEY);
+  }
+
   /** Stable, bounded idempotency key for an explicit refresh request — repeats collapse to one event. */
   public static String refreshIdempotencyKey(JourneySourceType sourceType, UUID sourceId, String reasonCode) {
     String key = "journey-refresh:" + sourceType + ":" + sourceId
