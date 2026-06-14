@@ -19,6 +19,7 @@ import com.orderpilot.domain.journey.OrderJourneyEventRepository;
 import com.orderpilot.domain.journey.OrderJourneyMilestone;
 import com.orderpilot.domain.journey.OrderJourneyMilestoneRepository;
 import com.orderpilot.domain.journey.OrderJourneyRepository;
+import com.orderpilot.domain.journey.events.JourneyProjectionEventType;
 import com.orderpilot.domain.reconciliation.ReconciliationCase;
 import com.orderpilot.domain.reconciliation.ReconciliationCaseRepository;
 import com.orderpilot.domain.reconciliation.ReconciliationStatus;
@@ -66,6 +67,7 @@ public class OrderJourneyService {
   private final ExceptionCaseRepository exceptionCaseRepository;
   private final ReconciliationCaseRepository reconciliationCaseRepository;
   private final AuditEventService auditEventService;
+  private final OrderJourneyProjectionPublisher journeyProjectionPublisher;
   private final Clock clock;
 
   public OrderJourneyService(OrderJourneyRepository journeyRepository,
@@ -73,7 +75,7 @@ public class OrderJourneyService {
       FulfillmentSignalRepository signalRepository, DraftQuoteRepository draftQuoteRepository,
       DraftOrderRepository draftOrderRepository, ExceptionCaseRepository exceptionCaseRepository,
       ReconciliationCaseRepository reconciliationCaseRepository, AuditEventService auditEventService,
-      Clock clock) {
+      OrderJourneyProjectionPublisher journeyProjectionPublisher, Clock clock) {
     this.journeyRepository = journeyRepository;
     this.milestoneRepository = milestoneRepository;
     this.eventRepository = eventRepository;
@@ -83,6 +85,7 @@ public class OrderJourneyService {
     this.exceptionCaseRepository = exceptionCaseRepository;
     this.reconciliationCaseRepository = reconciliationCaseRepository;
     this.auditEventService = auditEventService;
+    this.journeyProjectionPublisher = journeyProjectionPublisher;
     this.clock = clock;
   }
 
@@ -168,8 +171,9 @@ public class OrderJourneyService {
     FulfillmentSignalType type = parseType(request.signalType());
     boolean customerVisible = Boolean.TRUE.equals(request.customerVisible());
 
-    signalRepository.save(new FulfillmentSignal(tenantId, journeyId, source, type, request.signalStatus(),
-        request.confidence(), request.sourceRef(), request.rawPayloadRef(), customerVisible, now, now));
+    FulfillmentSignal savedSignal = signalRepository.save(new FulfillmentSignal(tenantId, journeyId, source, type,
+        request.signalStatus(), request.confidence(), request.sourceRef(), request.rawPayloadRef(),
+        customerVisible, now, now));
 
     JourneyActorType actorType = actorTypeFor(source);
     eventRepository.save(new OrderJourneyEvent(tenantId, journeyId, "FULFILLMENT_SIGNAL", type.name(),
@@ -177,6 +181,12 @@ public class OrderJourneyService {
         actorType, actorType == JourneyActorType.OPERATOR ? actorId : null, customerVisible, now, now));
     auditEventService.record("ORDER_JOURNEY_SIGNAL_RECORDED", "ORDER_JOURNEY", journeyId.toString(), actorId,
         "{\"signalType\":\"" + type.name() + "\",\"source\":\"" + source.name() + "\"}");
+
+    // OP-CAP-24: publish a durable, idempotent journey projection event for the underlying journey source.
+    // The discriminator is the new signal id, so distinct signals each get their own event while reprocessing
+    // the same signal event is idempotent. The synchronous refresh below is preserved (OP-CAP-22 behavior).
+    journeyProjectionPublisher.publishSourceEvent(tenantId, JourneyProjectionEventType.FULFILLMENT_SIGNAL_RECORDED,
+        journey.getSourceType(), journey.getSourceId(), savedSignal.getId().toString());
 
     return refreshFromSource(journey.getSourceType(), journey.getSourceId());
   }
