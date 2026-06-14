@@ -113,6 +113,16 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/intake") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.INTAKE_WRITE;
     }
+    // OP-CAP-17E: trust analytics read models. Reads require the dedicated TRUST_ANALYTICS_READ; the
+    // bounded tenant rebuild requires the stronger TRUST_ANALYTICS_REBUILD. These must be checked before
+    // the generic /api/v1/trust -> TRUST_READ prefix mapping below (analytics also starts with that
+    // prefix).
+    if (path.startsWith("/api/v1/trust/analytics/rebuild") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_ANALYTICS_REBUILD;
+    }
+    if (path.startsWith("/api/v1/trust/analytics")) {
+      return ApiPermission.TRUST_ANALYTICS_READ;
+    }
     // OP-CAP-17D: trust risk-decision writes. Override is stronger than evaluate and is checked first.
     // GET reads under /api/v1/trust fall through to the TRUST_READ prefix map below.
     if (path.startsWith("/api/v1/trust/risk-decisions") && path.endsWith("/override") && !HttpMethod.GET.matches(method)) {
