@@ -59,5 +59,12 @@ public enum ApiPermission {
   // OP-CAP-18: approve an operator correction for governed AI-memory learning (gate to HUMAN_APPROVED).
   TRUST_OPERATOR_CORRECTION_APPROVE,
   // OP-CAP-18: reject an operator correction for learning.
-  TRUST_OPERATOR_CORRECTION_REJECT
+  TRUST_OPERATOR_CORRECTION_REJECT,
+  // OP-CAP-19: read advisory-memory evaluation runs/cases/results.
+  TRUST_AI_MEMORY_EVALUATION_READ,
+  // OP-CAP-19: create evaluation runs/cases — stronger than read.
+  TRUST_AI_MEMORY_EVALUATION_WRITE,
+  // OP-CAP-19: execute an evaluation run — the strongest evaluation permission. Generic AI-memory
+  // read/write never grants it.
+  TRUST_AI_MEMORY_EVALUATION_RUN
 }

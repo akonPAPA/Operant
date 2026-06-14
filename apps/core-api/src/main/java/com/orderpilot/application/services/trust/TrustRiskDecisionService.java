@@ -85,6 +85,8 @@ public class TrustRiskDecisionService {
   private final PaymentObligationRepository paymentObligations;
   private final AuditEventRepository auditEvents;
   private final JsonSupport jsonSupport;
+  // OP-CAP-19 Layer A: emit a bounded TRUST_RISK_DECIDED/OVERRIDDEN event after the decision is persisted.
+  private final TrustAiEventAutoPublishService eventAutoPublish;
   private Clock clock;
 
   public TrustRiskDecisionService(
@@ -98,6 +100,7 @@ public class TrustRiskDecisionService {
       PaymentObligationRepository paymentObligations,
       AuditEventRepository auditEvents,
       JsonSupport jsonSupport,
+      TrustAiEventAutoPublishService eventAutoPublish,
       Clock clock) {
     this.decisions = decisions;
     this.contributions = contributions;
@@ -109,6 +112,7 @@ public class TrustRiskDecisionService {
     this.paymentObligations = paymentObligations;
     this.auditEvents = auditEvents;
     this.jsonSupport = jsonSupport;
+    this.eventAutoPublish = eventAutoPublish;
     this.clock = clock;
   }
 
@@ -225,6 +229,11 @@ public class TrustRiskDecisionService {
     if (finalLevel.atLeast(TrustRiskLevel.HIGH)) {
       recordEvaluationAudit(tenantId, decision, command.actor());
     }
+
+    // OP-CAP-19 Layer A: the decision is persisted and authoritative — publish a bounded advisory event.
+    eventAutoPublish.publishTrustRiskDecided(tenantId, decision.getId(),
+        "Trust risk decided " + finalLevel.name() + " (" + policy.action().name() + ") for "
+            + decision.getSubjectType());
     return decision;
   }
 
@@ -432,6 +441,10 @@ public class TrustRiskDecisionService {
     if (!newRiskLevel.atLeast(TrustRiskLevel.HIGH)) {
       cancelPendingApprovals(tenantId, decision.getId(), now);
     }
+
+    // OP-CAP-19 Layer A: publish a bounded advisory event per override (override-record id keys the event).
+    eventAutoPublish.publishTrustRiskOverridden(tenantId, decision.getId(), record.getId(),
+        "Trust risk overridden " + previousLevel.name() + " -> " + newRiskLevel.name());
     return decision;
   }
 
