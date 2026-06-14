@@ -1,5 +1,6 @@
 package com.orderpilot.api.dto;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -81,4 +82,97 @@ public final class TrustDtos {
       CounterpartyTrustCounts counts,
       List<CounterpartyTrustSignalView> recentSignals,
       List<CounterpartyTrustSnapshotView> recentSnapshots) {}
+
+  // ---------------------------------------------------------------------------
+  // OP-CAP-17D Trust Risk Decision Engine — deterministic risk decision surface.
+  // Never expose raw document/OCR/prompt text, bank credentials, account numbers, or secrets.
+  // ---------------------------------------------------------------------------
+
+  /** Request to evaluate a deterministic risk decision for one business subject. */
+  public record TrustRiskEvaluationRequest(
+      String subjectType,
+      UUID subjectId,
+      UUID documentTrustRunId,
+      UUID counterpartyId,
+      UUID paymentObligationId,
+      UUID validationRunId,
+      BigDecimal transactionAmount,
+      String currency,
+      String businessAction,
+      String idempotencyKey) {}
+
+  public record TrustRiskSignalContributionView(
+      UUID id,
+      String sourceType,
+      UUID sourceId,
+      String signalCode,
+      String severity,
+      BigDecimal confidence,
+      int weight,
+      int contributionScore,
+      String forcedLevel,
+      String explanation,
+      String evidenceRef,
+      Instant createdAt) {}
+
+  public record TrustApprovalRequirementView(
+      UUID id,
+      String requiredAction,
+      String requiredPermissionCode,
+      String requiredRoleCode,
+      String reasonCode,
+      String status,
+      Instant createdAt,
+      Instant satisfiedAt) {}
+
+  public record TrustDecisionOverrideView(
+      UUID id,
+      String previousRiskLevel,
+      String newRiskLevel,
+      String previousAction,
+      String newAction,
+      String reason,
+      UUID overriddenBy,
+      Instant overriddenAt) {}
+
+  public record TrustRiskDecisionView(
+      UUID id,
+      String subjectType,
+      UUID subjectId,
+      UUID documentTrustRunId,
+      UUID counterpartyId,
+      UUID paymentObligationId,
+      UUID validationRunId,
+      String riskLevel,
+      int riskScore,
+      String action,
+      boolean humanReviewRequired,
+      boolean blocking,
+      int signalCount,
+      String reasonSummary,
+      String status,
+      Instant createdAt,
+      Instant updatedAt,
+      List<TrustRiskSignalContributionView> contributions,
+      List<TrustApprovalRequirementView> approvalRequirements,
+      List<TrustDecisionOverrideView> overrides) {}
+
+  /** Compact response returned from an evaluate call (header + bounded reason codes). */
+  public record TrustRiskEvaluationResponse(
+      UUID id,
+      String subjectType,
+      UUID subjectId,
+      String riskLevel,
+      int riskScore,
+      String action,
+      boolean humanReviewRequired,
+      boolean blocking,
+      String reasonSummary,
+      List<String> reasonCodes,
+      List<TrustApprovalRequirementView> approvalRequirements) {}
+
+  public record TrustDecisionOverrideRequest(
+      String newRiskLevel,
+      String newAction,
+      String reason) {}
 }

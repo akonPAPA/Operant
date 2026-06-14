@@ -113,6 +113,14 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/intake") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.INTAKE_WRITE;
     }
+    // OP-CAP-17D: trust risk-decision writes. Override is stronger than evaluate and is checked first.
+    // GET reads under /api/v1/trust fall through to the TRUST_READ prefix map below.
+    if (path.startsWith("/api/v1/trust/risk-decisions") && path.endsWith("/override") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_RISK_OVERRIDE;
+    }
+    if (path.startsWith("/api/v1/trust/risk-decisions") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_RISK_EVALUATE;
+    }
     return readPrefixes.entrySet().stream()
         .filter(entry -> path.startsWith(entry.getKey()))
         .map(Map.Entry::getValue)
