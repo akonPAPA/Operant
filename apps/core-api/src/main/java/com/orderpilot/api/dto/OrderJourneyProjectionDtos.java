@@ -21,7 +21,12 @@ public final class OrderJourneyProjectionDtos {
       int deadLettered,
       Instant generatedAt) {}
 
-  /** Bounded projector health snapshot (cheap tenant-scoped counts + recent failures). */
+  /**
+   * Bounded projector health snapshot (cheap tenant-scoped counts + recent failures). OP-CAP-25 adds
+   * {@code oldestPendingAt} (the occurredAt of this tenant's oldest drainable event, for staleness
+   * monitoring), {@code schedulerEnabled} (whether the controlled scheduled drain is configured on), and
+   * {@code configuredBatchSize} (the clamped per-tenant drain batch). No tenant-sensitive data is exposed.
+   */
   public record JourneyProjectionHealthDto(
       long pendingEvents,
       long failedEvents,
@@ -29,6 +34,25 @@ public final class OrderJourneyProjectionDtos {
       long failedCheckpoints,
       Instant lastProcessedAt,
       List<JourneyProjectionFailureDto> recentFailures,
+      Instant oldestPendingAt,
+      boolean schedulerEnabled,
+      int configuredBatchSize,
+      Instant generatedAt) {}
+
+  /**
+   * OP-CAP-25 — bounded tally returned by a controlled projector drain. Carries only counts and flags; never
+   * tenant names, customer data, raw payloads, or per-event detail. {@code tenantsScanned} is the number of
+   * tenants the drain visited this cycle; {@code partial} indicates the tenant scan hit its clamp (more
+   * tenants may have pending work); {@code limitApplied} is the per-tenant event batch limit that was used.
+   */
+  public record OrderJourneyProjectionDrainSummary(
+      int tenantsScanned,
+      int eventsProcessed,
+      int eventsSkipped,
+      int eventsFailed,
+      int eventsDeadLettered,
+      boolean partial,
+      int limitApplied,
       Instant generatedAt) {}
 
   /** A single bounded checkpoint failure entry for observability. */

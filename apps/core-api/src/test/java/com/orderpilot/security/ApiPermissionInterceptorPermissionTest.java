@@ -1292,6 +1292,26 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("REVIEW_ACTION");
   }
 
+  // --- OP-CAP-25 controlled drain endpoint (same prefix rule: non-GET requires REVIEW_ACTION) ---
+
+  @Test
+  void orderJourneyProjectionDrainPostWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection/drain");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void orderJourneyProjectionDrainPostWithAnalyticsReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection/drain");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
