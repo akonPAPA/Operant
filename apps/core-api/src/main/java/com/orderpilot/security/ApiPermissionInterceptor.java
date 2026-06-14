@@ -12,6 +12,8 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
   private final ApiPermissionGuard guard;
   private final Map<String, ApiPermission> readPrefixes = Map.ofEntries(
       Map.entry("/api/v1/analytics", ApiPermission.ANALYTICS_READ),
+      // OP-CAP-21: command center read models are read-only analytics projections.
+      Map.entry("/api/v1/command-center", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/v1/analytics/commerce", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage8/analytics", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage8/reconciliation", ApiPermission.ANALYTICS_READ),

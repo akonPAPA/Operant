@@ -1182,6 +1182,25 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
   }
 
+  // --- OP-CAP-21: command center summary read requires ANALYTICS_READ ---
+
+  @Test
+  void commandCenterSummaryGetWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/command-center/summary");
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void commandCenterSummaryGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/command-center/summary");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("ANALYTICS_READ");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
