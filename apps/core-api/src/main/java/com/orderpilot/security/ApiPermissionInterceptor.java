@@ -151,6 +151,12 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
         && !HttpMethod.GET.matches(method)) {
       return ApiPermission.TRUST_AI_MEMORY_EVALUATION_RUN;
     }
+    // OP-CAP-20 Layer B: a batch run creates a run, adds cases, AND executes in one call, so it requires
+    // the strongest TRUST_AI_MEMORY_EVALUATION_RUN — never the weaker WRITE. Checked before the generic
+    // evaluations non-GET -> WRITE rule below.
+    if (path.startsWith("/api/v1/trust/ai-memory/evaluations/batch-runs") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_AI_MEMORY_EVALUATION_RUN;
+    }
     if (path.startsWith("/api/v1/trust/ai-memory/evaluations") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.TRUST_AI_MEMORY_EVALUATION_WRITE;
     }

@@ -113,7 +113,7 @@ public class AiAdvisoryMemoryRetrievalService {
 
     List<AdvisoryMemoryHintDto> hints = scored.stream()
         .limit(maxResults)
-        .map(ScoredHint::toDto)
+        .<AdvisoryMemoryHintDto>map(ScoredHint::toDto)
         .toList();
 
     List<String> namespaceNames = namespaces.stream().map(Enum::name).toList();

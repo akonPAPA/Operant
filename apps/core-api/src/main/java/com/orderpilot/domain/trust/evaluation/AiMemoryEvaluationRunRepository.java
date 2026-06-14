@@ -1,5 +1,6 @@
 package com.orderpilot.domain.trust.evaluation;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,4 +17,11 @@ public interface AiMemoryEvaluationRunRepository extends JpaRepository<AiMemoryE
 
   List<AiMemoryEvaluationRun> findByTenantIdAndRunTypeOrderByCreatedAtDesc(
       UUID tenantId, AiMemoryEvaluationRunType runType, Pageable pageable);
+
+  /**
+   * OP-CAP-20 Layer B — concurrency guard. Detects an already-active (e.g. {@code PENDING}/{@code RUNNING})
+   * run of the same type for a tenant so a batch run does not start a duplicate. Tenant-scoped and bounded.
+   */
+  boolean existsByTenantIdAndRunTypeAndStatusIn(
+      UUID tenantId, AiMemoryEvaluationRunType runType, Collection<AiMemoryEvaluationStatus> statuses);
 }

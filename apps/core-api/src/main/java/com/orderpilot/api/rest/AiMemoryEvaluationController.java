@@ -1,10 +1,16 @@
 package com.orderpilot.api.rest;
 
+import com.orderpilot.api.dto.AiMemoryEvaluationBatchDtos.BatchCaseRequest;
+import com.orderpilot.api.dto.AiMemoryEvaluationBatchDtos.BatchRunRequest;
 import com.orderpilot.api.dto.AiMemoryEvaluationDtos.AddEvaluationCaseRequest;
 import com.orderpilot.api.dto.AiMemoryEvaluationDtos.CreateEvaluationRunRequest;
 import com.orderpilot.api.dto.AiMemoryEvaluationDtos.EvaluationCaseDto;
 import com.orderpilot.api.dto.AiMemoryEvaluationDtos.EvaluationResultDto;
 import com.orderpilot.api.dto.AiMemoryEvaluationDtos.EvaluationRunDto;
+import com.orderpilot.application.services.trust.AiMemoryEvaluationBatchRunnerService;
+import com.orderpilot.application.services.trust.AiMemoryEvaluationBatchRunnerService.BatchRunCommand;
+import com.orderpilot.application.services.trust.AiMemoryEvaluationBatchRunnerService.CaseSource;
+import com.orderpilot.application.services.trust.AiMemoryEvaluationBatchRunnerService.ManualCaseSpec;
 import com.orderpilot.application.services.trust.AiMemoryEvaluationService;
 import com.orderpilot.application.services.trust.AiMemoryEvaluationService.AddCaseCommand;
 import com.orderpilot.common.tenant.TenantContext;
@@ -38,9 +44,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AiMemoryEvaluationController {
   private final AiMemoryEvaluationService service;
+  private final AiMemoryEvaluationBatchRunnerService batchRunner;
 
-  public AiMemoryEvaluationController(AiMemoryEvaluationService service) {
+  public AiMemoryEvaluationController(
+      AiMemoryEvaluationService service, AiMemoryEvaluationBatchRunnerService batchRunner) {
     this.service = service;
+    this.batchRunner = batchRunner;
   }
 
   @PostMapping("/api/v1/trust/ai-memory/evaluations/runs")
@@ -69,6 +78,26 @@ public class AiMemoryEvaluationController {
   @PostMapping("/api/v1/trust/ai-memory/evaluations/runs/{runId}/execute")
   public EvaluationRunDto execute(@PathVariable UUID runId) {
     return toDto(service.runEvaluation(TenantContext.requireTenantId(), runId));
+  }
+
+  /**
+   * OP-CAP-20 Layer B — bounded batch run: create a run, add clamped cases, and execute it in one call.
+   * Because it executes, it requires the stronger {@code TRUST_AI_MEMORY_EVALUATION_RUN} (see
+   * {@code ApiPermissionInterceptor}); generic AI-memory write never grants it.
+   */
+  @PostMapping("/api/v1/trust/ai-memory/evaluations/batch-runs")
+  public EvaluationRunDto batchRun(@RequestBody BatchRunRequest request) {
+    UUID tenantId = TenantContext.requireTenantId();
+    List<ManualCaseSpec> specs = (request.cases() == null ? List.<BatchCaseRequest>of() : request.cases())
+        .stream().map(AiMemoryEvaluationController::toManualCaseSpec).toList();
+    BatchRunCommand command = new BatchRunCommand(
+        parseEnum(AiMemoryEvaluationRunType.class, request.runType(), "runType"),
+        parseEnum(CaseSource.class, request.caseSource(), "caseSource"),
+        request.maxCases(),
+        request.maxResultsPerCase(),
+        Boolean.TRUE.equals(request.dryRun()),
+        specs);
+    return toDto(batchRunner.runBatch(tenantId, null, command));
   }
 
   @GetMapping("/api/v1/trust/ai-memory/evaluations/runs")
@@ -119,6 +148,17 @@ public class AiMemoryEvaluationController {
     return new EvaluationResultDto(r.getId(), r.getRunId(), r.getCaseId(), r.getStatus().name(),
         r.getTopMemoryRecordId(), r.getTopMemoryKey(), r.getTopScore(), r.isExpectedMatched(),
         r.isExcludedUnsafe(), r.isTenantIsolated(), r.getFailureReason(), r.getCreatedAt());
+  }
+
+  private static ManualCaseSpec toManualCaseSpec(BatchCaseRequest c) {
+    return new ManualCaseSpec(
+        parseEnum(AiMemoryEvaluationCaseType.class, c.caseType(), "caseType"),
+        parseEnum(AiAdvisoryTaskType.class, c.taskType(), "taskType"),
+        parseEnum(AiMemoryNamespace.class, c.namespace(), "namespace"),
+        c.lookupKey(),
+        c.expectedMemoryKey(),
+        c.expectedExcludedMemoryKey(),
+        c.minExpectedScore());
   }
 
   private static <E extends Enum<E>> E parseEnum(Class<E> type, String value, String field) {
