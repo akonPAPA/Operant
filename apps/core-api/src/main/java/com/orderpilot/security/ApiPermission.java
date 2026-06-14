@@ -26,5 +26,10 @@ public enum ApiPermission {
   // Not for general operators.
   RUNTIME_ENTITLEMENT_MANAGE,
   // OP-CAP-17A: read-only access to deterministic document trust runs/signals.
-  TRUST_READ
+  TRUST_READ,
+  // OP-CAP-17D: evaluate a deterministic trust risk decision (write-through the backend engine).
+  TRUST_RISK_EVALUATE,
+  // OP-CAP-17D: manually override a trust risk decision — stronger than evaluate. Not for general
+  // operators; a CRITICAL decision can never be silently downgraded.
+  TRUST_RISK_OVERRIDE
 }

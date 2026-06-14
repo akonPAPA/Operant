@@ -694,6 +694,55 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_READ");
   }
 
+  // --- OP-CAP-17D trust risk decisions: GET requires TRUST_READ, evaluate requires
+  //     TRUST_RISK_EVALUATE, override requires the stronger TRUST_RISK_OVERRIDE ---
+
+  @Test
+  void trustRiskDecisionGetWithTrustReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/risk-decisions/some-id");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustRiskEvaluateWithEvaluatePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/risk-decisions/evaluate");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_RISK_EVALUATE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustRiskEvaluateWithTrustReadAloneIsRejected() throws Exception {
+    // A read permission must NOT be sufficient to write-through a risk evaluation.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/risk-decisions/evaluate");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_RISK_EVALUATE");
+  }
+
+  @Test
+  void trustRiskOverrideWithOverridePermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/risk-decisions/some-id/override");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_RISK_OVERRIDE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void trustRiskOverrideWithEvaluatePermissionAloneIsRejected() throws Exception {
+    // Evaluate must NOT be sufficient to override a decision (override is the stronger permission).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/risk-decisions/some-id/override");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_RISK_EVALUATE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_RISK_OVERRIDE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
