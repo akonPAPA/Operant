@@ -15,6 +15,7 @@ import com.orderpilot.domain.audit.AuditEvent;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.integration.OutboxEvent;
 import com.orderpilot.domain.integration.OutboxEventRepository;
+import com.orderpilot.domain.journey.OrderJourneyRepository;
 import com.orderpilot.domain.intake.ProcessingJob;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
 import com.orderpilot.domain.reconciliation.ReconciliationCase;
@@ -59,6 +60,7 @@ public class CommandCenterReadService {
   private final OutboxEventRepository outboxEventRepository;
   private final AuditEventRepository auditEventRepository;
   private final ReconciliationCaseRepository reconciliationCaseRepository;
+  private final OrderJourneyRepository orderJourneyRepository;
   private final Clock clock;
 
   public CommandCenterReadService(
@@ -69,6 +71,7 @@ public class CommandCenterReadService {
       OutboxEventRepository outboxEventRepository,
       AuditEventRepository auditEventRepository,
       ReconciliationCaseRepository reconciliationCaseRepository,
+      OrderJourneyRepository orderJourneyRepository,
       Clock clock) {
     this.exceptionCaseRepository = exceptionCaseRepository;
     this.draftQuoteRepository = draftQuoteRepository;
@@ -77,6 +80,7 @@ public class CommandCenterReadService {
     this.outboxEventRepository = outboxEventRepository;
     this.auditEventRepository = auditEventRepository;
     this.reconciliationCaseRepository = reconciliationCaseRepository;
+    this.orderJourneyRepository = orderJourneyRepository;
     this.clock = clock;
   }
 
@@ -102,6 +106,7 @@ public class CommandCenterReadService {
     long draftOrders = draftOrderRepository.countByTenantId(tenantId);
     long outboxPending = outboxEventRepository.countByTenantIdAndStatus(tenantId, "PENDING");
     long jobsFailed = processingJobRepository.countByTenantIdAndStatus(tenantId, "FAILED");
+    long blockedJourneys = orderJourneyRepository.countByTenantIdAndBlockedTrue(tenantId);
     return List.of(
         CommandCenterMetricDto.count("pendingReviews", "Pending reviews", pendingReviews),
         CommandCenterMetricDto.count("highRiskCases", "High-risk / critical cases", highRisk),
@@ -109,6 +114,8 @@ public class CommandCenterReadService {
         CommandCenterMetricDto.count("draftOrders", "Draft orders", draftOrders),
         CommandCenterMetricDto.count("outboxPending", "Outbox pending", outboxPending),
         CommandCenterMetricDto.count("jobsFailed", "Failed processing jobs", jobsFailed),
+        // OP-CAP-22: blocked order journeys needing operator attention (single bounded count).
+        CommandCenterMetricDto.count("blockedJourneys", "Blocked order journeys", blockedJourneys),
         CommandCenterMetricDto.unavailable(
             "automationReadiness",
             "Automation readiness",

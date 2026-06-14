@@ -59,7 +59,8 @@ export const navigationGroups: NavigationGroup[] = [
       { label: "Draft Quotes", href: "/quotes" },
       { label: "Draft Orders", href: "/orders" },
       { label: "Draft Quote Review", href: "/workspace/draft-quotes" },
-      { label: "Draft Order Review", href: "/workspace/draft-orders" }
+      { label: "Draft Order Review", href: "/workspace/draft-orders" },
+      { label: "Order Journey", href: "/order-journey" }
     ]
   },
   {
