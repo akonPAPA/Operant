@@ -88,12 +88,30 @@ public class OrderJourneyReadService {
     UUID tenantId = TenantContext.requireTenantId();
     OrderJourney journey = journeyRepository.findByIdAndTenantId(id, tenantId)
         .orElseThrow(() -> new NotFoundException("Order journey not found"));
-    return toDetail(tenantId, journey);
+    return toDetail(tenantId, journey, "READY");
   }
 
   @Transactional(readOnly = true)
   public OrderJourneyDetailDto detailByEntity(OrderJourney journey) {
-    return toDetail(journey.getTenantId(), journey);
+    return toDetail(journey.getTenantId(), journey, "READY");
+  }
+
+  /** OP-CAP-23 — detail for a freshly-materialized journey, tagged with how the projection was obtained. */
+  @Transactional(readOnly = true)
+  public OrderJourneyDetailDto detailByEntity(OrderJourney journey, String projectionSource) {
+    return toDetail(journey.getTenantId(), journey, projectionSource);
+  }
+
+  /**
+   * OP-CAP-23 — read the already-projected journey for a source WITHOUT materializing it. Empty when no
+   * projection exists yet (the caller then decides whether to request one / use the read fallback).
+   */
+  @Transactional(readOnly = true)
+  public java.util.Optional<OrderJourneyDetailDto> detailBySourceIfPresent(
+      com.orderpilot.domain.journey.JourneySourceType sourceType, UUID sourceId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    return journeyRepository.findByTenantIdAndSourceTypeAndSourceId(tenantId, sourceType, sourceId)
+        .map(j -> toDetail(tenantId, j, "READY"));
   }
 
   @Transactional(readOnly = true)
@@ -117,7 +135,7 @@ public class OrderJourneyReadService {
         fulfillmentConnected, false, clock.instant());
   }
 
-  private OrderJourneyDetailDto toDetail(UUID tenantId, OrderJourney journey) {
+  private OrderJourneyDetailDto toDetail(UUID tenantId, OrderJourney journey, String projectionSource) {
     List<OrderJourneyMilestone> milestones =
         milestoneRepository.findByTenantIdAndJourneyIdOrderBySortOrderAsc(tenantId, journey.getId());
     List<OrderJourneyEventDto> events = eventRepository
@@ -136,7 +154,7 @@ public class OrderJourneyReadService {
         journey.getRiskLevel(), journey.isBlocked(), journey.getCustomerVisibleStatus(), journey.getInternalStatus(),
         journey.getLastSignalAt(), journey.getCreatedAt(), journey.getUpdatedAt(),
         milestones.stream().map(this::toMilestone).toList(), events, signals,
-        false, fulfillmentConnected, clock.instant());
+        false, fulfillmentConnected, projectionSource, clock.instant());
   }
 
   private OrderJourneyListItemDto toListItem(OrderJourney j) {

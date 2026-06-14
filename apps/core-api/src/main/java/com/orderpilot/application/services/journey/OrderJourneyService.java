@@ -92,6 +92,30 @@ public class OrderJourneyService {
     return refreshFromSource(sourceType, sourceId);
   }
 
+  /**
+   * OP-CAP-23 — projector-safe refresh: returns empty (rather than throwing {@link NotFoundException}) when
+   * the trusted internal source row is absent, so the event/outbox projector can mark the event SKIPPED
+   * without poisoning the surrounding transaction. Presence is checked up-front with a tenant-scoped read.
+   */
+  @Transactional
+  public java.util.Optional<OrderJourney> refreshIfSourcePresent(JourneySourceType sourceType, UUID sourceId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    if (sourceId == null || !sourceType.isProjectable() || !sourcePresent(tenantId, sourceType, sourceId)) {
+      return java.util.Optional.empty();
+    }
+    return java.util.Optional.of(refreshFromSource(sourceType, sourceId));
+  }
+
+  private boolean sourcePresent(UUID tenantId, JourneySourceType sourceType, UUID sourceId) {
+    return switch (sourceType) {
+      case DRAFT_QUOTE -> draftQuoteRepository.findByIdAndTenantId(sourceId, tenantId).isPresent();
+      case DRAFT_ORDER, ORDER -> draftOrderRepository.findByIdAndTenantId(sourceId, tenantId).isPresent();
+      case VALIDATION_REVIEW -> exceptionCaseRepository.findByIdAndTenantId(sourceId, tenantId).isPresent();
+      case RECONCILIATION_CASE -> reconciliationCaseRepository.findByIdAndTenantId(sourceId, tenantId).isPresent();
+      case EXTERNAL_MIRROR -> false; // no persisted external source row this stage (out of scope)
+    };
+  }
+
   @Transactional
   public OrderJourney refreshFromSource(JourneySourceType sourceType, UUID sourceId) {
     UUID tenantId = TenantContext.requireTenantId();

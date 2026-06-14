@@ -83,6 +83,22 @@ test("no mutation or external-write controls in read surfaces", () => {
   }
 });
 
+test("OP-CAP-23: api client exposes read-only projector health and projection source type", () => {
+  assert.match(apiClient, /\/api\/v1\/order-journeys\/projection-health/);
+  assert.match(apiClient, /getJourneyProjectionHealth/);
+  assert.match(apiClient, /projectionSource\?/);
+  // health read stays a GET (no projector mutation control wired into the read client)
+  assert.doesNotMatch(apiClient, /method:\s*"(POST|PUT|PATCH|DELETE)"/);
+});
+
+test("OP-CAP-23: detail honestly reports projection source without inventing status", () => {
+  assert.match(detail, /Prepared by projector/);
+  assert.match(detail, /Refreshed on read \(projector pending\)/);
+  assert.match(detail, /ON_READ_FALLBACK/);
+  // still no fake projector control buttons in the read surface
+  assert.doesNotMatch(detail, /Run projector|Process events|Force refresh/i);
+});
+
 test("pages exist and keep the Operant shell; branding stays Operant not OrderPilot", () => {
   assert.equal(existsSync(listPage), true);
   assert.equal(existsSync(detailPage), true);

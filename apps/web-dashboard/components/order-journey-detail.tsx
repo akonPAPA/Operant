@@ -43,6 +43,10 @@ export async function OrderJourneyDetail({ id }: Readonly<{ id: string }>) {
             <dt>Payment status</dt>
             <dd>{data.paymentStatusAvailable ? "Available" : "Payment status unavailable"}</dd>
           </div>
+          <div>
+            <dt>Projection</dt>
+            <dd>{projectionSourceLabel(data.projectionSource)}</dd>
+          </div>
         </dl>
       </section>
 
@@ -75,6 +79,20 @@ export async function OrderJourneyDetail({ id }: Readonly<{ id: string }>) {
       </section>
     </>
   );
+}
+
+// OP-CAP-23 — honestly reports how the projection was obtained. "READY" means it was prepared by the
+// event/outbox projector (the production path); "ON_READ_FALLBACK" means it was materialized during this
+// read as the documented temporary fallback while the projector catches up. Never invents status.
+function projectionSourceLabel(source: string | null | undefined): string {
+  switch (source) {
+    case "READY":
+      return "Prepared by projector";
+    case "ON_READ_FALLBACK":
+      return "Refreshed on read (projector pending)";
+    default:
+      return "—";
+  }
 }
 
 function Cell({ label, value }: Readonly<{ label: string; value: string }>) {

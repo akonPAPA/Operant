@@ -87,11 +87,25 @@ export type OrderJourneyDetail = {
   fulfillmentSignals: FulfillmentSignal[];
   paymentStatusAvailable: boolean;
   fulfillmentTrackingConnected: boolean;
+  // OP-CAP-23: how this projection was obtained — "READY" (already-projected, the production path) or
+  // "ON_READ_FALLBACK" (materialized during this read as the documented temporary fallback). Optional so
+  // older payloads remain compatible. The frontend only reports this honestly; it never invents status.
+  projectionSource?: string | null;
+  generatedAt: string;
+};
+
+export type JourneyProjectionHealth = {
+  pendingEvents: number;
+  failedEvents: number;
+  deadLetteredEvents: number;
+  failedCheckpoints: number;
+  lastProcessedAt: string | null;
   generatedAt: string;
 };
 
 export type OrderJourneyListResult = { data: OrderJourneySummary | null; error?: string };
 export type OrderJourneyDetailResult = { data: OrderJourneyDetail | null; error?: string };
+export type JourneyProjectionHealthResult = { data: JourneyProjectionHealth | null; error?: string };
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 const ANALYTICS_READ = "ANALYTICS_READ";
@@ -150,4 +164,9 @@ export async function getOrderJourneyAttention(): Promise<OrderJourneyListResult
 
 export async function getOrderJourney(id: string): Promise<OrderJourneyDetailResult> {
   return read<OrderJourneyDetail>(`/api/v1/order-journeys/${encodeURIComponent(id)}`);
+}
+
+// OP-CAP-23: bounded, read-only projector health (pending/failed/dead-lettered counts + last processed).
+export async function getJourneyProjectionHealth(): Promise<JourneyProjectionHealthResult> {
+  return read<JourneyProjectionHealth>("/api/v1/order-journeys/projection-health");
 }

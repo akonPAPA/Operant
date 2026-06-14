@@ -101,6 +101,9 @@ public final class OrderJourneyDtos {
       List<FulfillmentSignalDto> fulfillmentSignals,
       boolean paymentStatusAvailable,
       boolean fulfillmentTrackingConnected,
+      // OP-CAP-23: how this projection was obtained — READY (already-projected, the production path) or
+      // ON_READ_FALLBACK (materialized during this read as the documented temporary fallback).
+      String projectionSource,
       Instant generatedAt) {}
 
   /**

@@ -94,3 +94,20 @@ and label its evidence level; everything else is honestly `UNKNOWN` / "not conne
   (read-only, MIRRORED evidence, no external writes).
 - Secure customer-facing tracking surface once authorized secure-link backend exists
   (`CustomerSafeJourneyDto` is the contract).
+
+## OP-CAP-23 — event/outbox-driven projection (frontend impact)
+
+The journey detail now reads an honest **projection source** the backend reports on
+`OrderJourneyDetailDto.projectionSource`:
+
+- `READY` → "Prepared by projector" (the production path: refreshed by the durable event/outbox
+  projector, not during this read).
+- `ON_READ_FALLBACK` → "Refreshed on read (projector pending)" (the documented temporary fallback while
+  the projector catches up).
+
+The field is optional, so older payloads stay compatible. `order-journey-api.ts` also exposes a
+read-only `getJourneyProjectionHealth()` (`GET /api/v1/order-journeys/projection-health`,
+ANALYTICS_READ) returning bounded counts (pending / failed / dead-lettered / failed checkpoints / last
+processed). No projector control buttons, no fake GPS/carrier/payment copy, and no journey status is
+invented on the client — status authority remains the backend. The Operant shell, grouped nav, and the
+list/detail surfaces are unchanged.
