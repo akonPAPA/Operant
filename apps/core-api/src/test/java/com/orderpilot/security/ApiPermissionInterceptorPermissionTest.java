@@ -266,6 +266,82 @@ class ApiPermissionInterceptorPermissionTest {
   }
 
   @Test
+  void validationReviewDraftabilityGetWithValidationReadSucceeds() throws Exception {
+    // OP-CAP-15C: per-line draftability hints are a read — GET under /api/v1/validations needs VALIDATION_READ.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draftability");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void validationReviewDraftabilityGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/123e4567-e89b-12d3-a456-426614174000/review/draftability");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
+  @Test
+  void reviewDraftQueueGetWithValidationReadSucceeds() throws Exception {
+    // OP-CAP-15C: review-origin draft queue is a read — GET under /api/v1/validations needs VALIDATION_READ.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/validations/review-drafts");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void reviewDraftQueueGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/validations/review-drafts");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
+  @Test
+  void reviewDraftRecentRemediationRollupGetWithValidationReadSucceeds() throws Exception {
+    // OP-CAP-15J: recent remediation rollup tile is a read — GET under /api/v1/validations needs VALIDATION_READ.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/validations/review-drafts/remediation-rollup");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void reviewDraftRecentRemediationRollupGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/validations/review-drafts/remediation-rollup");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
+  @Test
+  void reviewDraftRemediationLineageGetWithValidationReadSucceeds() throws Exception {
+    // OP-CAP-15H: remediation lineage detail is a read — GET under /api/v1/validations needs VALIDATION_READ.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/review-drafts/QUOTE/123e4567-e89b-12d3-a456-426614174000/remediation-lineage");
+    req.addHeader("X-OrderPilot-Permissions", "VALIDATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void reviewDraftRemediationLineageGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/validations/review-drafts/QUOTE/123e4567-e89b-12d3-a456-426614174000/remediation-lineage");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("VALIDATION_READ");
+  }
+
+  @Test
   void validationEngineTriggerStillRequiresValidationRunNotReviewAction() throws Exception {
     // A non-review validations mutation (advisory handoff) must remain VALIDATION_RUN-guarded.
     MockHttpServletRequest req = new MockHttpServletRequest(

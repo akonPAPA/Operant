@@ -6,4 +6,7 @@ public interface DraftQuoteLineRepository extends JpaRepository<DraftQuoteLine, 
   // One grouped query for queue line counts — avoids N+1 line-array loading.
   @Query("select l.draftQuoteId, count(l) from DraftQuoteLine l where l.tenantId = :tenantId and l.draftQuoteId in :ids group by l.draftQuoteId")
   List<Object[]> countByDraftQuoteIds(@Param("tenantId") UUID tenantId, @Param("ids") Collection<UUID> ids);
+  // OP-CAP-15G: batch-load (draftQuoteId, sourceExtractedLineItemId) pairs for remediation lineage — avoids N+1.
+  @Query("select l.draftQuoteId, l.sourceExtractedLineItemId from DraftQuoteLine l where l.tenantId = :tenantId and l.draftQuoteId in :ids")
+  List<Object[]> sourceLineIdsByDraftQuoteIds(@Param("tenantId") UUID tenantId, @Param("ids") Collection<UUID> ids);
 }

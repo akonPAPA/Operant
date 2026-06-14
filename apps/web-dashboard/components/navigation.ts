@@ -20,6 +20,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Quote Review", href: "/quote-review" },
   { label: "Draft Quote Review", href: "/workspace/draft-quotes" },
   { label: "Draft Order Review", href: "/workspace/draft-orders" },
+  { label: "Review-Origin Drafts", href: "/workspace/review-drafts" },
   { label: "AI Work Assistant", href: "/ai-work" },
   { label: "Processing Jobs", href: "/processing-jobs" },
   { label: "Webhook Events", href: "/webhook-events" },
