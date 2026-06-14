@@ -7,7 +7,9 @@ import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionHealthDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequest;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequestResponse;
+import com.orderpilot.api.dto.OrderJourneyProjectionDtos.OrderJourneyProjectionDrainSummary;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.ProcessJourneyProjectionResponse;
+import com.orderpilot.application.services.journey.OrderJourneyProjectionDrainService;
 import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
 import com.orderpilot.application.services.journey.OrderJourneyProjectorRunner;
 import com.orderpilot.application.services.journey.OrderJourneyReadService;
@@ -45,15 +47,17 @@ public class OrderJourneyController {
   private final OrderJourneyService journeyService;
   private final OrderJourneyProjectorRunner projectorRunner;
   private final OrderJourneyProjectionPublisher projectionPublisher;
+  private final OrderJourneyProjectionDrainService drainService;
   private final RequestActorResolver actorResolver;
 
   public OrderJourneyController(OrderJourneyReadService readService, OrderJourneyService journeyService,
       OrderJourneyProjectorRunner projectorRunner, OrderJourneyProjectionPublisher projectionPublisher,
-      RequestActorResolver actorResolver) {
+      OrderJourneyProjectionDrainService drainService, RequestActorResolver actorResolver) {
     this.readService = readService;
     this.journeyService = journeyService;
     this.projectorRunner = projectorRunner;
     this.projectionPublisher = projectionPublisher;
+    this.drainService = drainService;
     this.actorResolver = actorResolver;
   }
 
@@ -105,6 +109,18 @@ public class OrderJourneyController {
   @PostMapping("/projection/process")
   public ProcessJourneyProjectionResponse processProjection(@RequestParam(defaultValue = "50") int limit) {
     return projectorRunner.processTenantBatch(TenantContext.requireTenantId(), limit);
+  }
+
+  /**
+   * OP-CAP-25 — bounded, tenant-scoped controlled drain for the CURRENT tenant only. Unlike the system
+   * scheduled drain, this endpoint never crosses tenants: it resolves {@code X-Tenant-Id} and drains just
+   * that tenant's clamped batch through the same projector runtime. REVIEW_ACTION (non-GET under this prefix
+   * via {@code ApiPermissionInterceptor}); no external write; summary carries counts only.
+   */
+  @PostMapping("/projection/drain")
+  public OrderJourneyProjectionDrainSummary drainProjection(
+      @RequestParam(defaultValue = "25") int perTenantLimit) {
+    return drainService.drainTenant(TenantContext.requireTenantId(), perTenantLimit);
   }
 
   /** OP-CAP-23 — explicit, audited, idempotent projection request for a known source. No external write. */

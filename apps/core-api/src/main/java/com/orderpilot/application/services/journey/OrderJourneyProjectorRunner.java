@@ -18,6 +18,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,8 @@ public class OrderJourneyProjectorRunner {
   private final AuditEventService auditEventService;
   private final OrderJourneyProjectorRunner self;
   private final Clock clock;
+  private final boolean schedulerEnabled;
+  private final int configuredBatchSize;
 
   public OrderJourneyProjectorRunner(
       OrderJourneyProjectionPublisher publisher,
@@ -55,7 +58,9 @@ public class OrderJourneyProjectorRunner {
       OrderJourneyProjector projector,
       AuditEventService auditEventService,
       @Lazy OrderJourneyProjectorRunner self,
-      Clock clock) {
+      Clock clock,
+      @Value("${orderpilot.runtime.order-journey-projection.enabled:false}") boolean schedulerEnabled,
+      @Value("${orderpilot.runtime.order-journey-projection.batch-size:25}") int configuredBatchSize) {
     this.publisher = publisher;
     this.events = events;
     this.checkpoints = checkpoints;
@@ -63,6 +68,8 @@ public class OrderJourneyProjectorRunner {
     this.auditEventService = auditEventService;
     this.self = self;
     this.clock = clock;
+    this.schedulerEnabled = schedulerEnabled;
+    this.configuredBatchSize = OrderJourneyProjectionPublisher.clampBatch(configuredBatchSize);
   }
 
   /**
@@ -186,6 +193,10 @@ public class OrderJourneyProjectorRunner {
     List<OrderJourneyProjectionEvent> recentProcessed = events.findByTenantIdAndStatusOrderByOccurredAtDesc(
         tenantId, JourneyProjectionEventStatus.PROCESSED, PageRequest.of(0, 1));
     Instant lastProcessedAt = recentProcessed.isEmpty() ? null : recentProcessed.get(0).getProcessedAt();
+    // Oldest drainable (PENDING / retry-ready FAILED) event for staleness monitoring — bounded to one row.
+    List<OrderJourneyProjectionEvent> oldestPending =
+        publisher.findPendingBatch(tenantId, 1, clock.instant());
+    Instant oldestPendingAt = oldestPending.isEmpty() ? null : oldestPending.get(0).getOccurredAt();
     List<JourneyProjectionFailureDto> recentFailures = checkpoints
         .findByTenantIdAndStatusOrderByUpdatedAtDesc(tenantId, JourneyProjectionCheckpointStatus.FAILED,
             PageRequest.of(0, FAILURE_PREVIEW_LIMIT))
@@ -195,7 +206,8 @@ public class OrderJourneyProjectorRunner {
             c.getFailureMessage(), c.getAttemptCount(), c.getFailedAt()))
         .toList();
     return new JourneyProjectionHealthDto(pending, failedEvents, deadLettered, failedCheckpoints,
-        lastProcessedAt, recentFailures, clock.instant());
+        lastProcessedAt, recentFailures, oldestPendingAt, schedulerEnabled, configuredBatchSize,
+        clock.instant());
   }
 
   private static String bound(String value, int max) {

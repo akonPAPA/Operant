@@ -38,4 +38,20 @@ public interface OrderJourneyProjectionEventRepository
   List<OrderJourneyProjectionEvent> findPendingBatch(
       @Param("tenantId") UUID tenantId, @Param("maxRetry") int maxRetry, @Param("now") Instant now,
       Pageable pageable);
+
+  /**
+   * OP-CAP-25 — bounded, fair, cross-tenant discovery for the controlled drain runtime. Returns only the
+   * distinct tenant ids that currently have drainable work (PENDING, or FAILED whose retry window has opened
+   * and whose retry cap is not yet reached) — never DEAD_LETTERED. Ordered by each tenant's oldest drainable
+   * event so no tenant is starved, and always clamped by the supplied {@link Pageable} so the scan is bounded
+   * and never loads the events themselves (only tenant ids). The drain then processes each tenant with the
+   * existing tenant-scoped {@code findPendingBatch}/runner, so per-tenant isolation is preserved.
+   */
+  @Query("select e.tenantId from OrderJourneyProjectionEvent e where "
+      + "e.status = com.orderpilot.domain.journey.events.JourneyProjectionEventStatus.PENDING "
+      + "or (e.status = com.orderpilot.domain.journey.events.JourneyProjectionEventStatus.FAILED "
+      + "and e.retryCount < :maxRetry and (e.nextRetryAt is null or e.nextRetryAt <= :now)) "
+      + "group by e.tenantId order by min(e.occurredAt) asc")
+  List<UUID> findTenantIdsWithPendingEvents(
+      @Param("maxRetry") int maxRetry, @Param("now") Instant now, Pageable pageable);
 }
