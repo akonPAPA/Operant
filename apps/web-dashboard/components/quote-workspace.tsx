@@ -97,7 +97,7 @@ export function QuoteWorkspace() {
     <div className="stack">
       <section className="panel">
         <h2>RFQ to Draft Quote</h2>
-        <p className="risk-note">Demo path: Steppe Logistics requests out-of-stock OE brake pads. OrderPilot validates the draft, shows substitute/approval context, and keeps externalExecution=DISABLED.</p>
+        <p className="risk-note">Demo path: Steppe Logistics requests out-of-stock OE brake pads. Operant validates the draft, shows substitute/approval context, and keeps externalExecution=DISABLED.</p>
         <form className="upload-form" onSubmit={submit}>
           <label><span>Tenant ID</span><input name="tenantId" defaultValue={demoTenantId} /></label>
           <label><span>Customer external ref</span><input name="customerExternalRef" defaultValue="CUST-001" /></label>

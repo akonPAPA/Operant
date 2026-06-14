@@ -8,7 +8,7 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
       <section className="panel">
         <h2>Case {id}</h2>
         <p>Review extraction fields, evidence, confidence, validation issues, suggested corrective actions, substitute candidates, approval requirements, notes, and operator actions.</p>
-        <p className="risk-note">Workspace actions update OrderPilot workflow state only. They do not mutate product, customer, inventory, pricing, ERP, accounting, or warehouse systems.</p>
+        <p className="risk-note">Workspace actions update Operant workflow state only. They do not mutate product, customer, inventory, pricing, ERP, accounting, or warehouse systems.</p>
       </section>
       <div className="page-grid">
         <section className="panel"><h2>Operator Actions</h2><p>Start review, approve for next stage, reject, request correction, escalate, add internal note, or confirm a candidate match inside review state.</p></section>

@@ -76,7 +76,7 @@ export function DemoDashboard() {
     <div className="demo-stack">
       <section className="demo-hero">
         <div>
-          <span className="eyebrow">OrderPilot Demo Parts Distributor</span>
+          <span className="eyebrow">Operant demo parts distributor</span>
           <h2>B2B auto and industrial parts distributor demo</h2>
           <p>
             Messy Telegram, PDF, and Excel requests become validated drafts or human handoffs, then flow into
