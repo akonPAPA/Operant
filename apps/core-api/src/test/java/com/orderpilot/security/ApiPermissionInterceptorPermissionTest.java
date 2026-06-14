@@ -1004,6 +1004,184 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_OPERATOR_CORRECTION_APPROVE");
   }
 
+  // --- OP-CAP-19 Layer B advisory retrieval: POST query is a READ — requires TRUST_AI_MEMORY_READ,
+  //     never the write/invalidate permissions ---
+
+  @Test
+  void advisoryRetrievalPostWithMemoryReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/advisory-retrieval");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void advisoryRetrievalPostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/advisory-retrieval");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+  }
+
+  @Test
+  void advisoryRetrievalPostWithMemoryWriteAloneIsRejected() throws Exception {
+    // Advisory retrieval is a read; the write permission must NOT satisfy it.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/advisory-retrieval");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+  }
+
+  // --- OP-CAP-19 Layer C evaluation harness: read/write/run have distinct permissions; generic AI-memory
+  //     read/write never grants evaluation run ---
+
+  @Test
+  void evaluationCreateRunWithEvaluationWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/evaluations/runs");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void evaluationCreateRunWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/evaluations/runs");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_WRITE");
+  }
+
+  @Test
+  void evaluationAddCaseWithEvaluationWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/cases");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void evaluationExecuteWithEvaluationRunSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/execute");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_RUN");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void evaluationExecuteWithEvaluationWriteAloneIsRejected() throws Exception {
+    // Write must NOT be sufficient to execute a run (run is the stronger permission).
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/execute");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
+  }
+
+  @Test
+  void evaluationExecuteWithGenericMemoryWriteIsRejected() throws Exception {
+    // Generic AI-memory write must NOT grant evaluation execution.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/execute");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
+  }
+
+  @Test
+  void evaluationRunsGetWithEvaluationReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory/evaluations/runs");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void evaluationResultsGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/trust/ai-memory/evaluations/runs/some-id/results");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_READ");
+  }
+
+  @Test
+  void evaluationReadWithGenericMemoryReadAloneIsRejected() throws Exception {
+    // Generic AI-memory read must NOT grant the dedicated evaluation read permission.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory/evaluations/runs");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_READ");
+  }
+
+  // --- OP-CAP-20 Layer A advisory runtime assist: GET requires TRUST_AI_MEMORY_READ (same read
+  //     permission as advisory retrieval), never a write permission ---
+
+  @Test
+  void advisoryAssistGetWithMemoryReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/trust/ai-memory/advisory-assist?contextType=TRUST_VALIDATION_REVIEW");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void advisoryAssistGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/trust/ai-memory/advisory-assist?contextType=TRUST_VALIDATION_REVIEW");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+  }
+
+  // --- OP-CAP-20 Layer B bounded batch run: it executes, so it requires the strongest
+  //     TRUST_AI_MEMORY_EVALUATION_RUN — never the weaker WRITE or a generic AI-memory write ---
+
+  @Test
+  void evaluationBatchRunWithRunPermissionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/batch-runs");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_RUN");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void evaluationBatchRunWithEvaluationWriteAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/batch-runs");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
+  }
+
+  @Test
+  void evaluationBatchRunWithGenericMemoryWriteIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/trust/ai-memory/evaluations/batch-runs");
+    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
