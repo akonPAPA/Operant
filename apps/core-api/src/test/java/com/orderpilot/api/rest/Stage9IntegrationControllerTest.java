@@ -3,6 +3,7 @@ package com.orderpilot.api.rest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -86,6 +87,19 @@ class Stage9IntegrationControllerTest {
     mockMvc.perform(get("/api/stage9/connector-sync-runs").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.syncRuns[0].direction").value("OUTBOUND_DEMO"));
+  }
+
+  @Test
+  void stage9ChangeRequestApproveIsRejectedAtRuntimeWithoutApprovePermission() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden());
+
+    verifyNoInteractions(changeRequestService);
   }
 
   // OP-CAP-17E: the connector ChangeRequest approver must be taken from the trusted actor header,
