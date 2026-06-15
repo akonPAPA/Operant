@@ -4,9 +4,12 @@ import com.orderpilot.api.dto.AiWorkDtos.AiWorkDecisionRequest;
 import com.orderpilot.api.dto.AiWorkDtos.AiWorkSuggestionResponse;
 import com.orderpilot.api.dto.AiWorkDtos.CreateAiWorkSuggestionRequest;
 import com.orderpilot.application.services.aiwork.AiWorkService;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkSuggestion;
 import com.orderpilot.domain.aiwork.AiWorkType;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,20 +34,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/ai-work")
 public class AiWorkController {
   private final AiWorkService service;
+  private final RequestActorResolver actorResolver;
 
-  public AiWorkController(AiWorkService service) {
+  public AiWorkController(AiWorkService service, RequestActorResolver actorResolver) {
     this.service = service;
+    this.actorResolver = actorResolver;
   }
 
   @PostMapping("/suggestions")
-  public AiWorkSuggestionResponse create(@RequestBody CreateAiWorkSuggestionRequest request) {
+  public AiWorkSuggestionResponse create(@RequestBody CreateAiWorkSuggestionRequest request, HttpServletRequest http) {
     AiWorkSuggestion saved = service.createSuggestion(
         parseWorkType(request.workType()),
         parseSourceType(request.sourceType()),
         request.sourceId(),
         request.contextText(),
         request.idempotencyKey(),
-        request.createdByUserId());
+        trustedActor(http));
     return toResponse(saved);
   }
 
@@ -66,16 +71,20 @@ public class AiWorkController {
 
   @PostMapping("/suggestions/{id}/accept")
   public AiWorkSuggestionResponse accept(
-      @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request) {
+      @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request, HttpServletRequest http) {
     return toResponse(service.accept(
-        id, request == null ? null : request.decidedByUserId(), request == null ? null : request.reason()));
+        id, trustedActor(http), request == null ? null : request.reason()));
   }
 
   @PostMapping("/suggestions/{id}/reject")
   public AiWorkSuggestionResponse reject(
-      @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request) {
+      @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request, HttpServletRequest http) {
     return toResponse(service.reject(
-        id, request == null ? null : request.decidedByUserId(), request == null ? null : request.reason()));
+        id, trustedActor(http), request == null ? null : request.reason()));
+  }
+
+  private UUID trustedActor(HttpServletRequest http) {
+    return actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
   }
 
   private static AiWorkType parseWorkType(String value) {
@@ -101,7 +110,6 @@ public class AiWorkController {
         s.getId(),
         s.getWorkType(),
         s.getSourceType(),
-        s.getSourceId(),
         s.getStatus(),
         s.getStrategyVersion(),
         s.getRiskLevel(),
@@ -110,10 +118,8 @@ public class AiWorkController {
         s.getStructuredPayloadJson(),
         s.getEvidenceRefsJson(),
         true,
-        s.getCreatedByUserId(),
         s.getCreatedAt(),
         s.getUpdatedAt(),
-        s.getDecidedByUserId(),
         s.getDecidedAt(),
         s.getDecisionReason());
   }
