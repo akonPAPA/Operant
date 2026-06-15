@@ -73,11 +73,7 @@ public class QuoteConversionAttemptReviewQueryService {
     return new QuoteConversionAttemptReviewDetail(
         item.id(),
         item.sourceType(),
-        item.sourceId(),
         item.sourceChannel(),
-        item.channelMessageId(),
-        item.inboundDocumentId(),
-        item.draftQuoteId(),
         item.draftQuoteLinked(),
         item.status(),
         item.reviewRequired(),
@@ -87,7 +83,6 @@ public class QuoteConversionAttemptReviewQueryService {
         item.customerResolution(),
         item.lineCount(),
         item.requestMode(),
-        item.triggeredBy(),
         item.triggeredByType(),
         item.createdAt(),
         safeMetadata(summary),
@@ -100,16 +95,10 @@ public class QuoteConversionAttemptReviewQueryService {
     List<String> reasonCodes = reasonCodes(attempt, issues);
     String reasonCode = reasonCodes.isEmpty() ? null : reasonCodes.get(0);
     String sourceChannel = sourceChannel(attempt, sources);
-    UUID channelMessageId = "CHANNEL_MESSAGE".equals(attempt.getSourceType()) ? attempt.getSourceId() : null;
-    UUID inboundDocumentId = "INBOUND_DOCUMENT".equals(attempt.getSourceType()) ? attempt.getSourceId() : null;
     return new QuoteConversionAttemptReviewItem(
         attempt.getId(),
         attempt.getSourceType(),
-        attempt.getSourceId(),
         sourceChannel,
-        channelMessageId,
-        inboundDocumentId,
-        attempt.getQuoteId(),
         attempt.getQuoteId() != null,
         attempt.getStatus(),
         reviewRequired(attempt),
@@ -119,7 +108,6 @@ public class QuoteConversionAttemptReviewQueryService {
         stringValue(summary.get("customerResolution")),
         intValue(summary.get("lineCount")),
         attempt.getRequestMode(),
-        attempt.getTriggeredBy(),
         attempt.getTriggeredByType(),
         attempt.getCreatedAt());
   }
