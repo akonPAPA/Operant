@@ -121,6 +121,17 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
     }
   }, []);
 
+  const applyResult = useCallback((result: Awaited<ReturnType<typeof getQuoteReviewDetail>>) => {
+    if (result.ok) {
+      setDetail(result.data ?? null);
+      setLoadState(result.data ? "ready" : "not_found");
+    } else {
+      setDetail(null);
+      setLoadState(result.kind === "forbidden" || result.kind === "not_found" ? result.kind : "error");
+      setMessage(result.message);
+    }
+  }, []);
+
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     setLoadState("loading");
