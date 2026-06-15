@@ -117,6 +117,29 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       // request-preparation lifecycle.
       return ApiPermission.CHANGE_REQUEST_CREATE;
     }
+    // ChangeRequest Stage9 authZ slice: the Stage9 connector ChangeRequest endpoints manipulate the
+    // SAME ChangeRequest aggregate (approveChangeRequest/rejectChangeRequest/execute*) as
+    // /api/v1/change-requests, so they must enforce the same dedicated least-privilege permissions.
+    // ADMIN_SETTINGS_READ must never satisfy a Stage9 ChangeRequest mutation. Specific action
+    // suffixes are checked before the generic create rule; GET reads fall through to READ below.
+    if (path.startsWith("/api/stage9/change-requests") && !HttpMethod.GET.matches(method)) {
+      if (path.endsWith("/approve")) {
+        return ApiPermission.CHANGE_REQUEST_APPROVE;
+      }
+      if (path.endsWith("/reject") || path.endsWith("/cancel")) {
+        return ApiPermission.CHANGE_REQUEST_REJECT;
+      }
+      // execute and retry both dispatch/re-dispatch the external write — execution control.
+      if (path.endsWith("/execute") || path.endsWith("/retry")) {
+        return ApiPermission.CHANGE_REQUEST_EXECUTE;
+      }
+      // POST /api/stage9/change-requests (create the connector ChangeRequest).
+      return ApiPermission.CHANGE_REQUEST_CREATE;
+    }
+    if (path.startsWith("/api/stage9/change-requests")) {
+      // GET list/get/execution-safety reads of the connector ChangeRequest aggregate.
+      return ApiPermission.CHANGE_REQUEST_READ;
+    }
     if ((path.startsWith("/api/v1/quotes") || path.startsWith("/api/v1/quote-transactions")) && !HttpMethod.GET.matches(method)) {
       return ApiPermission.QUOTE_ACTION;
     }

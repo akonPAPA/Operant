@@ -70,17 +70,17 @@ class Stage9IntegrationControllerTest {
     mockMvc.perform(post("/api/stage9/integrations/demo-erp").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.connectionKind").value("DEMO_ERP_LOCAL"));
-    mockMvc.perform(get("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+    mockMvc.perform(get("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.changeRequests[0].status").value("EXECUTED"))
         .andExpect(jsonPath("$.changeRequests[0].externalReference").value("DEMO-QUOTE-123"));
-    mockMvc.perform(post("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\"}"))
+    mockMvc.perform(post("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE").contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.targetSystem").value("DEMO_ERP"));
-    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_APPROVE").contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.approvalStatus").value("APPROVED"));
-    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_EXECUTE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.executionStatus").value("EXECUTED"));
     mockMvc.perform(get("/api/stage9/connector-sync-runs").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
@@ -101,7 +101,7 @@ class Stage9IntegrationControllerTest {
     when(changeRequestService.approveChangeRequest(eq(requestId), any())).thenReturn(changeRequest);
 
     mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve")
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_APPROVE")
             .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"actorId\":\"" + spoofActor + "\"}"))
@@ -125,7 +125,7 @@ class Stage9IntegrationControllerTest {
     when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), anyString(), any())).thenReturn(changeRequest);
 
     mockMvc.perform(post("/api/stage9/change-requests")
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
             .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\",\"actorId\":\"" + spoofActor + "\"}"))

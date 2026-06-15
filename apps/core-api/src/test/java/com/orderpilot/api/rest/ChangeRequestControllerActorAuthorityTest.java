@@ -51,6 +51,7 @@ class ChangeRequestControllerActorAuthorityTest {
 
     mockMvc.perform(post("/api/v1/change-requests")
             .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\",\"createdByUserId\":\"" + spoofActor + "\"}"))
         .andExpect(status().isOk())
@@ -69,6 +70,7 @@ class ChangeRequestControllerActorAuthorityTest {
     when(service.createChangeRequest(anyString(), anyString(), anyString(), anyString(), any(), anyString(), any(), any())).thenReturn(changeRequest);
 
     mockMvc.perform(post("/api/v1/change-requests")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\"}"))
         .andExpect(status().isOk());
@@ -85,6 +87,7 @@ class ChangeRequestControllerActorAuthorityTest {
     UUID sourceId = UUID.randomUUID();
     mockMvc.perform(post("/api/v1/change-requests")
             .header(RequestActorResolver.ACTOR_HEADER, "not-a-uuid")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\"}"))
         .andExpect(status().isBadRequest())
