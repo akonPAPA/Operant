@@ -46,6 +46,7 @@ orderpilot:
       batch-size: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_BATCH_SIZE:25}"
       max-tenants-per-cycle: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_MAX_TENANTS:10}"
       fixed-delay-ms: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_FIXED_DELAY_MS:30000}"
+      recovery-stale-processing-seconds: "${ORDERPILOT_ORDER_JOURNEY_RECOVERY_STALE_PROCESSING_SECONDS:900}"
     rate:
       # in-memory (default, single-node/dev/test) | redis (distributed counters across instances)
       store: "${ORDERPILOT_RUNTIME_RATE_STORE:in-memory}"

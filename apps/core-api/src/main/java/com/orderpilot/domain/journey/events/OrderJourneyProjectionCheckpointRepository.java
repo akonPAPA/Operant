@@ -19,4 +19,7 @@ public interface OrderJourneyProjectionCheckpointRepository
 
   List<OrderJourneyProjectionCheckpoint> findByTenantIdAndStatusOrderByUpdatedAtDesc(
       UUID tenantId, JourneyProjectionCheckpointStatus status, Pageable pageable);
+
+  Optional<OrderJourneyProjectionCheckpoint> findFirstByTenantIdAndProjectorNameOrderByUpdatedAtDesc(
+      UUID tenantId, String projectorName);
 }
