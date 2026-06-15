@@ -64,8 +64,6 @@ class QuoteReviewControllerTest {
         .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(8)).get());
   }
 
-  private static final String TENANT_HEADER = "X-Tenant-Id";
-  private static final String ACTOR_HEADER = "X-OrderPilot-Actor-Id";
 
   @Test
   void conversionAttemptListReturnsSafePreDraftAndDraftLinkedContract() throws Exception {
