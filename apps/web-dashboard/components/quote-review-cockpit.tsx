@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   correctQuoteReviewLine,
@@ -13,6 +13,7 @@ import {
   resolveQuoteReviewIssue,
   selectQuoteReviewSubstitute
 } from "@/lib/quote-review-api";
+import { generateIdempotencyKey } from "@/lib/security-idempotency";
 
 type LoadKind = "loading" | "ready" | "forbidden" | "not_found" | "error";
 
@@ -105,6 +106,9 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   const [reason, setReason] = useState("OPERATOR_REVIEW");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
+  const [mutationInFlight, setMutationInFlight] = useState(false);
+  const mutationInFlightRef = useRef(false);
+  const mutationKeysRef = useRef<Map<string, string>>(new Map());
 
   const applyResult = useCallback((result: Awaited<ReturnType<typeof getQuoteReviewDetail>>) => {
     if (result.ok) {
@@ -135,15 +139,31 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
     };
   }, [quoteId, applyResult]);
 
-  async function mutate(operation: () => Promise<unknown>, done: string) {
+  async function mutate(actionKey: string, operation: (idempotencyKey: string) => Promise<unknown>, done: string) {
+    if (mutationInFlightRef.current) return;
+    let idempotencyKey = mutationKeysRef.current.get(actionKey);
+    if (!idempotencyKey) {
+      try {
+        idempotencyKey = generateIdempotencyKey();
+        mutationKeysRef.current.set(actionKey, idempotencyKey);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
+        return;
+      }
+    }
+    mutationInFlightRef.current = true;
+    setMutationInFlight(true);
     setMessage("");
     try {
-      await operation();
+      await operation(idempotencyKey);
       applyResult(await getQuoteReviewDetail(quoteId));
+      mutationKeysRef.current.delete(actionKey);
       setMessage(done);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Review command failed.");
     }
+    mutationInFlightRef.current = false;
+    setMutationInFlight(false);
   }
 
   return (
@@ -198,8 +218,8 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
                     <td>{issue.status}</td>
                     <td>{issue.message}</td>
                     <td className="action-row">
-                      <button className="button secondary-button" disabled={issue.status !== "OPEN"} onClick={() => mutate(() => resolveQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note }), "Issue resolution persisted and quote revalidated.")}>Resolve</button>
-                      <button className="button secondary-button" disabled={issue.status !== "OPEN"} onClick={() => mutate(() => escalateQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note }), "Issue escalated to approval/review path.")}>Escalate</button>
+                      <button className="button secondary-button" disabled={issue.status !== "OPEN" || mutationInFlight} onClick={() => mutate(`resolve-issue-${issue.id}`, (idempotencyKey) => resolveQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note, idempotencyKey }), "Issue resolution persisted and quote revalidated.")}>Resolve</button>
+                      <button className="button secondary-button" disabled={issue.status !== "OPEN" || mutationInFlight} onClick={() => mutate(`escalate-issue-${issue.id}`, (idempotencyKey) => escalateQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note, idempotencyKey }), "Issue escalated to approval/review path.")}>Escalate</button>
                     </td>
                   </tr>
                 )) : <tr><td colSpan={5}>No validation issues.</td></tr>}
@@ -219,9 +239,9 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
                   <td>{line.uom}</td>
                   <td>{humanize(line.validationStatus)}</td>
                   <td className="action-row">
-                    <button className="button secondary-button" onClick={() => mutate(() => correctQuoteReviewLine(quoteId, line.id, { quantity: Number(line.quantity) > 0 ? Number(line.quantity) : 1, reasonCode: reason, note }), "Line quantity correction persisted and revalidated.")}>Fix qty</button>
-                    <button className="button secondary-button" onClick={() => mutate(() => correctQuoteReviewLine(quoteId, line.id, { uom: "EA", reasonCode: reason, note }), "Line UOM correction persisted and revalidated.")}>Set EA</button>
-                    <button className="button secondary-button" onClick={() => mutate(() => correctQuoteReviewLine(quoteId, line.id, { manualFollowUp: true, reasonCode: "MANUAL_FOLLOW_UP", note }), "Line marked for manual follow-up.")}>Follow-up</button>
+                    <button className="button secondary-button" disabled={mutationInFlight} onClick={() => mutate(`line-qty-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { quantity: Number(line.quantity) > 0 ? Number(line.quantity) : 1, reasonCode: reason, note, idempotencyKey }), "Line quantity correction persisted and revalidated.")}>Fix qty</button>
+                    <button className="button secondary-button" disabled={mutationInFlight} onClick={() => mutate(`line-uom-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { uom: "EA", reasonCode: reason, note, idempotencyKey }), "Line UOM correction persisted and revalidated.")}>Set EA</button>
+                    <button className="button secondary-button" disabled={mutationInFlight} onClick={() => mutate(`line-follow-up-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { manualFollowUp: true, reasonCode: "MANUAL_FOLLOW_UP", note, idempotencyKey }), "Line marked for manual follow-up.")}>Follow-up</button>
                   </td>
                 </tr>
               ))}</tbody>
@@ -239,8 +259,8 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
                   <td>{candidate.stockStatus}</td>
                   <td>{humanize(candidate.reasonCode)}</td>
                   <td className="action-row">
-                    <button className="button secondary-button" disabled={!candidate.lineId || candidate.blocked} onClick={() => mutate(() => selectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note }), candidate.requiresApproval ? "Substitute selected and routed to approval." : "Substitute selection persisted and revalidated.")}>Select</button>
-                    <button className="button secondary-button" disabled={!candidate.lineId} onClick={() => mutate(() => rejectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note }), "Substitute rejection persisted.")}>Reject</button>
+                    <button className="button secondary-button" disabled={!candidate.lineId || candidate.blocked || mutationInFlight} onClick={() => mutate(`substitute-select-${candidate.lineId}-${candidate.productId}`, (idempotencyKey) => selectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note, idempotencyKey }), candidate.requiresApproval ? "Substitute selected and routed to approval." : "Substitute selection persisted and revalidated.")}>Select</button>
+                    <button className="button secondary-button" disabled={!candidate.lineId || mutationInFlight} onClick={() => mutate(`substitute-reject-${candidate.lineId}-${candidate.productId}`, (idempotencyKey) => rejectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note, idempotencyKey }), "Substitute rejection persisted.")}>Reject</button>
                   </td>
                 </tr>
               )) : <tr><td colSpan={5}>Substitute selection is enabled only when backend-compatible candidates exist.</td></tr>}</tbody>

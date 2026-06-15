@@ -5,6 +5,8 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import com.orderpilot.common.tenant.TenantContextMissingException;
+import com.orderpilot.common.idempotency.IdempotencyConflictException;
+import com.orderpilot.common.idempotency.IdempotencyInProgressException;
 import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
@@ -95,6 +97,16 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(ConflictException.class)
   ResponseEntity<ApiErrorResponse> handleConflict(ConflictException ex, HttpServletRequest request) {
     return build(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(IdempotencyConflictException.class)
+  ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(IdempotencyConflictException ex, HttpServletRequest request) {
+    return build(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_CONFLICT", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(IdempotencyInProgressException.class)
+  ResponseEntity<ApiErrorResponse> handleIdempotencyInProgress(IdempotencyInProgressException ex, HttpServletRequest request) {
+    return build(HttpStatus.CONFLICT, "IDEMPOTENCY_REQUEST_IN_PROGRESS", ex.getMessage(), request, List.of());
   }
 
   @ExceptionHandler(TenantContextMissingException.class)

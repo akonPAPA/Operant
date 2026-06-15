@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -24,6 +25,7 @@ import com.orderpilot.application.services.workspace.QuoteConversionAttemptRevie
 import com.orderpilot.application.services.workspace.QuoteReviewService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.common.errors.NotFoundException;
+import com.orderpilot.common.idempotency.IdempotencyService;
 import com.orderpilot.common.tenant.TenantContextFilter;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.RequestActorResolver;
@@ -33,6 +35,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,9 +52,18 @@ class QuoteReviewControllerTest {
   @Autowired private MockMvc mockMvc;
   @MockBean private QuoteReviewService quoteReviewService;
   @MockBean private QuoteConversionAttemptReviewQueryService conversionAttemptQueryService;
+  @MockBean private IdempotencyService idempotencyService;
 
   private static final String TENANT_HEADER = "X-Tenant-Id";
   private static final String ACTOR_HEADER = "X-OrderPilot-Actor-Id";
+  private static final String IDEMPOTENCY_HEADER = "Idempotency-Key";
+
+  @BeforeEach
+  void setUpIdempotencyWrapper() {
+    lenient().when(idempotencyService.execute(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(8)).get());
+  }
+
 
   @Test
   void conversionAttemptListReturnsSafePreDraftAndDraftLinkedContract() throws Exception {
@@ -225,6 +238,7 @@ class QuoteReviewControllerTest {
     mockMvc.perform(post("/api/v1/quote-review/{quoteId}/issues/{issueId}/resolve", quoteId, issueId)
             .header(TENANT_HEADER, tenant.toString())
             .header(ACTOR_HEADER, trustedActor.toString())
+            .header(IDEMPOTENCY_HEADER, "resolve-issue-key")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
@@ -266,6 +280,7 @@ class QuoteReviewControllerTest {
     mockMvc.perform(post("/api/v1/quote-review/{quoteId}/lines/{lineId}/correct", quoteId, lineId)
             .header(TENANT_HEADER, tenant.toString())
             .header(ACTOR_HEADER, trustedActor.toString())
+            .header(IDEMPOTENCY_HEADER, "line-correction-key")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {

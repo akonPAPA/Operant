@@ -2,6 +2,7 @@ package com.orderpilot.api.rest;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,12 +16,16 @@ import com.orderpilot.application.services.workspace.ChannelToQuoteWiringService
 import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineService;
 import com.orderpilot.application.services.workspace.QuoteDraftService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
+import com.orderpilot.common.idempotency.IdempotencyService;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiPermissionGuard;
 import com.orderpilot.security.ApiPermissionInterceptor;
 import com.orderpilot.security.ApiSecurityWebConfig;
+import com.orderpilot.security.RequestActorResolver;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -36,6 +41,15 @@ class QuoteTransactionSecurityTest {
   @MockBean private QuoteDraftService quoteDraftService;
   @MockBean private QuoteApprovalStateMachineService approvalStateMachineService;
   @MockBean private ChannelToQuoteWiringService channelToQuoteWiringService;
+  @MockBean private IdempotencyService idempotencyService;
+  @MockBean private RequestActorResolver actorResolver;
+
+  @BeforeEach
+  void setUpIdempotencyWrapper() {
+    lenient().when(actorResolver.resolveVerifiedActor(any(), any())).thenReturn(null);
+    lenient().when(idempotencyService.execute(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(8)).get());
+  }
 
   @Test
   void quoteReadRequiresQuoteReadPermission() throws Exception {
@@ -66,6 +80,8 @@ class QuoteTransactionSecurityTest {
 
     mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+            .header("X-Tenant-Id", UUID.randomUUID().toString())
+            .header("Idempotency-Key", "approve-security-test")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isOk())

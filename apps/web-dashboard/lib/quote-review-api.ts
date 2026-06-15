@@ -81,6 +81,7 @@ export type QuoteReviewCommandPayload = {
   manualFollowUp?: boolean;
   fixType?: string;
   values?: Record<string, string>;
+  idempotencyKey?: string;
 };
 
 export type QuoteConversionAttemptReviewFilter = {
@@ -169,13 +170,15 @@ export function rejectQuoteReviewSubstitute(quoteId: string, lineId: string, pay
 // operator-safe messages so a 403/404 body (which may reference tenant/resource
 // ids) is never surfaced into the UI.
 async function requestQuoteReview<T>(path: string, payload: QuoteReviewCommandPayload): Promise<T> {
+  const { idempotencyKey, ...body } = payload;
   const response = await fetch(`${coreApiBaseUrl()}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       ...demoScopeHeaders()
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   });
   if (!response.ok) {
     throw new Error(coreApiStatusMessage(response.status));
