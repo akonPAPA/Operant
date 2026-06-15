@@ -13,6 +13,10 @@ type UploadState =
   | { status: "error"; message: string };
 
 export function IntakeUploadForm() {
+  // OP-CAP-17E: tenant authority is not user-editable. It is derived from server-side demo config
+  // and sent only as the X-Tenant-Id header; the backend resolves the tenant from that header, not
+  // from any request-body field. The operator cannot type an arbitrary tenant id here.
+  const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "";
   const [state, setState] = useState<UploadState>({ status: "idle", message: "No upload submitted." });
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -24,8 +28,8 @@ export function IntakeUploadForm() {
       setState({ status: "error", message: "Choose a supported file before uploading." });
       return;
     }
-    if (!hasDemoScope()) {
-      setState({ status: "error", message: missingDemoScopeMessage("tenant-scoped uploads") });
+    if (!tenantId) {
+      setState({ status: "error", message: "Tenant is not configured. Set NEXT_PUBLIC_DEMO_TENANT_ID for tenant-scoped upload." });
       return;
     }
 
@@ -52,6 +56,7 @@ export function IntakeUploadForm() {
 
   return (
     <form className="panel upload-form" onSubmit={submit}>
+      <p className="form-message idle">Tenant scope: {tenantId ? tenantId : "not configured"} (server-side demo config; not editable).</p>
       <label>
         <span>Document</span>
         <input name="file" type="file" accept={ACCEPTED_TYPES} />

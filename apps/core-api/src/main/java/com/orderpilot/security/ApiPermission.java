@@ -66,5 +66,10 @@ public enum ApiPermission {
   TRUST_AI_MEMORY_EVALUATION_WRITE,
   // OP-CAP-19: execute an evaluation run — the strongest evaluation permission. Generic AI-memory
   // read/write never grants it.
-  TRUST_AI_MEMORY_EVALUATION_RUN
+  TRUST_AI_MEMORY_EVALUATION_RUN,
+  CHANGE_REQUEST_READ,
+  CHANGE_REQUEST_CREATE,
+  CHANGE_REQUEST_APPROVE,
+  CHANGE_REQUEST_REJECT,
+  CHANGE_REQUEST_EXECUTE
 }

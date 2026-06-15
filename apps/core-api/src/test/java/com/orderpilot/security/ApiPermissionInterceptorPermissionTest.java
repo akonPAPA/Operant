@@ -1004,312 +1004,338 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("TRUST_OPERATOR_CORRECTION_APPROVE");
   }
 
-  // --- OP-CAP-19 Layer B advisory retrieval: POST query is a READ — requires TRUST_AI_MEMORY_READ,
-  //     never the write/invalidate permissions ---
+  // --- ChangeRequest authZ slice: /api/v1/change-requests + /api/v1/outbox-events.
+  //     ChangeRequest is the controlled path for risky external/system writes; each action requires a
+  //     dedicated least-privilege permission. A read-only or create-only user must never be able to
+  //     approve, reject, or control execution; an unauthenticated/unprivileged user is rejected. ---
 
   @Test
-  void advisoryRetrievalPostWithMemoryReadSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/advisory-retrieval");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+  void changeRequestListGetWithReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/change-requests");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void advisoryRetrievalPostWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/advisory-retrieval");
+  void changeRequestGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/change-requests/some-id");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+        .hasMessageContaining("CHANGE_REQUEST_READ");
   }
 
   @Test
-  void advisoryRetrievalPostWithMemoryWriteAloneIsRejected() throws Exception {
-    // Advisory retrieval is a read; the write permission must NOT satisfy it.
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/advisory-retrieval");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
-
-    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
-        .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_READ");
-  }
-
-  // --- OP-CAP-19 Layer C evaluation harness: read/write/run have distinct permissions; generic AI-memory
-  //     read/write never grants evaluation run ---
-
-  @Test
-  void evaluationCreateRunWithEvaluationWriteSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/evaluations/runs");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
+  void outboxEventsGetWithReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/outbox-events");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void evaluationCreateRunWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/trust/ai-memory/evaluations/runs");
+  void outboxEventsGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/outbox-events");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_WRITE");
+        .hasMessageContaining("CHANGE_REQUEST_READ");
   }
 
   @Test
-  void evaluationAddCaseWithEvaluationWriteSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/cases");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
+  void changeRequestCreateWithCreateSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_CREATE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void evaluationExecuteWithEvaluationRunSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/execute");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_RUN");
+  void changeRequestCreateWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("CHANGE_REQUEST_CREATE");
+  }
+
+  @Test
+  void changeRequestCreateWithReadAloneIsRejected() throws Exception {
+    // Read-only permission must NOT be sufficient to create an external-write ChangeRequest.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("CHANGE_REQUEST_CREATE");
+  }
+
+  @Test
+  void changeRequestValidateWithCreateSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/validate");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_CREATE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void evaluationExecuteWithEvaluationWriteAloneIsRejected() throws Exception {
-    // Write must NOT be sufficient to execute a run (run is the stronger permission).
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/execute");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
-
-    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
-        .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
-  }
-
-  @Test
-  void evaluationExecuteWithGenericMemoryWriteIsRejected() throws Exception {
-    // Generic AI-memory write must NOT grant evaluation execution.
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/runs/some-id/execute");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
-
-    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
-        .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
-  }
-
-  @Test
-  void evaluationRunsGetWithEvaluationReadSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory/evaluations/runs");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_READ");
+  void changeRequestApproveWithApproveSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/approve");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_APPROVE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void evaluationResultsGetWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "GET", "/api/v1/trust/ai-memory/evaluations/runs/some-id/results");
+  void changeRequestApproveWithCreateAloneIsRejected() throws Exception {
+    // A user who can only create/request must NOT be able to approve (gate before external write).
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/approve");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_CREATE");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_READ");
+        .hasMessageContaining("CHANGE_REQUEST_APPROVE");
   }
 
   @Test
-  void evaluationReadWithGenericMemoryReadAloneIsRejected() throws Exception {
-    // Generic AI-memory read must NOT grant the dedicated evaluation read permission.
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/trust/ai-memory/evaluations/runs");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+  void changeRequestApproveWithReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/approve");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_READ");
+        .hasMessageContaining("CHANGE_REQUEST_APPROVE");
   }
 
-  // --- OP-CAP-20 Layer A advisory runtime assist: GET requires TRUST_AI_MEMORY_READ (same read
-  //     permission as advisory retrieval), never a write permission ---
-
   @Test
-  void advisoryAssistGetWithMemoryReadSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "GET", "/api/v1/trust/ai-memory/advisory-assist?contextType=TRUST_VALIDATION_REVIEW");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_READ");
+  void changeRequestApproveInternalWithApproveSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/approve-internal");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_APPROVE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void advisoryAssistGetWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "GET", "/api/v1/trust/ai-memory/advisory-assist?contextType=TRUST_VALIDATION_REVIEW");
+  void changeRequestApproveInternalWithCreateAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/approve-internal");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_CREATE");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_READ");
+        .hasMessageContaining("CHANGE_REQUEST_APPROVE");
   }
 
-  // --- OP-CAP-20 Layer B bounded batch run: it executes, so it requires the strongest
-  //     TRUST_AI_MEMORY_EVALUATION_RUN — never the weaker WRITE or a generic AI-memory write ---
-
   @Test
-  void evaluationBatchRunWithRunPermissionSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/batch-runs");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_RUN");
+  void changeRequestRejectWithRejectSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/reject");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_REJECT");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void evaluationBatchRunWithEvaluationWriteAloneIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/batch-runs");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_EVALUATION_WRITE");
-
-    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
-        .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
-  }
-
-  @Test
-  void evaluationBatchRunWithGenericMemoryWriteIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest(
-        "POST", "/api/v1/trust/ai-memory/evaluations/batch-runs");
-    req.addHeader("X-OrderPilot-Permissions", "TRUST_AI_MEMORY_WRITE");
-
-    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
-        .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("TRUST_AI_MEMORY_EVALUATION_RUN");
-  }
-
-  // --- OP-CAP-21: command center summary read requires ANALYTICS_READ ---
-
-  @Test
-  void commandCenterSummaryGetWithAnalyticsReadSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/command-center/summary");
-    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+  void changeRequestCancelWithRejectSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/cancel");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_REJECT");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void commandCenterSummaryGetWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/command-center/summary");
+  void changeRequestRejectWithReadAloneIsRejected() throws Exception {
+    // A view-only user must NOT be able to reject/cancel a pending external write.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/reject");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("ANALYTICS_READ");
+        .hasMessageContaining("CHANGE_REQUEST_REJECT");
   }
 
-  // --- OP-CAP-22: order journey reads require ANALYTICS_READ, signal ingest requires REVIEW_ACTION ---
-
   @Test
-  void orderJourneyListGetWithAnalyticsReadSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/order-journeys");
-    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+  void changeRequestExecutionDisabledWithExecuteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/execution-disabled");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_EXECUTE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void orderJourneyGetWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/order-journeys/attention");
+  void changeRequestExecutionDisabledWithCreateAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/change-requests/some-id/execution-disabled");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_CREATE");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("ANALYTICS_READ");
+        .hasMessageContaining("CHANGE_REQUEST_EXECUTE");
   }
 
+  // --- ChangeRequest Stage9 authZ slice: /api/stage9/change-requests endpoints mutate the SAME
+  //     ChangeRequest aggregate as /api/v1/change-requests and were previously unguarded (the
+  //     interceptor was only registered for /api/v1/**). They must enforce the same dedicated
+  //     least-privilege permissions; ADMIN_SETTINGS_READ must never satisfy a Stage9 mutation, and a
+  //     read/create-only user must never approve/reject/execute. ---
+
   @Test
-  void orderJourneySignalPostRequiresReviewAction() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/some-id/signals");
-    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+  void stage9ChangeRequestListGetWithReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/stage9/change-requests");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void orderJourneySignalPostWithAnalyticsReadAloneIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/some-id/signals");
-    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+  void stage9ChangeRequestGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/stage9/change-requests/some-id");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("REVIEW_ACTION");
+        .hasMessageContaining("CHANGE_REQUEST_READ");
   }
 
-  // --- OP-CAP-23 order-journey projector runtime endpoints (same prefix: GET=ANALYTICS_READ, write=REVIEW_ACTION) ---
+  @Test
+  void stage9ChangeRequestExecutionSafetyGetWithAdminSettingsReadIsRejected() throws Exception {
+    // A Stage9 ChangeRequest read must require the dedicated CHANGE_REQUEST_READ, not the broad
+    // ADMIN_SETTINGS_READ that the old (unreachable) /api/stage9 prefix mapping used.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/stage9/change-requests/some-id/execution-safety");
+    req.addHeader("X-OrderPilot-Permissions", "ADMIN_SETTINGS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("CHANGE_REQUEST_READ");
+  }
+
+  // approve
 
   @Test
-  void orderJourneyProjectionHealthGetWithAnalyticsReadSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/order-journeys/projection-health");
-    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+  void stage9ChangeRequestApproveWithApproveSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/approve");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_APPROVE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void orderJourneyProjectionHealthGetWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/order-journeys/projection-health");
+  void stage9ChangeRequestApproveWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/approve");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("ANALYTICS_READ");
+        .hasMessageContaining("CHANGE_REQUEST_APPROVE");
   }
 
   @Test
-  void orderJourneyProjectionProcessPostWithReviewActionSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection/process");
-    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+  void stage9ChangeRequestApproveWithReadCreateRejectOrExecuteAloneIsRejected() throws Exception {
+    for (String insufficient : new String[] {"CHANGE_REQUEST_READ", "CHANGE_REQUEST_CREATE", "CHANGE_REQUEST_REJECT", "CHANGE_REQUEST_EXECUTE", "ADMIN_SETTINGS_READ"}) {
+      MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/approve");
+      req.addHeader("X-OrderPilot-Permissions", insufficient);
+
+      assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+          .as("approve must reject permission %s", insufficient)
+          .isInstanceOf(TenantPolicyException.class)
+          .hasMessageContaining("CHANGE_REQUEST_APPROVE");
+    }
+  }
+
+  // execute / retry
+
+  @Test
+  void stage9ChangeRequestExecuteWithExecuteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/execute");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_EXECUTE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void orderJourneyProjectionProcessPostWithAnalyticsReadAloneIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection/process");
-    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
-
-    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
-        .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("REVIEW_ACTION");
-  }
-
-  @Test
-  void orderJourneyProjectionRequestPostWithReviewActionSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection-requests");
-    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+  void stage9ChangeRequestRetryWithExecuteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/retry");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_EXECUTE");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void orderJourneyProjectionRequestPostWithoutPermissionIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection-requests");
+  void stage9ChangeRequestExecuteWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/execute");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("REVIEW_ACTION");
+        .hasMessageContaining("CHANGE_REQUEST_EXECUTE");
   }
 
-  // --- OP-CAP-25 controlled drain endpoint (same prefix rule: non-GET requires REVIEW_ACTION) ---
+  @Test
+  void stage9ChangeRequestExecuteWithReadCreateApproveOrRejectAloneIsRejected() throws Exception {
+    for (String insufficient : new String[] {"CHANGE_REQUEST_READ", "CHANGE_REQUEST_CREATE", "CHANGE_REQUEST_APPROVE", "CHANGE_REQUEST_REJECT", "ADMIN_SETTINGS_READ"}) {
+      MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/execute");
+      req.addHeader("X-OrderPilot-Permissions", insufficient);
+
+      assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+          .as("execute must reject permission %s", insufficient)
+          .isInstanceOf(TenantPolicyException.class)
+          .hasMessageContaining("CHANGE_REQUEST_EXECUTE");
+    }
+  }
+
+  // reject / cancel
 
   @Test
-  void orderJourneyProjectionDrainPostWithReviewActionSucceeds() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection/drain");
-    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+  void stage9ChangeRequestRejectWithRejectSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/reject");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_REJECT");
 
     assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
   }
 
   @Test
-  void orderJourneyProjectionDrainPostWithAnalyticsReadAloneIsRejected() throws Exception {
-    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/order-journeys/projection/drain");
-    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+  void stage9ChangeRequestCancelWithRejectSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/cancel");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_REJECT");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void stage9ChangeRequestRejectWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/reject");
 
     assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
         .isInstanceOf(TenantPolicyException.class)
-        .hasMessageContaining("REVIEW_ACTION");
+        .hasMessageContaining("CHANGE_REQUEST_REJECT");
+  }
+
+  @Test
+  void stage9ChangeRequestRejectWithReadCreateApproveOrExecuteAloneIsRejected() throws Exception {
+    for (String insufficient : new String[] {"CHANGE_REQUEST_READ", "CHANGE_REQUEST_CREATE", "CHANGE_REQUEST_APPROVE", "CHANGE_REQUEST_EXECUTE", "ADMIN_SETTINGS_READ"}) {
+      MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/reject");
+      req.addHeader("X-OrderPilot-Permissions", insufficient);
+
+      assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+          .as("reject must reject permission %s", insufficient)
+          .isInstanceOf(TenantPolicyException.class)
+          .hasMessageContaining("CHANGE_REQUEST_REJECT");
+    }
+  }
+
+  // create
+
+  @Test
+  void stage9ChangeRequestCreateWithCreateSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_CREATE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void stage9ChangeRequestCreateWithReadAloneIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests");
+    req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("CHANGE_REQUEST_CREATE");
   }
 
   // --- unrelated paths are not affected ---

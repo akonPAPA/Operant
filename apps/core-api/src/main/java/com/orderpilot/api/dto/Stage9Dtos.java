@@ -22,12 +22,15 @@ public final class Stage9Dtos {
 
   public record Stage9DemoErpConnectionRequest(String displayName) {}
 
+  // OP-CAP-17F: the connector change-request creator is an authority field resolved server-side from
+  // the trusted actor context (see Stage9IntegrationController#createChangeRequest /
+  // RequestActorResolver). It is never accepted from the request body, so this DTO no longer carries
+  // an actorId — the body holds business intent only.
   public record Stage9ChangeRequestCreateRequest(
       String sourceType,
       UUID sourceId,
       String requestedAction,
-      String requestPayloadJson,
-      UUID actorId
+      String requestPayloadJson
   ) {}
 
   public record Stage9ApprovalRequest(UUID actorId, String reason) {}
