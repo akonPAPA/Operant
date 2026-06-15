@@ -27,6 +27,10 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/workspace/draft-orders", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/workspace/products", ApiPermission.REVIEW_READ),
       Map.entry("/api/v1/quote-review", ApiPermission.REVIEW_READ),
+      // ChangeRequest authZ slice: reads (list/get) of change requests and their outbox events
+      // require the dedicated read permission. Mutations are mapped per-action in permissionFor.
+      Map.entry("/api/v1/change-requests", ApiPermission.CHANGE_REQUEST_READ),
+      Map.entry("/api/v1/outbox-events", ApiPermission.CHANGE_REQUEST_READ),
       Map.entry("/api/v1/quotes", ApiPermission.QUOTE_READ),
       Map.entry("/api/v1/quote-transactions", ApiPermission.QUOTE_READ),
       Map.entry("/api/v1/bot-runtime", ApiPermission.BOT_READ),
@@ -94,6 +98,24 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     }
     if (path.startsWith("/api/v1/quote-review") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
+    }
+    // ChangeRequest authZ slice: ChangeRequest is the controlled path for risky external/system
+    // writes. Each non-GET action requires a dedicated least-privilege permission — approval,
+    // rejection, and execution control must never be reachable by a generic authenticated user or a
+    // read-only user. Specific suffixes are checked before the generic create rule.
+    if (path.startsWith("/api/v1/change-requests") && !HttpMethod.GET.matches(method)) {
+      if (path.endsWith("/approve") || path.endsWith("/approve-internal")) {
+        return ApiPermission.CHANGE_REQUEST_APPROVE;
+      }
+      if (path.endsWith("/reject") || path.endsWith("/cancel")) {
+        return ApiPermission.CHANGE_REQUEST_REJECT;
+      }
+      if (path.endsWith("/execution-disabled")) {
+        return ApiPermission.CHANGE_REQUEST_EXECUTE;
+      }
+      // POST /change-requests (create) and POST /change-requests/{id}/validate are the
+      // request-preparation lifecycle.
+      return ApiPermission.CHANGE_REQUEST_CREATE;
     }
     if ((path.startsWith("/api/v1/quotes") || path.startsWith("/api/v1/quote-transactions")) && !HttpMethod.GET.matches(method)) {
       return ApiPermission.QUOTE_ACTION;

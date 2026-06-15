@@ -9,6 +9,9 @@ import com.orderpilot.api.dto.Stage12BDtos.QuoteSourceContextDto;
 import com.orderpilot.application.services.workspace.ChannelToQuoteWiringService;
 import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineService;
 import com.orderpilot.application.services.workspace.QuoteDraftService;
+import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,11 +21,13 @@ public class QuoteTransactionController {
   private final QuoteDraftService quoteDraftService;
   private final QuoteApprovalStateMachineService approvalStateMachineService;
   private final ChannelToQuoteWiringService channelToQuoteWiringService;
+  private final RequestActorResolver actorResolver;
 
-  public QuoteTransactionController(QuoteDraftService quoteDraftService, QuoteApprovalStateMachineService approvalStateMachineService, ChannelToQuoteWiringService channelToQuoteWiringService) {
+  public QuoteTransactionController(QuoteDraftService quoteDraftService, QuoteApprovalStateMachineService approvalStateMachineService, ChannelToQuoteWiringService channelToQuoteWiringService, RequestActorResolver actorResolver) {
     this.quoteDraftService = quoteDraftService;
     this.approvalStateMachineService = approvalStateMachineService;
     this.channelToQuoteWiringService = channelToQuoteWiringService;
+    this.actorResolver = actorResolver;
   }
 
   @PostMapping("/from-rfq")
@@ -46,22 +51,35 @@ public class QuoteTransactionController {
   }
 
   @PostMapping("/{id}/approve")
-  public QuoteApprovalCommandResponse approve(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command) {
-    return approvalStateMachineService.approveQuote(id, command);
+  public QuoteApprovalCommandResponse approve(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    return approvalStateMachineService.approveQuote(id, withTrustedActor(command, http));
   }
 
   @PostMapping("/{id}/reject")
-  public QuoteApprovalCommandResponse reject(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command) {
-    return approvalStateMachineService.rejectQuote(id, command);
+  public QuoteApprovalCommandResponse reject(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    return approvalStateMachineService.rejectQuote(id, withTrustedActor(command, http));
   }
 
   @PostMapping("/{id}/request-changes")
-  public QuoteApprovalCommandResponse requestChanges(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command) {
-    return approvalStateMachineService.requestQuoteChanges(id, command);
+  public QuoteApprovalCommandResponse requestChanges(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    return approvalStateMachineService.requestQuoteChanges(id, withTrustedActor(command, http));
   }
 
   @PostMapping("/{id}/convert-to-internal-order")
-  public QuoteApprovalCommandResponse convertToInternalOrder(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command) {
-    return approvalStateMachineService.convertApprovedQuoteToInternalDraftOrder(id, command);
+  public QuoteApprovalCommandResponse convertToInternalOrder(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    return approvalStateMachineService.convertApprovedQuoteToInternalDraftOrder(id, withTrustedActor(command, http));
+  }
+
+  // OP-CAP-17F: the quote-approval decision actor is the audit identity recorded against an approve/
+  // reject/request-changes/convert decision. It is resolved from the trusted (optionally signed) actor
+  // context and overrides any body-supplied actorId, so a caller cannot forge who made the decision.
+  // The body's actorId is ignored; the rest of the command (reason/comment/idempotencyKey/etc.) is
+  // business intent and is preserved.
+  private QuoteApprovalDecisionCommand withTrustedActor(QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    if (command == null) {
+      return new QuoteApprovalDecisionCommand(null, actorId, null, null, null, null, null);
+    }
+    return new QuoteApprovalDecisionCommand(command.tenantId(), actorId, command.actorRole(), command.approvalRequestId(), command.reason(), command.comment(), command.idempotencyKey());
   }
 }

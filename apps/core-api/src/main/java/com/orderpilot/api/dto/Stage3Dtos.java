@@ -16,5 +16,8 @@ public final class Stage3Dtos {
   public record WebhookPayloadRequest(String externalEventId, String rawPayload) {}
   public record ProcessingJobResponse(UUID id, String jobType, String targetType, UUID targetId, String status, Instant queuedAt) {}
   public record WebhookEventResponse(UUID id, String provider, String externalEventId, boolean signatureVerified, boolean replayDetected, String status, Instant receivedAt) {}
-  public record InboundEventResponse(UUID id, String source, String externalEventId, String eventType, String fingerprintSha256, String status, String rawPayloadStorageKey) {}
+  // OP-CAP-17E: raw object storage key is an internal, tenant-scoped path and must never reach the
+  // frontend. Expose only a safe boolean indicator that a raw payload was persisted; the content
+  // fingerprint (sha256) remains as the safe, non-locating document handle.
+  public record InboundEventResponse(UUID id, String source, String externalEventId, String eventType, String fingerprintSha256, String status, boolean rawPayloadStored) {}
 }

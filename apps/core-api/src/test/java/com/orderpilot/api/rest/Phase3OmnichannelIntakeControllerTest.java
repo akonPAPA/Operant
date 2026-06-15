@@ -270,6 +270,29 @@ class Phase3OmnichannelIntakeControllerTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  // OP-CAP-17E: the inbound-event ledger response must never expose the raw object storage key
+  // (an internal, tenant-scoped path). It returns only a safe boolean indicator plus the content
+  // fingerprint; the raw key is persisted server-side but stays out of the API contract.
+  @Test
+  void inboundEventResponseExposesSafeFlagNotRawStorageKey() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    uploadCsv(tenantId, "sku,qty\nPAD-100,2\n".getBytes(StandardCharsets.UTF_8)).andExpect(status().isOk());
+
+    String rawStorageKey = ledgerRepository.findByTenantIdOrderByReceivedAtDesc(tenantId).getFirst().getRawPayloadStorageKey();
+    assertThat(rawStorageKey).isNotBlank();
+
+    String body = mockMvc.perform(get("/api/v1/intake/events")
+            .header(TENANT, tenantId.toString())
+            .header(PERMISSIONS, "INTAKE_READ"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].rawPayloadStored").value(true))
+        .andExpect(jsonPath("$[0].fingerprintSha256").isNotEmpty())
+        .andExpect(jsonPath("$[0].rawPayloadStorageKey").doesNotExist())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(body).doesNotContain(rawStorageKey);
+  }
+
   private org.springframework.test.web.servlet.ResultActions uploadCsv(UUID tenantId, byte[] bytes) throws Exception {
     MockMultipartFile file = new MockMultipartFile("file", "rfq.csv", "text/csv", bytes);
     return mockMvc.perform(multipart("/api/v1/intake/documents/upload").file(file).header(TENANT, tenantId.toString()).header(PERMISSIONS, "INTAKE_WRITE").param("sourceChannel", "FILE_UPLOAD"));
