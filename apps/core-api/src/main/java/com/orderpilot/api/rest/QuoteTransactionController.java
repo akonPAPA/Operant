@@ -31,8 +31,32 @@ public class QuoteTransactionController {
   }
 
   @PostMapping("/from-rfq")
-  public QuoteTransactionResponse createFromRfq(@RequestBody CreateDraftQuoteFromRfqCommand command) {
-    return quoteDraftService.createFromRfq(command);
+  public QuoteTransactionResponse createFromRfq(
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+      @RequestBody CreateDraftQuoteFromRfqCommand command,
+      HttpServletRequest http) {
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID actorId = trustedActor(http, tenantId);
+    CreateDraftQuoteFromRfqCommand safeCommand = new CreateDraftQuoteFromRfqCommand(
+        command == null ? null : command.tenantId(),
+        actorId,
+        command == null ? null : command.actorRole(),
+        command == null ? null : command.customerExternalRef(),
+        command == null ? null : command.customerName(),
+        command == null ? null : command.requestedItems(),
+        command == null ? null : command.requestedLocation(),
+        command == null ? null : command.requestedDiscountPercent(),
+        firstNonBlank(idempotencyKey, command == null ? null : command.idempotencyKey()));
+    return idempotencyService.execute(
+        tenantId,
+        actorId,
+        safeCommand.idempotencyKey(),
+        "QUOTE_CREATE_FROM_RFQ",
+        "DRAFT_QUOTE",
+        "",
+        safeCommand,
+        QuoteTransactionResponse.class,
+        () -> quoteDraftService.createFromRfq(safeCommand));
   }
 
   @GetMapping("/{id}/transaction")

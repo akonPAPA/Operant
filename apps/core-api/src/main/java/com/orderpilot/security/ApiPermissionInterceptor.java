@@ -12,6 +12,10 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
   private final ApiPermissionGuard guard;
   private final Map<String, ApiPermission> readPrefixes = Map.ofEntries(
       Map.entry("/api/v1/analytics", ApiPermission.ANALYTICS_READ),
+      // OP-CAP-21: command center read models are read-only analytics projections.
+      Map.entry("/api/v1/command-center", ApiPermission.ANALYTICS_READ),
+      // OP-CAP-22: order journey reads are tenant-scoped analytics-style projections.
+      Map.entry("/api/v1/order-journeys", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/v1/analytics/commerce", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage8/analytics", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage8/reconciliation", ApiPermission.ANALYTICS_READ),
@@ -83,6 +87,11 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       return ApiPermission.RUNTIME_ENTITLEMENT_MANAGE;
     }
     if (path.startsWith("/api/v1/operator-review") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.REVIEW_ACTION;
+    }
+    // OP-CAP-22: recording an internal fulfillment signal is an audited operator action (no external
+    // write); reads fall through to ANALYTICS_READ via the prefix map.
+    if (path.startsWith("/api/v1/order-journeys") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.REVIEW_ACTION;
     }
     if (path.startsWith("/api/v1/validation-review") && !HttpMethod.GET.matches(method)) {
@@ -182,6 +191,31 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     }
     if (path.startsWith("/api/v1/trust/operator-corrections")) {
       return ApiPermission.TRUST_OPERATOR_CORRECTION_READ;
+    }
+    // OP-CAP-19 Layer B: advisory memory retrieval is a read even though it is a POST (it carries a
+    // structured query body). It requires TRUST_AI_MEMORY_READ — never the write/invalidate permissions.
+    // Checked before the generic /api/v1/trust/ai-memory non-GET -> WRITE rule below.
+    if (path.startsWith("/api/v1/trust/ai-memory/advisory-retrieval")) {
+      return ApiPermission.TRUST_AI_MEMORY_READ;
+    }
+    // OP-CAP-19 Layer C: projected-memory evaluation harness. Execute requires the strongest
+    // TRUST_AI_MEMORY_EVALUATION_RUN; create run/case require WRITE; reads require READ. Generic AI-memory
+    // read/write never grants evaluation run. Checked before the generic ai-memory rules.
+    if (path.startsWith("/api/v1/trust/ai-memory/evaluations") && path.endsWith("/execute")
+        && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_AI_MEMORY_EVALUATION_RUN;
+    }
+    // OP-CAP-20 Layer B: a batch run creates a run, adds cases, AND executes in one call, so it requires
+    // the strongest TRUST_AI_MEMORY_EVALUATION_RUN — never the weaker WRITE. Checked before the generic
+    // evaluations non-GET -> WRITE rule below.
+    if (path.startsWith("/api/v1/trust/ai-memory/evaluations/batch-runs") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_AI_MEMORY_EVALUATION_RUN;
+    }
+    if (path.startsWith("/api/v1/trust/ai-memory/evaluations") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.TRUST_AI_MEMORY_EVALUATION_WRITE;
+    }
+    if (path.startsWith("/api/v1/trust/ai-memory/evaluations")) {
+      return ApiPermission.TRUST_AI_MEMORY_EVALUATION_READ;
     }
     // OP-CAP-17F: AI memory governance. Invalidate is its own permission; create/supersede require
     // WRITE; reads require READ. AI runtime traces have dedicated read/write permissions. All checked

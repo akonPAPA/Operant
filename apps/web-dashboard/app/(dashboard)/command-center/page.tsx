@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { OperantCommandCenter } from "@/components/operant-command-center";
 import { CommandCenterAnalytics } from "@/components/command-center-analytics";
 import { BusinessValueAnalytics } from "@/components/business-value-analytics";
 
@@ -37,17 +38,13 @@ export default async function CommandCenterPage() {
           <h2>Investor demo path</h2>
           <p>Use the Investor Demo route to show Telegram RFQ intake, human handoff, reconciliation, analytics, and trust controls in one guided flow.</p>
         </section>
+        <OperantCommandCenter />
         <CommandCenterAnalytics />
         <BusinessValueAnalytics />
         <section className="panel">
           <h2>Bot runtime</h2>
           <p>Telegram-style updates are accepted by core-api for demo intake. No real Telegram API calls or business replies are sent.</p>
         </section>
-        <section className="panel"><h2>Open exception cases</h2><p>Operator cases grouped from validation issues for review and resolution.</p></section>
-        <section className="panel"><h2>Waiting approvals</h2><p>Read-only counts of validation and review approval requirements.</p></section>
-        <section className="panel"><h2>Bot handoffs</h2><p>Inbound bot conversations requiring operator review. No outbound customer messages.</p></section>
-        <section className="panel"><h2>Processing health</h2><p>Failed, stale, and pending job counts for operator visibility.</p></section>
-        <section className="panel"><h2>High severity issues</h2><p>Critical and error validation issues that need human attention first.</p></section>
       </div>
     </DashboardShell>
   );

@@ -26,7 +26,6 @@ export type AiWorkSuggestion = {
   id: string;
   workType: AiWorkType;
   sourceType: AiWorkSourceType;
-  sourceId: string;
   status: AiWorkStatus;
   strategyVersion: string;
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
@@ -37,25 +36,13 @@ export type AiWorkSuggestion = {
   /** JSON string anchoring the suggestion to its source evidence. */
   evidenceRefsJson: string;
   advisoryOnly: boolean;
-  createdByUserId?: string;
   createdAt: string;
   updatedAt: string;
-  decidedByUserId?: string;
   decidedAt?: string;
   decisionReason?: string;
 };
 
-export type CreateAiWorkSuggestionRequest = {
-  workType: AiWorkType;
-  sourceType: AiWorkSourceType;
-  sourceId: string;
-  contextText?: string;
-  idempotencyKey?: string;
-  createdByUserId?: string;
-};
-
 export type AiWorkDecisionRequest = {
-  decidedByUserId?: string;
   reason?: string;
 };
 
@@ -74,6 +61,21 @@ export const aiWorkClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
   tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
 };
+
+// Operator-safe state messages by HTTP status. 403/404 are valid security/business
+// outcomes and must not leak whether a tenant-scoped resource exists.
+function aiWorkStatusMessage(status: number): string {
+  switch (status) {
+    case 403:
+      return "You do not have access to this workspace or tenant context.";
+    case 404:
+      return "This suggestion is not found or no longer available.";
+    case 422:
+      return "This request could not be processed as submitted.";
+    default:
+      return "Could not load AI work suggestions.";
+  }
+}
 
 function baseHeaders(extra?: Record<string, string>): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -99,15 +101,13 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
         ...((init.headers as Record<string, string>) ?? {})
       }
     });
+    if (!response.ok) {
+      // Inspect status before parsing; do not assume a JSON body exists and never
+      // surface the raw backend body (it may reference tenant/resource ids).
+      return { data: fallback, error: aiWorkStatusMessage(response.status) };
+    }
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : fallback;
-    if (!response.ok) {
-      const message =
-        typeof data === "object" && data && "message" in data
-          ? String((data as { message?: string }).message)
-          : "";
-      return { data: fallback, error: message || `Core API returned ${response.status}.` };
-    }
     return { data };
   } catch (error) {
     return {
@@ -146,19 +146,6 @@ export function getAiWorkSuggestion(id: string) {
 
 // --- Mutations (AI_WORK_ACTION) ---
 
-/** Generate a new advisory suggestion. Does not mutate any business record. */
-export function createAiWorkSuggestion(req: CreateAiWorkSuggestionRequest) {
-  return request<AiWorkSuggestion | null>(
-    "/api/v1/ai-work/suggestions",
-    {
-      method: "POST",
-      headers: { "X-OrderPilot-Permissions": AI_WORK_ACTION },
-      body: JSON.stringify(req)
-    },
-    null
-  );
-}
-
 /** Record operator acceptance of the advisory text/idea. Never approves business state. */
 export function acceptAiWorkSuggestion(id: string, req?: AiWorkDecisionRequest) {
   return request<AiWorkSuggestion | null>(
@@ -186,23 +173,6 @@ export function rejectAiWorkSuggestion(id: string, req?: AiWorkDecisionRequest) 
 }
 
 // --- Display helpers ---
-
-export const AI_WORK_TYPES: AiWorkType[] = [
-  "REQUEST_SUMMARY",
-  "VALIDATION_EXPLANATION",
-  "CUSTOMER_REPLY_DRAFT",
-  "NEXT_ACTION_SUGGESTION",
-  "SOURCE_CONTEXT_DIGEST"
-];
-
-export const AI_WORK_SOURCE_TYPES: AiWorkSourceType[] = [
-  "CHANNEL_MESSAGE",
-  "INBOUND_CHANNEL_EVENT",
-  "OPERATOR_REVIEW",
-  "QUOTE",
-  "QUOTE_TRANSACTION",
-  "SOURCE_CONTEXT"
-];
 
 export function workTypeLabel(type: AiWorkType): string {
   switch (type) {

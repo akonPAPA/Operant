@@ -17,11 +17,15 @@ import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineSe
 import com.orderpilot.application.services.workspace.QuoteDraftService;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
+import com.orderpilot.common.idempotency.IdempotencyService;
+import com.orderpilot.common.tenant.TenantContextFilter;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.RequestActorResolver;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +42,15 @@ class QuoteTransactionControllerTest {
   @MockBean private QuoteDraftService quoteDraftService;
   @MockBean private QuoteApprovalStateMachineService approvalStateMachineService;
   @MockBean private ChannelToQuoteWiringService channelToQuoteWiringService;
+  @MockBean private IdempotencyService idempotencyService;
+  @MockBean private RequestActorResolver actorResolver;
+
+  @BeforeEach
+  void setUpIdempotencyWrapper() {
+    lenient().when(actorResolver.resolveVerifiedActor(any(), any())).thenReturn(null);
+    lenient().when(idempotencyService.execute(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(8)).get());
+  }
 
   @Test
   void createsDraftQuoteFromRfqAtRequiredEndpoint() throws Exception {
@@ -68,6 +81,8 @@ class QuoteTransactionControllerTest {
 
     mockMvc.perform(post("/api/v1/quotes/from-rfq")
             .contentType("application/json")
+            .header("X-Tenant-Id", tenantId.toString())
+            .header("Idempotency-Key", "api-test-1")
             .content(objectMapper.writeValueAsString(request)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.draftQuoteId").value(quoteId.toString()))
@@ -112,13 +127,13 @@ class QuoteTransactionControllerTest {
     when(approvalStateMachineService.convertApprovedQuoteToInternalDraftOrder(eq(quoteId), any())).thenReturn(converted);
     QuoteApprovalDecisionCommand command = new QuoteApprovalDecisionCommand(tenantId, UUID.randomUUID(), "OPERATOR", null, "decision note", "decision note", "idem");
 
-    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).header("Idempotency-Key", "approve-key").content(objectMapper.writeValueAsString(command)))
         .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("APPROVED"));
-    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/reject").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/reject").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).header("Idempotency-Key", "reject-key").content(objectMapper.writeValueAsString(command)))
         .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("REJECTED"));
-    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/request-changes").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/request-changes").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).header("Idempotency-Key", "changes-key").content(objectMapper.writeValueAsString(command)))
         .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CHANGES_REQUESTED"));
-    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/convert-to-internal-order").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).content(objectMapper.writeValueAsString(command)))
+    mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/convert-to-internal-order").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).header("Idempotency-Key", "convert-key").content(objectMapper.writeValueAsString(command)))
         .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CONVERTED_TO_INTERNAL_ORDER")).andExpect(jsonPath("$.externalExecutionStatus").value("EXTERNAL_EXECUTION_DISABLED"));
   }
 
@@ -130,6 +145,7 @@ class QuoteTransactionControllerTest {
     mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve")
             .contentType("application/json")
             .header("X-Tenant-Id", UUID.randomUUID().toString())
+            .header("Idempotency-Key", "invalid-transition-key")
             .content("{}"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("QUOTE_LIFECYCLE_TRANSITION_BLOCKED"));

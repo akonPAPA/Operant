@@ -8,6 +8,7 @@ import com.orderpilot.api.dto.Stage8Dtos.Stage8ProductTimelineResponse;
 import com.orderpilot.api.dto.Stage8Dtos.Stage8ReconciliationRefreshResponse;
 import com.orderpilot.api.dto.Stage8Dtos.Stage8ReconciliationSummaryResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
 import com.orderpilot.application.services.runtime.RuntimeFeatureType;
 import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
 import com.orderpilot.application.services.runtime.RuntimeGuardService;
@@ -18,6 +19,8 @@ import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.inventory.InventorySnapshot;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
+import com.orderpilot.domain.journey.JourneySourceType;
+import com.orderpilot.domain.journey.events.JourneyProjectionEventType;
 import com.orderpilot.domain.reconciliation.*;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -42,15 +45,17 @@ public class InventoryReconciliationService {
   private final AuditEventService auditEventService;
   private final RuntimeGuardService runtimeGuardService;
   private final RuntimeUnitEstimator runtimeUnitEstimator;
+  private final OrderJourneyProjectionPublisher journeyProjectionPublisher;
   private final Clock clock;
 
-  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, InventorySnapshotRepository inventorySnapshotRepository, AuditEventService auditEventService, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, Clock clock) {
+  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, InventorySnapshotRepository inventorySnapshotRepository, AuditEventService auditEventService, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, OrderJourneyProjectionPublisher journeyProjectionPublisher, Clock clock) {
     this.movementRepository = movementRepository;
     this.caseRepository = caseRepository;
     this.inventorySnapshotRepository = inventorySnapshotRepository;
     this.auditEventService = auditEventService;
     this.runtimeGuardService = runtimeGuardService;
     this.runtimeUnitEstimator = runtimeUnitEstimator;
+    this.journeyProjectionPublisher = journeyProjectionPublisher;
     this.clock = clock;
   }
 
@@ -84,6 +89,12 @@ public class InventoryReconciliationService {
     reconciliationCase = caseRepository.save(reconciliationCase);
     if (created || materiallyChanged) {
       auditEventService.record(created ? "RECONCILIATION_CASE_CREATED" : "RECONCILIATION_CASE_UPDATED", "RECONCILIATION_CASE", reconciliationCase.getId().toString(), null, "{\"productId\":\"" + productId + "\",\"locationId\":\"" + locationId + "\",\"mismatchQuantity\":\"" + mismatch + "\"}");
+      // OP-CAP-24: publish a durable, idempotent journey projection event for the reconciliation source. The
+      // discriminator (this run's instant) lets each material transition produce its own event while
+      // identical re-runs collapse. No journey mutation / external write here.
+      journeyProjectionPublisher.publishSourceEvent(tenantId,
+          created ? JourneyProjectionEventType.RECONCILIATION_CASE_CREATED : JourneyProjectionEventType.RECONCILIATION_CASE_UPDATED,
+          JourneySourceType.RECONCILIATION_CASE, reconciliationCase.getId(), Long.toString(now.toEpochMilli()));
     }
     return new ReconciliationRunResponse(tenantId, productId, locationId, expected, actual, mismatch, severity.name(), reconciliationCase.getStatus().name(), reconciliationCase.getId(), created || materiallyChanged, now);
   }
@@ -108,6 +119,11 @@ public class InventoryReconciliationService {
     reconciliationCase.setStatus(nextStatus, clock.instant());
     reconciliationCase = caseRepository.save(reconciliationCase);
     auditEventService.record("RECONCILIATION_CASE_STATUS_UPDATED", "RECONCILIATION_CASE", reconciliationCase.getId().toString(), null, "{\"status\":\"" + nextStatus + "\"}");
+    // OP-CAP-24: a status transition is a meaningful reconciliation update; publish an idempotent journey
+    // projection event keyed by the new status (re-setting the same status collapses to one event).
+    journeyProjectionPublisher.publishSourceEvent(reconciliationCase.getTenantId(),
+        JourneyProjectionEventType.RECONCILIATION_CASE_UPDATED, JourneySourceType.RECONCILIATION_CASE,
+        reconciliationCase.getId(), nextStatus.name());
     return toResponse(reconciliationCase);
   }
 

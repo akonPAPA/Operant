@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-const DEFAULT_BASE_URL = "http://localhost:8080";
+import { coreApiBaseUrl, coreApiStatusMessage, demoScopeHeaders, hasDemoScope, missingDemoScopeMessage } from "@/lib/core-api-client";
+
 const ACCEPTED_TYPES = ".pdf,.csv,.xlsx,.xls,.txt,.png,.jpg,.jpeg";
 
 type UploadState =
@@ -34,17 +35,17 @@ export function IntakeUploadForm() {
 
     setState({ status: "working", message: "Uploading through core-api..." });
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL;
-      const response = await fetch(`${baseUrl}/api/v1/intake/documents/upload`, {
+      const response = await fetch(`${coreApiBaseUrl()}/api/v1/intake/documents/upload`, {
         method: "POST",
-        headers: { "X-Tenant-Id": tenantId },
+        headers: demoScopeHeaders(),
         body: formData
       });
-      const text = await response.text();
       if (!response.ok) {
-        setState({ status: "error", message: text || `Upload rejected with HTTP ${response.status}.` });
+        // Map to operator-safe messages; never surface the raw backend body.
+        setState({ status: "error", message: coreApiStatusMessage(response.status) });
         return;
       }
+      const text = await response.text();
       const result = JSON.parse(text) as { status?: string; originalFilename?: string };
       setState({ status: "done", message: `${result.originalFilename ?? "Document"} accepted with status ${result.status ?? "RECEIVED"}.` });
       form.reset();
