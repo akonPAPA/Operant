@@ -74,7 +74,7 @@ public class OrderJourneyController {
   /** OP-CAP-23 — bounded, tenant-scoped projector health (pending/failed/dead-lettered + recent failures). */
   @GetMapping("/projection-health")
   public JourneyProjectionHealthDto projectionHealth() {
-    return projectorRunner.health(TenantContext.requireTenantId());
+    return drainService.health(TenantContext.requireTenantId());
   }
 
   @GetMapping("/{id}")

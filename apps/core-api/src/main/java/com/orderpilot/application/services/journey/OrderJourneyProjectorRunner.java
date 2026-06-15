@@ -205,9 +205,11 @@ public class OrderJourneyProjectorRunner {
             c.getSourceType().name(), c.getSourceId(), c.getStatus().name(), c.getFailureCode(),
             c.getFailureMessage(), c.getAttemptCount(), c.getFailedAt()))
         .toList();
-    return new JourneyProjectionHealthDto(pending, failedEvents, deadLettered, failedCheckpoints,
-        lastProcessedAt, recentFailures, oldestPendingAt, schedulerEnabled, configuredBatchSize,
-        clock.instant());
+    UUID lastProcessedEventId = recentProcessed.isEmpty() ? null : recentProcessed.get(0).getId();
+    return new JourneyProjectionHealthDto(pending, 0, 0, failedEvents, 0, deadLettered,
+        deadLettered, failedCheckpoints, lastProcessedAt, lastProcessedEventId, recentFailures,
+        oldestPendingAt, null, schedulerEnabled, configuredBatchSize, null, null, null, null, null, null,
+        null, null, null, null, 0, clock.instant());
   }
 
   private static String bound(String value, int max) {

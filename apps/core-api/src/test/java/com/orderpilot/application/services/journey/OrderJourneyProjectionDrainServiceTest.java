@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionHealthDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.OrderJourneyProjectionDrainSummary;
+import com.orderpilot.api.dto.OrderJourneyProjectionDtos.OrderJourneyProjectionRecoverySummary;
 import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher.PublishCommand;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.journey.JourneySourceType;
@@ -88,6 +89,10 @@ class OrderJourneyProjectionDrainServiceTest {
 
   private OrderJourneyProjectionEvent reload(UUID tenantId, UUID eventId) {
     return events.findByIdAndTenantId(eventId, tenantId).orElseThrow();
+  }
+
+  private Instant staleAfter(OrderJourneyProjectionEvent event) {
+    return event.getCreatedAt().plusSeconds(OrderJourneyProjectionDrainService.DEFAULT_STALE_PROCESSING_SECONDS + 1);
   }
 
   // ----------------------------- 1. drain processes pending draft quote event -> READY -----------------------------
@@ -319,5 +324,203 @@ class OrderJourneyProjectionDrainServiceTest {
     assertThat(detail.paymentStatusAvailable()).isFalse();
     assertThat(detail.milestones()).anyMatch(m -> m.milestoneCode().equals("PAYMENT_CONFIRMED")
         && m.milestoneState().equals("UNKNOWN"));
+  }
+
+  // ----------------------------- OP-CAP-26 missed-event recovery -----------------------------
+
+  @Test
+  void recoverMissedEventsProcessesPendingEventsInBoundedBatch() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    for (int i = 0; i < 3; i++) {
+      UUID quoteId = draftQuote(tenantId, "Q-REC-P-" + i, "APPROVED");
+      publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED, JourneySourceType.DRAFT_QUOTE,
+          quoteId, "rec-p-" + i);
+    }
+
+    OrderJourneyProjectionRecoverySummary summary =
+        drainService.recoverMissedEvents(tenantId, 2, Instant.now());
+
+    assertThat(summary.scannedCount()).isEqualTo(2);
+    assertThat(summary.recoveredCount()).isEqualTo(2);
+    assertThat(summary.limitApplied()).isEqualTo(2);
+    assertThat(events.countByTenantIdAndStatus(tenantId, JourneyProjectionEventStatus.PENDING)).isEqualTo(1);
+  }
+
+  @Test
+  void recoveryDoesNotReprocessCompletedEventsAndIsIdempotent() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-IDEM", "APPROVED");
+    publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED, JourneySourceType.DRAFT_QUOTE,
+        quoteId, "rec-idem");
+
+    OrderJourneyProjectionRecoverySummary first =
+        drainService.recoverMissedEvents(tenantId, 25, Instant.now());
+    OrderJourneyProjectionRecoverySummary second =
+        drainService.recoverMissedEvents(tenantId, 25, Instant.now());
+
+    assertThat(first.recoveredCount()).isEqualTo(1);
+    assertThat(second.scannedCount()).isZero();
+    assertThat(second.recoveredCount()).isZero();
+    assertThat(journeyRepository.countByTenantId(tenantId)).isEqualTo(1);
+  }
+
+  @Test
+  void recoveryReclaimsStaleProcessingEvents() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-ST", "APPROVED");
+    OrderJourneyProjectionEvent event = publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, quoteId, "rec-stale");
+    event.markProcessing();
+    events.save(event);
+
+    OrderJourneyProjectionRecoverySummary summary =
+        drainService.recoverMissedEvents(tenantId, 25, staleAfter(event));
+
+    assertThat(summary.staleInProgressCount()).isEqualTo(1);
+    assertThat(summary.recoveredCount()).isEqualTo(1);
+    assertThat(reload(tenantId, event.getId()).getStatus()).isEqualTo(JourneyProjectionEventStatus.PROCESSED);
+  }
+
+  @Test
+  void recoveryDoesNotReclaimFreshProcessingEvents() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-FRESH", "APPROVED");
+    OrderJourneyProjectionEvent event = publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, quoteId, "rec-fresh");
+    event.markProcessing();
+    events.save(event);
+
+    OrderJourneyProjectionRecoverySummary summary =
+        drainService.recoverMissedEvents(tenantId, 25, event.getCreatedAt().plusSeconds(1));
+
+    assertThat(summary.scannedCount()).isZero();
+    assertThat(reload(tenantId, event.getId()).getStatus()).isEqualTo(JourneyProjectionEventStatus.PROCESSING);
+  }
+
+  @Test
+  void recoveryRetriesRetryableFailedEvents() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-FAIL", "APPROVED");
+    OrderJourneyProjectionEvent event = publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, quoteId, "rec-retry");
+    Instant retryAt = event.getCreatedAt().minusSeconds(1);
+    event.recordFailure("TRANSIENT", "safe bounded failure", retryAt, retryAt);
+    events.save(event);
+
+    OrderJourneyProjectionRecoverySummary summary =
+        drainService.recoverMissedEvents(tenantId, 25, event.getCreatedAt());
+
+    assertThat(summary.retryScheduledCount()).isEqualTo(1);
+    assertThat(summary.recoveredCount()).isEqualTo(1);
+    assertThat(reload(tenantId, event.getId()).getStatus()).isEqualTo(JourneyProjectionEventStatus.PROCESSED);
+  }
+
+  @Test
+  void recoveryDoesNotRetryPermanentFailedEvents() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-PERM", "APPROVED");
+    OrderJourneyProjectionEvent event = publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, quoteId, "rec-perm");
+    Instant retryAt = event.getCreatedAt().minusSeconds(1);
+    event.recordFailure("TRANSIENT", "first", retryAt, retryAt);
+    event.recordFailure("TRANSIENT", "second", retryAt, retryAt);
+    event.recordFailure("TRANSIENT", "third", retryAt, retryAt);
+    events.save(event);
+
+    OrderJourneyProjectionRecoverySummary summary =
+        drainService.recoverMissedEvents(tenantId, 25, event.getCreatedAt());
+
+    assertThat(summary.scannedCount()).isZero();
+    assertThat(reload(tenantId, event.getId()).getStatus()).isEqualTo(JourneyProjectionEventStatus.FAILED);
+    assertThat(reload(tenantId, event.getId()).getRetryCount())
+        .isEqualTo(OrderJourneyProjectionPublisher.MAX_RETRY);
+  }
+
+  @Test
+  void recoveryIsTenantScoped() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    UUID quoteA = draftQuote(tenantA, "Q-REC-A", "APPROVED");
+    UUID quoteB = draftQuote(tenantB, "Q-REC-B", "APPROVED");
+    publish(tenantA, JourneyProjectionEventType.DRAFT_QUOTE_CREATED, JourneySourceType.DRAFT_QUOTE,
+        quoteA, "rec-a");
+    publish(tenantB, JourneyProjectionEventType.DRAFT_QUOTE_CREATED, JourneySourceType.DRAFT_QUOTE,
+        quoteB, "rec-b");
+
+    OrderJourneyProjectionRecoverySummary summary =
+        drainService.recoverMissedEvents(tenantA, 25, Instant.now());
+
+    assertThat(summary.recoveredCount()).isEqualTo(1);
+    assertThat(events.countByTenantIdAndStatus(tenantA, JourneyProjectionEventStatus.PENDING)).isZero();
+    assertThat(events.countByTenantIdAndStatus(tenantB, JourneyProjectionEventStatus.PENDING)).isEqualTo(1);
+    assertThat(journeyRepository.countByTenantId(tenantB)).isZero();
+  }
+
+  // ----------------------------- OP-CAP-26 drain health monitoring -----------------------------
+
+  @Test
+  void healthReportsProjectionDrainCountsAndOldestPendingAge() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-H", "APPROVED");
+    OrderJourneyProjectionEvent pending = publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, quoteId, "rec-health");
+    OrderJourneyProjectionEvent stale = publish(tenantId,
+        JourneyProjectionEventType.ORDER_JOURNEY_REFRESH_REQUESTED, JourneySourceType.DRAFT_QUOTE,
+        quoteId, "rec-health-stale");
+    stale.markProcessing();
+    events.save(stale);
+
+    JourneyProjectionHealthDto health = drainService.health(tenantId);
+
+    assertThat(health.pendingEvents()).isEqualTo(1);
+    assertThat(health.inProgressEvents()).isEqualTo(1);
+    assertThat(health.oldestPendingAt()).isEqualTo(pending.getOccurredAt());
+    assertThat(health.oldestPendingAgeSeconds()).isNotNull();
+    assertThat(health.lastDrainErrorMessageSafe()).isNull();
+  }
+
+  @Test
+  void healthReportsLastCheckpointAndRecoverySummary() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuote(tenantId, "Q-REC-CHK", "APPROVED");
+    OrderJourneyProjectionEvent event = publish(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, quoteId, "rec-checkpoint");
+
+    drainService.recoverMissedEvents(tenantId, 25, Instant.now());
+    JourneyProjectionHealthDto health = drainService.health(tenantId);
+
+    assertThat(health.lastProcessedEventId()).isEqualTo(event.getId());
+    assertThat(health.lastCheckpointEventId()).isEqualTo(event.getId());
+    assertThat(health.lastCheckpointStatus()).isEqualTo("COMPLETED");
+    assertThat(health.lastRecoveredAt()).isNotNull();
+    assertThat(health.lastRecoveryRecoveredCount()).isEqualTo(1);
+  }
+
+  @Test
+  void healthIsTenantScoped() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    UUID quoteA = draftQuote(tenantA, "Q-REC-HA", "APPROVED");
+    UUID quoteB = draftQuote(tenantB, "Q-REC-HB", "APPROVED");
+    publish(tenantA, JourneyProjectionEventType.DRAFT_QUOTE_CREATED, JourneySourceType.DRAFT_QUOTE,
+        quoteA, "rec-ha");
+    publish(tenantB, JourneyProjectionEventType.DRAFT_QUOTE_CREATED, JourneySourceType.DRAFT_QUOTE,
+        quoteB, "rec-hb");
+    drainService.recoverMissedEvents(tenantA, 25, Instant.now());
+
+    JourneyProjectionHealthDto healthA = drainService.health(tenantA);
+    JourneyProjectionHealthDto healthB = drainService.health(tenantB);
+
+    assertThat(healthA.pendingEvents()).isZero();
+    assertThat(healthB.pendingEvents()).isEqualTo(1);
+    assertThat(healthB.lastProcessedEventId()).isNull();
   }
 }

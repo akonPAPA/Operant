@@ -96,6 +96,16 @@ public class OrderJourneyProjectionEvent {
     this.status = JourneyProjectionEventStatus.PROCESSING;
   }
 
+  public void requeueStaleProcessingForRecovery(Instant now) {
+    if (this.status == JourneyProjectionEventStatus.PROCESSING) {
+      this.status = JourneyProjectionEventStatus.PENDING;
+      this.nextRetryAt = null;
+      this.failedAt = null;
+      this.failureCode = null;
+      this.failureMessage = null;
+    }
+  }
+
   public void markProcessed(Instant now) {
     this.status = JourneyProjectionEventStatus.PROCESSED;
     this.processedAt = now;
