@@ -1194,6 +1194,12 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("CHANGE_REQUEST_READ");
   }
 
+  // --- ChangeRequest Stage9 authZ slice: /api/stage9/change-requests endpoints mutate the SAME
+  //     ChangeRequest aggregate as /api/v1/change-requests and were previously unguarded (the
+  //     interceptor was only registered for /api/v1/**). They must enforce the same dedicated
+  //     least-privilege permissions; ADMIN_SETTINGS_READ must never satisfy a Stage9 mutation, and a
+  //     read/create-only user must never approve/reject/execute. ---
+
   @Test
   void stage9ChangeRequestExecutionSafetyGetWithAdminSettingsReadIsRejected() throws Exception {
     // A Stage9 ChangeRequest read must require the dedicated CHANGE_REQUEST_READ, not the broad
@@ -1213,7 +1219,9 @@ class ApiPermissionInterceptorPermissionTest {
     MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/approve");
     req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_APPROVE");
 
-    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("CHANGE_REQUEST_READ");
   }
 
   @Test
@@ -1278,6 +1286,8 @@ class ApiPermissionInterceptorPermissionTest {
     }
   }
 
+  // execute / retry
+
   @Test
   void stage9ChangeRequestExecuteWithoutPermissionIsRejected() throws Exception {
     MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/execute");
@@ -1315,8 +1325,14 @@ class ApiPermissionInterceptorPermissionTest {
     MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/stage9/change-requests/some-id/cancel");
     req.addHeader("X-OrderPilot-Permissions", "CHANGE_REQUEST_REJECT");
 
-    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+      assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+          .as("execute must reject permission %s", insufficient)
+          .isInstanceOf(TenantPolicyException.class)
+          .hasMessageContaining("CHANGE_REQUEST_EXECUTE");
+    }
   }
+
+  // reject / cancel
 
   @Test
   void stage9ChangeRequestCancelWithoutPermissionIsRejected() throws Exception {
