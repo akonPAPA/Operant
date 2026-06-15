@@ -29,14 +29,48 @@ public final class OrderJourneyProjectionDtos {
    */
   public record JourneyProjectionHealthDto(
       long pendingEvents,
+      long inProgressEvents,
+      long staleInProgressEvents,
       long failedEvents,
+      long failedRetryableEvents,
+      long failedPermanentEvents,
       long deadLetteredEvents,
       long failedCheckpoints,
       Instant lastProcessedAt,
+      UUID lastProcessedEventId,
       List<JourneyProjectionFailureDto> recentFailures,
       Instant oldestPendingAt,
+      Long oldestPendingAgeSeconds,
       boolean schedulerEnabled,
       int configuredBatchSize,
+      Instant lastDrainStartedAt,
+      Instant lastDrainCompletedAt,
+      Long lastDrainDurationMs,
+      String lastDrainStatus,
+      String lastDrainErrorCode,
+      String lastDrainErrorMessageSafe,
+      UUID lastCheckpointEventId,
+      String lastCheckpointStatus,
+      Instant lastCheckpointUpdatedAt,
+      Instant lastRecoveredAt,
+      int lastRecoveryRecoveredCount,
+      Instant generatedAt) {}
+
+  /**
+   * OP-CAP-26 — bounded missed-event recovery summary. Counts only; no payload/customer/error detail.
+   */
+  public record OrderJourneyProjectionRecoverySummary(
+      UUID tenantId,
+      int scannedCount,
+      int recoveredCount,
+      int skippedCount,
+      int failedCount,
+      int deadLetteredCount,
+      int staleInProgressCount,
+      int retryScheduledCount,
+      Long oldestPendingAgeSeconds,
+      UUID lastRecoveredEventId,
+      int limitApplied,
       Instant generatedAt) {}
 
   /**
