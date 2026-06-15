@@ -60,18 +60,16 @@ public enum ApiPermission {
   TRUST_OPERATOR_CORRECTION_APPROVE,
   // OP-CAP-18: reject an operator correction for learning.
   TRUST_OPERATOR_CORRECTION_REJECT,
-  // ChangeRequest authZ slice: ChangeRequest is the controlled path for risky external/system writes.
-  // Each action has a dedicated least-privilege permission so a generic authenticated user (or a
-  // read-only user) can never approve, reject, or control execution of an external-write ChangeRequest.
-  // Read change requests / outbox events (list + get).
+  // OP-CAP-19: read advisory-memory evaluation runs/cases/results.
+  TRUST_AI_MEMORY_EVALUATION_READ,
+  // OP-CAP-19: create evaluation runs/cases — stronger than read.
+  TRUST_AI_MEMORY_EVALUATION_WRITE,
+  // OP-CAP-19: execute an evaluation run — the strongest evaluation permission. Generic AI-memory
+  // read/write never grants it.
+  TRUST_AI_MEMORY_EVALUATION_RUN,
   CHANGE_REQUEST_READ,
-  // Create/request a ChangeRequest and run its deterministic structural validation (request preparation).
   CHANGE_REQUEST_CREATE,
-  // Approve a ChangeRequest (internal or external) — the gate before any external write. Stronger
-  // than create/read; never satisfied by CHANGE_REQUEST_CREATE or CHANGE_REQUEST_READ alone.
   CHANGE_REQUEST_APPROVE,
-  // Reject or cancel a ChangeRequest — a control decision over a pending external write.
   CHANGE_REQUEST_REJECT,
-  // Control ChangeRequest execution/dispatch behavior (e.g. mark external execution disabled).
   CHANGE_REQUEST_EXECUTE
 }

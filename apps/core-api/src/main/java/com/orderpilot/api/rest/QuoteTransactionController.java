@@ -9,6 +9,7 @@ import com.orderpilot.api.dto.Stage12BDtos.QuoteSourceContextDto;
 import com.orderpilot.application.services.workspace.ChannelToQuoteWiringService;
 import com.orderpilot.application.services.workspace.QuoteApprovalStateMachineService;
 import com.orderpilot.application.services.workspace.QuoteDraftService;
+import com.orderpilot.common.idempotency.IdempotencyService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.security.RequestActorResolver;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,12 +22,19 @@ public class QuoteTransactionController {
   private final QuoteDraftService quoteDraftService;
   private final QuoteApprovalStateMachineService approvalStateMachineService;
   private final ChannelToQuoteWiringService channelToQuoteWiringService;
+  private final IdempotencyService idempotencyService;
   private final RequestActorResolver actorResolver;
 
-  public QuoteTransactionController(QuoteDraftService quoteDraftService, QuoteApprovalStateMachineService approvalStateMachineService, ChannelToQuoteWiringService channelToQuoteWiringService, RequestActorResolver actorResolver) {
+  public QuoteTransactionController(
+      QuoteDraftService quoteDraftService,
+      QuoteApprovalStateMachineService approvalStateMachineService,
+      ChannelToQuoteWiringService channelToQuoteWiringService,
+      IdempotencyService idempotencyService,
+      RequestActorResolver actorResolver) {
     this.quoteDraftService = quoteDraftService;
     this.approvalStateMachineService = approvalStateMachineService;
     this.channelToQuoteWiringService = channelToQuoteWiringService;
+    this.idempotencyService = idempotencyService;
     this.actorResolver = actorResolver;
   }
 
@@ -75,35 +83,52 @@ public class QuoteTransactionController {
   }
 
   @PostMapping("/{id}/approve")
-  public QuoteApprovalCommandResponse approve(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
-    return approvalStateMachineService.approveQuote(id, withTrustedActor(command, http));
+  public QuoteApprovalCommandResponse approve(@PathVariable UUID id, @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    QuoteApprovalDecisionCommand safeCommand = command(idempotencyKey, command, http);
+    return idempotencyService.execute(TenantContext.requireTenantId(), safeCommand.actorId(), safeCommand.idempotencyKey(), "QUOTE_APPROVE", "DRAFT_QUOTE", id.toString(), safeCommand, QuoteApprovalCommandResponse.class, () -> approvalStateMachineService.approveQuote(id, safeCommand));
   }
 
   @PostMapping("/{id}/reject")
-  public QuoteApprovalCommandResponse reject(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
-    return approvalStateMachineService.rejectQuote(id, withTrustedActor(command, http));
+  public QuoteApprovalCommandResponse reject(@PathVariable UUID id, @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    QuoteApprovalDecisionCommand safeCommand = command(idempotencyKey, command, http);
+    return idempotencyService.execute(TenantContext.requireTenantId(), safeCommand.actorId(), safeCommand.idempotencyKey(), "QUOTE_REJECT", "DRAFT_QUOTE", id.toString(), safeCommand, QuoteApprovalCommandResponse.class, () -> approvalStateMachineService.rejectQuote(id, safeCommand));
   }
 
   @PostMapping("/{id}/request-changes")
-  public QuoteApprovalCommandResponse requestChanges(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
-    return approvalStateMachineService.requestQuoteChanges(id, withTrustedActor(command, http));
+  public QuoteApprovalCommandResponse requestChanges(@PathVariable UUID id, @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    QuoteApprovalDecisionCommand safeCommand = command(idempotencyKey, command, http);
+    return idempotencyService.execute(TenantContext.requireTenantId(), safeCommand.actorId(), safeCommand.idempotencyKey(), "QUOTE_REQUEST_CHANGES", "DRAFT_QUOTE", id.toString(), safeCommand, QuoteApprovalCommandResponse.class, () -> approvalStateMachineService.requestQuoteChanges(id, safeCommand));
   }
 
   @PostMapping("/{id}/convert-to-internal-order")
-  public QuoteApprovalCommandResponse convertToInternalOrder(@PathVariable UUID id, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
-    return approvalStateMachineService.convertApprovedQuoteToInternalDraftOrder(id, withTrustedActor(command, http));
+  public QuoteApprovalCommandResponse convertToInternalOrder(@PathVariable UUID id, @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @RequestBody(required = false) QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    QuoteApprovalDecisionCommand safeCommand = command(idempotencyKey, command, http);
+    return idempotencyService.execute(TenantContext.requireTenantId(), safeCommand.actorId(), safeCommand.idempotencyKey(), "QUOTE_CONVERT_TO_INTERNAL_ORDER", "DRAFT_QUOTE", id.toString(), safeCommand, QuoteApprovalCommandResponse.class, () -> approvalStateMachineService.convertApprovedQuoteToInternalDraftOrder(id, safeCommand));
   }
 
-  // OP-CAP-17F: the quote-approval decision actor is the audit identity recorded against an approve/
-  // reject/request-changes/convert decision. It is resolved from the trusted (optionally signed) actor
-  // context and overrides any body-supplied actorId, so a caller cannot forge who made the decision.
-  // The body's actorId is ignored; the rest of the command (reason/comment/idempotencyKey/etc.) is
-  // business intent and is preserved.
-  private QuoteApprovalDecisionCommand withTrustedActor(QuoteApprovalDecisionCommand command, HttpServletRequest http) {
-    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
-    if (command == null) {
-      return new QuoteApprovalDecisionCommand(null, actorId, null, null, null, null, null);
+  private QuoteApprovalDecisionCommand command(String idempotencyKey, QuoteApprovalDecisionCommand command, HttpServletRequest http) {
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID actorId = trustedActor(http, tenantId);
+    return new QuoteApprovalDecisionCommand(
+        command == null ? null : command.tenantId(),
+        actorId,
+        null,
+        command == null ? null : command.approvalRequestId(),
+        command == null ? null : command.reason(),
+        command == null ? null : command.comment(),
+        firstNonBlank(idempotencyKey, command == null ? null : command.idempotencyKey()));
+  }
+
+  private UUID trustedActor(HttpServletRequest http, UUID tenantId) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, tenantId);
+    return RequestActorResolver.SYSTEM_ACTOR.equals(actorId) ? null : actorId;
+  }
+
+  private static String firstNonBlank(String... values) {
+    if (values == null) return null;
+    for (String value : values) {
+      if (value != null && !value.isBlank()) return value.trim();
     }
-    return new QuoteApprovalDecisionCommand(command.tenantId(), actorId, command.actorRole(), command.approvalRequestId(), command.reason(), command.comment(), command.idempotencyKey());
+    return null;
   }
 }
