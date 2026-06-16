@@ -30,17 +30,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * OP-CAP-18 Operator Correction Learning Loop — capture + governance of operator corrections.
- *
- * Captures sanitized operator-correction metadata and governs its promotion into advisory AI memory. Raw
- * previous/corrected values are SHA-256 hashed and discarded — never persisted or logged. Learning
- * eligibility is deterministic; an operator correction does not become high-authority automatically. Only
- * explicit approval queues a record for projection (by publishing an idempotent
- * {@code OPERATOR_CORRECTION_RECORDED} event the projector consumes). Price/stock corrections are recorded
- * for traceability but can never be approved into authoritative memory. All actions are tenant-scoped and
- * audited.
- */
 @Service
 public class OperatorCorrectionLearningService {
   public static final int DEFAULT_LIMIT = 25;

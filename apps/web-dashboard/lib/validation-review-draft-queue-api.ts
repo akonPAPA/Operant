@@ -154,7 +154,6 @@ export type ValidationReviewDraftRemediationLineageDetail = {
   externalExecution: string;
 };
 
-// Frontend route to the remediation lineage detail for one review-origin draft (used by the queue link).
 export function remediationLineagePath(draftKind: string, draftId: string): string {
   return `/workspace/review-drafts/${draftKind}/${draftId}/remediation-lineage`;
 }
