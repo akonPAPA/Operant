@@ -53,6 +53,17 @@ function Resolve-NpmCommand {
   throw "npm is not available on PATH. Install Node.js, then run npm install in apps\web-dashboard if dependencies are missing."
 }
 
+function Get-EnvOrDefault([string]$Name, [string]$DefaultValue) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ($value) { return $value }
+  return $DefaultValue
+}
+
+$dbName = Get-EnvOrDefault "ORDERPILOT_DB_NAME" "orderpilot_local"
+$dbUser = Get-EnvOrDefault "ORDERPILOT_DB_USER" "orderpilot_local_user"
+$testDbName = Get-EnvOrDefault "ORDERPILOT_TEST_DB_NAME" "orderpilot_test"
+$testDbUser = Get-EnvOrDefault "ORDERPILOT_TEST_DB_USER" $dbUser
+
 Write-Host "OrderPilot local parity check"
 Write-Host "Repo root: $repoRoot"
 Write-Host "This script does not delete volumes, create .env files, or modify business data."
@@ -77,10 +88,11 @@ Write-Section "Compose Status"
 Invoke-Native $docker @("compose", "-f", $composeFile, "ps") $repoRoot
 
 Write-Section "Postgres Readiness"
-Invoke-Native $docker @("exec", "orderpilot-postgres", "pg_isready", "-U", "orderpilot", "-d", "orderpilot") $repoRoot
+Invoke-Native $docker @("exec", "orderpilot-postgres", "pg_isready", "-U", $dbUser, "-d", $dbName) $repoRoot
+Invoke-Native $docker @("exec", "orderpilot-postgres", "pg_isready", "-U", $testDbUser, "-d", $testDbName) $repoRoot
 
 Write-Section "Postgres Identity"
-Invoke-Native $docker @("exec", "orderpilot-postgres", "psql", "-U", "orderpilot", "-d", "orderpilot", "-c", "select current_user, current_database();") $repoRoot
+Invoke-Native $docker @("exec", "orderpilot-postgres", "psql", "-U", $dbUser, "-d", $dbName, "-c", "select current_user, current_database();") $repoRoot
 
 Write-Section "Backend Tests"
 $previousSpringProfilesActive = [Environment]::GetEnvironmentVariable("SPRING_PROFILES_ACTIVE")

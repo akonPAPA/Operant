@@ -26,9 +26,13 @@ MAX_METADATA_BYTES = 8_192
 # exists so policy is explicit and so it can be tightened per-deployment later.
 ALLOWED_SOURCE_TYPES = frozenset(AiJobSourceType)
 
-# Provider modes the worker can actually run today. FUTURE_SEMANTIC is intentionally excluded: no
-# real semantic/LLM provider call happens in this PR, so requesting it fails closed.
-ALLOWED_PIPELINES = frozenset({ProviderMode.RULE_BASED, ProviderMode.MOCK_SEMANTIC})
+# Provider modes the worker can actually run today. LOCAL_OLLAMA is selectable but gated a second time
+# by its own config: it only reaches a local runtime when explicitly enabled (endpoint + model +
+# transport) and otherwise fails closed downstream. FUTURE_SEMANTIC stays excluded — no such provider
+# exists, so requesting it is rejected here.
+ALLOWED_PIPELINES = frozenset(
+    {ProviderMode.RULE_BASED, ProviderMode.MOCK_SEMANTIC, ProviderMode.LOCAL_OLLAMA}
+)
 
 
 class JobRejected(Exception):

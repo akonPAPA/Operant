@@ -6,7 +6,7 @@ This file is the canonical roadmap and instruction source for OrderPilot Core v1
 
 ## Product Thesis
 
-OrderPilot Core v1 is a controlled B2B transaction intelligence platform for auto and industrial parts distributors. It turns inbound customer demand from messages, documents, files, and channel integrations into validated quote/order work without giving AI, chatbots, frontend clients, or connectors direct authority over business records.
+OrderPilot Core v1 is a controlled o2c/e2e commerce intelligent software transaction intelligence platform for auto and industrial parts distributors. It turns inbound customer demand from messages, documents, files, and channel integrations into validated quote/order work without giving AI, chatbots, frontend clients, or connectors direct authority over business records.
 
 The product thesis is trust before autonomy: AI can understand and suggest, but deterministic backend services decide. Every risky business mutation must be tenant-scoped, validated, approval-gated where required, audited, and routed through typed command services.
 
@@ -168,6 +168,103 @@ Current. Close targeted Stage 9B demo-only integration-control safety and focus 
 Stage 10 does not add production connectors, real ERP/1C writes, external connector network calls, raw secret handling, inventory mutation, bot-triggered connector commands, LLM calls, or new infrastructure. It preserves `ChangeRequest` as the integration lifecycle source, `connectorIdempotencyKeyHash` as the API/frontend field, `sha256:*` idempotency values, replay audit metadata, demo-only execution mode, and policy-block audit events.
 
 Stage 10 verification result: sandboxed backend `mvn test` was blocked by Maven Central dependency/network restrictions; approved Maven `mvn test` passed with 312 tests, 0 failures, 0 errors. Frontend `npm.cmd run lint`, `npm.cmd run test` (39 tests), and `npm.cmd run build` passed. AI worker `.venv\Scripts\python.exe -m pytest` passed with 12 tests.
+
+## Enterprise Platform Layer Roadmap Extension
+
+Status: target architecture and additive roadmap extension. This section does not replace the Core v1 roadmap above, the completed/active stage history, or the canonical current-stage source in `docs/product/current-stage.md` and `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not treat the items below as implemented unless code, tests, migrations, and stage docs prove the specific slice.
+
+This extension corrects product positioning: OrderPilot is not only an auto/industrial parts product. Parts and industrial supplies remain the first vertical wedge and demo dataset; the broader product is a B2B Transaction Intelligence Platform for sellers, distributors, wholesalers, and enterprise commerce teams that sell physical goods through messy operational channels.
+
+### Platform Layers
+
+1. Transaction Core: RFQ, validation review, corrections, approval requests, draft quotes, draft orders, commercial decisions, source trace, audit events, and outbox events. All business mutations go through Core API command services with tenant policy, deterministic validation, approvals where required, transactions, audit, and outbox where needed.
+2. Channel & Document Intake: email, PDF, Excel/XLSX, CSV, API upload, Telegram, WhatsApp-ready adapters, portal, and future EDI/SFTP intake. Intake normalizes hostile customer content into auditable events, preserves raw source safely, deduplicates retries, and pushes heavy parsing to processing jobs.
+3. Product / Catalog Intelligence: generic SKU-heavy catalog support through products, variants, aliases, categories, attributes, relations, substitutes, bundles, compatibility, and product documents. Auto/industrial fitment and OEM-specific behavior belongs in an Industry Pack, not the generic core.
+4. Commercial Rules Engine: price books, customer/segment/quantity rules, discount policy, margin guardrails, approval thresholds, commercial risk decisions, price simulation, and price-source explanation.
+5. Inventory & Availability Intelligence: inventory snapshots, movements, availability checks, stock freshness policy, reservations later, low/out-of-stock signals, reconciliation cases, discrepancy reasons, and warehouse/location scope.
+6. Quote / Order Workspace: operator workflow for validation review detail, draft quote/order detail, line corrections, validation issues, price/margin impact, substitutions, approvals, and audit timeline. Unresolved blocking issues prevent draft/final actions.
+7. Exception & Approval Cockpit: controlled queue for low-confidence extraction, unmatched SKU, unknown customer, invalid UOM, out-of-stock, risky substitute, margin/discount violation, stale inventory, duplicate request, connector failure, external-write approval, and prompt-injection suspicion.
+8. Integration Fabric: integration connections, scoped credentials, connector scopes, sync runs, mapping profiles, external references, ChangeRequests, connector commands, retries, circuit breakers, diagnostics, and dead-letter handling. Connectors are read-only by default.
+9. Enterprise Control Plane: organizations, tenants, business units, regions, branches, departments, users, groups, roles, permissions, policies, feature flags, environments, audit export, retention, SSO/OIDC/SAML-ready authentication, SCIM-ready provisioning, service accounts, and scoped API keys.
+10. AI Governance Layer: provider/model policy, prompt and schema versions, model runs, input/output references, evaluation datasets, correction feedback, token-cost ledger, PII redaction policy, prompt-injection signals, and quality metrics. AI remains advisory only.
+11. Commerce Intelligence / Analytics: read-model-backed metrics for automation rate, touchless rate, exception rate, cycle time, quote turnaround, human correction rate, margin saved, discount leakage, substitute recovered revenue, stock discrepancy value, channel volume, demand trend, exception reasons, and connector failure rate.
+12. Industry Packs: optional vertical rules, attributes, import templates, demo datasets, labels, and analytics for Generic Wholesale, Auto/Industrial Parts, Electronics, Construction Materials, Medical Supplies, Food Wholesale, Industrial Equipment, and future verticals. Do not hardcode a pack into the transaction core.
+13. Deployment & Operations Layer: standard SaaS, dedicated tenant later, private cloud later, hybrid Windows Local Connector Agent, outbound-only on-prem connector sync, sandbox/staging/prod environments, health checks, structured logs, metrics, tracing, connector diagnostics, queue monitoring, AI cost monitoring, audit export, backup/restore testing, incident response, and security review package.
+
+### Product Editions
+
+Mid-Market Edition:
+
+- SaaS deployment with a single company/tenant account.
+- Standard roles, Excel/CSV import, email/PDF/API/Telegram intake, validation review, draft quote/order workflow, basic approvals, basic audit, basic analytics, and standard integrations.
+
+Enterprise Edition:
+
+- Organization hierarchy, business units, regions, branches, SSO/OIDC/SAML, SCIM-ready provisioning, advanced RBAC/ABAC, approval policies, audit export, retention policies, environment separation, connector governance, mapping profiles, AI governance, ROI dashboards, dedicated tenant option later, and security/procurement package.
+
+Hybrid Connector Edition:
+
+- Windows Local Connector Agent for local Excel/CSV/DB/1C access, read-only first, outbound-only connectivity, encrypted local credentials, watched folders, sync diagnostics, connector health monitoring, and approved external write commands only after ChangeRequest approval.
+
+### Roadmap Extension After Current Core v1 Gates
+
+These OP-CAP items are planning targets. They do not override the current authorized slice in `docs/product/current-stage.md`, and they must be implemented one scoped backend-first slice at a time.
+
+```text
+OP-CAP-15A - Validation Review -> Draft Quote / Draft Order
+OP-CAP-15B - Draft Quote/Order Workspace UI
+OP-CAP-15C - Commercial Rules Engine v2
+OP-CAP-15D - Exception Cockpit v2
+
+OP-CAP-16A - Integration Fabric Foundation
+OP-CAP-16B - Connector Mapping + Sync Run Diagnostics
+OP-CAP-16C - ChangeRequest External Write Control
+
+OP-CAP-17A - Enterprise Control Plane Foundation
+OP-CAP-17B - SSO/OIDC/SCIM-ready Admin Layer
+OP-CAP-17C - Audit Export + Data Retention Policies
+
+OP-CAP-18A - AI Governance + Evaluation Harness
+OP-CAP-18B - AI Cost/Quality Dashboard
+OP-CAP-18C - Local/Open-Source Model Provider Governance
+
+OP-CAP-19A - Commerce Intelligence Read Models
+OP-CAP-19B - ROI / Executive Dashboard
+OP-CAP-19C - Reconciliation and Margin Leakage Analytics
+
+OP-CAP-20A - Security Review Pack + Pentest Readiness
+OP-CAP-20B - Threat Model and Procurement Readiness
+OP-CAP-20C - Enterprise Demo Dataset and Demo Script
+```
+
+### Future Module Direction
+
+This is target structure only. Do not create empty packages without a real business slice.
+
+```text
+common: tenant, auth, security, audit, idempotency, policy, errors
+platform: organization, control plane, feature flags, environments, compliance
+commerce: customer, product, pricing, inventory, quote, order, validation, approval, reconciliation
+intake: channels, documents, messages, uploads, processing jobs
+intelligence: extraction, confidence, AI results, model runs, evaluation
+integrations: connections, credentials, mappings, ChangeRequests, sync runs, connector commands
+analytics: read models, KPIs, reports, exports
+verticals: generic, parts, electronics, construction, food, medical, future packs
+```
+
+### Non-Negotiable Enterprise Rules
+
+- Keep the generic commerce core separate from industry packs.
+- Do not hardcode auto/parts assumptions into generic quote, order, product, pricing, inventory, intake, or analytics modules.
+- AI is advisory only; deterministic backend validation remains the authority.
+- Frontend, bot, AI worker, and connector code must not directly write trusted business tables.
+- All mutations go through Core API command services.
+- Tenant isolation is mandatory for every tenant-owned read and write.
+- Important mutations are audited.
+- External writes require ChangeRequest, approval, connector command, audit, and controlled execution.
+- Dashboard analytics must move to read models/materialized views as data grows.
+- Enterprise features must be additive and must not destroy mid-market simplicity.
+- Do not create architecture-only layers without a working business slice.
 
 ## Agent Working Rules
 

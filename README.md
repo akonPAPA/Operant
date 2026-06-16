@@ -1,15 +1,11 @@
-# OrderPilot Core
-*Ayan Saken:
-  The frontend developer, ux/ui tester,perfomance tester,KPSIP dev.
+# Operant Core
 
- *Akan Mukhametgali:
-  The teamlead,backend developer,AI engineer,pentester,devops,tester.
-
-The developers contributors: akonPAPA, Ayan2k6
+Operant is intelligent o2c/e2e/intelligent e-commercesoftware
+The developers contributors: akonPAPA, Ayan2k6, almuhxmed,jobegamests-code
 
 ## License and proprietary notice
 
-OrderPilot is proprietary and confidential software.
+Operant is proprietary and confidential software.
 
 Copyright (c) 2026 OrderPilot / Akan Mukhametgali. All rights reserved.
 
@@ -19,7 +15,7 @@ THIRD_PARTY_NOTICES.md, and docs/legal/ for details.
 
 Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
 
-OrderPilot Core is the Stage 1 foundation for an investor-grade transaction intelligence platform for auto and industrial parts distributors.
+Operant Core is the Stage 1 foundation for an investor-grade transaction intelligence platform for auto and industrial parts distributors.
 
 This repository is intentionally scoped to platform foundation only:
 
@@ -34,13 +30,13 @@ AI, frontend, chatbot, and connector components must never directly write truste
 ## Local quick start
 
 ```powershell
-cd "C:\OrderPilot\OrderPilot-Core"
-Copy-Item ".env.example" ".env"
-docker compose -f "infra/docker/docker-compose.yml" up -d postgres redis
-docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot
+cd "C:\OrderPilot\OrderPilot-Core\infra\docker"
+docker compose up -d postgres redis
+Test-NetConnection localhost -Port 55432
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_local
 ```
 
-For the full Windows local setup, use `docs/runbooks/local-development.md`. The primary Compose entrypoint is `infra/docker/docker-compose.yml` from the repo root. The local Postgres role/database is `orderpilot/orderpilot`; do not use `postgres/postgres` unless you intentionally created that role outside this repo.
+For the full Windows local setup, use `docs/runbooks/local-development.md`. The primary Compose entrypoint is `infra/docker/docker-compose.yml` from `C:\OrderPilot\OrderPilot-Core\infra\docker`. Host tools use `localhost:55432`; containers use Docker service DNS `postgres:5432`. The default local app role/database is `orderpilot_local_user/orderpilot_local`; do not use `postgres/postgres` unless you intentionally created that role outside this repo.
 
 Local parity check:
 

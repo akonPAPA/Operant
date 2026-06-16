@@ -11,22 +11,43 @@ import {
   QuoteConversionAttemptReviewItem
 } from "@/lib/quote-review-api";
 
-const demoTenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
+type LoadKind = "loading" | "ready" | "forbidden" | "not_found" | "error";
 
 export function ConversionReviewList() {
-  const [tenantId, setTenantId] = useState(demoTenantId);
   const [filter, setFilter] = useState<QuoteConversionAttemptReviewFilter>({});
   const [attempts, setAttempts] = useState<QuoteConversionAttemptReviewItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<LoadKind>("loading");
   const [error, setError] = useState("");
+  const loading = loadState === "loading";
+
+  const apply = useCallback((result: Awaited<ReturnType<typeof getQuoteConversionAttempts>>) => {
+    if (result.ok) {
+      setAttempts(result.data ?? []);
+      setLoadState("ready");
+    } else {
+      setAttempts([]);
+      setLoadState(result.kind === "forbidden" || result.kind === "not_found" ? result.kind : "error");
+      setError(result.message);
+    }
+  }, []);
 
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
-    await loadConversionState(event, () => getQuoteConversionAttempts(tenantId, filter), setAttempts, setError, setLoading, [], "Conversion review failed.");
-  }, [filter, tenantId]);
+    event?.preventDefault();
+    setLoadState("loading");
+    setError("");
+    apply(await getQuoteConversionAttempts(filter));
+  }, [filter, apply]);
 
   useEffect(() => {
-    return loadInitialConversionState(() => getQuoteConversionAttempts(demoTenantId), setAttempts, setError, setLoading, "Conversion review failed.");
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      const result = await getQuoteConversionAttempts();
+      if (!cancelled) apply(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apply]);
 
   return (
     <div className="stack">
@@ -34,7 +55,6 @@ export function ConversionReviewList() {
       <section className="panel">
         <h2>Conversion Attempts</h2>
         <form className="upload-form" onSubmit={load}>
-          <label><span>Tenant ID</span><input value={tenantId} onChange={(event) => setTenantId(event.target.value)} /></label>
           <div className="control-grid">
             <label><span>Status</span><input value={filter.status ?? ""} onChange={(event) => setFilter({ ...filter, status: event.target.value })} placeholder="NEEDS_REVIEW" /></label>
             <label><span>Reason code</span><input value={filter.reasonCode ?? ""} onChange={(event) => setFilter({ ...filter, reasonCode: event.target.value })} placeholder="CUSTOMER_UNRESOLVED" /></label>
@@ -51,19 +71,22 @@ export function ConversionReviewList() {
         <table className="data-table">
           <thead><tr><th>Attempt</th><th>Source</th><th>Status</th><th>Review</th><th>Draft</th><th>Issues</th><th>Lines</th><th>Created</th><th>Open</th></tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={9}>Loading conversion attempts...</td></tr> : null}
-            {!loading && !error && attempts.length === 0 ? <tr><td colSpan={9}>No conversion attempts match the current filters.</td></tr> : null}
-            {!loading && attempts.map((attempt) => (
+            {loadState === "loading" ? <tr><td colSpan={9}>Loading conversion attempts...</td></tr> : null}
+            {loadState === "forbidden" || loadState === "not_found" || loadState === "error"
+              ? <tr><td colSpan={9}>{safeError(error)}</td></tr>
+              : null}
+            {loadState === "ready" && attempts.length === 0 ? <tr><td colSpan={9}>No conversion reviews found.</td></tr> : null}
+            {loadState === "ready" && attempts.map((attempt) => (
               <tr key={attempt.id}>
-                <td><strong>{shortId(attempt.id)}</strong><br /><span className="muted-copy">{attempt.requestMode ?? "review"}</span></td>
-                <td>{humanize(attempt.sourceType)}<br /><span className="muted-copy">{attempt.sourceChannel ?? "n/a"} / {shortId(attempt.sourceId)}</span></td>
+                <td><strong>{attempt.requestMode ? humanize(attempt.requestMode) : "Review"}</strong><br /><span className="muted-copy">{formatSourceContext(attempt)}</span></td>
+                <td>{humanize(attempt.sourceType)}<br /><span className="muted-copy">{attempt.sourceChannel ?? "Linked intake source"}</span></td>
                 <td><StatusPill value={attempt.status} /></td>
                 <td>{attempt.reviewRequired ? <span className="status-pill warning">Review Required</span> : <span className="status-pill done">No Review</span>}<br /><span className="muted-copy">{attempt.reasonCode ? humanize(attempt.reasonCode) : "No reason code"}</span></td>
-                <td>{attempt.draftQuoteLinked ? <span className="status-pill done">Draft-linked</span> : <span className="status-pill warning">Pre-draft</span>}<br /><span className="muted-copy">{attempt.draftQuoteId ? shortId(attempt.draftQuoteId) : "No draft quote"}</span></td>
+                <td>{attempt.draftQuoteLinked ? <span className="status-pill done">Draft-linked</span> : <span className="status-pill warning">Pre-draft</span>}<br /><span className="muted-copy">{attempt.draftQuoteLinked ? "Internal draft available" : "No draft quote"}</span></td>
                 <td>{attempt.issueCount}</td>
                 <td>{attempt.lineCount}</td>
                 <td>{formatDate(attempt.createdAt)}</td>
-                <td><Link className="button secondary-button table-link-button" href={`/conversion-review/${attempt.id}?tenantId=${encodeURIComponent(tenantId)}`}>Open</Link></td>
+                <td><Link className="button secondary-button table-link-button" href={`/conversion-review/${attempt.id}`}>Open</Link></td>
               </tr>
             ))}
           </tbody>
@@ -73,35 +96,57 @@ export function ConversionReviewList() {
   );
 }
 
-export function ConversionReviewDetail({ attemptId, initialTenantId = demoTenantId }: { attemptId: string; initialTenantId?: string }) {
-  const [tenantId, setTenantId] = useState(initialTenantId);
+export function ConversionReviewDetail({ attemptId }: { attemptId: string }) {
   const [detail, setDetail] = useState<QuoteConversionAttemptReviewDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<LoadKind>("loading");
   const [error, setError] = useState("");
+  const loading = loadState === "loading";
+
+  const apply = useCallback((result: Awaited<ReturnType<typeof getQuoteConversionAttemptDetail>>) => {
+    if (result.ok) {
+      setDetail(result.data ?? null);
+      setLoadState(result.data ? "ready" : "not_found");
+    } else {
+      setDetail(null);
+      setLoadState(result.kind === "forbidden" || result.kind === "not_found" ? result.kind : "error");
+      setError(result.message);
+    }
+  }, []);
 
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
-    await loadConversionState(event, () => getQuoteConversionAttemptDetail(tenantId, attemptId), setDetail, setError, setLoading, null, "Conversion attempt detail failed.");
-  }, [attemptId, tenantId]);
+    event?.preventDefault();
+    setLoadState("loading");
+    setError("");
+    apply(await getQuoteConversionAttemptDetail(attemptId));
+  }, [attemptId, apply]);
 
   useEffect(() => {
-    return loadInitialConversionState(() => getQuoteConversionAttemptDetail(initialTenantId, attemptId), setDetail, setError, setLoading, "Conversion attempt detail failed.");
-  }, [attemptId, initialTenantId]);
+    let cancelled = false;
+    void (async () => {
+      const result = await getQuoteConversionAttemptDetail(attemptId);
+      if (!cancelled) apply(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptId, apply]);
 
   return (
     <div className="stack">
       <ReadOnlyNotice />
       <section className="panel">
-        <h2>Attempt {shortId(attemptId)}</h2>
+        <h2>Conversion Review Item</h2>
         <form className="upload-form" onSubmit={load}>
-          <label><span>Tenant ID</span><input value={tenantId} onChange={(event) => setTenantId(event.target.value)} /></label>
           <button className="button" disabled={loading} type="submit">{loading ? "Loading..." : "Reload"}</button>
         </form>
         {error ? <p className="form-message error">{safeError(error)}</p> : null}
       </section>
 
       {loading ? <section className="panel"><h2>Loading</h2><p>Loading conversion attempt detail...</p></section> : null}
-      {!loading && !error && !detail ? <section className="panel"><h2>No attempt</h2><p>No conversion attempt was returned by the backend.</p></section> : null}
-      {detail ? (
+      {loadState === "forbidden" || loadState === "not_found" || loadState === "error"
+        ? <section className="panel"><h2>Review unavailable</h2><p className="form-message error">{safeError(error)}</p></section>
+        : null}
+      {loadState === "ready" && detail ? (
         <>
           <section className="panel">
             <h2>Review Summary</h2>
@@ -109,7 +154,7 @@ export function ConversionReviewDetail({ attemptId, initialTenantId = demoTenant
               <KeyValue label="Status" value={humanize(detail.status)} />
               <KeyValue label="Review required" value={detail.reviewRequired ? "Yes" : "No"} />
               <KeyValue label="Reason" value={detail.reasonCode ? humanize(detail.reasonCode) : "None"} />
-              <KeyValue label="Draft state" value={detail.draftQuoteLinked ? `Draft-linked ${shortId(detail.draftQuoteId)}` : "Pre-draft / no draft quote"} />
+              <KeyValue label="Draft state" value={detail.draftQuoteLinked ? "Draft-linked" : "Pre-draft / no draft quote"} />
               <KeyValue label="Customer resolution" value={detail.customerResolution ?? "n/a"} />
               <KeyValue label="Created" value={formatDate(detail.createdAt)} />
             </dl>
@@ -120,10 +165,8 @@ export function ConversionReviewDetail({ attemptId, initialTenantId = demoTenant
             <dl className="detail-list">
               <KeyValue label="Source type" value={humanize(detail.sourceType)} />
               <KeyValue label="Source channel" value={detail.sourceChannel ?? "n/a"} />
-              <KeyValue label="Source id" value={detail.sourceId} />
-              <KeyValue label="Channel message" value={detail.channelMessageId ?? "n/a"} />
-              <KeyValue label="Inbound document" value={detail.inboundDocumentId ?? "n/a"} />
-              <KeyValue label="Triggered by" value={detail.triggeredBy ? `${shortId(detail.triggeredBy)} / ${detail.triggeredByType ?? "n/a"}` : detail.triggeredByType ?? "n/a"} />
+              <KeyValue label="Source reference" value={formatSourceContext(detail)} />
+              <KeyValue label="Triggered by" value={detail.triggeredByType ?? "n/a"} />
             </dl>
           </section>
 
@@ -138,7 +181,7 @@ export function ConversionReviewDetail({ attemptId, initialTenantId = demoTenant
                     <td>{issue.severity}</td>
                     <td>{issue.blocking ? "Yes" : "No"}</td>
                     <td>{issue.message}</td>
-                    <td>{issue.lineId ? shortId(issue.lineId) : "Source"}</td>
+                    <td>{issue.lineId ? "Line item" : "Source"}</td>
                   </tr>
                 )) : <tr><td colSpan={5}>No validation issues returned for this attempt.</td></tr>}
               </tbody>
@@ -237,9 +280,9 @@ function formatValue(value: string | number | boolean | null) {
   return String(value);
 }
 
-function shortId(value?: string | null) {
-  if (!value) return "n/a";
-  return value.length > 8 ? value.slice(0, 8) : value;
+function formatSourceContext(attempt: Pick<QuoteConversionAttemptReviewItem, "sourceType" | "sourceChannel" | "createdAt">) {
+  const channel = attempt.sourceChannel ? humanize(attempt.sourceChannel) : "linked intake source";
+  return `${humanize(attempt.sourceType)} via ${channel} (${formatDate(attempt.createdAt)})`;
 }
 
 function humanize(value?: string | null) {

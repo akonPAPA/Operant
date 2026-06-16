@@ -16,9 +16,14 @@ from orderpilot_ai_worker.extraction.providers.semantic_extraction import (
     SemanticExtractionProvider,
 )
 from orderpilot_ai_worker.extraction.schemas.extraction import (
+    AiSuggestion,
+    CommercialContext,
+    CustomerContext,
     ExtractedField,
     ExtractedLineItem,
     ExtractionResult,
+    ModelMetadata,
+    RiskSignals,
     SourceEvidence,
 )
 from orderpilot_ai_worker.extraction.security.output_sanitizer import sanitize_text, validate_result
@@ -26,10 +31,16 @@ from orderpilot_ai_worker.extraction.security.output_sanitizer import sanitize_t
 # Bound everything that can echo customer content so results/logs never carry unbounded payloads.
 MAX_SNIPPET_LEN = 180
 MAX_DESCRIPTION_LEN = 180
+MAX_SUMMARY_LEN = 240
 
 PROVIDER_NAME = "rule-based-understanding"
 MODEL_NAME = "rule-based-v1"
+PROMPT_VERSION = "op-cap-12a.prompt.v1"
 SCHEMA_VERSION = "stage4.v1"
+
+# A document scoring at/above this bar is advisory-"ready_for_validation"; below it is "needs_review".
+# This only routes to deterministic Core API validation — it never approves anything.
+READY_CONFIDENCE_FLOOR = 0.5
 
 # Canonical advisory intents (superset of the legacy mock intents). Strings only — never actions.
 INTENT_RFQ = "RFQ"
@@ -88,6 +99,21 @@ _UOM_NORMALIZE = {
     "units": "EA", "set": "SET", "sets": "SET", "box": "BOX", "boxes": "BOX", "pair": "PAIR",
     "pairs": "PAIR", "kg": "KG", "kgs": "KG", "l": "L", "liters": "L", "litres": "L", "x": "EA",
 }
+# Lowercase known unit tokens. A quantity unit outside this set is flagged unsupported (advisory) —
+# deterministic Core API validation is the real UOM authority.
+_KNOWN_UNIT_TOKENS = frozenset(_UOM_NORMALIZE.keys())
+
+# A line item starts with a quantity then a short unit token, optionally prefixed by "line N:".
+_LINE_LEAD_QTY = re.compile(r"^\s*(?:line\s*\d+[:.\-\s]+)?(\d{1,5})\s*([A-Za-z]{1,6})\b\s*(.*)$", re.I)
+
+# Advisory commercial hints. Discounts/urgency are flagged only; pricing/margin authority is Core API.
+# No trailing \b after the unit: "%" is a non-word char, so "35% discount" has no word boundary
+# right after "%". The optional trailing "discount"/"off" is captured when present.
+_DISCOUNT = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:%|percent|pct)\s*(?:discount|off)?", re.I)
+_DISCOUNT_WORD = re.compile(r"\bdiscount\b", re.I)
+_URGENCY_TERMS = ("urgent", "asap", "as soon as possible", "immediately", "today", "rush", "expedite")
+# Cyrillic presence is a deterministic, dependency-free language hint (ru/kk markets). Default en.
+_CYRILLIC = re.compile(r"[Ѐ-ӿ]")
 
 _PRODUCT_TRIGGER = re.compile(
     r"\b(?:need|needs|want|wants|looking for|require|requires|quote for|rfq for|price for|"
@@ -139,6 +165,10 @@ class RuleBasedExtractionProvider(SemanticExtractionProvider):  # pylint: disabl
         line_items = _build_line_items(safe_text, spans)
         intent = classify_intent(safe_text)
         confidence = _document_confidence(fields, intent)
+        customer = _build_customer(safe_text, spans, source_channel_context)
+        commercial = _build_commercial_context(safe_text, fields)
+        risk = _build_risk_signals(fields, line_items, confidence)
+        suggestions = _build_suggestions(commercial)
         result = ExtractionResult(
             detected_intent=intent,
             document_type="message",
@@ -147,13 +177,24 @@ class RuleBasedExtractionProvider(SemanticExtractionProvider):  # pylint: disabl
             extraction_method="rule_based",
             provider_name=PROVIDER_NAME,
             model_name=MODEL_NAME,
+            prompt_version=PROMPT_VERSION,
             schema_version=SCHEMA_VERSION,
             source_channel_context=source_channel_context,
             customer_hints=[spans.customer.group(1).strip()] if spans.customer else [],
-            validation_status="ready_for_validation" if confidence >= 0.5 else "needs_review",
+            validation_status="ready_for_validation" if _is_ready(confidence, risk) else "needs_review",
             fields=fields,
             line_items=line_items,
+            suggestions=suggestions,
             evidence=[_snippet(safe_text, 0, min(len(safe_text), MAX_SNIPPET_LEN))] if safe_text else [],
+            language=_detect_language(safe_text),
+            customer=customer,
+            commercial_context=commercial,
+            risk_signals=risk,
+            operator_summary=_build_operator_summary(intent, line_items, customer, risk),
+            model_metadata=ModelMetadata(
+                provider=PROVIDER_NAME, model=MODEL_NAME,
+                prompt_version=PROMPT_VERSION, schema_version=SCHEMA_VERSION,
+            ),
         )
         return validate_result(result)
 
@@ -312,41 +353,105 @@ def _location_hint(text: str, spans: _Spans) -> str | None:
 
 
 def _build_line_items(text: str, spans: _Spans) -> List[ExtractedLineItem]:
+    vehicle = _vehicle_context(text)
     lines = [ln for ln in text.splitlines() if ln.strip()]
     items: List[ExtractedLineItem] = []
     for line in lines:
-        qty = _LINE_QTY.search(line)
-        if qty is None:
-            continue
-        sku = _SKU.search(line.upper())
-        line_offset = text.find(line)
-        items.append(ExtractedLineItem(
-            line_number=len(items) + 1,
-            raw_sku=sku.group(0) if sku else None,
-            raw_alias=sku.group(0) if sku else None,
-            raw_description=line.strip()[:MAX_DESCRIPTION_LEN],
-            raw_quantity=qty.group(1),
-            raw_uom=_normalize_uom(qty.group(2)),
-            confidence=0.6,
-            evidence=_snippet(text, max(0, line_offset), max(0, line_offset) + len(line)),
-        ))
+        item = _line_item_from_line(text, line, len(items) + 1, vehicle)
+        if item is not None:
+            items.append(item)
     if items:
         return items
     # Fallback: a single document-level item when any business field was found.
     if spans.quantity or spans.sku or _product_text(text):
+        sku = spans.sku.group(0) if spans.sku else None
         return [ExtractedLineItem(
             line_number=1,
-            raw_sku=spans.sku.group(0) if spans.sku else None,
-            raw_alias=spans.sku.group(0) if spans.sku else None,
+            raw_sku=sku,
+            raw_alias=sku,
+            raw_oem_reference=sku,
             raw_description=(_product_text(text) or text.strip())[:MAX_DESCRIPTION_LEN],
             raw_quantity=spans.quantity.group(1) if spans.quantity else None,
             raw_uom=_normalize_uom(spans.quantity.group(2)) if spans.quantity else None,
             requested_date=spans.requested_date.group(1) if spans.requested_date else None,
             ship_to_location_hint=_location_hint(text, spans),
+            vehicle_context=vehicle,
+            # A free-text single-item RFQ without an explicit SKU is normal (Core API resolves the
+            # catalog match); only structured per-line items missing a SKU are flagged ambiguous.
+            ambiguous=False,
             confidence=0.58,
             evidence=_snippet(text, 0, min(len(text), MAX_SNIPPET_LEN)),
         )]
     return []
+
+
+def _line_item_from_line(
+    text: str, line: str, line_number: int, vehicle: str | None
+) -> ExtractedLineItem | None:
+    """Build one advisory line item from a single PO/RFQ line, or None if it is not a line item."""
+    qnum, unit_raw, remainder, structured = _parse_qty_lead(line)
+    if qnum is None:
+        return None
+    sku = _SKU.search((remainder or line).upper())
+    has_part = _has_part_word(remainder or line)
+    unit_known = unit_raw is not None and unit_raw.lower() in _KNOWN_UNIT_TOKENS
+    # Reject false positives like "2018 was a good year": a real line item must carry a recognized
+    # unit, a SKU candidate, or a known part word.
+    if not (unit_known or sku or has_part):
+        return None
+    sku_token = sku.group(0) if sku else None
+    line_offset = text.find(line)
+    # Ambiguity is meaningful only for a *structured* PO line (leading quantity) that still lacks a
+    # confident SKU candidate. Inline quantities inside prose RFQs are not treated as ambiguous —
+    # Core API resolves the catalog match there.
+    ambiguous = structured and sku_token is None
+    return ExtractedLineItem(
+        line_number=line_number,
+        raw_sku=sku_token,
+        raw_alias=sku_token,
+        raw_oem_reference=sku_token,
+        raw_description=line.strip()[:MAX_DESCRIPTION_LEN],
+        raw_quantity=qnum,
+        raw_uom=_normalize_uom(unit_raw) if unit_known else (unit_raw.upper() if unit_raw else None),
+        vehicle_context=vehicle,
+        ambiguous=ambiguous,
+        unsupported_uom=unit_raw is not None and not unit_known,
+        confidence=0.6 if sku_token and unit_known else 0.45,
+        evidence=_snippet(text, max(0, line_offset), max(0, line_offset) + len(line)),
+    )
+
+
+def _parse_qty_lead(line: str) -> tuple[str | None, str | None, str | None, bool]:
+    """Return (quantity, unit_token, remainder, structured).
+
+    ``structured`` is True only for a leading-quantity PO-style line. The legacy inline
+    ``<n> x|pcs <sku>`` form (quantity embedded in prose) is preserved but marked non-structured.
+    Returns ``(None, None, None, False)`` when no quantity is present.
+    """
+    lead = _LINE_LEAD_QTY.match(line)
+    if lead:
+        return lead.group(1), lead.group(2), lead.group(3), True
+    inline = _LINE_QTY.search(line)
+    if inline:
+        return inline.group(1), inline.group(2), line, False
+    return None, None, None, False
+
+
+def _has_part_word(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(part in lowered for part in _PARTS_LEXICON)
+
+
+def _vehicle_context(text: str) -> str | None:
+    """Compose a deterministic 'Make Model Year' vehicle hint from vehicle fields, if any."""
+    parts = [
+        f.normalized_value
+        for f in _vehicle_fields(text)
+        if f.field_name in ("vehicle_make", "vehicle_model", "vehicle_year") and f.normalized_value
+    ]
+    if not parts:
+        return None
+    return " ".join(parts)[:MAX_DESCRIPTION_LEN]
 
 
 def _document_confidence(fields: List[ExtractedField], intent: str) -> float:
@@ -354,3 +459,127 @@ def _document_confidence(fields: List[ExtractedField], intent: str) -> float:
         return 0.3 if intent != INTENT_UNKNOWN else 0.2
     base = 0.45 + 0.07 * len(fields)
     return round(min(base, 0.92), 3)
+
+
+def _is_ready(confidence: float, risk: RiskSignals) -> bool:
+    """Advisory readiness: confident enough AND no risk flag. Never an approval — only routes to
+    deterministic Core API validation."""
+    return confidence >= READY_CONFIDENCE_FLOOR and not risk.requires_review
+
+
+def _detect_language(text: str) -> str:
+    """Deterministic, dependency-free language hint. Cyrillic => 'ru', otherwise 'en'."""
+    return "ru" if _CYRILLIC.search(text or "") else "en"
+
+
+def _build_customer(text: str, spans: _Spans, channel: str | None) -> CustomerContext | None:
+    name = spans.customer.group(1).strip() if spans.customer else None
+    handle = spans.contact.group(0).strip() if spans.contact else None
+    if not (name or handle or channel):
+        return None
+    evidence = None
+    if spans.customer:
+        evidence = _snippet(text, *spans.customer.span())
+    elif spans.contact:
+        evidence = _snippet(text, *spans.contact.span())
+    confidence = 0.6 if name else (0.5 if handle else 0.3)
+    return CustomerContext(
+        raw_name=name[:MAX_DESCRIPTION_LEN] if name else None,
+        contact_handle=handle[:MAX_DESCRIPTION_LEN] if handle else None,
+        channel=channel,
+        confidence=confidence,
+        evidence=evidence,
+    )
+
+
+def _build_commercial_context(text: str, fields: List[ExtractedField]) -> CommercialContext:
+    lowered = text.lower()
+    discount = None
+    match = _DISCOUNT.search(text)
+    if match:
+        discount = match.group(0).strip()[:40]
+    elif _DISCOUNT_WORD.search(text):
+        discount = "discount_requested"
+    urgency = "high" if any(term in lowered for term in _URGENCY_TERMS) else None
+    if "wholesale" in lowered:
+        channel_hint = "wholesale"
+    elif "retail" in lowered:
+        channel_hint = "retail"
+    else:
+        channel_hint = None
+    location = next(
+        (f.normalized_value for f in fields if f.field_name == "ship_to_location_hint"), None
+    )
+    return CommercialContext(
+        requested_discount=discount,
+        urgency=urgency,
+        wholesale_retail_hint=channel_hint,
+        delivery_location_hint=location,
+    )
+
+
+def _build_risk_signals(
+    fields: List[ExtractedField], line_items: List[ExtractedLineItem], confidence: float
+) -> RiskSignals:
+    """Deterministic advisory risk flags. Flags only — never decisions, never actions."""
+    details: List[str] = []
+    has_quantity = any(f.field_name == "quantity" for f in fields) or any(
+        li.raw_quantity for li in line_items
+    )
+    missing_quantity = bool(line_items) and not has_quantity
+    ambiguous = any(li.ambiguous for li in line_items)
+    unsupported_uom = any(li.unsupported_uom for li in line_items)
+    low_confidence = confidence < READY_CONFIDENCE_FLOOR
+    if missing_quantity:
+        details.append("missing_quantity")
+    if ambiguous:
+        details.append("ambiguous_product")
+    if unsupported_uom:
+        details.append("unsupported_uom")
+    if low_confidence:
+        details.append("low_confidence")
+    return RiskSignals(
+        ambiguous_product=ambiguous,
+        missing_quantity=missing_quantity,
+        unsupported_uom=unsupported_uom,
+        low_confidence=low_confidence,
+        details=details,
+    )
+
+
+def _build_suggestions(commercial: CommercialContext) -> List[AiSuggestion]:
+    """Advisory suggestions that route the document to the right deterministic check. Never a decision.
+
+    A requested discount only *flags* that Core API's deterministic margin/discount guardrail must
+    run; the worker never computes margin and never approves the discount.
+    """
+    suggestions: List[AiSuggestion] = []
+    if commercial.requested_discount:
+        suggestions.append(AiSuggestion(
+            suggestion_type="REQUIRES_MARGIN_VALIDATION",
+            suggestion={
+                "reason": "discount_requested",
+                "handling": "DETERMINISTIC_MARGIN_VALIDATION_REQUIRED",
+            },
+            confidence=0.9,
+        ))
+    return suggestions
+
+
+def _build_operator_summary(
+    intent: str,
+    line_items: List[ExtractedLineItem],
+    customer: CustomerContext | None,
+    risk: RiskSignals,
+) -> str:
+    """One bounded, structured operator-facing line. Uses tokens/counts only — no raw payload echo."""
+    who = (customer.raw_name or customer.contact_handle) if customer else None
+    parts = [
+        f"Intent: {intent}",
+        f"{len(line_items)} line item(s)",
+        f"customer: {who or 'unknown'}",
+    ]
+    if risk.requires_review:
+        parts.append("risk: " + ", ".join(risk.details or ["review_required"]))
+    parts.append("advisory only — deterministic validation required")
+    return "; ".join(parts)[:MAX_SUMMARY_LEN]

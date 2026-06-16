@@ -94,7 +94,58 @@ POST /api/v1/validation-review/{reviewCaseId}/approvals/{approvalRequestId}/reje
 GET /api/v1/validation-review/{reviewCaseId}/draft-preview?targetType=QUOTE
 POST /api/v1/validation-review/{reviewCaseId}/prepare-draft-quote
 POST /api/v1/validation-review/{reviewCaseId}/prepare-draft-order
+POST /api/v1/validation-review/{reviewCaseId}/prepare-draft
 ```
+
+All `/api/v1/validation-review` reads require `REVIEW_READ`; all `/api/v1/validation-review` mutations (corrections, approvals, and every draft-preparation endpoint) require `REVIEW_ACTION`. Read-only review permission is never sufficient to prepare a draft.
+
+OP-CAP-09A adds `POST /api/v1/validation-review/{reviewCaseId}/prepare-draft`: the first real bridge from validation review into the quote/order workspace. It prepares exactly one internal draft from an approved validation handoff (review case) and returns a bounded result: `draftType` (`QUOTE`|`ORDER`), `draftId`, `sourceHandoffId`, `status`, `created`, `alreadyExisted`, `externalExecution` (always `DISABLED`), and `nextAction` (`OPEN_OPERATOR_WORKSPACE`). Draft type is chosen conservatively from the validation-backed document intent: `RFQ` → `QUOTE`, `PURCHASE_ORDER` → `ORDER`; any other or unknown intent fails closed with `400 BAD_REQUEST`. The endpoint reuses the existing draft-preparation readiness gate, so handoffs that are not draft-ready (e.g. blocked/rejected validation state) fail closed with `409 DRAFT_PREPARATION_BLOCKED`. Preparation is idempotent: a unique `(tenant_id, source_exception_case_id)` constraint on `draft_quote`/`draft_order` guarantees a single draft per handoff; repeating the call returns the existing draft with `created=false`, `alreadyExisted=true` and creates no duplicate. Every call is audited (`DRAFT_PREPARATION_SUCCEEDED` / `DRAFT_PREPARATION_ALREADY_PREPARED`) with ids only — no raw AI result JSON, document text, or message text. The endpoint does not finalize a quote/order, reserve inventory, mutate product/customer/pricing/connector master data, create connector commands, or write to ERP/1C/accounting. Draft line materialization from validated/corrected line data already exists via the typed draft services; richer line-level review remains future work.
+
+## OP-CAP-09B Line-Level Operator Draft Review Workspace
+
+OP-CAP-09B extends the existing `WorkspaceController` (`/api/v1/workspace`) with bounded line-level operator review over internal `DraftQuote`/`DraftOrder` records prepared in 09A. It is internal-only: no final quote/order approval, no inventory mutation, no master-data mutation, no connector/ERP/1C/accounting/external write, and no outbox.
+
+```
+GET   /api/v1/workspace/draft-quotes/{draftQuoteId}/review
+PATCH /api/v1/workspace/draft-quotes/{draftQuoteId}/lines/{lineId}
+POST  /api/v1/workspace/draft-quotes/{draftQuoteId}/mark-ready
+GET   /api/v1/workspace/draft-orders/{draftOrderId}/review
+PATCH /api/v1/workspace/draft-orders/{draftOrderId}/lines/{lineId}
+POST  /api/v1/workspace/draft-orders/{draftOrderId}/mark-ready
+```
+
+All `/api/v1/workspace/draft-quotes` and `/api/v1/workspace/draft-orders` reads require `REVIEW_READ`; all mutations (line `PATCH`, `mark-ready`, and the pre-existing approve-internal/reject/cancel/from-validation operations on those prefixes) require `REVIEW_ACTION`. Read-only permission can never correct a line or mark a draft ready.
+
+The bounded review-detail DTO returns `draftId`, tenant-safe `sourceReviewCaseId` and `sourceValidationRunId`, `status`, customer reference/name where already available, header totals, `lineCount`, bounded line summaries, and `externalExecution=DISABLED`. It never exposes raw AI result JSON, raw document text, or raw message text. Quote line summaries carry `lineId`, `lineNumber`, `productId`, `rawSku`, `normalizedSku`, `productName`, `description`, `quantity`, `uom`, `unitPrice`, `discountPercent`, `lineTotal`, `marginPercent`, and `status`/`validationStatus`; order line summaries carry the same minus SKU-resolution fields the order line model does not store.
+
+Line correction (`PATCH .../lines/{lineId}`) accepts only conservative, modeled fields — `quantity`, `uom`, `description`, `unitPrice`, optional `productId`, and a `correctionReason`. Validation fails closed: `quantity` must be positive, `unitPrice` must be non-negative, `uom` is bounded to 16 characters, text fields are bounded to 512 characters, a provided `productId` must already exist for the tenant (read-only check, no master-data write), the line must belong to the draft, the draft must belong to the current tenant, and a draft/line in a terminal/locked status (`APPROVED_INTERNAL`, `APPROVED`, `REJECTED`, `CANCELLED`, `REMOVED`) cannot be corrected. Corrections apply in place (no duplicate lines), recompute the line total and draft header totals, and return the line and draft to `NEEDS_REVIEW`. No line is deleted; line removal is intentionally deferred. `mark-ready` performs the single conservative transition to `WAITING_APPROVAL` (the existing "ready for internal approval" state), is idempotent if already in that state, and fails closed from terminal statuses — it never finalizes or approves. Every correction and transition emits a bounded audit event (`DRAFT_QUOTE_LINE_CORRECTED` / `DRAFT_ORDER_LINE_CORRECTED` / `DRAFT_QUOTE_MARKED_READY` / `DRAFT_ORDER_MARKED_READY`) recording draft id, line id, changed field **names** (not raw before/after values), reason, and actor — never raw AI JSON. The 09B operator UI is deferred to 09C.
+
+## OP-CAP-09C Operator Draft Review UI
+
+OP-CAP-09C adds the operator-facing dashboard surface over the 09B backend. No backend change was required. Routes (Next.js App Router, `(dashboard)` group):
+
+```
+/workspace/draft-quotes/[id]   -> draft quote review detail
+/workspace/draft-orders/[id]   -> draft order review detail
+```
+
+Each page is a server component that fetches the bounded 09B review DTO (`GET /api/v1/workspace/draft-{quotes|orders}/{id}/review`) through the tenant-scoped `lib/draft-review-api.ts` client and renders a shared `DraftReviewWorkspace` client component. The UI shows bounded header/source metadata (draft type, draft id, source review case id, source validation run id, status, customer reference/name, totals, `createdAt`, `externalExecution=DISABLED`), an internal-draft-review-only badge, and a bounded line table (line number, SKU/product where available, description, quantity, UOM, unit price, discount %, margin %, line total, status). Operators may correct only the 09B-supported fields (`description`, `quantity`, `uom`, `unitPrice`, optional `productId`, `correctionReason`) with client-side guards (quantity > 0, unit price ≥ 0, bounded UOM/text) that defer to the authoritative backend; `mark-ready` calls the 09B endpoint and reflects `WAITING_APPROVAL`/locked states. The UI surfaces structured backend errors, handles loading/empty/error/forbidden states, and replaces draft state from the backend response (no client-side row duplication). It exposes no raw AI result JSON / document text / message text and no final-approval, ERP/1C/accounting, invoicing, connector, or external-sync controls.
+
+## OP-CAP-09D Draft Review Queue, Navigation & Product Picker
+
+OP-CAP-09D adds bounded queue/read-model endpoints and operator list pages so drafts can be discovered, plus a read-only tenant-scoped product picker for line correction. All reads require `REVIEW_READ`. Endpoints (extend `WorkspaceController`):
+
+```
+GET /api/v1/workspace/draft-quotes/review-queue?status=&sourceReviewCaseId=&customerRef=&limit=
+GET /api/v1/workspace/draft-orders/review-queue?status=&sourceReviewCaseId=&customerRef=&limit=
+GET /api/v1/workspace/products/search?q=&limit=
+```
+
+The queue returns `DraftReviewSummary` rows only — `draftId`, `draftType` (`QUOTE`/`ORDER`), `status`, `sourceReviewCaseId`, `sourceValidationRunId`, `customerAccountId`, `customerName` (quote only — draft orders have no denormalized name), `lineCount` (computed via one grouped count query, never a full line array), `subtotalAmount`/`totalAmount`/`currency`, `createdAt`/`updatedAt`, `externalExecution=DISABLED`, and `nextAction=REVIEW_LINES`. No raw AI result JSON / document text / message text is exposed. Filters: `status` is validated against a bounded allowlist (`DRAFT`, `NEEDS_REVIEW`, `WAITING_APPROVAL`, `APPROVED_INTERNAL`, `REJECTED`, `CANCELLED`) and fails closed (`400`) on unknown values; `sourceReviewCaseId` is exact match; `customerRef` is a case-insensitive name-contains for quotes only; `limit` is clamped (default 25, max 100). Queries are tenant-scoped and ordered by `createdAt` desc; cursor pagination is intentionally deferred (limit-only) to avoid unbounded scans.
+
+The product picker (`GET /workspace/products/search`) reuses the existing tenant-scoped `ProductRepository` SKU/name-contains search (deleted excluded), additionally filters to `ACTIVE` status, requires a non-blank `q` (empty term returns `[]`, never an unbounded scan), and clamps `limit` (default 10, max 25). `ProductPickerItem` carries only `productId`, `sku`, `name`, `normalizedSku`, `status` — no cost, margin, supplier, or inventory-private fields. The search is read-only and never mutates master data.
+
+Frontend list pages (Next.js App Router, `(dashboard)` group) `/workspace/draft-quotes` and `/workspace/draft-orders` are server components with a native GET status/customer filter form and rows linking to the 09C detail routes; nav entries are labelled "Draft Quote Review" / "Draft Order Review" (distinct from the existing `/quotes`, `/orders` entries). The 09C correction form gains a read-only product search/picker that populates `productId`. No final approval, external execution, ERP/1C/accounting/connector write, inventory reservation, or master-data mutation is added.
 
 Draft preparation endpoints are internal Core API operations. They may create internal draft quote/order records through existing typed services, but they do not approve quotes/orders, reserve inventory, mutate product/customer/pricing master data, create connector commands, or write to ERP/external systems.
 

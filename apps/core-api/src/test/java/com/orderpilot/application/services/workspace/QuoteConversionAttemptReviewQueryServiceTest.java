@@ -68,13 +68,10 @@ class QuoteConversionAttemptReviewQueryServiceTest {
     var item = service.list(new QuoteConversionAttemptReviewFilter(null, true, "CUSTOMER_UNRESOLVED", "TELEGRAM", false, null, null)).getFirst();
     var detail = service.detail(attempt.getId());
 
-    assertThat(item.draftQuoteId()).isNull();
     assertThat(item.draftQuoteLinked()).isFalse();
     assertThat(item.reviewRequired()).isTrue();
     assertThat(item.reasonCode()).isEqualTo("CUSTOMER_UNRESOLVED");
     assertThat(item.reasonCodes()).containsExactly("CUSTOMER_UNRESOLVED");
-    assertThat(item.channelMessageId()).isEqualTo(message.getId());
-    assertThat(item.inboundDocumentId()).isNull();
     assertThat(item.issueCount()).isEqualTo(1);
     assertThat(detail.validationIssues()).hasSize(1);
     assertThat(detail.safeMetadata()).containsEntry("customerResolution", "UNRESOLVED").containsEntry("lineCount", 1);
@@ -93,12 +90,9 @@ class QuoteConversionAttemptReviewQueryServiceTest {
     var item = service.list(new QuoteConversionAttemptReviewFilter(null, false, null, "EMAIL", true, null, null)).getFirst();
     var detail = service.detail(attempt.getId());
 
-    assertThat(item.draftQuoteId()).isEqualTo(quoteId);
     assertThat(item.draftQuoteLinked()).isTrue();
     assertThat(item.reviewRequired()).isFalse();
     assertThat(item.reasonCodes()).isEmpty();
-    assertThat(item.inboundDocumentId()).isEqualTo(document.getId());
-    assertThat(detail.draftQuoteId()).isEqualTo(quoteId);
     assertThat(detail.sourceChannel()).isEqualTo("EMAIL");
   }
 

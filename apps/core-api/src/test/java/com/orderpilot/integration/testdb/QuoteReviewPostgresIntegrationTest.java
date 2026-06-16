@@ -12,9 +12,6 @@ import static com.orderpilot.support.DatabaseIntegrationTestBase.USERS_ROLES;
 import static com.orderpilot.support.TestQuoteReviewFixtures.ATTEMPT_A_LINKED;
 import static com.orderpilot.support.TestQuoteReviewFixtures.ATTEMPT_A_REVIEW;
 import static com.orderpilot.support.TestQuoteReviewFixtures.ATTEMPT_B_REVIEW;
-import static com.orderpilot.support.TestQuoteReviewFixtures.CHANNEL_MESSAGE_A;
-import static com.orderpilot.support.TestQuoteReviewFixtures.DRAFT_QUOTE_A;
-import static com.orderpilot.support.TestQuoteReviewFixtures.INBOUND_DOCUMENT_A;
 import static com.orderpilot.support.TestTenantFixtures.TENANT_A;
 import static com.orderpilot.support.TestTenantFixtures.TENANT_B;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,19 +40,14 @@ class QuoteReviewPostgresIntegrationTest extends DatabaseIntegrationTestBase {
     assertThat(items).noneMatch(item -> item.id().equals(ATTEMPT_B_REVIEW));
     assertThat(items).anySatisfy(item -> {
       assertThat(item.id()).isEqualTo(ATTEMPT_A_REVIEW);
-      assertThat(item.draftQuoteId()).isNull();
       assertThat(item.draftQuoteLinked()).isFalse();
       assertThat(item.reviewRequired()).isTrue();
       assertThat(item.reasonCodes()).containsExactly("CUSTOMER_UNRESOLVED");
-      assertThat(item.channelMessageId()).isEqualTo(CHANNEL_MESSAGE_A);
-      assertThat(item.inboundDocumentId()).isNull();
     });
     assertThat(items).anySatisfy(item -> {
       assertThat(item.id()).isEqualTo(ATTEMPT_A_LINKED);
-      assertThat(item.draftQuoteId()).isEqualTo(DRAFT_QUOTE_A);
       assertThat(item.draftQuoteLinked()).isTrue();
       assertThat(item.reviewRequired()).isFalse();
-      assertThat(item.inboundDocumentId()).isEqualTo(INBOUND_DOCUMENT_A);
     });
   }
 

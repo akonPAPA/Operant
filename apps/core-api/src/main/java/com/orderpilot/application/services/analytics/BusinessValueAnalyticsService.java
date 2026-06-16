@@ -5,6 +5,12 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
 import com.orderpilot.domain.intake.InboundDocumentRepository;
+import com.orderpilot.application.services.runtime.RuntimeFeatureType;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.domain.reconciliation.ReconciliationCase;
 import com.orderpilot.domain.reconciliation.ReconciliationCaseRepository;
 import com.orderpilot.domain.validation.DiscountCheckResult;
@@ -41,9 +47,11 @@ public class BusinessValueAnalyticsService {
   private final DiscountCheckResultRepository discountCheckResultRepository;
   private final MarginCheckResultRepository marginCheckResultRepository;
   private final ReconciliationCaseRepository reconciliationCaseRepository;
+  private final RuntimeGuardService runtimeGuardService;
+  private final RuntimeUnitEstimator runtimeUnitEstimator;
   private final Clock clock;
 
-  public BusinessValueAnalyticsService(RoiAssumptionsService assumptionsService, CommerceAnalyticsService commerceAnalyticsService, ChannelMessageRepository channelMessageRepository, InboundDocumentRepository inboundDocumentRepository, ExceptionCaseRepository exceptionCaseRepository, AuditEventRepository auditEventRepository, DraftQuoteRepository draftQuoteRepository, DraftQuoteLineRepository draftQuoteLineRepository, DraftOrderRepository draftOrderRepository, DiscountCheckResultRepository discountCheckResultRepository, MarginCheckResultRepository marginCheckResultRepository, ReconciliationCaseRepository reconciliationCaseRepository, Clock clock) {
+  public BusinessValueAnalyticsService(RoiAssumptionsService assumptionsService, CommerceAnalyticsService commerceAnalyticsService, ChannelMessageRepository channelMessageRepository, InboundDocumentRepository inboundDocumentRepository, ExceptionCaseRepository exceptionCaseRepository, AuditEventRepository auditEventRepository, DraftQuoteRepository draftQuoteRepository, DraftQuoteLineRepository draftQuoteLineRepository, DraftOrderRepository draftOrderRepository, DiscountCheckResultRepository discountCheckResultRepository, MarginCheckResultRepository marginCheckResultRepository, ReconciliationCaseRepository reconciliationCaseRepository, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, Clock clock) {
     this.assumptionsService = assumptionsService;
     this.commerceAnalyticsService = commerceAnalyticsService;
     this.channelMessageRepository = channelMessageRepository;
@@ -56,6 +64,8 @@ public class BusinessValueAnalyticsService {
     this.discountCheckResultRepository = discountCheckResultRepository;
     this.marginCheckResultRepository = marginCheckResultRepository;
     this.reconciliationCaseRepository = reconciliationCaseRepository;
+    this.runtimeGuardService = runtimeGuardService;
+    this.runtimeUnitEstimator = runtimeUnitEstimator;
     this.clock = clock;
   }
 
@@ -130,6 +140,19 @@ public class BusinessValueAnalyticsService {
   @Transactional(readOnly = true)
   public Stage8PilotRoiReportResponse export() {
     UUID tenantId = TenantContext.requireTenantId();
+    // OP-CAP-16H runtime guard: entitlement -> quota only (operator-initiated, low-frequency ROI
+    // report export — rate limiting is reserved for high-frequency automated paths, consistent with
+    // the 16F/16G operator-report rule), BEFORE the heavier multi-source metrics aggregation below.
+    // A disabled REPORT_EXPORT entitlement or an exhausted quota throws a stable mapped 403 and no
+    // report work runs. Requested units come from a cheap tenant-scoped COUNT of exception/review
+    // cases (the central report-driving entity); no report rows are loaded for the estimate.
+    int requestedUnits =
+        runtimeUnitEstimator.estimate(
+            RuntimeUnitEstimateRequest.forReport(
+                tenantId, (int) Math.min(exceptionCaseRepository.countByTenantId(tenantId), Integer.MAX_VALUE)));
+    runtimeGuardService.enforceWithoutRate(
+        RuntimeGuardRequest.of(tenantId, RuntimeOperationType.REPORT_GENERATED, requestedUnits),
+        RuntimeFeatureType.REPORT_EXPORT);
     RoiAssumptionsResponse assumptions = assumptionsService.currentForTenant(tenantId);
     Metrics metrics = metrics(tenantId, assumptions);
     Stage8CommandCenterAnalyticsResponse commandCenter = commerceAnalyticsService.stage8CommandCenter();

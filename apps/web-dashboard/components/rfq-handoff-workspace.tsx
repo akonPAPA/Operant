@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   dismissRfqHandoff,
+  generateRfqHandoffAiSuggestion,
   getRfqHandoff,
   isTerminal,
   listRfqHandoffs,
@@ -13,6 +14,7 @@ import {
   type RfqHandoff,
   type RfqHandoffStatus
 } from "@/lib/rfq-handoff-api";
+import type { AiWorkSuggestion } from "@/lib/ai-work-api";
 
 // Exact backend status values — do not rename. "all" is a UI-only convenience filter.
 const STATUS_FILTERS = ["PENDING_REVIEW", "IN_REVIEW", "CONVERTED", "DISMISSED", "all"] as const;
@@ -49,6 +51,7 @@ export function RfqHandoffWorkspace({
   const [showDismiss, setShowDismiss] = useState(false);
   const [conversionNote, setConversionNote] = useState("");
   const [showConvert, setShowConvert] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<AiWorkSuggestion | null>(null);
 
   const [action, setAction] = useState<ActionState>({
     status: initialError ? "error" : "idle",
@@ -78,6 +81,7 @@ export function RfqHandoffWorkspace({
     setShowConvert(false);
     setDismissReason("");
     setConversionNote("");
+    setAiSuggestion(null);
     setAction({ status: "idle", message: "" });
     setIsLoadingDetail(true);
     const result = await getRfqHandoff(id);
@@ -135,6 +139,20 @@ export function RfqHandoffWorkspace({
       return;
     }
     applyUpdated(result.data, "Handoff marked converted (ready for a later, separately-gated quote workflow).");
+  }
+
+  async function submitGenerateAiSuggestion() {
+    if (!detail) return;
+    setIsMutating(true);
+    setAction({ status: "loading", message: "Generating advisory suggestion..." });
+    const result = await generateRfqHandoffAiSuggestion(detail.id);
+    setIsMutating(false);
+    if (result.error || !result.data) {
+      setAction({ status: "error", message: result.error ?? "AI suggestion was not accepted by the backend." });
+      return;
+    }
+    setAiSuggestion(result.data);
+    setAction({ status: "success", message: "Advisory suggestion generated. No business state was changed." });
   }
 
   const canStartReview = detail?.status === "PENDING_REVIEW";
@@ -227,11 +245,9 @@ export function RfqHandoffWorkspace({
           <dl className="detail-list">
             <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(detail.status)}`}>{statusLabel(detail.status)}</span></dd></div>
             <div><dt>Source channel</dt><dd>{detail.sourceChannel}</dd></div>
-            <div><dt>Source event ID</dt><dd>{detail.sourceExternalEventId ?? "n/a"}</dd></div>
             <div><dt>Sender / contact hint</dt><dd>{detail.sourceActorExternalId ?? "n/a"}</dd></div>
             <div><dt>Detected intent</dt><dd>{detail.detectedIntent ?? "—"}</dd></div>
             <div><dt>Request text</dt><dd>{detail.requestText ?? "—"}</dd></div>
-            {detail.reviewerUserId ? (<div><dt>Reviewer</dt><dd>{detail.reviewerUserId}</dd></div>) : null}
             {detail.reviewStartedAt ? (<div><dt>Review started</dt><dd>{formatTimestamp(detail.reviewStartedAt)}</dd></div>) : null}
             {detail.dismissReason ? (<div><dt>Dismiss reason</dt><dd>{detail.dismissReason}</dd></div>) : null}
             {detail.dismissedAt ? (<div><dt>Dismissed at</dt><dd>{formatTimestamp(detail.dismissedAt)}</dd></div>) : null}
@@ -271,8 +287,27 @@ export function RfqHandoffWorkspace({
               >
                 Mark converted…
               </button>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || !canAct}
+                onClick={() => void submitGenerateAiSuggestion()}
+              >
+                Generate suggestion
+              </button>
             </div>
           )}
+
+          {aiSuggestion ? (
+            <div className="control-grid">
+              <h3>Advisory suggestion</h3>
+              <p className="generated-text">{aiSuggestion.generatedText}</p>
+              <div className="tag-row">
+                <span className="status-pill">Advisory only</span>
+                <span className="status-pill warning">Risk: {aiSuggestion.riskLevel}</span>
+              </div>
+            </div>
+          ) : null}
 
           {showDismiss ? (
             <div className="control-grid">

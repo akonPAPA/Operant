@@ -170,6 +170,18 @@ function Get-JdbcHostPort([string]$JdbcUrl) {
   }
 }
 
+function Get-EnvOrDefault([string]$Name, [string]$DefaultValue) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ($value) { return $value }
+  return $DefaultValue
+}
+
+function Get-DefaultDatasourceUrl() {
+  $hostPort = Get-EnvOrDefault "ORDERPILOT_DB_HOST_PORT" "55432"
+  $databaseName = Get-EnvOrDefault "ORDERPILOT_DB_NAME" "orderpilot_local"
+  return "jdbc:postgresql://localhost:${hostPort}/${databaseName}"
+}
+
 function Test-DemoConfigHasNoRawSecrets([string]$Root) {
   $configPaths = Get-RelativeExistingPaths $Root @(
     ".env.example",
@@ -178,7 +190,7 @@ function Test-DemoConfigHasNoRawSecrets([string]$Root) {
     "apps/web-dashboard/.env.local"
   )
   $secretNamePattern = "(?i)(secret|token|password|api[_-]?key|private[_-]?key)"
-  $allowedValuePattern = "(?i)^(|example|placeholder|changeme|change_me|local|demo|dev|test|orderpilot_dev_password|false|true|http://localhost:8080|00000000-0000-0000-0000-000000000000)$"
+  $allowedValuePattern = "(?i)^(|example|placeholder|changeme|change_me|change-me-local-dev-only|local|demo|dev|test|orderpilot_dev_password|false|true|http://localhost:8080|00000000-0000-0000-0000-000000000000)$"
   $findings = @()
   foreach ($relativePath in $configPaths) {
     $path = Join-Path $Root $relativePath
@@ -418,7 +430,7 @@ if ($RequireRuntime) {
   Add-Check $checks "Runtime checks" "Backend health returns OK if service is running" $(if ($actuatorHealth.Ok) { "PASS" } else { "FAIL" }) $actuatorHealth.Detail $true
 
   $datasourceUrl = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_URL")
-  if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:55432/orderpilot" }
+  if (-not $datasourceUrl) { $datasourceUrl = Get-DefaultDatasourceUrl }
   $jdbc = Get-JdbcHostPort $datasourceUrl
   if ($jdbc) {
     $db = Test-TcpOpen $jdbc.Host $jdbc.Port

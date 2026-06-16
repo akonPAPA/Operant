@@ -5,7 +5,10 @@ import com.orderpilot.application.services.integration.ChangeRequestService;
 import com.orderpilot.application.services.integration.ConnectorExecutionSafetyService;
 import com.orderpilot.application.services.integration.ConnectorSyncEventService;
 import com.orderpilot.application.services.integration.IntegrationConnectionService;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.integration.*;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,12 +18,14 @@ public class Stage9IntegrationController {
   private final ChangeRequestService changeRequestService;
   private final ConnectorSyncEventService connectorSyncEventService;
   private final ConnectorExecutionSafetyService safetyService;
+  private final RequestActorResolver actorResolver;
 
-  public Stage9IntegrationController(IntegrationConnectionService integrationConnectionService, ChangeRequestService changeRequestService, ConnectorSyncEventService connectorSyncEventService, ConnectorExecutionSafetyService safetyService) {
+  public Stage9IntegrationController(IntegrationConnectionService integrationConnectionService, ChangeRequestService changeRequestService, ConnectorSyncEventService connectorSyncEventService, ConnectorExecutionSafetyService safetyService, RequestActorResolver actorResolver) {
     this.integrationConnectionService = integrationConnectionService;
     this.changeRequestService = changeRequestService;
     this.connectorSyncEventService = connectorSyncEventService;
     this.safetyService = safetyService;
+    this.actorResolver = actorResolver;
   }
 
   @GetMapping("/api/stage9/connectors/policies")
@@ -56,13 +61,21 @@ public class Stage9IntegrationController {
   }
 
   @PostMapping("/api/stage9/change-requests")
-  public Stage9ChangeRequestResponse createChangeRequest(@RequestBody Stage9ChangeRequestCreateRequest request) {
-    return toChangeRequest(changeRequestService.createStage9DemoChangeRequest(request.sourceType(), request.sourceId(), request.requestedAction(), request.requestPayloadJson(), request.actorId()));
+  public Stage9ChangeRequestResponse createChangeRequest(@RequestBody Stage9ChangeRequestCreateRequest request, HttpServletRequest http) {
+    // OP-CAP-17F: the connector ChangeRequest creator is server-resolved from the trusted (optionally
+    // signed) actor context, never from a body-supplied actorId, so a caller cannot forge who created
+    // a connector write request. The body carries business intent only.
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return toChangeRequest(changeRequestService.createStage9DemoChangeRequest(request.sourceType(), request.sourceId(), request.requestedAction(), request.requestPayloadJson(), actorId));
   }
 
   @PostMapping("/api/stage9/change-requests/{id}/approve")
-  public Stage9ChangeRequestResponse approve(@PathVariable UUID id, @RequestBody(required = false) Stage9ApprovalRequest request) {
-    return toChangeRequest(changeRequestService.approveChangeRequest(id, request == null ? null : request.actorId()));
+  public Stage9ChangeRequestResponse approve(@PathVariable UUID id, HttpServletRequest http) {
+    // OP-CAP-17E: the connector ChangeRequest approver is server-resolved from the trusted
+    // (optionally signed) actor context, never from the request body. Any body-supplied actorId is
+    // ignored so a caller cannot forge who approved a connector write.
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return toChangeRequest(changeRequestService.approveChangeRequest(id, actorId));
   }
 
   @PostMapping("/api/stage9/change-requests/{id}/reject")

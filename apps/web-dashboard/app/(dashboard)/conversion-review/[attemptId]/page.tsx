@@ -1,11 +1,11 @@
 import { ConversionReviewDetail } from "@/components/conversion-review-cockpit";
 import { DashboardShell } from "@/components/dashboard-shell";
 
-export default async function Page({ params, searchParams }: Readonly<{ params: Promise<{ attemptId: string }>; searchParams: Promise<{ tenantId?: string }> }>) {
-  const [{ attemptId }, query] = await Promise.all([params, searchParams]);
+export default async function Page({ params }: Readonly<{ params: Promise<{ attemptId: string }> }>) {
+  const { attemptId } = await params;
   return (
     <DashboardShell title="Conversion Attempt Review">
-      <ConversionReviewDetail attemptId={attemptId} initialTenantId={query.tenantId} />
+      <ConversionReviewDetail attemptId={attemptId} />
     </DashboardShell>
   );
 }

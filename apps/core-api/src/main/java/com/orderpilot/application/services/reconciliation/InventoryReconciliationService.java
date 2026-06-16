@@ -8,10 +8,19 @@ import com.orderpilot.api.dto.Stage8Dtos.Stage8ProductTimelineResponse;
 import com.orderpilot.api.dto.Stage8Dtos.Stage8ReconciliationRefreshResponse;
 import com.orderpilot.api.dto.Stage8Dtos.Stage8ReconciliationSummaryResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
+import com.orderpilot.application.services.runtime.RuntimeFeatureType;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.inventory.InventorySnapshot;
 import com.orderpilot.domain.inventory.InventorySnapshotRepository;
+import com.orderpilot.domain.journey.JourneySourceType;
+import com.orderpilot.domain.journey.events.JourneyProjectionEventType;
 import com.orderpilot.domain.reconciliation.*;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -34,13 +43,19 @@ public class InventoryReconciliationService {
   private final ReconciliationCaseRepository caseRepository;
   private final InventorySnapshotRepository inventorySnapshotRepository;
   private final AuditEventService auditEventService;
+  private final RuntimeGuardService runtimeGuardService;
+  private final RuntimeUnitEstimator runtimeUnitEstimator;
+  private final OrderJourneyProjectionPublisher journeyProjectionPublisher;
   private final Clock clock;
 
-  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, InventorySnapshotRepository inventorySnapshotRepository, AuditEventService auditEventService, Clock clock) {
+  public InventoryReconciliationService(InventoryMovementRepository movementRepository, ReconciliationCaseRepository caseRepository, InventorySnapshotRepository inventorySnapshotRepository, AuditEventService auditEventService, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, OrderJourneyProjectionPublisher journeyProjectionPublisher, Clock clock) {
     this.movementRepository = movementRepository;
     this.caseRepository = caseRepository;
     this.inventorySnapshotRepository = inventorySnapshotRepository;
     this.auditEventService = auditEventService;
+    this.runtimeGuardService = runtimeGuardService;
+    this.runtimeUnitEstimator = runtimeUnitEstimator;
+    this.journeyProjectionPublisher = journeyProjectionPublisher;
     this.clock = clock;
   }
 
@@ -74,6 +89,12 @@ public class InventoryReconciliationService {
     reconciliationCase = caseRepository.save(reconciliationCase);
     if (created || materiallyChanged) {
       auditEventService.record(created ? "RECONCILIATION_CASE_CREATED" : "RECONCILIATION_CASE_UPDATED", "RECONCILIATION_CASE", reconciliationCase.getId().toString(), null, "{\"productId\":\"" + productId + "\",\"locationId\":\"" + locationId + "\",\"mismatchQuantity\":\"" + mismatch + "\"}");
+      // OP-CAP-24: publish a durable, idempotent journey projection event for the reconciliation source. The
+      // discriminator (this run's instant) lets each material transition produce its own event while
+      // identical re-runs collapse. No journey mutation / external write here.
+      journeyProjectionPublisher.publishSourceEvent(tenantId,
+          created ? JourneyProjectionEventType.RECONCILIATION_CASE_CREATED : JourneyProjectionEventType.RECONCILIATION_CASE_UPDATED,
+          JourneySourceType.RECONCILIATION_CASE, reconciliationCase.getId(), Long.toString(now.toEpochMilli()));
     }
     return new ReconciliationRunResponse(tenantId, productId, locationId, expected, actual, mismatch, severity.name(), reconciliationCase.getStatus().name(), reconciliationCase.getId(), created || materiallyChanged, now);
   }
@@ -98,6 +119,11 @@ public class InventoryReconciliationService {
     reconciliationCase.setStatus(nextStatus, clock.instant());
     reconciliationCase = caseRepository.save(reconciliationCase);
     auditEventService.record("RECONCILIATION_CASE_STATUS_UPDATED", "RECONCILIATION_CASE", reconciliationCase.getId().toString(), null, "{\"status\":\"" + nextStatus + "\"}");
+    // OP-CAP-24: a status transition is a meaningful reconciliation update; publish an idempotent journey
+    // projection event keyed by the new status (re-setting the same status collapses to one event).
+    journeyProjectionPublisher.publishSourceEvent(reconciliationCase.getTenantId(),
+        JourneyProjectionEventType.RECONCILIATION_CASE_UPDATED, JourneySourceType.RECONCILIATION_CASE,
+        reconciliationCase.getId(), nextStatus.name());
     return toResponse(reconciliationCase);
   }
 
@@ -129,8 +155,18 @@ public class InventoryReconciliationService {
   @Transactional
   public Stage8ReconciliationRefreshResponse refreshProjections() {
     UUID tenantId = TenantContext.requireTenantId();
-    long beforeCases = caseRepository.count();
+    // OP-CAP-16F runtime guard before bulk reconciliation case generation. The distinct
+    // product/location pairs are the operation's own first read (not an extra estimation query);
+    // requestedUnits are estimated from that already-known pair count. Entitlement + quota only (no
+    // rate): a reconciliation refresh is an operator/scheduled bulk action, not a high-frequency hot
+    // path. A denial throws a stable mapped exception (403) and creates/updates no reconciliation case.
     List<InventoryMovementRepository.ProductLocationPair> pairs = movementRepository.findDistinctProductLocationsByTenantIdAndMovementType(tenantId, InventoryMovementType.ACTUAL_STOCK_COUNT);
+    int requestedUnits = runtimeUnitEstimator.estimate(
+        RuntimeUnitEstimateRequest.forReconciliation(tenantId, pairs.size()));
+    runtimeGuardService.enforceWithoutRate(
+        RuntimeGuardRequest.of(tenantId, RuntimeOperationType.RECONCILIATION_RUN, requestedUnits),
+        RuntimeFeatureType.RECONCILIATION_RUN);
+    long beforeCases = caseRepository.count();
     long changed = 0;
     for (InventoryMovementRepository.ProductLocationPair pair : pairs) {
       ReconciliationRunResponse response = runInventoryReconciliation(pair.getProductId(), pair.getLocationId());

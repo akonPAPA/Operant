@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "quote-review-api.ts"), "utf8");
+const coreApiClient = readFileSync(join(root, "lib", "core-api-client.ts"), "utf8");
 const cockpit = readFileSync(join(root, "components", "quote-review-cockpit.tsx"), "utf8");
 const queuePage = readFileSync(join(root, "app", "(dashboard)", "quote-review", "page.tsx"), "utf8");
 const detailPage = readFileSync(join(root, "app", "(dashboard)", "quote-review", "[quoteId]", "page.tsx"), "utf8");
@@ -17,7 +18,8 @@ test("quote review API client exposes Stage 12C endpoints", () => {
   assert.match(apiClient, /selectQuoteReviewSubstitute/);
   assert.match(apiClient, /\/api\/v1\/quote-review\/queue/);
   assert.match(apiClient, /\/api\/v1\/quote-review\/\$\{quoteId\}/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assert.match(apiClient, /demoScopeHeaders/);
+  assert.match(coreApiClient, /X-Tenant-Id/);
 });
 
 test("quote review pages render queue and detail workflow", () => {
@@ -43,10 +45,10 @@ test("review UI does not show draft review quotes as final or fake fixed", () =>
 
 test("quote review links encode route data and avoid raw HTML sinks", () => {
   assert.match(cockpit, /buildQuoteReviewHref/);
-  assert.match(cockpit, /URLSearchParams\(\{ tenantId \}\)/);
   assert.match(cockpit, /encodeURIComponent\(quoteId\)/);
   assert.match(cockpit, /UUID_RE\.test\(quoteId\)/);
   assert.match(cockpit, /reviewHref \? <a className="button secondary-button" href=\{reviewHref\}>Open Review<\/a> : <span className="muted-copy">Unavailable<\/span>/);
+  assert.doesNotMatch(cockpit, /URLSearchParams\(\{ tenantId \}\)/);
   assert.doesNotMatch(cockpit, /href=\{`\/quote-review\/\$\{row\.quoteId\}\?tenantId=\$\{tenantId\}`\}/);
   assert.doesNotMatch(cockpit, /dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|DOMParser|document\.write/);
 });

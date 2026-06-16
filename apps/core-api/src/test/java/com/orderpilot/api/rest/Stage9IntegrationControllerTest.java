@@ -1,6 +1,10 @@
 package com.orderpilot.api.rest;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -14,19 +18,22 @@ import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiPermissionGuard;
 import com.orderpilot.security.ApiPermissionInterceptor;
 import com.orderpilot.security.ApiSecurityWebConfig;
+import com.orderpilot.security.RequestActorResolver;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 @WebMvcTest(Stage9IntegrationController.class)
-@Import({CoreConfiguration.class, ApiSecurityWebConfig.class, ApiPermissionInterceptor.class, ApiPermissionGuard.class})
+@Import({CoreConfiguration.class, ApiSecurityWebConfig.class, ApiPermissionInterceptor.class, ApiPermissionGuard.class, RequestActorResolver.class})
 class Stage9IntegrationControllerTest {
   @Autowired private MockMvc mockMvc;
   @MockBean private IntegrationConnectionService integrationConnectionService;
@@ -66,21 +73,169 @@ class Stage9IntegrationControllerTest {
     mockMvc.perform(post("/api/stage9/integrations/demo-erp").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.connectionKind").value("DEMO_ERP_LOCAL"));
-    mockMvc.perform(get("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+    mockMvc.perform(get("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.changeRequests[0].status").value("EXECUTED"))
         .andExpect(jsonPath("$.changeRequests[0].externalReference").value("DEMO-QUOTE-123"));
-    mockMvc.perform(post("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\"}"))
+    mockMvc.perform(post("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE").contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.targetSystem").value("DEMO_ERP"));
-    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_APPROVE").contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.approvalStatus").value("APPROVED"));
-    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_EXECUTE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.executionStatus").value("EXECUTED"));
     mockMvc.perform(get("/api/stage9/connector-sync-runs").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.syncRuns[0].direction").value("OUTBOUND_DEMO"));
+  }
+
+  // OP-CAP-17E: the connector ChangeRequest approver must be taken from the trusted actor header,
+  // never from a body-supplied actorId. A request cannot forge who approved a connector write.
+  @Test
+  void connectorApprovalActorComesFromTrustedHeaderNotRequestBody() throws Exception {
+    UUID requestId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    Instant now = Instant.parse("2026-05-27T00:00:00Z");
+    ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "DEMO_ERP", "DRAFT_QUOTE", "CREATE_DRAFT_QUOTE", "DRAFT_QUOTE", UUID.randomUUID(), "{}", "key", null, now);
+    changeRequest.approve(trustedActor, now);
+    when(changeRequestService.approveChangeRequest(eq(requestId), any())).thenReturn(changeRequest);
+
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_APPROVE")
+            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"actorId\":\"" + spoofActor + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.approvalStatus").value("APPROVED"));
+
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(changeRequestService).approveChangeRequest(eq(requestId), actorCaptor.capture());
+    assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
+  }
+
+  // OP-CAP-17F: the connector ChangeRequest creator must be taken from the trusted actor header,
+  // never from a body-supplied actorId. A request cannot forge who created a connector write request.
+  @Test
+  void connectorCreateActorComesFromTrustedHeaderNotRequestBody() throws Exception {
+    UUID sourceId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    Instant now = Instant.parse("2026-05-27T00:00:00Z");
+    ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "DEMO_ERP", "DRAFT_QUOTE", "CREATE_DRAFT_QUOTE", "DRAFT_QUOTE", sourceId, "{}", "key", trustedActor, now);
+    when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), anyString(), any())).thenReturn(changeRequest);
+
+    mockMvc.perform(post("/api/stage9/change-requests")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
+            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\",\"actorId\":\"" + spoofActor + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.targetSystem").value("DEMO_ERP"));
+
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(changeRequestService).createStage9DemoChangeRequest(eq("DRAFT_QUOTE"), eq(sourceId), eq("CREATE_DRAFT_QUOTE"), eq("{}"), actorCaptor.capture());
+    assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
+  }
+
+  @Test
+  void changeRequestListWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(changeRequestService);
+  }
+
+  @Test
+  void changeRequestDetailWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(changeRequestService);
+  }
+
+  @Test
+  void executionSafetyWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(safetyService);
+  }
+
+  @Test
+  void executionSafetyWithAdminSettingsReadIsForbiddenBeforeServiceInvocation() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(safetyService);
+  }
+
+  @Test
+  void approveWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"actorId\":\"00000000-0000-0000-0000-000000000001\",\"requestPayloadJson\":\"SECRET-PAYLOAD\"}"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verify(changeRequestService, never()).approveChangeRequest(any(), any());
+  }
+
+  @Test
+  void executeWithReadPermissionIsForbiddenBeforeServiceInvocation() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verify(changeRequestService, never()).executeStage9DemoChangeRequest(any());
+  }
+
+  @Test
+  void retryWithReadPermissionIsForbiddenBeforeServiceInvocation() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/retry")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verify(changeRequestService, never()).retryStage9DemoChangeRequest(any());
+  }
+
+  private void assertForbiddenResponseDoesNotLeakSensitiveDetails(MvcResult result) throws Exception {
+    String body = result.getResponse().getContentAsString();
+    assertThat(body)
+        .doesNotContain("SECRET-PAYLOAD")
+        .doesNotContain("requestPayloadJson")
+        .doesNotContain("ChangeRequestService")
+        .doesNotContain("ConnectorExecutionSafetyService")
+        .doesNotContain("java.lang")
+        .doesNotContain("org.springframework")
+        .doesNotContain("stackTrace");
   }
 }

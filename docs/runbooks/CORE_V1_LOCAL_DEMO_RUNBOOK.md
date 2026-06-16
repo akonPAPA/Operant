@@ -58,9 +58,10 @@ mvn spring-boot:run
 For the standard host-run backend, use local PostgreSQL at `localhost:55432` unless your environment overrides it:
 
 ```powershell
-$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:55432/orderpilot"
-$env:SPRING_DATASOURCE_USERNAME="orderpilot"
-$env:SPRING_DATASOURCE_PASSWORD="orderpilot_dev_password"
+$env:ORDERPILOT_DB_NAME="orderpilot_local"
+$env:ORDERPILOT_DB_USER="orderpilot_local_user"
+$env:ORDERPILOT_DB_PASSWORD="change-me-local-dev-only"
+$env:ORDERPILOT_DB_HOST_PORT="55432"
 $env:SERVER_PORT="8080"
 mvn spring-boot:run
 ```

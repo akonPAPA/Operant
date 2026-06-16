@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 
 import {
   approveQuote,
@@ -13,6 +13,7 @@ import {
   rejectQuote,
   requestQuoteChanges
 } from "@/lib/quote-transaction-api";
+import { generateIdempotencyKey } from "@/lib/security-idempotency";
 
 const demoTenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
 
@@ -24,10 +25,22 @@ export function QuoteWorkspace() {
   const [decisionReason, setDecisionReason] = useState("");
   const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [defaultIdempotencyKey] = useState(() => `quote-workspace-${Date.now()}`);
+  const loadingRef = useRef(false);
+  const createDraftKeyRef = useRef<string | null>(null);
+  const approvalActionKeyRef = useRef<Map<string, string>>(new Map());
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loadingRef.current) return;
+    if (!createDraftKeyRef.current) {
+      try {
+        createDraftKeyRef.current = generateIdempotencyKey();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
+        return;
+      }
+    }
+    loadingRef.current = true;
     setLoading(true);
     setMessage("");
     const form = new FormData(event.currentTarget);
@@ -38,7 +51,7 @@ export function QuoteWorkspace() {
         customerExternalRef: String(form.get("customerExternalRef") || "CUST-001"),
         requestedLocation: String(form.get("requestedLocation") || "WH-ALM"),
         requestedDiscountPercent: Number(form.get("requestedDiscountPercent") || 0),
-        idempotencyKey: String(form.get("idempotencyKey") || `quote-workspace-${Date.now()}`),
+        idempotencyKey: createDraftKeyRef.current,
         requestedItems: [{
           rawSkuOrAlias: String(form.get("rawSkuOrAlias") || "PAD-OE-04465"),
           description: String(form.get("description") || "Original brake pads for Toyota Camry 2018"),
@@ -50,21 +63,34 @@ export function QuoteWorkspace() {
       setTenantId(selectedTenant);
       setResult(response);
       setApprovalResult(null);
+      createDraftKeyRef.current = null;
       setApprovalState(await getQuoteApprovalState(selectedTenant, response.draftQuoteId));
       setMessage("Draft quote created through the backend transaction service.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Quote request failed.");
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }
 
   async function runApprovalAction(action: "approve" | "reject" | "changes" | "convert") {
     if (!result) return;
+    if (loadingRef.current) return;
     if ((action === "reject" || action === "changes") && !decisionReason.trim()) {
       setMessage("Reason/comment is required for reject or request changes.");
       return;
     }
+    const actionKey = `${action}-${result.draftQuoteId}`;
+    if (!approvalActionKeyRef.current.has(actionKey)) {
+      try {
+        approvalActionKeyRef.current.set(actionKey, generateIdempotencyKey());
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
+        return;
+      }
+    }
+    loadingRef.current = true;
     setLoading(true);
     setMessage("");
     const payload = {
@@ -72,7 +98,7 @@ export function QuoteWorkspace() {
       actorRole: "OPERATOR",
       reason: decisionReason,
       comment: decisionReason,
-      idempotencyKey: `${action}-${result.draftQuoteId}-${Date.now()}`
+      idempotencyKey: approvalActionKeyRef.current.get(actionKey)!
     };
     try {
       const response = action === "approve"
@@ -83,12 +109,14 @@ export function QuoteWorkspace() {
             ? await requestQuoteChanges(result.draftQuoteId, payload)
             : await convertQuoteToInternalOrder(result.draftQuoteId, payload);
       setApprovalResult(response);
+      approvalActionKeyRef.current.delete(actionKey);
       setApprovalState(await getQuoteApprovalState(tenantId, result.draftQuoteId));
       setResult({ ...result, status: response.newStatus, approvalRequired: response.approvalRequired, approvalReasons: response.approvalReasons });
       setMessage(`${response.approvalDecision} completed. External ERP write was not executed.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Quote approval action failed.");
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }
@@ -97,7 +125,7 @@ export function QuoteWorkspace() {
     <div className="stack">
       <section className="panel">
         <h2>RFQ to Draft Quote</h2>
-        <p className="risk-note">Demo path: Steppe Logistics requests out-of-stock OE brake pads. OrderPilot validates the draft, shows substitute/approval context, and keeps externalExecution=DISABLED.</p>
+        <p className="risk-note">Demo path: Steppe Logistics requests out-of-stock OE brake pads. Operant validates the draft, shows substitute/approval context, and keeps externalExecution=DISABLED.</p>
         <form className="upload-form" onSubmit={submit}>
           <label><span>Tenant ID</span><input name="tenantId" defaultValue={demoTenantId} /></label>
           <label><span>Customer external ref</span><input name="customerExternalRef" defaultValue="CUST-001" /></label>
@@ -107,7 +135,6 @@ export function QuoteWorkspace() {
           <label><span>UOM</span><input name="uom" defaultValue="EA" /></label>
           <label><span>Location</span><input name="requestedLocation" defaultValue="WH-ALM" /></label>
           <label><span>Discount percent</span><input name="requestedDiscountPercent" type="number" min="0" step="0.01" defaultValue="0" /></label>
-          <label><span>Idempotency key</span><input name="idempotencyKey" defaultValue={defaultIdempotencyKey} /></label>
           <button className="button" disabled={loading} type="submit">{loading ? "Submitting..." : "Create Draft Quote"}</button>
         </form>
         {message ? <p className={result ? "form-message done" : "form-message error"}>{message}</p> : null}

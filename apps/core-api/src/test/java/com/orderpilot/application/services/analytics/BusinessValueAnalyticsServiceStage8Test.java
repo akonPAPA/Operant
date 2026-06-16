@@ -18,6 +18,11 @@ import com.orderpilot.domain.validation.DiscountCheckResult;
 import com.orderpilot.domain.validation.DiscountCheckResultRepository;
 import com.orderpilot.domain.validation.MarginCheckResult;
 import com.orderpilot.domain.validation.MarginCheckResultRepository;
+import com.orderpilot.application.services.runtime.FeatureEntitlementGuard;
+import com.orderpilot.application.services.runtime.QuotaGuard;
+import com.orderpilot.application.services.runtime.RateLimitService;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.domain.workspace.*;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.math.BigDecimal;
@@ -34,7 +39,8 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({BusinessValueAnalyticsService.class, RoiAssumptionsService.class, CommerceAnalyticsService.class, CoreConfiguration.class})
+@Import({BusinessValueAnalyticsService.class, RoiAssumptionsService.class, CommerceAnalyticsService.class, CoreConfiguration.class,
+  RuntimeGuardService.class, QuotaGuard.class, RateLimitService.class, FeatureEntitlementGuard.class, UsageMeterService.class})
 class BusinessValueAnalyticsServiceStage8Test {
   private static final Instant NOW = Instant.parse("2026-05-27T00:00:00Z");
 

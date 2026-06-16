@@ -8,6 +8,7 @@ package com.orderpilot.domain.aiwork;
 public enum AiWorkSourceType {
   CHANNEL_MESSAGE,
   INBOUND_CHANNEL_EVENT,
+  RFQ_HANDOFF,
   OPERATOR_REVIEW,
   QUOTE,
   QUOTE_TRANSACTION,
