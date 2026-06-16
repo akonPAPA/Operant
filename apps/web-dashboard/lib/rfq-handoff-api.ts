@@ -99,28 +99,28 @@ export function getRfqHandoff(id: string) {
 // --- Operator workflow transitions (tenant-scoped, audited, no quote/order/ERP write) ---
 
 /** Take a handoff into review: PENDING_REVIEW -> IN_REVIEW. */
-export function startReviewRfqHandoff(id: string, reviewerUserId?: string) {
+export function startReviewRfqHandoff(id: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/start-review`,
-    { method: "POST", body: JSON.stringify({ reviewerUserId: reviewerUserId ?? null }) },
+    { method: "POST", body: JSON.stringify({}) },
     null
   );
 }
 
 /** Dismiss an invalid/irrelevant handoff. Reason is required (non-blank) by the backend. */
-export function dismissRfqHandoff(id: string, reason: string, actorUserId?: string) {
+export function dismissRfqHandoff(id: string, reason: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/dismiss`,
-    { method: "POST", body: JSON.stringify({ reason, actorUserId: actorUserId ?? null }) },
+    { method: "POST", body: JSON.stringify({ reason }) },
     null
   );
 }
 
 /** Mark a handoff converted (workflow complete). Does NOT create any quote/order. */
-export function markConvertedRfqHandoff(id: string, conversionNote?: string, actorUserId?: string) {
+export function markConvertedRfqHandoff(id: string, conversionNote?: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/mark-converted`,
-    { method: "POST", body: JSON.stringify({ conversionNote: conversionNote ?? null, actorUserId: actorUserId ?? null }) },
+    { method: "POST", body: JSON.stringify({ conversionNote: conversionNote ?? null }) },
     null
   );
 }

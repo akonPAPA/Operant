@@ -41,6 +41,13 @@ test("api client sends tenant and ADMIN_SETTINGS_READ permission headers", () =>
   assert.match(api, /ADMIN_SETTINGS_READ/);
 });
 
+test("api client transition payloads do not send backend-owned actor fields", () => {
+  assert.doesNotMatch(api, /reviewerUserId:\s*reviewerUserId/);
+  assert.doesNotMatch(api, /actorUserId:\s*actorUserId/);
+  assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*actorUserId/s);
+  assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*reviewerUserId/s);
+});
+
 test("api client has no manual create function and no quote/order/erp action", () => {
   assert.doesNotMatch(api, /createRfqHandoff|createHandoff/);
   assert.doesNotMatch(api, /createQuote|createOrder|approve|erpSync|inventory|priceUpdate/i);
