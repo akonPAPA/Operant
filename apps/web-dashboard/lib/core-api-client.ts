@@ -35,8 +35,6 @@ export const NOT_FOUND_STATE_MESSAGE = "Review not found or no longer available.
 export const VALIDATION_STATE_MESSAGE = "This request could not be processed as submitted.";
 export const LOAD_ERROR_STATE_MESSAGE = "Could not load this workspace.";
 
-// Map an HTTP status to the operator-safe error message. Used by read and
-// command paths so neither one surfaces a raw backend body.
 export function coreApiStatusMessage(status: number): string {
   switch (status) {
     case 403:
