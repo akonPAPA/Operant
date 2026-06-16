@@ -108,12 +108,6 @@ public class DraftCommandPreparationService {
     return prepareDraft(reviewCaseId, actorId, null);
   }
 
-  /**
-   * OP-CAP-15A: same idempotent, readiness-gated, audited internal draft preparation, but with an
-   * operator-chosen target type ({@code QUOTE}/{@code ORDER}). A null/blank {@code requestedType}
-   * falls back to the conservative document-intent mapping used by OP-CAP-09A. No final/approved
-   * order, no external/ERP write.
-   */
   @Transactional
   public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId, String requestedType) {
     return prepareDraft(reviewCaseId, actorId, requestedType, null, null);

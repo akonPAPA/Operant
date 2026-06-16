@@ -12,14 +12,6 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * OP-CAP-18 Trust/AI Event Projector Runtime.
- *
- * Tracks one projector's progress on one event, enforcing idempotency. Unique per
- * (tenant, projector, event) and (tenant, projector, idempotency key). A {@code COMPLETED}/{@code SKIPPED}
- * checkpoint makes re-projection a no-op. Holds the projected record reference and bounded failure
- * metadata only.
- */
 @Entity
 @Table(name = "trust_ai_projection_checkpoint",
     uniqueConstraints = {
