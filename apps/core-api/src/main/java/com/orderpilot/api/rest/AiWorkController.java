@@ -2,9 +2,14 @@ package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.AiWorkDtos.AiWorkDecisionRequest;
 import com.orderpilot.api.dto.AiWorkDtos.AiWorkSuggestionResponse;
+import com.orderpilot.api.dto.AiWorkDtos.CreateContextualAiWorkSuggestionRequest;
 import com.orderpilot.api.dto.AiWorkDtos.CreateAiWorkSuggestionRequest;
 import com.orderpilot.application.services.aiwork.AiWorkService;
+import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.channel.ChannelRfqHandoff;
+import com.orderpilot.domain.channel.ChannelRfqHandoffRepository;
+import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkSuggestion;
 import com.orderpilot.domain.aiwork.AiWorkType;
@@ -36,10 +41,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class AiWorkController {
   private final AiWorkService service;
   private final RequestActorResolver actorResolver;
+  private final ChannelRfqHandoffRepository handoffRepository;
 
-  public AiWorkController(AiWorkService service, RequestActorResolver actorResolver) {
+  public AiWorkController(
+      AiWorkService service,
+      RequestActorResolver actorResolver,
+      ChannelRfqHandoffRepository handoffRepository) {
     this.service = service;
     this.actorResolver = actorResolver;
+    this.handoffRepository = handoffRepository;
   }
 
   @PostMapping("/suggestions")
@@ -50,6 +60,31 @@ public class AiWorkController {
         request.sourceId(),
         request.contextText(),
         request.idempotencyKey(),
+        trustedActor(http));
+    return toResponse(saved);
+  }
+
+  @PostMapping("/rfq-handoffs/{handoffId}/suggestions")
+  public AiWorkSuggestionResponse createForRfqHandoff(
+      @PathVariable UUID handoffId,
+      @RequestBody(required = false) CreateContextualAiWorkSuggestionRequest request,
+      HttpServletRequest http) {
+    UUID tenantId = TenantContext.requireTenantId();
+    ChannelRfqHandoff handoff = handoffRepository.findByIdAndTenantId(handoffId, tenantId)
+        .orElseThrow(() -> new NotFoundException("RFQ handoff not found"));
+    if (handoff.getStatus() == ChannelRfqHandoffStatus.DISMISSED
+        || handoff.getStatus() == ChannelRfqHandoffStatus.CONVERTED) {
+      throw new IllegalArgumentException("RFQ handoff is terminal and cannot generate AI work");
+    }
+    AiWorkType workType = request == null || request.workType() == null || request.workType().isBlank()
+        ? AiWorkType.NEXT_ACTION_SUGGESTION
+        : parseWorkType(request.workType());
+    AiWorkSuggestion saved = service.createSuggestion(
+        workType,
+        AiWorkSourceType.RFQ_HANDOFF,
+        handoffId,
+        rfqHandoffContext(handoff),
+        request == null ? null : request.idempotencyKey(),
         trustedActor(http));
     return toResponse(saved);
   }
@@ -86,6 +121,27 @@ public class AiWorkController {
 
   private UUID trustedActor(HttpServletRequest http) {
     return actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
+  }
+
+  private static String rfqHandoffContext(ChannelRfqHandoff handoff) {
+    StringBuilder context = new StringBuilder();
+    append(context, "source", "RFQ_HANDOFF");
+    append(context, "status", handoff.getStatus().name());
+    append(context, "channel", handoff.getSourceChannel());
+    append(context, "intent", handoff.getDetectedIntent());
+    append(context, "customerAccountPresent", handoff.getCustomerAccountId() == null ? "false" : "true");
+    append(context, "request", handoff.getRequestText());
+    return context.toString();
+  }
+
+  private static void append(StringBuilder context, String key, String value) {
+    if (value == null || value.isBlank()) {
+      return;
+    }
+    if (context.length() > 0) {
+      context.append('\n');
+    }
+    context.append(key).append(": ").append(value.strip());
   }
 
   private static AiWorkType parseWorkType(String value) {

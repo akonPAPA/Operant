@@ -15,6 +15,7 @@ export type AiWorkType =
 export type AiWorkSourceType =
   | "CHANNEL_MESSAGE"
   | "INBOUND_CHANNEL_EVENT"
+  | "RFQ_HANDOFF"
   | "OPERATOR_REVIEW"
   | "QUOTE"
   | "QUOTE_TRANSACTION"

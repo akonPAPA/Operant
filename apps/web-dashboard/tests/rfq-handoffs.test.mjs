@@ -26,6 +26,7 @@ test("api client exposes read and the three transition functions", () => {
   assert.match(api, /startReviewRfqHandoff/);
   assert.match(api, /dismissRfqHandoff/);
   assert.match(api, /markConvertedRfqHandoff/);
+  assert.match(api, /generateRfqHandoffAiSuggestion/);
 });
 
 test("api client targets the OP-CAP-06B/06C channel routes", () => {
@@ -46,6 +47,13 @@ test("api client transition payloads do not send backend-owned actor fields", ()
   assert.doesNotMatch(api, /actorUserId:\s*actorUserId/);
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*actorUserId/s);
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*reviewerUserId/s);
+});
+
+test("api client contextual AI payload does not send source ids or context text", () => {
+  assert.match(api, /\/api\/v1\/ai-work\/rfq-handoffs\/\$\{id\}\/suggestions/);
+  assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*sourceId/s);
+  assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*sourceType/s);
+  assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*contextText/s);
 });
 
 test("api client has no manual create function and no quote/order/erp action", () => {
@@ -72,6 +80,7 @@ test("workspace is a client component with status filter and actions", () => {
   assert.match(workspace, /Start review/);
   assert.match(workspace, /Dismiss/);
   assert.match(workspace, /Mark converted/);
+  assert.match(workspace, /Generate suggestion/);
 });
 
 test("workspace requires a dismiss reason before enabling confirm", () => {
