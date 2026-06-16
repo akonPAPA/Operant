@@ -1497,6 +1497,36 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("INTAKE_WRITE");
   }
 
+  // --- OP-CAP-29 /api/v1/internal/processing-jobs worker claim is internal-only (AI_RESULT_INTAKE) ---
+
+  @Test
+  void workerClaimPostWithAiResultIntakeSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/processing-jobs/claim");
+    req.addHeader("X-OrderPilot-Permissions", "AI_RESULT_INTAKE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void workerClaimPostWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/processing-jobs/claim");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_RESULT_INTAKE");
+  }
+
+  @Test
+  void workerClaimPostWithPublicJobPermissionIsRejected() throws Exception {
+    // A public/user processing-job permission must NOT satisfy the internal worker claim surface.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/internal/processing-jobs/claim");
+    req.addHeader("X-OrderPilot-Permissions", "INTAKE_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_RESULT_INTAKE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test

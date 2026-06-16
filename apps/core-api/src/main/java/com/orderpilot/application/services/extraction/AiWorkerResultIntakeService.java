@@ -119,6 +119,15 @@ public class AiWorkerResultIntakeService {
           job.getId(), run.getId(), resultId, job.getStatus(), run.getStatus(), true, true, now);
     }
 
+    // OP-CAP-29: lifecycle guard. By this point there is no surviving advisory run for the job (the
+    // idempotency branch above already returns for duplicates). A fresh result is therefore accepted only
+    // while the job is still active (PENDING or PROCESSING). If the job already reached a terminal state
+    // through another path — e.g. the stale-PROCESSING reaper marked it FAILED — a late/runless result
+    // must not resurrect or overwrite it. Fail closed, audited, no run/result created, no business write.
+    if (!job.isActiveForResult()) {
+      throw rejected(request, "job_not_in_processable_state");
+    }
+
     String providerName = bounded(stringFrom(request.providerMetadata(), "provider_name", "providerName"), 200);
     String providerMode = bounded(stringFrom(request.providerMetadata(), "mode"), 100);
 
