@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$databaseName = if ($env:POSTGRES_TEST_DB) { $env:POSTGRES_TEST_DB } else { "orderpilot_test" }
+$databaseName = if ($env:ORDERPILOT_TEST_DB_NAME) { $env:ORDERPILOT_TEST_DB_NAME } else { "orderpilot_test" }
 if (-not $databaseName.EndsWith("_test")) {
   throw "Refusing to reset database '$databaseName'. Test database names must end with _test."
 }

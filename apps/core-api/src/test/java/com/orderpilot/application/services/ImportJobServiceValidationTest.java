@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.Stage2Dtos.ValidationReportResponse;
+import com.orderpilot.application.services.runtime.DefaultRuntimeUnitEstimator;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.imports.ImportJob;
@@ -61,7 +63,9 @@ class ImportJobServiceValidationTest {
   private final MarginRuleRepository marginRuleRepository = mock(MarginRuleRepository.class);
   private final AuditEventService auditEventService = mock(AuditEventService.class);
   private final JsonSupport jsonSupport = new JsonSupport(new ObjectMapper());
-  private final ImportJobService service = new ImportJobService(jobRepository, rowRepository, reportRepository, issueRepository, validationService, productRepository, customerAccountRepository, inventorySnapshotRepository, locationRepository, productAliasRepository, oemReferenceRepository, productSubstituteRepository, productCompatibilityRepository, priceRuleRepository, discountRuleRepository, marginRuleRepository, auditEventService, jsonSupport, CLOCK);
+  // OP-CAP-16F: validate() does not call the runtime guard; a no-op mock keeps this unit test focused.
+  private final RuntimeGuardService runtimeGuardService = mock(RuntimeGuardService.class);
+  private final ImportJobService service = new ImportJobService(jobRepository, rowRepository, reportRepository, issueRepository, validationService, productRepository, customerAccountRepository, inventorySnapshotRepository, locationRepository, productAliasRepository, oemReferenceRepository, productSubstituteRepository, productCompatibilityRepository, priceRuleRepository, discountRuleRepository, marginRuleRepository, auditEventService, jsonSupport, runtimeGuardService, new DefaultRuntimeUnitEstimator(), CLOCK);
 
   @AfterEach
   void clearTenant() {

@@ -162,6 +162,18 @@ function Get-JdbcHostPort([string]$JdbcUrl) {
   }
 }
 
+function Get-EnvOrDefault([string]$Name, [string]$DefaultValue) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ($value) { return $value }
+  return $DefaultValue
+}
+
+function Get-DefaultDatasourceUrl() {
+  $hostPort = Get-EnvOrDefault "ORDERPILOT_DB_HOST_PORT" "55432"
+  $databaseName = Get-EnvOrDefault "ORDERPILOT_DB_NAME" "orderpilot_local"
+  return "jdbc:postgresql://localhost:${hostPort}/${databaseName}"
+}
+
 $failures = [System.Collections.Generic.List[string]]::new()
 $resolvedRoot = (Resolve-Path $RepoRoot).Path
 $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
@@ -247,9 +259,9 @@ $fullDemoIdsConfigured =
 
 Write-Step "Backend runtime prerequisites"
 $datasourceUrl = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_URL")
-if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:55432/orderpilot" }
+if (-not $datasourceUrl) { $datasourceUrl = Get-DefaultDatasourceUrl }
 $datasourceUsername = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_USERNAME")
-if (-not $datasourceUsername) { $datasourceUsername = "orderpilot" }
+if (-not $datasourceUsername) { $datasourceUsername = Get-EnvOrDefault "ORDERPILOT_DB_USER" "orderpilot_local_user" }
 $datasourceCredential = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_PASSWORD")
 
 Write-Host "Runtime datasource URL: $datasourceUrl"

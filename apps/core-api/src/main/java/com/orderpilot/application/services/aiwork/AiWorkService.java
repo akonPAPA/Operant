@@ -1,6 +1,12 @@
 package com.orderpilot.application.services.aiwork;
 
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.runtime.RuntimeFeatureType;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkStatus;
@@ -33,16 +39,22 @@ public class AiWorkService {
   private final AiWorkSuggestionRepository repository;
   private final AiWorkProvider provider;
   private final AuditEventService auditEventService;
+  private final RuntimeGuardService runtimeGuardService;
+  private final RuntimeUnitEstimator runtimeUnitEstimator;
   private final Clock clock;
 
   public AiWorkService(
       AiWorkSuggestionRepository repository,
       AiWorkProvider provider,
       AuditEventService auditEventService,
+      RuntimeGuardService runtimeGuardService,
+      RuntimeUnitEstimator runtimeUnitEstimator,
       Clock clock) {
     this.repository = repository;
     this.provider = provider;
     this.auditEventService = auditEventService;
+    this.runtimeGuardService = runtimeGuardService;
+    this.runtimeUnitEstimator = runtimeUnitEstimator;
     this.clock = clock;
   }
 
@@ -68,6 +80,20 @@ public class AiWorkService {
         return existing.get();
       }
     }
+
+    // OP-CAP-16G runtime guard: entitlement -> quota -> rate, BEFORE the advisory AI explanation/
+    // summary provider call. A denial throws a stable mapped exception (403 feature/quota, 429 rate)
+    // and the provider is never invoked and no suggestion row is created. This runs after the
+    // idempotency short-circuit above, so a retried key returns the existing suggestion without
+    // consuming guard budget. Requested units are estimated cheaply from the already-in-memory
+    // context line count (no parsing, no I/O); absent context falls back to 1.
+    int requestedUnits =
+        runtimeUnitEstimator.estimate(
+            RuntimeUnitEstimateRequest.forExplanation(tenantId, lineCountOf(contextText), null));
+    runtimeGuardService.enforce(
+        RuntimeGuardRequest.of(
+            tenantId, RuntimeOperationType.AI_VALIDATION_EXPLANATION, requestedUnits),
+        RuntimeFeatureType.AI_VALIDATION_EXPLANATION);
 
     AiWorkGenerationResult generated =
         provider.generate(new AiWorkGenerationRequest(tenantId, workType, sourceType, sourceId, contextText));
@@ -164,6 +190,23 @@ public class AiWorkService {
 
   private static String normalize(String value) {
     return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  /**
+   * OP-CAP-16G: cheap line count of the already-in-memory advisory context (one O(n) scan over a
+   * bounded string; no parsing, no I/O). Blank context → null so the estimator falls back to 1.
+   */
+  private static Integer lineCountOf(String contextText) {
+    if (contextText == null || contextText.isBlank()) {
+      return null;
+    }
+    int lines = 1;
+    for (int i = 0; i < contextText.length(); i++) {
+      if (contextText.charAt(i) == '\n') {
+        lines++;
+      }
+    }
+    return lines;
   }
 
   /** Safe audit metadata — IDs, type, status, and decision reason only. No prompt/generated text. */

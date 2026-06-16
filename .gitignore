@@ -1,6 +1,8 @@
 ﻿# ===== Secrets / environment =====
 .env
+.env.local
 .env.*
+.env.*.local
 *.env.local
 !.env.example
 !.env.local.example
@@ -26,6 +28,23 @@ orderpilot_claude_code_complete_setup_v2 (1).md
 .next/
 target/
 node_modules/
+ORDERPILOT_ENTERPRISE_PLATFORM_LAYER.md
+ORDERPILOT_CORE_V1_AI_DEV.md
+orderpilot_claude_code_complete_setup_v2 (1).md
+ORDERPILOT_SANA_ESKER_REPLACEMENT_ARCHITECTURE_V1.md
+ORDERPILOT_TRANSACTION_TRUST_AI_DATA_RUNTIME_LAYER.md
+ORDERPILOT_WORLD_CLASS_RUNTIME_ARCHITECTURE_BLUEPRINT.md
+ORDERPILOT_PRODUCTION_SHAPED_LAYER_DEVELOPMENT_STANDARD_V2.md
+Frontend design by Zaipulla Bratan/
+**/Frontend design by Zaipulla Bratan/
+
+# ===== graphify (knowledge-graph output — never commit) =====
+graphify-out/
+**/graphify-out/
+*.graphify
+.graphify_root
+.graphify_labels.json
+GRAPH_REPORT.md
 
 # ===== Local/private data =====
 local-data/

@@ -92,7 +92,7 @@ public class QuoteReviewService {
         .filter(row -> channel == null || channel.equals(row.sourceChannel()))
         .filter(row -> issueType == null || quoteHasIssue(tenantId, row.quoteId(), issueType, null))
         .filter(row -> severity == null || quoteHasIssue(tenantId, row.quoteId(), null, severity))
-        .filter(row -> assignedTo == null ? true : row.assignedOperatorId() != null && row.assignedOperatorId().equals(assignedTo))
+        .filter(row -> assignedTo == null)
         .toList();
   }
 
@@ -110,9 +110,9 @@ public class QuoteReviewService {
     return new QuoteReviewDetail(
         QuoteHeader.from(quote),
         quote.getStatus(),
-        sourceContext,
+        safeSourceContext(sourceContext),
         ConversionAttemptSummary.from(attempt),
-        sourceContext == null ? List.of() : sourceContext.candidateLines(),
+        safeCandidateLines(sourceContext),
         lines.stream().map(QuoteLine::from).toList(),
         issues.stream().map(ValidationIssue::from).toList(),
         substituteCandidates(tenantId, quote, lines),
@@ -318,9 +318,7 @@ public class QuoteReviewService {
     QuoteSourceLink source = sourceLinkRepository.findFirstByTenantIdAndQuoteId(tenantId, quote.getId()).orElse(null);
     return new QuoteReviewQueueRow(
         quote.getId(),
-        attempt == null ? null : attempt.getId(),
         source == null ? quote.getSourceType() : source.getSourceType(),
-        source == null ? null : source.getSourceId(),
         source == null ? null : source.getSourceChannel(),
         new CustomerSummary(quote.getCustomerAccountId(), quote.getCustomerDisplayName(), quote.getCustomerAccountId() == null ? "UNRESOLVED" : "RESOLVED"),
         lines.size(),
@@ -328,8 +326,31 @@ public class QuoteReviewService {
         highestSeverity(issues),
         quote.getStatus(),
         quote.getCreatedAt(),
-        null,
         nextAction(quote, issues));
+  }
+
+  private QuoteReviewSourceContext safeSourceContext(QuoteSourceContextDto sourceContext) {
+    if (sourceContext == null) return null;
+    return new QuoteReviewSourceContext(
+        sourceContext.sourceType(),
+        sourceContext.sourceChannel(),
+        sourceContext.sourceReceivedAt(),
+        sourceContext.createdByType(),
+        sourceContext.conversionStatus());
+  }
+
+  private List<QuoteReviewCandidateLine> safeCandidateLines(QuoteSourceContextDto sourceContext) {
+    if (sourceContext == null) return List.of();
+    return sourceContext.candidateLines().stream()
+        .map(line -> new QuoteReviewCandidateLine(
+            line.lineNumber(),
+            line.rawSkuOrAlias(),
+            line.description(),
+            line.quantity(),
+            line.uom(),
+            line.requestedDate(),
+            line.status()))
+        .toList();
   }
 
   private void revalidateLine(UUID tenantId, DraftQuote quote, DraftQuoteLine line) {

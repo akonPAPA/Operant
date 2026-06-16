@@ -4,11 +4,14 @@ import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.api.dto.Stage6Dtos.BlockingReason;
 import com.orderpilot.api.dto.Stage6Dtos.DraftPreview;
 import com.orderpilot.api.dto.Stage6Dtos.DraftPreviewLine;
+import com.orderpilot.api.dto.Stage6Dtos.DraftPreparationResult;
 import com.orderpilot.api.dto.Stage6Dtos.ApprovalRequirementReview;
 import com.orderpilot.api.dto.Stage6Dtos.ReviewReadiness;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.ExtractedLineItem;
 import com.orderpilot.domain.extraction.ExtractedLineItemRepository;
+import com.orderpilot.domain.extraction.ExtractionResult;
+import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.product.Product;
 import com.orderpilot.domain.product.ProductRepository;
 import com.orderpilot.domain.validation.*;
@@ -45,12 +48,15 @@ public class DraftCommandPreparationService {
   private final MarginCheckResultRepository marginRepository;
   private final DiscountCheckResultRepository discountRepository;
   private final InventoryCheckResultRepository inventoryRepository;
+  private final ExtractionResultRepository extractionResultRepository;
+  private final DraftQuoteRepository draftQuoteRepository;
+  private final DraftOrderRepository draftOrderRepository;
   private final DraftQuoteService draftQuoteService;
   private final DraftOrderService draftOrderService;
   private final AuditEventService auditEventService;
   private final OperatorActionService actionService;
 
-  public DraftCommandPreparationService(ExceptionCaseRepository caseRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, ProductMatchResultRepository productMatchRepository, SubstituteCandidateRepository substituteCandidateRepository, ValidationRunRepository validationRunRepository, ExtractedLineItemRepository lineRepository, ProductRepository productRepository, PriceCheckResultRepository priceRepository, UomNormalizationResultRepository uomRepository, MarginCheckResultRepository marginRepository, DiscountCheckResultRepository discountRepository, InventoryCheckResultRepository inventoryRepository, DraftQuoteService draftQuoteService, DraftOrderService draftOrderService, AuditEventService auditEventService, OperatorActionService actionService) {
+  public DraftCommandPreparationService(ExceptionCaseRepository caseRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, ProductMatchResultRepository productMatchRepository, SubstituteCandidateRepository substituteCandidateRepository, ValidationRunRepository validationRunRepository, ExtractedLineItemRepository lineRepository, ProductRepository productRepository, PriceCheckResultRepository priceRepository, UomNormalizationResultRepository uomRepository, MarginCheckResultRepository marginRepository, DiscountCheckResultRepository discountRepository, InventoryCheckResultRepository inventoryRepository, ExtractionResultRepository extractionResultRepository, DraftQuoteRepository draftQuoteRepository, DraftOrderRepository draftOrderRepository, DraftQuoteService draftQuoteService, DraftOrderService draftOrderService, AuditEventService auditEventService, OperatorActionService actionService) {
     this.caseRepository = caseRepository;
     this.issueRepository = issueRepository;
     this.approvalRepository = approvalRepository;
@@ -64,6 +70,9 @@ public class DraftCommandPreparationService {
     this.marginRepository = marginRepository;
     this.discountRepository = discountRepository;
     this.inventoryRepository = inventoryRepository;
+    this.extractionResultRepository = extractionResultRepository;
+    this.draftQuoteRepository = draftQuoteRepository;
+    this.draftOrderRepository = draftOrderRepository;
     this.draftQuoteService = draftQuoteService;
     this.draftOrderService = draftOrderService;
     this.auditEventService = auditEventService;
@@ -88,6 +97,95 @@ public class DraftCommandPreparationService {
     actionService.record(actorId, "REVIEW_CASE", reviewCase.getId(), "DRAFT_ORDER_PREPARED", "Internal draft order prepared from review case", "{\"draftOrderId\":\"" + order.getId() + "\",\"inventoryReservation\":\"DISABLED\"}");
     auditEventService.record("DRAFT_ORDER_PREPARATION_SUCCEEDED", "DRAFT_ORDER", order.getId().toString(), actorId, "{\"reviewCaseId\":\"" + reviewCase.getId() + "\",\"externalExecution\":\"DISABLED\",\"inventoryReservation\":\"DISABLED\"}");
     return order;
+  }
+
+  /**
+   * OP-CAP-09A: prepare exactly one internal draft (quote or order) from an approved validation handoff (review case).
+   * Intent-driven, tenant-scoped, idempotent, audited. Creates no final quote/order and triggers no external/ERP write.
+   */
+  @Transactional
+  public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId) {
+    return prepareDraft(reviewCaseId, actorId, null);
+  }
+
+  @Transactional
+  public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId, String requestedType) {
+    return prepareDraft(reviewCaseId, actorId, requestedType, null, null);
+  }
+
+  /**
+   * OP-CAP-15B: same idempotent, readiness-gated, audited preparation, with an optional selected-line
+   * subset (by extracted line item id; null = all eligible lines, validated by the caller) and a bounded
+   * operator note. Selection narrows the included lines but never relaxes run-level readiness gating.
+   */
+  @Transactional
+  public DraftPreparationResult prepareDraft(UUID reviewCaseId, UUID actorId, String requestedType, Set<UUID> selectedLineIds, String operatorNote) {
+    UUID tenantId = TenantContext.requireTenantId();
+    ExceptionCase reviewCase = caseRepository.findByIdAndTenantId(reviewCaseId, tenantId).orElseThrow();
+
+    // Idempotency: a single internal draft per (tenant, source handoff). Return the existing draft without re-creating
+    // (selected lines / operator note of a replay are ignored — the original draft is authoritative).
+    Optional<DraftQuote> existingQuote = draftQuoteRepository.findFirstByTenantIdAndSourceExceptionCaseIdOrderByCreatedAtAsc(tenantId, reviewCaseId);
+    if (existingQuote.isPresent()) {
+      return alreadyPrepared("QUOTE", existingQuote.get().getId(), existingQuote.get().getStatus(), reviewCase, actorId);
+    }
+    Optional<DraftOrder> existingOrder = draftOrderRepository.findFirstByTenantIdAndSourceExceptionCaseIdOrderByCreatedAtAsc(tenantId, reviewCaseId);
+    if (existingOrder.isPresent()) {
+      return alreadyPrepared("ORDER", existingOrder.get().getId(), existingOrder.get().getStatus(), reviewCase, actorId);
+    }
+
+    // Operator-chosen type when provided; otherwise conservative intent mapping (fail closed on unknown/unsupported intent).
+    String draftType = normalizeRequestedDraftType(requestedType);
+    if (draftType == null) {
+      draftType = resolveDraftType(reviewCase, tenantId);
+    }
+    // Reuse the validation/review readiness gate (DRAFT_PREPARATION_READY analog; BLOCKED/FAILED fail closed).
+    ensureAllowed(reviewCase, actorId, "QUOTE".equals(draftType) ? "DRAFT_QUOTE" : "DRAFT_ORDER");
+
+    if ("QUOTE".equals(draftType)) {
+      DraftQuote quote = draftQuoteService.createFromValidation(reviewCase.getValidationRunId(), reviewCase.getId(), selectedLineIds, operatorNote);
+      return prepared("QUOTE", quote.getId(), quote.getStatus(), reviewCase, actorId);
+    }
+    DraftOrder order = draftOrderService.createFromValidation(reviewCase.getValidationRunId(), reviewCase.getId(), selectedLineIds, operatorNote);
+    return prepared("ORDER", order.getId(), order.getStatus(), reviewCase, actorId);
+  }
+
+  private String normalizeRequestedDraftType(String requestedType) {
+    if (requestedType == null || requestedType.isBlank()) {
+      return null;
+    }
+    String type = requestedType.trim().toUpperCase(java.util.Locale.ROOT);
+    if (!"QUOTE".equals(type) && !"ORDER".equals(type)) {
+      throw new IllegalArgumentException("Unsupported draft target type: " + requestedType);
+    }
+    return type;
+  }
+
+  private String resolveDraftType(ExceptionCase reviewCase, UUID tenantId) {
+    UUID extractionResultId = reviewCase.getExtractionResultId();
+    String intent = extractionResultId == null ? null
+        : extractionResultRepository.findByIdAndTenantId(extractionResultId, tenantId).map(ExtractionResult::getDetectedIntent).orElse(null);
+    if (intent == null) {
+      throw new IllegalArgumentException("Draft preparation requires a validation-backed document intent");
+    }
+    return switch (intent) {
+      case "RFQ" -> "QUOTE";
+      case "PURCHASE_ORDER" -> "ORDER";
+      default -> throw new IllegalArgumentException("Unsupported document intent for draft preparation: " + intent);
+    };
+  }
+
+  private DraftPreparationResult prepared(String draftType, UUID draftId, String status, ExceptionCase reviewCase, UUID actorId) {
+    String entityType = "QUOTE".equals(draftType) ? "DRAFT_QUOTE" : "DRAFT_ORDER";
+    actionService.record(actorId, "REVIEW_CASE", reviewCase.getId(), "DRAFT_PREPARED", "Internal " + draftType.toLowerCase() + " draft prepared from approved validation handoff", "{\"draftType\":\"" + draftType + "\",\"draftId\":\"" + draftId + "\"}");
+    auditEventService.record("DRAFT_PREPARATION_SUCCEEDED", entityType, draftId.toString(), actorId, "{\"reviewCaseId\":\"" + reviewCase.getId() + "\",\"draftType\":\"" + draftType + "\",\"externalExecution\":\"DISABLED\"}");
+    return new DraftPreparationResult(draftType, draftId, reviewCase.getId(), status, true, false, "DISABLED", "OPEN_OPERATOR_WORKSPACE");
+  }
+
+  private DraftPreparationResult alreadyPrepared(String draftType, UUID draftId, String status, ExceptionCase reviewCase, UUID actorId) {
+    String entityType = "QUOTE".equals(draftType) ? "DRAFT_QUOTE" : "DRAFT_ORDER";
+    auditEventService.record("DRAFT_PREPARATION_ALREADY_PREPARED", entityType, draftId.toString(), actorId, "{\"reviewCaseId\":\"" + reviewCase.getId() + "\",\"draftType\":\"" + draftType + "\",\"externalExecution\":\"DISABLED\"}");
+    return new DraftPreparationResult(draftType, draftId, reviewCase.getId(), status, false, true, "DISABLED", "OPEN_OPERATOR_WORKSPACE");
   }
 
   @Transactional

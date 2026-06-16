@@ -108,6 +108,18 @@ function Test-Postgres([string]$DatasourceUrl) {
   Write-Host "OK: Postgres TCP endpoint is reachable at ${hostName}:$port."
 }
 
+function Get-EnvOrDefault([string]$Name, [string]$DefaultValue) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ($value) { return $value }
+  return $DefaultValue
+}
+
+function Get-DefaultDatasourceUrl() {
+  $hostPort = Get-EnvOrDefault "ORDERPILOT_DB_HOST_PORT" "55432"
+  $databaseName = Get-EnvOrDefault "ORDERPILOT_DB_NAME" "orderpilot_local"
+  return "jdbc:postgresql://localhost:${hostPort}/${databaseName}"
+}
+
 $resolvedRoot = (Resolve-Path $RepoRoot).Path
 $coreRoot = Join-Path $resolvedRoot "apps\core-api"
 $webRoot = Join-Path $resolvedRoot "apps\web-dashboard"
@@ -154,7 +166,7 @@ Show-PortState "Frontend" 3000
 
 Write-Step "Checking backend runtime datastore"
 $datasourceUrl = [Environment]::GetEnvironmentVariable("SPRING_DATASOURCE_URL")
-if (-not $datasourceUrl) { $datasourceUrl = "jdbc:postgresql://localhost:55432/orderpilot" }
+if (-not $datasourceUrl) { $datasourceUrl = Get-DefaultDatasourceUrl }
 Test-Postgres $datasourceUrl
 
 Write-Host ""

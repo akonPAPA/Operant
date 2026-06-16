@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-const DEFAULT_BASE_URL = "http://localhost:8080";
+import { coreApiBaseUrl, coreApiStatusMessage, demoScopeHeaders } from "@/lib/core-api-client";
+
 const ACCEPTED_TYPES = ".pdf,.csv,.xlsx,.xls,.txt,.png,.jpg,.jpeg";
 
 type UploadState =
@@ -12,7 +13,10 @@ type UploadState =
   | { status: "error"; message: string };
 
 export function IntakeUploadForm() {
-  const [tenantId, setTenantId] = useState(process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "");
+  // OP-CAP-17E: tenant authority is not user-editable. It is derived from server-side demo config
+  // and sent only as the X-Tenant-Id header; the backend resolves the tenant from that header, not
+  // from any request-body field. The operator cannot type an arbitrary tenant id here.
+  const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "";
   const [state, setState] = useState<UploadState>({ status: "idle", message: "No upload submitted." });
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -25,23 +29,23 @@ export function IntakeUploadForm() {
       return;
     }
     if (!tenantId) {
-      setState({ status: "error", message: "Tenant ID is required for a tenant-scoped upload." });
+      setState({ status: "error", message: "Tenant is not configured. Set NEXT_PUBLIC_DEMO_TENANT_ID for tenant-scoped upload." });
       return;
     }
 
     setState({ status: "working", message: "Uploading through core-api..." });
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL;
-      const response = await fetch(`${baseUrl}/api/v1/intake/documents/upload`, {
+      const response = await fetch(`${coreApiBaseUrl()}/api/v1/intake/documents/upload`, {
         method: "POST",
-        headers: { "X-Tenant-Id": tenantId },
+        headers: demoScopeHeaders(),
         body: formData
       });
-      const text = await response.text();
       if (!response.ok) {
-        setState({ status: "error", message: text || `Upload rejected with HTTP ${response.status}.` });
+        // Map to operator-safe messages; never surface the raw backend body.
+        setState({ status: "error", message: coreApiStatusMessage(response.status) });
         return;
       }
+      const text = await response.text();
       const result = JSON.parse(text) as { status?: string; originalFilename?: string };
       setState({ status: "done", message: `${result.originalFilename ?? "Document"} accepted with status ${result.status ?? "RECEIVED"}.` });
       form.reset();
@@ -52,10 +56,7 @@ export function IntakeUploadForm() {
 
   return (
     <form className="panel upload-form" onSubmit={submit}>
-      <label>
-        <span>Tenant ID</span>
-        <input name="tenantId" value={tenantId} onChange={(event) => setTenantId(event.target.value)} placeholder="UUID" />
-      </label>
+      <p className="form-message idle">Tenant scope: {tenantId ? tenantId : "not configured"} (server-side demo config; not editable).</p>
       <label>
         <span>Document</span>
         <input name="file" type="file" accept={ACCEPTED_TYPES} />

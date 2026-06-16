@@ -58,7 +58,15 @@ import org.springframework.test.context.ActiveProfiles;
     CommerceAnalyticsService.class,
     InventoryReconciliationService.class,
     AuditEventService.class,
-    CoreConfiguration.class
+    // OP-CAP-24: reconciliation case create/update now publishes a durable journey projection event.
+    com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher.class,
+    CoreConfiguration.class,
+    // OP-CAP-16F: reconciliation refresh now depends on the runtime guard chain.
+    com.orderpilot.application.services.runtime.RuntimeGuardService.class,
+    com.orderpilot.application.services.runtime.QuotaGuard.class,
+    com.orderpilot.application.services.runtime.RateLimitService.class,
+    com.orderpilot.application.services.runtime.FeatureEntitlementGuard.class,
+    com.orderpilot.application.services.runtime.UsageMeterService.class
 })
 class TenantIsolationBoundaryTest {
   @Autowired private ChangeRequestService changeRequestService;

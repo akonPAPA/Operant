@@ -4,6 +4,12 @@ import com.orderpilot.api.dto.Stage2Dtos.ImportJobRequest;
 import com.orderpilot.api.dto.Stage2Dtos.ImportRowRequest;
 import com.orderpilot.api.dto.Stage2Dtos.ValidationError;
 import com.orderpilot.api.dto.Stage2Dtos.ValidationReportResponse;
+import com.orderpilot.application.services.runtime.RuntimeFeatureType;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.imports.ImportJob;
@@ -67,9 +73,11 @@ public class ImportJobService {
   private final MarginRuleRepository marginRuleRepository;
   private final AuditEventService auditEventService;
   private final JsonSupport jsonSupport;
+  private final RuntimeGuardService runtimeGuardService;
+  private final RuntimeUnitEstimator runtimeUnitEstimator;
   private final Clock clock;
 
-  public ImportJobService(ImportJobRepository jobRepository, ImportStagingRowRepository rowRepository, ValidationReportRepository reportRepository, ImportValidationIssueRepository issueRepository, ImportValidationService validationService, ProductRepository productRepository, CustomerAccountRepository customerAccountRepository, InventorySnapshotRepository inventorySnapshotRepository, LocationRepository locationRepository, ProductAliasRepository productAliasRepository, OEMReferenceRepository oemReferenceRepository, ProductSubstituteRepository productSubstituteRepository, ProductCompatibilityRepository productCompatibilityRepository, PriceRuleRepository priceRuleRepository, DiscountRuleRepository discountRuleRepository, MarginRuleRepository marginRuleRepository, AuditEventService auditEventService, JsonSupport jsonSupport, Clock clock) {
+  public ImportJobService(ImportJobRepository jobRepository, ImportStagingRowRepository rowRepository, ValidationReportRepository reportRepository, ImportValidationIssueRepository issueRepository, ImportValidationService validationService, ProductRepository productRepository, CustomerAccountRepository customerAccountRepository, InventorySnapshotRepository inventorySnapshotRepository, LocationRepository locationRepository, ProductAliasRepository productAliasRepository, OEMReferenceRepository oemReferenceRepository, ProductSubstituteRepository productSubstituteRepository, ProductCompatibilityRepository productCompatibilityRepository, PriceRuleRepository priceRuleRepository, DiscountRuleRepository discountRuleRepository, MarginRuleRepository marginRuleRepository, AuditEventService auditEventService, JsonSupport jsonSupport, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, Clock clock) {
     this.jobRepository = jobRepository;
     this.rowRepository = rowRepository;
     this.reportRepository = reportRepository;
@@ -88,6 +96,8 @@ public class ImportJobService {
     this.marginRuleRepository = marginRuleRepository;
     this.auditEventService = auditEventService;
     this.jsonSupport = jsonSupport;
+    this.runtimeGuardService = runtimeGuardService;
+    this.runtimeUnitEstimator = runtimeUnitEstimator;
     this.clock = clock;
   }
 
@@ -203,6 +213,16 @@ public class ImportJobService {
     if (!"VALIDATED".equals(job.getStatus()) || job.getInvalidRows() > 0) {
       throw new IllegalArgumentException("Only validated imports with zero invalid rows can be activated in Stage 2");
     }
+    // OP-CAP-16F runtime guard: entitlement -> quota BEFORE applying any staged row to a business
+    // table. requestedUnits are estimated from the already-stored row count (cheap, no parsing). Rate
+    // limiting is intentionally NOT applied here: activating an import is a deliberate operator action
+    // that may legitimately burst, so it is gated by feature entitlement and quota only. A denial
+    // throws a stable mapped exception (403) and applies nothing (job stays VALIDATED).
+    int requestedUnits = runtimeUnitEstimator.estimate(
+        RuntimeUnitEstimateRequest.forBulkImport(job.getTenantId(), job.getTotalRows(), null));
+    runtimeGuardService.enforceWithoutRate(
+        RuntimeGuardRequest.of(job.getTenantId(), RuntimeOperationType.BULK_IMPORT, requestedUnits),
+        RuntimeFeatureType.BULK_IMPORT);
     List<ImportStagingRow> rows = rowRepository.findByTenantIdAndImportJobIdOrderByRowNumber(job.getTenantId(), job.getId());
     int appliedRows = switch (job.getImportType()) {
       case "LOCATIONS" -> activateLocations(job, rows);

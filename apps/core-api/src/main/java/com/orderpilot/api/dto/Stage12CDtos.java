@@ -5,8 +5,6 @@ import com.orderpilot.api.dto.Stage12ADtos.QuoteLine;
 import com.orderpilot.api.dto.Stage12ADtos.ResolvedCustomer;
 import com.orderpilot.api.dto.Stage12ADtos.SubstituteCandidate;
 import com.orderpilot.api.dto.Stage12ADtos.ValidationIssue;
-import com.orderpilot.api.dto.Stage12BDtos.QuoteCandidateLineDto;
-import com.orderpilot.api.dto.Stage12BDtos.QuoteSourceContextDto;
 import com.orderpilot.api.dto.Stage12BDtos.QuoteValidationIssueDto;
 import com.orderpilot.domain.audit.AuditEvent;
 import com.orderpilot.domain.workspace.DraftQuote;
@@ -22,9 +20,7 @@ public final class Stage12CDtos {
 
   public record QuoteReviewQueueRow(
       UUID quoteId,
-      UUID conversionAttemptId,
       String sourceType,
-      UUID sourceId,
       String sourceChannel,
       CustomerSummary customer,
       int lineCount,
@@ -32,7 +28,6 @@ public final class Stage12CDtos {
       String highestSeverity,
       String status,
       Instant createdAt,
-      UUID assignedOperatorId,
       String nextRequiredAction) {}
 
   public record CustomerSummary(UUID customerAccountId, String displayName, String resolutionStatus) {}
@@ -40,9 +35,9 @@ public final class Stage12CDtos {
   public record QuoteReviewDetail(
       QuoteHeader header,
       String status,
-      QuoteSourceContextDto sourceContext,
+      QuoteReviewSourceContext sourceContext,
       ConversionAttemptSummary conversionAttempt,
-      List<QuoteCandidateLineDto> sourceLines,
+      List<QuoteReviewCandidateLine> sourceLines,
       List<QuoteLine> draftQuoteLines,
       List<ValidationIssue> validationIssues,
       List<SubstituteCandidate> proposedSubstitutes,
@@ -61,8 +56,7 @@ public final class Stage12CDtos {
       BigDecimal totalAmount,
       BigDecimal marginPercent,
       boolean requiresHumanReview,
-      Instant createdAt,
-      UUID auditCorrelationId) {
+      Instant createdAt) {
     public static QuoteHeader from(DraftQuote quote) {
       return new QuoteHeader(
           quote.getId(),
@@ -74,26 +68,39 @@ public final class Stage12CDtos {
           quote.getTotalAmount(),
           quote.getMarginPercent(),
           quote.isRequiresHumanReview(),
-          quote.getCreatedAt(),
-          quote.getAuditCorrelationId());
+          quote.getCreatedAt());
     }
   }
 
   public record ConversionAttemptSummary(
       UUID id,
       String sourceType,
-      UUID sourceId,
       String status,
       String failureCode,
       String failureMessage,
       String requestMode,
-      UUID triggeredBy,
       String triggeredByType) {
     public static ConversionAttemptSummary from(QuoteConversionAttempt attempt) {
       if (attempt == null) return null;
-      return new ConversionAttemptSummary(attempt.getId(), attempt.getSourceType(), attempt.getSourceId(), attempt.getStatus(), attempt.getFailureCode(), attempt.getFailureMessage(), attempt.getRequestMode(), attempt.getTriggeredBy(), attempt.getTriggeredByType());
+      return new ConversionAttemptSummary(attempt.getId(), attempt.getSourceType(), attempt.getStatus(), attempt.getFailureCode(), attempt.getFailureMessage(), attempt.getRequestMode(), attempt.getTriggeredByType());
     }
   }
+
+  public record QuoteReviewSourceContext(
+      String sourceType,
+      String sourceChannel,
+      Instant sourceReceivedAt,
+      String createdByType,
+      String conversionStatus) {}
+
+  public record QuoteReviewCandidateLine(
+      int lineNumber,
+      String rawSkuOrAlias,
+      String description,
+      BigDecimal quantity,
+      String uom,
+      java.time.LocalDate requestedDate,
+      String status) {}
 
   public record QuoteConversionAttemptReviewFilter(
       String status,
@@ -107,11 +114,7 @@ public final class Stage12CDtos {
   public record QuoteConversionAttemptReviewItem(
       UUID id,
       String sourceType,
-      UUID sourceId,
       String sourceChannel,
-      UUID channelMessageId,
-      UUID inboundDocumentId,
-      UUID draftQuoteId,
       boolean draftQuoteLinked,
       String status,
       boolean reviewRequired,
@@ -121,18 +124,13 @@ public final class Stage12CDtos {
       String customerResolution,
       int lineCount,
       String requestMode,
-      UUID triggeredBy,
       String triggeredByType,
       Instant createdAt) {}
 
   public record QuoteConversionAttemptReviewDetail(
       UUID id,
       String sourceType,
-      UUID sourceId,
       String sourceChannel,
-      UUID channelMessageId,
-      UUID inboundDocumentId,
-      UUID draftQuoteId,
       boolean draftQuoteLinked,
       String status,
       boolean reviewRequired,
@@ -142,7 +140,6 @@ public final class Stage12CDtos {
       String customerResolution,
       int lineCount,
       String requestMode,
-      UUID triggeredBy,
       String triggeredByType,
       Instant createdAt,
       Map<String, Object> safeMetadata,
@@ -158,15 +155,11 @@ public final class Stage12CDtos {
       boolean approvalRequired) {}
 
   public record AuditTimelineEvent(
-      UUID id,
       String action,
-      String entityType,
-      String entityId,
-      UUID actorId,
       Instant occurredAt,
       String metadata) {
     public static AuditTimelineEvent from(AuditEvent event) {
-      return new AuditTimelineEvent(event.getId(), event.getAction(), event.getEntityType(), event.getEntityId(), event.getActorId(), event.getOccurredAt(), event.getMetadata());
+      return new AuditTimelineEvent(event.getAction(), event.getOccurredAt(), event.getMetadata());
     }
   }
 
@@ -179,6 +172,14 @@ public final class Stage12CDtos {
       List<String> reviewRequiredReasons,
       boolean approvalRequired,
       String validationSummary) {}
+
+  public record ResolveValidationIssueRequest(String reasonCode, String note) {}
+  public record RejectValidationIssueSuggestionRequest(String reasonCode, String note) {}
+  public record ApplyValidationIssueFixRequest(String fixType, Map<String, String> values, String reasonCode, String note) {}
+  public record EscalateValidationIssueRequest(String reasonCode, String note) {}
+  public record CorrectQuoteCustomerRequest(UUID customerAccountId, String reasonCode, String note) {}
+  public record CorrectQuoteLineRequest(BigDecimal quantity, String uom, UUID productId, boolean removeLine, boolean manualFollowUp, String reasonCode, String note) {}
+  public record QuoteLineSubstituteRequest(UUID substituteProductId, String reasonCode, String note) {}
 
   public record ResolveValidationIssueCommand(UUID tenantId, UUID actorId, String actorRole, String reasonCode, String note) {}
   public record RejectValidationIssueSuggestionCommand(UUID tenantId, UUID actorId, String actorRole, String reasonCode, String note) {}

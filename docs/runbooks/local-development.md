@@ -36,50 +36,59 @@ If npm is blocked by the PowerShell execution policy, use `npm.cmd` in the same 
 
 ## Local Database Convention
 
-Local development uses these non-production values:
+Local development uses explicit non-production environment variables. These values are local placeholders only:
 
 ```powershell
-POSTGRES_DB=orderpilot
-POSTGRES_USER=orderpilot
-POSTGRES_PASSWORD=orderpilot_dev_password
+ORDERPILOT_DB_NAME=orderpilot_local
+ORDERPILOT_DB_USER=orderpilot_local_user
+ORDERPILOT_DB_PASSWORD=change-me-local-dev-only
+ORDERPILOT_DB_HOST_PORT=55432
+
+ORDERPILOT_TEST_DB_NAME=orderpilot_test
+ORDERPILOT_TEST_DB_USER=orderpilot_local_user
+ORDERPILOT_TEST_DB_PASSWORD=change-me-local-dev-only
+ORDERPILOT_TEST_DB_HOST_PORT=55432
 ```
 
-The backend datasource must match:
+The backend datasource is derived from those variables unless `SPRING_DATASOURCE_*` is explicitly supplied:
 
 ```powershell
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:55432/orderpilot
-SPRING_DATASOURCE_USERNAME=orderpilot
-SPRING_DATASOURCE_PASSWORD=orderpilot_dev_password
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:55432/orderpilot_local
+SPRING_DATASOURCE_USERNAME=orderpilot_local_user
+SPRING_DATASOURCE_PASSWORD=change-me-local-dev-only
 ```
 
-Inside Docker Compose, `core-api` connects to `jdbc:postgresql://postgres:5432/orderpilot`. On the Windows host, Compose publishes PostgreSQL to `localhost:55432` by default to avoid collisions with any native PostgreSQL service on `localhost:5432`.
+Inside Docker Compose, `core-api` connects to `jdbc:postgresql://postgres:5432/orderpilot_local` through Docker service DNS. On the Windows host, Compose publishes the same PostgreSQL container to `localhost:55432` by default. Host-run tools and Maven use `localhost:<host-port>`; containers use `postgres:5432`.
+
+The PostgreSQL integration-test profile uses the same host port and the separate `orderpilot_test` database so test cleanup cannot wipe local app/demo data.
 
 ## Start Local Infrastructure
 
-The primary Compose file is `infra/docker/docker-compose.yml`. Run it from the repo root:
+The primary Compose file is `infra/docker/docker-compose.yml`. Run Compose from its directory:
 
 ```powershell
-cd "C:\OrderPilot\OrderPilot-Core"
-Copy-Item ".env.example" ".env" -Force
-docker compose -f "infra/docker/docker-compose.yml" up -d postgres redis
-docker compose -f "infra/docker/docker-compose.yml" ps
+cd "C:\OrderPilot\OrderPilot-Core\infra\docker"
+docker compose up -d postgres redis
+docker compose ps
 ```
 
 Useful checks:
 
 ```powershell
+Test-NetConnection localhost -Port 55432
 docker ps
 docker logs orderpilot-postgres
-docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_local
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_test
 ```
 
-Do not use `psql -U postgres -d postgres` for this repo. The local Compose config creates the `orderpilot` role and `orderpilot` database.
+Do not use `psql -U postgres -d postgres` for this repo. The local Compose config creates the configured OrderPilot role, app database, and integration-test database.
 
 ## Start All Services With Docker Compose
 
 ```powershell
-cd "C:\OrderPilot\OrderPilot-Core"
-docker compose -f "infra/docker/docker-compose.yml" up --build
+cd "C:\OrderPilot\OrderPilot-Core\infra\docker"
+docker compose up -d
 ```
 
 Ports:
@@ -96,9 +105,10 @@ Start infra first, then run the backend locally:
 
 ```powershell
 cd "C:\OrderPilot\OrderPilot-Core\apps\core-api"
-$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:55432/orderpilot"
-$env:SPRING_DATASOURCE_USERNAME="orderpilot"
-$env:SPRING_DATASOURCE_PASSWORD="orderpilot_dev_password"
+$env:ORDERPILOT_DB_NAME="orderpilot_local"
+$env:ORDERPILOT_DB_USER="orderpilot_local_user"
+$env:ORDERPILOT_DB_PASSWORD="change-me-local-dev-only"
+$env:ORDERPILOT_DB_HOST_PORT="55432"
 mvn spring-boot:run
 ```
 
@@ -112,7 +122,7 @@ Invoke-RestMethod "http://localhost:8080/actuator/health"
 Flyway runs on backend startup. To inspect migration history:
 
 ```powershell
-docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot -c "select installed_rank, version, description, success from flyway_schema_history order by installed_rank;"
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_local -c "select installed_rank, version, description, success from flyway_schema_history order by installed_rank;"
 ```
 
 ## Frontend
@@ -184,7 +194,7 @@ Run broader component checks before handing off larger changes:
 
 ```powershell
 cd "C:\OrderPilot\OrderPilot-Core\apps\core-api"
-mvn test
+mvn clean test
 
 cd "C:\OrderPilot\OrderPilot-Core\apps\web-dashboard"
 npm run lint
@@ -194,6 +204,8 @@ npm test
 cd "C:\OrderPilot\OrderPilot-Core\apps\ai-worker"
 python -m pytest
 ```
+
+Do not debug Maven integration-test failures until `Test-NetConnection localhost -Port 55432` succeeds. The suite contains PostgreSQL integration tests that use `orderpilot_test` on the documented host port.
 
 ## One-Command Local Parity Check
 
@@ -217,7 +229,7 @@ The script validates:
 - `infra/docker/docker-compose.yml` renders with `docker compose config`.
 - PostgreSQL and Redis start through Docker Compose.
 - Compose service status is visible.
-- `orderpilot-postgres` accepts the repo-defined `orderpilot` role and `orderpilot` database.
+- `orderpilot-postgres` accepts the repo-defined app role/database and integration-test database.
 - Backend tests pass with Maven and `SPRING_PROFILES_ACTIVE=test`.
 - Frontend lint, build, and tests pass with npm.
 - AI worker tests pass through `apps\ai-worker\.venv\Scripts\python.exe`.
@@ -252,7 +264,7 @@ FATAL: role "postgres" does not exist
 Use the repo-defined role and database instead:
 
 ```powershell
-docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_local
 ```
 
 If this still fails after the Compose files were updated, the existing local Docker volume was probably initialized with old credentials. PostgreSQL only uses `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` on first initialization of an empty data directory.
@@ -261,7 +273,7 @@ If the mismatch appears again, do not delete the volume manually. Use the reset 
 
 ## Reset Local Dev Postgres Volume
 
-DATA LOSS WARNING: this deletes the local development PostgreSQL data volume only. It removes local tables and seed data so Postgres can initialize again with the current `orderpilot` role and database.
+DATA LOSS WARNING: this deletes the local development PostgreSQL data volume only. It removes local tables and seed data so Postgres can initialize again with the current configured role, app database, and integration-test database.
 
 Interactive reset:
 
@@ -280,6 +292,7 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\dev\reset-postgres-volume.ps
 Then verify:
 
 ```powershell
-docker compose -f "infra/docker/docker-compose.yml" ps
-docker exec -it orderpilot-postgres psql -U orderpilot -d orderpilot
+cd "C:\OrderPilot\OrderPilot-Core\infra\docker"
+docker compose ps
+docker exec -it orderpilot-postgres psql -U orderpilot_local_user -d orderpilot_local
 ```

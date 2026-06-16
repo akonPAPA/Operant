@@ -20,6 +20,7 @@ export default async function Page({ params }: Readonly<{ params: Promise<{ id: 
       <section className="panel">
         <h2>Run Summary</h2>
         <p>Run {id} shows the deterministic validation result prepared for the Stage 6 operator review boundary.</p>
+        <p><a className="button" href={`/validations/${id}/review`}>Open operator review</a></p>
         <p className="risk-note">Approving a Stage 5 requirement only approves validation workflow output. It does not create a quote/order or write to ERP.</p>
       </section>
       <section className="panel action-panel">

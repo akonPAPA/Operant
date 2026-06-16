@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { productBrand } from "@/lib/brand";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OrderPilot",
-  description: "Secure B2B transaction intelligence platform"
+  title: productBrand.name,
+  description: productBrand.description
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

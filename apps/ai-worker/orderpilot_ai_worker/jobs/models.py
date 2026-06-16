@@ -6,9 +6,10 @@ credentials, no secrets, no unrestricted tenant/customer data, and no executable
 field. Malformed input fails closed (see ``orderpilot_ai_worker.jobs.security``).
 """
 
+import os
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import List, Mapping, Optional
 
 from pydantic import BaseModel, Field
 
@@ -46,11 +47,35 @@ class AiJobStatus(str, Enum):
 
 
 class ProviderMode(str, Enum):
-    """Extraction provider modes. Default deterministic; no real LLM call in this PR."""
+    """Extraction provider modes. Default deterministic/offline; explicit opt-in for local runtime.
+
+    LOCAL_OLLAMA (OP-CAP-12C) selects the local open-source Ollama-compatible runtime. Selecting it is
+    necessary but not sufficient: the local provider still fails closed unless ORDERPILOT_AI_LOCAL_MODEL_*
+    config explicitly enables it (enabled + endpoint + model). No paid API/key is ever required.
+    """
 
     RULE_BASED = "RULE_BASED"
     MOCK_SEMANTIC = "MOCK_SEMANTIC"
+    LOCAL_OLLAMA = "LOCAL_OLLAMA"  # local open-source runtime; off unless explicitly enabled
     FUTURE_SEMANTIC = "FUTURE_SEMANTIC"  # placeholder only — not available, fails closed
+
+
+def provider_mode_from_env(env: Optional[Mapping[str, str]] = None) -> "ProviderMode":
+    """Resolve the worker's default provider mode from ``ORDERPILOT_AI_PROVIDER_MODE``.
+
+    Unknown/blank falls back to the deterministic offline default (``RULE_BASED``) — the worker never
+    silently upgrades itself to a model-backed mode. Choosing ``LOCAL_OLLAMA`` here does not by itself
+    enable the local runtime; that still requires ``ORDERPILOT_AI_LOCAL_MODEL_*`` config, and the
+    local provider fails closed otherwise.
+    """
+    source = env if env is not None else os.environ
+    raw = (source.get("ORDERPILOT_AI_PROVIDER_MODE", "") or "").strip().upper()
+    if not raw:
+        return ProviderMode.RULE_BASED
+    try:
+        return ProviderMode(raw)
+    except ValueError:
+        return ProviderMode.RULE_BASED
 
 
 class JobSecurityContext(BaseModel):  # pylint: disable=too-few-public-methods
@@ -86,7 +111,9 @@ class AiProcessingJobRequest(BaseModel):  # pylint: disable=too-few-public-metho
     text_ref: Optional[str] = None
     object_storage_ref: Optional[str] = None
     source_metadata: dict = Field(default_factory=dict)
-    requested_pipeline: ProviderMode = ProviderMode.RULE_BASED
+    # Defaults to the worker's configured mode (ORDERPILOT_AI_PROVIDER_MODE), falling back to the
+    # deterministic offline RULE_BASED default. Core API may still set this explicitly per job.
+    requested_pipeline: ProviderMode = Field(default_factory=provider_mode_from_env)
     schema_version: str = JOB_SCHEMA_VERSION
     created_at: datetime = Field(default_factory=_utcnow)
     security_context: Optional[JobSecurityContext] = None

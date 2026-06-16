@@ -174,13 +174,15 @@ export type QuoteApprovalDecisionPayload = {
 const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
 
 export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPayload): Promise<QuoteTransactionResponse> {
+  const { idempotencyKey, ...body } = payload;
   const response = await fetch(`${baseUrl}/api/v1/quotes/from-rfq`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": payload.tenantId
+      "X-Tenant-Id": payload.tenantId,
+      "Idempotency-Key": idempotencyKey
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   });
   if (!response.ok) {
     throw new Error(`Core API returned ${response.status}`);
@@ -221,13 +223,15 @@ export function getQuoteSourceContext(tenantId: string, quoteId: string): Promis
 }
 
 async function requestQuoteApproval<T>(tenantId: string, path: string, payload?: QuoteApprovalDecisionPayload): Promise<T> {
+  const { idempotencyKey, ...body } = payload ?? {};
   const response = await fetch(`${baseUrl}${path}`, {
     method: payload ? "POST" : "GET",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": tenantId
+      "X-Tenant-Id": tenantId,
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
     },
-    body: payload ? JSON.stringify(payload) : undefined
+    body: payload ? JSON.stringify(body) : undefined
   });
   if (!response.ok) {
     const message = await response.text();
@@ -237,13 +241,15 @@ async function requestQuoteApproval<T>(tenantId: string, path: string, payload?:
 }
 
 async function requestQuoteTransaction<T>(tenantId: string, path: string, payload: ChannelToQuotePayload): Promise<T> {
+  const { idempotencyKey, ...body } = payload;
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": tenantId
+      "X-Tenant-Id": tenantId,
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   });
   if (!response.ok) {
     const message = await response.text();
