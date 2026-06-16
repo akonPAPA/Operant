@@ -15,7 +15,10 @@ import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftQ
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftRecentRemediationRollupResponse;
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftRemediationLineageDetail;
 import com.orderpilot.application.services.validation.*;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.validation.*;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
@@ -42,9 +45,11 @@ public class ValidationController {
   private final ValidationReviewDraftabilityService validationReviewDraftabilityService;
   private final ValidationReviewDraftQueryService validationReviewDraftQueryService;
   private final ValidationReviewDraftRemediationLineageService validationReviewDraftRemediationLineageService;
+  private final RequestActorResolver actorResolver;
 
-  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService, ValidationReviewQueryService validationReviewQueryService, ValidationReviewCommandService validationReviewCommandService, ValidationReviewDraftCommandService validationReviewDraftCommandService, ValidationReviewDraftabilityService validationReviewDraftabilityService, ValidationReviewDraftQueryService validationReviewDraftQueryService, ValidationReviewDraftRemediationLineageService validationReviewDraftRemediationLineageService) {
+  public ValidationController(ValidationRunService runService, ValidationIssueService issueService, CustomerMatchingService customerMatchingService, ProductMatchingService productMatchingService, UomNormalizationService uomNormalizationService, InventoryValidationService inventoryValidationService, PricingValidationService pricingValidationService, DiscountValidationService discountValidationService, MarginValidationService marginValidationService, SubstitutionEngineService substitutionEngineService, ApprovalRequirementService approvalRequirementService, ExtractionValidationService extractionValidationService, AdvisoryExtractionValidationHandoffService advisoryValidationHandoffService, ValidationReviewQueryService validationReviewQueryService, ValidationReviewCommandService validationReviewCommandService, ValidationReviewDraftCommandService validationReviewDraftCommandService, ValidationReviewDraftabilityService validationReviewDraftabilityService, ValidationReviewDraftQueryService validationReviewDraftQueryService, ValidationReviewDraftRemediationLineageService validationReviewDraftRemediationLineageService, RequestActorResolver actorResolver) {
     this.runService=runService; this.issueService=issueService; this.customerMatchingService=customerMatchingService; this.productMatchingService=productMatchingService; this.uomNormalizationService=uomNormalizationService; this.inventoryValidationService=inventoryValidationService; this.pricingValidationService=pricingValidationService; this.discountValidationService=discountValidationService; this.marginValidationService=marginValidationService; this.substitutionEngineService=substitutionEngineService; this.approvalRequirementService=approvalRequirementService; this.extractionValidationService=extractionValidationService; this.advisoryValidationHandoffService=advisoryValidationHandoffService; this.validationReviewQueryService=validationReviewQueryService; this.validationReviewCommandService=validationReviewCommandService; this.validationReviewDraftCommandService=validationReviewDraftCommandService; this.validationReviewDraftabilityService=validationReviewDraftabilityService; this.validationReviewDraftQueryService=validationReviewDraftQueryService; this.validationReviewDraftRemediationLineageService=validationReviewDraftRemediationLineageService;
+    this.actorResolver = actorResolver;
   }
 
   /**
@@ -55,14 +60,14 @@ public class ValidationController {
    * Creates an internal draft only — no final/approved order and no ERP/1C/connector write.
    */
   @PostMapping("/{validationRunId}/review/draft-quote")
-  public ValidationReviewDraftResult createDraftQuote(@PathVariable UUID validationRunId, @RequestBody(required = false) ValidationReviewDraftRequest request) {
-    return validationReviewDraftCommandService.createDraftQuote(validationRunId, actor(request), selectedLines(request), note(request));
+  public ValidationReviewDraftResult createDraftQuote(@PathVariable UUID validationRunId, @RequestBody(required = false) ValidationReviewDraftRequest request, HttpServletRequest http) {
+    return validationReviewDraftCommandService.createDraftQuote(validationRunId, trustedActor(http), selectedLines(request), note(request));
   }
 
   /** OP-CAP-15A/15B — create an internal Draft Order from a validation run review (same gates/idempotency/audit). */
   @PostMapping("/{validationRunId}/review/draft-order")
-  public ValidationReviewDraftResult createDraftOrder(@PathVariable UUID validationRunId, @RequestBody(required = false) ValidationReviewDraftRequest request) {
-    return validationReviewDraftCommandService.createDraftOrder(validationRunId, actor(request), selectedLines(request), note(request));
+  public ValidationReviewDraftResult createDraftOrder(@PathVariable UUID validationRunId, @RequestBody(required = false) ValidationReviewDraftRequest request, HttpServletRequest http) {
+    return validationReviewDraftCommandService.createDraftOrder(validationRunId, trustedActor(http), selectedLines(request), note(request));
   }
 
   /**
@@ -121,8 +126,8 @@ public class ValidationController {
     return validationReviewDraftRemediationLineageService.remediationLineage(draftKind, draftId);
   }
 
-  private UUID actor(ValidationReviewDraftRequest request) {
-    return request == null ? null : request.actorUserId();
+  private UUID trustedActor(HttpServletRequest http) {
+    return actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
   }
 
   private java.util.List<UUID> selectedLines(ValidationReviewDraftRequest request) {
@@ -141,20 +146,20 @@ public class ValidationController {
    * action result (no raw payload).
    */
   @PostMapping("/{validationRunId}/review/corrections")
-  public ValidationReviewActionResult submitCorrection(@PathVariable UUID validationRunId, @RequestBody ValidationReviewCorrectionRequest request) {
-    return validationReviewCommandService.submitCorrection(validationRunId, request);
+  public ValidationReviewActionResult submitCorrection(@PathVariable UUID validationRunId, @RequestBody ValidationReviewCorrectionRequest request, HttpServletRequest http) {
+    return validationReviewCommandService.submitCorrection(validationRunId, trusted(request, trustedActor(http)));
   }
 
   /** OP-CAP-14C — resolve / ignore / escalate a validation issue (tenant-scoped, state-checked, audited). */
   @PostMapping("/{validationRunId}/review/issues/{issueId}/resolution")
-  public ValidationReviewActionResult resolveIssue(@PathVariable UUID validationRunId, @PathVariable UUID issueId, @RequestBody ValidationIssueResolutionRequest request) {
-    return validationReviewCommandService.resolveIssue(validationRunId, issueId, request);
+  public ValidationReviewActionResult resolveIssue(@PathVariable UUID validationRunId, @PathVariable UUID issueId, @RequestBody ValidationIssueResolutionRequest request, HttpServletRequest http) {
+    return validationReviewCommandService.resolveIssue(validationRunId, issueId, trusted(request, trustedActor(http)));
   }
 
   /** OP-CAP-14C — raise a minimal pending approval request (reuses existing approval infrastructure). */
   @PostMapping("/{validationRunId}/review/approval-requests")
-  public ValidationReviewActionResult requestApproval(@PathVariable UUID validationRunId, @RequestBody ValidationApprovalRequestCommand request) {
-    return validationReviewCommandService.requestApproval(validationRunId, request);
+  public ValidationReviewActionResult requestApproval(@PathVariable UUID validationRunId, @RequestBody ValidationApprovalRequestCommand request, HttpServletRequest http) {
+    return validationReviewCommandService.requestApproval(validationRunId, trusted(request, trustedActor(http)));
   }
 
   /**
@@ -231,5 +236,20 @@ public class ValidationController {
 
   private ValidationRunResponse toRun(ValidationRun run) {
     return new ValidationRunResponse(run.getId(), run.getExtractionResultId(), run.getSourceType(), run.getStatus(), run.getOverallStatus(), run.getOverallConfidence(), run.getStartedAt(), run.getFinishedAt(), run.getErrorMessage(), run.getCreatedAt());
+  }
+
+  private ValidationReviewCorrectionRequest trusted(ValidationReviewCorrectionRequest request, UUID actorId) {
+    if (request == null) return null;
+    return new ValidationReviewCorrectionRequest(request.targetType(), request.targetId(), request.correctedValue(), request.correctedQuantity(), request.correctedUom(), request.reason(), actorId, request.clientRequestId());
+  }
+
+  private ValidationIssueResolutionRequest trusted(ValidationIssueResolutionRequest request, UUID actorId) {
+    if (request == null) return null;
+    return new ValidationIssueResolutionRequest(request.resolution(), request.reason(), request.correctionActionId(), actorId, request.clientRequestId());
+  }
+
+  private ValidationApprovalRequestCommand trusted(ValidationApprovalRequestCommand request, UUID actorId) {
+    if (request == null) return null;
+    return new ValidationApprovalRequestCommand(request.extractedLineItemId(), request.requirementType(), request.reason(), actorId);
   }
 }

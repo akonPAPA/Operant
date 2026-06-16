@@ -11,6 +11,7 @@ import com.orderpilot.domain.aiwork.AiWorkType;
 import com.orderpilot.security.RequestActorResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -114,13 +115,40 @@ public class AiWorkController {
         s.getStrategyVersion(),
         s.getRiskLevel(),
         s.getConfidence(),
-        s.getGeneratedText(),
-        s.getStructuredPayloadJson(),
-        s.getEvidenceRefsJson(),
+        safeDisplayText(s.getGeneratedText()),
+        safeJsonField(s.getStructuredPayloadJson(), "{}"),
+        safeJsonField(s.getEvidenceRefsJson(), "[]"),
         true,
         s.getCreatedAt(),
         s.getUpdatedAt(),
         s.getDecidedAt(),
         s.getDecisionReason());
+  }
+
+  private static String safeDisplayText(String value) {
+    return containsLeakMarker(value) ? "Advisory output withheld by safety filter." : value;
+  }
+
+  private static String safeJsonField(String value, String fallback) {
+    if (value == null || value.isBlank()) {
+      return fallback;
+    }
+    return containsLeakMarker(value) ? fallback : value;
+  }
+
+  private static boolean containsLeakMarker(String value) {
+    if (value == null) {
+      return false;
+    }
+    String lower = value.toLowerCase(Locale.ROOT);
+    return lower.contains("objectstoragekey")
+        || lower.contains("storagekey")
+        || lower.contains("rawpayload")
+        || lower.contains("rawdocument")
+        || lower.contains("prompttext")
+        || lower.contains("stacktrace")
+        || lower.contains("connectorcredential")
+        || lower.contains("secret")
+        || lower.contains("token");
   }
 }

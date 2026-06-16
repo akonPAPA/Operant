@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -136,5 +137,37 @@ class AiWorkControllerAuthorityBoundaryTest {
     verify(service).accept(any(), actorCaptor.capture(), reasonCaptor.capture());
     assertThat(actorCaptor.getValue()).isEqualTo(trustedActor);
     assertThat(reasonCaptor.getValue()).isEqualTo("operator accepted advisory note");
+  }
+
+  @Test
+  void suggestionResponseScrubsInternalProviderPayloadFields() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID sourceId = UUID.randomUUID();
+    UUID suggestionId = UUID.randomUUID();
+    when(service.getSuggestion(suggestionId))
+        .thenReturn(new AiWorkSuggestion(
+            tenant,
+            AiWorkType.REQUEST_SUMMARY,
+            AiWorkSourceType.CHANNEL_MESSAGE,
+            sourceId,
+            "deterministic-v1",
+            "LOW",
+            new BigDecimal("0.80"),
+            "objectStorageKey=tenant/raw/private.txt",
+            "{\"objectStorageKey\":\"tenant/raw/private.txt\",\"secret\":\"s3cr3t\"}",
+            "[{\"promptText\":\"system prompt\",\"token\":\"secret-token\"}]",
+            null,
+            RequestActorResolver.SYSTEM_ACTOR,
+            NOW));
+
+    mockMvc.perform(get("/api/v1/ai-work/suggestions/{id}", suggestionId)
+            .header(TENANT_HEADER, tenant.toString()))
+        .andExpect(status().isOk())
+        .andExpect(content().string(containsString("Advisory output withheld by safety filter.")))
+        .andExpect(content().string(not(containsString("objectStorageKey"))))
+        .andExpect(content().string(not(containsString("tenant/raw/private.txt"))))
+        .andExpect(content().string(not(containsString("promptText"))))
+        .andExpect(content().string(not(containsString("secret-token"))))
+        .andExpect(content().string(not(containsString("s3cr3t"))));
   }
 }
