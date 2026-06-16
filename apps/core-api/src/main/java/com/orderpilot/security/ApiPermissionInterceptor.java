@@ -22,6 +22,10 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/stage8/value", ApiPermission.ANALYTICS_READ),
       Map.entry("/api/stage9", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/intake", ApiPermission.INTAKE_READ),
+      // OP-CAP-28: the processing-job status/control surface (same ProcessingJob controllers as the
+      // /api/v1/intake/jobs alias) must enforce the SAME intake permission boundary. Reads require
+      // INTAKE_READ; mutations (retry, run-extraction) require INTAKE_WRITE via the non-GET rule below.
+      Map.entry("/api/v1/processing/jobs", ApiPermission.INTAKE_READ),
       Map.entry("/api/v1/webhooks/events", ApiPermission.INTAKE_READ),
       Map.entry("/api/v1/extractions", ApiPermission.EXTRACTION_READ),
       Map.entry("/api/v1/validations", ApiPermission.VALIDATION_READ),
@@ -169,6 +173,11 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       return ApiPermission.VALIDATION_RUN;
     }
     if (path.startsWith("/api/v1/intake") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.INTAKE_WRITE;
+    }
+    // OP-CAP-28: processing-job mutations (retry / run-extraction) require INTAKE_WRITE — the same
+    // boundary as the /api/v1/intake/jobs alias. Previously /api/v1/processing/jobs was unguarded.
+    if (path.startsWith("/api/v1/processing/jobs") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.INTAKE_WRITE;
     }
     // OP-CAP-18: trust/AI event projector runtime. Processing (any non-GET) requires the stronger
