@@ -70,6 +70,19 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- OP-CAP-29: real PostgreSQL via Testcontainers for the worker-claim concurrency proof
+         (FOR UPDATE SKIP LOCKED). Version managed by the Spring Boot parent's Testcontainers BOM.
+         Test scope only; the H2 fast-test profile is unchanged. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
   <build>
     <plugins>

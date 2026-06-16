@@ -58,7 +58,9 @@ public class WorkerJobLeaseService {
   public List<ProcessingJob> claim(Integer limit) {
     UUID tenantId = TenantContext.requireTenantId();
     int clamped = clamp(limit, DEFAULT_CLAIM_LIMIT, MAX_CLAIM_LIMIT);
-    List<ProcessingJob> claimable = repository.findByTenantIdAndStatusOrderByQueuedAtAsc(
+    // Atomic, row-locked selection (FOR UPDATE SKIP LOCKED on PostgreSQL) so a concurrent worker can
+    // never lease the same job — the lock, not an after-the-fact status read, is what enforces exclusivity.
+    List<ProcessingJob> claimable = repository.findWithLockByTenantIdAndStatusOrderByQueuedAtAsc(
         tenantId, ProcessingJobStatus.PENDING.name(), PageRequest.of(0, clamped));
     Instant now = clock.instant();
     for (ProcessingJob job : claimable) {
@@ -85,15 +87,23 @@ public class WorkerJobLeaseService {
     List<ProcessingJob> stale = repository.findByStatusAndStartedAtBeforeOrderByStartedAtAsc(
         ProcessingJobStatus.PROCESSING.name(), cutoff, PageRequest.of(0, clamped));
     Instant now = clock.instant();
+    int recovered = 0;
     for (ProcessingJob job : stale) {
+      // Defensive re-check against the recovery-vs-completion race: only flip a job that is STILL
+      // PROCESSING. The query already filters on PROCESSING, but a result-intake completion committed
+      // between selection and flush could have moved it to a terminal state — never overwrite that.
+      if (!ProcessingJobStatus.PROCESSING.name().equals(job.getStatus())) {
+        continue;
+      }
       // No audit row here: this reaper is a deliberately cross-tenant system sweep with no single
       // TenantContext, and AuditEventService stamps the audit tenant from TenantContext. The recovery is
       // instead evidenced deterministically on the job itself — status=FAILED, finishedAt, and the safe
       // lastError token "stale_processing_timeout" — which is sufficient operational evidence and avoids
       // forcing a tenant identity onto a fleet-wide maintenance operation.
       job.markFailed("stale_processing_timeout", now);
+      recovered++;
     }
-    return stale.size();
+    return recovered;
   }
 
   /** Convenience overload using the default lease timeout relative to the service clock. */

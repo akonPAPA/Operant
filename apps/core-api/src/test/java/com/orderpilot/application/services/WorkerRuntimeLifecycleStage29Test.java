@@ -29,6 +29,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
@@ -164,6 +165,27 @@ class WorkerRuntimeLifecycleStage29Test {
     // No tenant id is carried on the lease record (compile-time guarantee — assert the value is absent
     // from the serialized form too).
     assertThat(lease.toString()).doesNotContain(tenant.toString());
+  }
+
+  @Test
+  void lockedClaimSelectionIsTenantScopedBoundedAndOldestFirst() {
+    // Exercises the pessimistic-write (FOR UPDATE [SKIP LOCKED]) claim selection directly. Under H2 this
+    // proves the locked query is functionally correct: tenant-scoped, PENDING-only, bounded, oldest-queued
+    // first. It does NOT prove concurrent SKIP-LOCKED exclusivity — that requires PostgreSQL (see report).
+    UUID tenant = UUID.randomUUID();
+    UUID other = UUID.randomUUID();
+    pendingJob(other, UUID.randomUUID()); // foreign tenant — must never be selected
+    ProcessingJob older = jobRepository.save(
+        new ProcessingJob(tenant, "DOCUMENT_EXTRACTION", "CHANNEL_MESSAGE", UUID.randomUUID(), 100, NOW.minusSeconds(60)));
+    ProcessingJob newer = jobRepository.save(
+        new ProcessingJob(tenant, "DOCUMENT_EXTRACTION", "CHANNEL_MESSAGE", UUID.randomUUID(), 100, NOW));
+
+    List<ProcessingJob> locked = jobRepository.findWithLockByTenantIdAndStatusOrderByQueuedAtAsc(
+        tenant, "PENDING", PageRequest.of(0, 1));
+
+    assertThat(locked).extracting(ProcessingJob::getId).containsExactly(older.getId()); // oldest-first, bounded to 1
+    assertThat(locked).extracting(ProcessingJob::getTenantId).containsOnly(tenant); // never the foreign tenant
+    assertThat(newer.getId()).isNotEqualTo(older.getId());
   }
 
   // ============================= 2. result intake transitions =============================
