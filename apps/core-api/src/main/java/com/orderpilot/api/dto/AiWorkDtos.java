@@ -22,6 +22,11 @@ public final class AiWorkDtos {
       String contextText,
       String idempotencyKey) {}
 
+  /** Create an advisory suggestion from a backend-resolved resource context. */
+  public record CreateContextualAiWorkSuggestionRequest(
+      String workType,
+      String idempotencyKey) {}
+
   /** Operator accept/reject decision. Advisory only — never approves business state. */
   public record AiWorkDecisionRequest(String reason) {}
 

@@ -5,7 +5,10 @@ import com.orderpilot.api.dto.ChannelRfqHandoffDtos.DismissRfqHandoffRequest;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.MarkConvertedRfqHandoffRequest;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.StartReviewRfqHandoffRequest;
 import com.orderpilot.application.services.channel.ChannelRfqHandoffService;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,9 +35,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ChannelRfqHandoffController {
   private final ChannelRfqHandoffService handoffService;
+  private final RequestActorResolver actorResolver;
 
-  public ChannelRfqHandoffController(ChannelRfqHandoffService handoffService) {
+  public ChannelRfqHandoffController(
+      ChannelRfqHandoffService handoffService, RequestActorResolver actorResolver) {
     this.handoffService = handoffService;
+    this.actorResolver = actorResolver;
   }
 
   /** List tenant-scoped RFQ handoffs, optionally filtered by status. */
@@ -54,30 +60,38 @@ public class ChannelRfqHandoffController {
   @PostMapping("/api/v1/channels/rfq-handoffs/{id}/start-review")
   public ChannelRfqHandoffResponse startReview(
       @PathVariable UUID id,
-      @RequestBody(required = false) StartReviewRfqHandoffRequest request) {
-    return handoffService.startReview(id, request == null ? null : request.reviewerUserId());
+      @RequestBody(required = false) StartReviewRfqHandoffRequest request,
+      HttpServletRequest http) {
+    return handoffService.startReview(id, trustedActor(http));
   }
 
   /** Dismiss a handoff as invalid/irrelevant. Requires a non-blank reason. */
   @PostMapping("/api/v1/channels/rfq-handoffs/{id}/dismiss")
   public ChannelRfqHandoffResponse dismiss(
       @PathVariable UUID id,
-      @RequestBody(required = false) DismissRfqHandoffRequest request) {
+      @RequestBody(required = false) DismissRfqHandoffRequest request,
+      HttpServletRequest http) {
     return handoffService.dismiss(
         id,
         request == null ? null : request.reason(),
-        request == null ? null : request.actorUserId());
+        trustedActor(http));
   }
 
   /** Mark a handoff as converted (workflow complete). Does not create any quote/order. */
   @PostMapping("/api/v1/channels/rfq-handoffs/{id}/mark-converted")
   public ChannelRfqHandoffResponse markConverted(
       @PathVariable UUID id,
-      @RequestBody(required = false) MarkConvertedRfqHandoffRequest request) {
+      @RequestBody(required = false) MarkConvertedRfqHandoffRequest request,
+      HttpServletRequest http) {
     return handoffService.markConverted(
         id,
         request == null ? null : request.conversionNote(),
-        request == null ? null : request.actorUserId());
+        trustedActor(http));
+  }
+
+  private UUID trustedActor(HttpServletRequest http) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
+    return RequestActorResolver.SYSTEM_ACTOR.equals(actorId) ? null : actorId;
   }
 
   private ChannelRfqHandoffStatus parseStatus(String status) {
