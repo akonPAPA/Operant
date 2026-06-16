@@ -83,6 +83,12 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if (path.startsWith("/api/v1/internal/ai-processing-results") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_RESULT_INTAKE;
     }
+    // OP-CAP-29: the worker lease/claim surface is internal-only. Any non-GET (claim) requires the same
+    // internal worker permission as result intake (AI_RESULT_INTAKE) — no public/user permission and no
+    // unauthenticated request may lease worker jobs. Previously /api/v1/internal/processing-jobs was unmapped.
+    if (path.startsWith("/api/v1/internal/processing-jobs") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.AI_RESULT_INTAKE;
+    }
     if (path.startsWith("/api/v1/ai-work") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.AI_WORK_ACTION;
     }

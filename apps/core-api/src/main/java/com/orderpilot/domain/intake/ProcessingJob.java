@@ -9,6 +9,16 @@ public class ProcessingJob {
   // isRetryable); the service enforces eligibility fail-closed before calling this. Each retry bumps
   // attempts so manual requeues are bounded by maxAttempts and can never loop unbounded.
   public void retry(Instant now){this.status=ProcessingJobStatus.PENDING.name(); this.lastError=null; this.attempts++; this.queuedAt=now; this.finishedAt=null; this.updatedAt=now;}
+  // OP-CAP-29: a worker lease/claim. Only a PENDING job is claimable (see isClaimable); the lease
+  // service enforces eligibility before calling this. Moves PENDING -> PROCESSING and stamps startedAt.
+  // It does NOT touch attempts — attempts counts controlled requeues (retry), not in-flight leases, so
+  // a claim+stale-recovery+retry cycle stays bounded by maxAttempts via the retry path alone.
+  public void markProcessing(Instant now){this.status=ProcessingJobStatus.PROCESSING.name(); this.startedAt=now; this.finishedAt=null; this.updatedAt=now;}
+  // OP-CAP-29: only PENDING jobs may be leased; PROCESSING/terminal jobs are never re-claimed.
+  public boolean isClaimable(){return ProcessingJobStatus.PENDING.name().equals(status);}
+  // OP-CAP-29: a fresh advisory result is accepted only while the job is still active (PENDING or
+  // PROCESSING). Once terminal, a late/runless result must not resurrect or overwrite the job.
+  public boolean isActiveForResult(){return ProcessingJobStatus.PENDING.name().equals(status) || ProcessingJobStatus.PROCESSING.name().equals(status);}
   // OP-CAP-28: retry is allowed only from the terminal FAILED state and only while attempts remain.
   // SUCCEEDED / PROCESSING / PENDING / NEEDS_REVIEW / REJECTED are never re-queued from the control layer.
   public boolean isRetryable(){return ProcessingJobStatus.FAILED.name().equals(status) && attempts < maxAttempts;}
@@ -24,5 +34,5 @@ public class ProcessingJob {
   // OP-CAP-28: bounded, non-sensitive operational fields for the safe status contract. lastError is
   // intentionally NOT exposed via a getter consumed by responses — failure detail is mapped to a safe
   // business message in the DTO layer instead.
-  public int getAttempts(){return attempts;} public int getMaxAttempts(){return maxAttempts;} public Instant getUpdatedAt(){return updatedAt;} public Instant getCreatedAt(){return createdAt;} public Instant getFinishedAt(){return finishedAt;}
+  public int getAttempts(){return attempts;} public int getMaxAttempts(){return maxAttempts;} public Instant getUpdatedAt(){return updatedAt;} public Instant getCreatedAt(){return createdAt;} public Instant getFinishedAt(){return finishedAt;} public Instant getStartedAt(){return startedAt;}
 }
