@@ -60,6 +60,8 @@ import org.springframework.test.context.ActiveProfiles;
   AuditEventService.class,
   JsonSupport.class,
   CoreConfiguration.class,
+  com.orderpilot.application.services.runtime.RuntimeControlService.class,
+  com.orderpilot.application.services.runtime.AiWorkloadClassifier.class,
   RuntimeGuardService.class,
   QuotaGuard.class,
   RateLimitService.class,
