@@ -2,7 +2,9 @@ package com.orderpilot.api.rest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -28,6 +30,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 @WebMvcTest(Stage9IntegrationController.class)
 @Import({CoreConfiguration.class, ApiSecurityWebConfig.class, ApiPermissionInterceptor.class, ApiPermissionGuard.class, RequestActorResolver.class})
@@ -135,5 +138,104 @@ class Stage9IntegrationControllerTest {
     ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
     verify(changeRequestService).createStage9DemoChangeRequest(eq("DRAFT_QUOTE"), eq(sourceId), eq("CREATE_DRAFT_QUOTE"), eq("{}"), actorCaptor.capture());
     assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
+  }
+
+  @Test
+  void changeRequestListWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(changeRequestService);
+  }
+
+  @Test
+  void changeRequestDetailWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(changeRequestService);
+  }
+
+  @Test
+  void executionSafetyWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(safetyService);
+  }
+
+  @Test
+  void executionSafetyWithAdminSettingsReadIsForbiddenBeforeServiceInvocation() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verifyNoInteractions(safetyService);
+  }
+
+  @Test
+  void approveWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"actorId\":\"00000000-0000-0000-0000-000000000001\",\"requestPayloadJson\":\"SECRET-PAYLOAD\"}"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verify(changeRequestService, never()).approveChangeRequest(any(), any());
+  }
+
+  @Test
+  void executeWithReadPermissionIsForbiddenBeforeServiceInvocation() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verify(changeRequestService, never()).executeStage9DemoChangeRequest(any());
+  }
+
+  @Test
+  void retryWithReadPermissionIsForbiddenBeforeServiceInvocation() throws Exception {
+    UUID requestId = UUID.randomUUID();
+
+    MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/retry")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
+        .andExpect(status().isForbidden())
+        .andReturn();
+
+    assertForbiddenResponseDoesNotLeakSensitiveDetails(result);
+    verify(changeRequestService, never()).retryStage9DemoChangeRequest(any());
+  }
+
+  private void assertForbiddenResponseDoesNotLeakSensitiveDetails(MvcResult result) throws Exception {
+    String body = result.getResponse().getContentAsString();
+    assertThat(body)
+        .doesNotContain("SECRET-PAYLOAD")
+        .doesNotContain("requestPayloadJson")
+        .doesNotContain("ChangeRequestService")
+        .doesNotContain("ConnectorExecutionSafetyService")
+        .doesNotContain("java.lang")
+        .doesNotContain("org.springframework")
+        .doesNotContain("stackTrace");
   }
 }
