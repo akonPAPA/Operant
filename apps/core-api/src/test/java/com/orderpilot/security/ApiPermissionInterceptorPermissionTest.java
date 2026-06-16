@@ -1436,6 +1436,67 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("CHANGE_REQUEST_CREATE");
   }
 
+  // --- OP-CAP-28 /api/v1/processing/jobs status/control surface is guarded (was previously unguarded) ---
+
+  @Test
+  void processingJobsListGetWithIntakeReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/processing/jobs");
+    req.addHeader("X-OrderPilot-Permissions", "INTAKE_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void processingJobsListGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/processing/jobs");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("INTAKE_READ");
+  }
+
+  @Test
+  void processingJobStatusGetWithoutPermissionIsRejected() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "GET", "/api/v1/processing/jobs/123e4567-e89b-12d3-a456-426614174000");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("INTAKE_READ");
+  }
+
+  @Test
+  void processingJobRetryPostWithIntakeWriteSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/processing/jobs/123e4567-e89b-12d3-a456-426614174000/retry");
+    req.addHeader("X-OrderPilot-Permissions", "INTAKE_WRITE");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void processingJobRetryPostWithReadAloneIsRejected() throws Exception {
+    // INTAKE_READ must NOT satisfy a processing-job mutation (retry).
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/processing/jobs/123e4567-e89b-12d3-a456-426614174000/retry");
+    req.addHeader("X-OrderPilot-Permissions", "INTAKE_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("INTAKE_WRITE");
+  }
+
+  @Test
+  void processingJobRunExtractionPostWithoutPermissionIsRejected() throws Exception {
+    // The heavy async-submission endpoint must never be reachable without INTAKE_WRITE.
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/processing/jobs/123e4567-e89b-12d3-a456-426614174000/run-extraction");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("INTAKE_WRITE");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
