@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { coreApiBaseUrl, coreApiStatusMessage, demoScopeHeaders, hasDemoScope, missingDemoScopeMessage } from "@/lib/core-api-client";
+import { coreApiBaseUrl, coreApiStatusMessage, demoScopeHeaders } from "@/lib/core-api-client";
 
 const ACCEPTED_TYPES = ".pdf,.csv,.xlsx,.xls,.txt,.png,.jpg,.jpeg";
 

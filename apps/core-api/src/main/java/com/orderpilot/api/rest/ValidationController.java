@@ -106,12 +106,6 @@ public class ValidationController {
     return validationReviewDraftQueryService.reviewDraftQueue(draftType, status, limit, offset);
   }
 
-  /**
-   * OP-CAP-15J — bounded recent-window remediation rollup tile for the review-draft workspace. GET under
-   * {@code /api/v1/validations} requires {@code VALIDATION_READ}. Tenant-scoped, read-only: aggregates the
-   * same structured per-draft remediation derivation used by the queue rows over the most recent drafts
-   * ({@code limit} default 50, clamped to 100). Never exposes raw operator-note content or AI payload.
-   */
   @GetMapping("/review-drafts/remediation-rollup")
   public ValidationReviewDraftRecentRemediationRollupResponse reviewDraftsRemediationRollup(
       @RequestParam(name = "limit", required = false) Integer limit) {
