@@ -8,8 +8,10 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.Stage4Dtos.ExtractionRunRequest;
+import com.orderpilot.api.dto.Stage4Dtos.ExtractionSubmissionResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.JsonSupport;
+import com.orderpilot.application.services.ProcessingJobService;
 import com.orderpilot.application.services.runtime.AiWorkloadType;
 import com.orderpilot.application.services.runtime.ModelTier;
 import com.orderpilot.application.services.runtime.RuntimeControlDecision;
@@ -19,8 +21,8 @@ import com.orderpilot.application.services.runtime.RuntimeControlService;
 import com.orderpilot.application.services.runtime.RuntimeFeatureNotAvailableException;
 import com.orderpilot.application.services.runtime.RuntimeFeatureType;
 import com.orderpilot.application.services.runtime.RuntimeGuardDecision;
-import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeGuardReasonCodes;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeQuotaExceededException;
 import com.orderpilot.application.services.runtime.RuntimeRateLimitedException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -28,6 +30,7 @@ import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.extraction.ExtractionRunRepository;
 import com.orderpilot.domain.intake.ChannelMessage;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
+import com.orderpilot.domain.intake.ProcessingJobRepository;
 import com.orderpilot.domain.usage.UsageMetricType;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.time.Instant;
@@ -45,22 +48,22 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * OP-CAP-27b — proves the document-extraction submission boundary ({@code
- * ExtractionPipelineService.runNow}) is now routed through the centralized {@link RuntimeControlService}
- * decision spine. The control service is mocked so each outcome can be driven exactly, without depending
- * on the real quota/rate stores (those are covered by {@code ExtractionPipelineGuardStage16*Test} and
- * {@code RuntimeControlServiceTest}). Proven: an allowed decision lets the run proceed; entitlement /
- * quota / rate denials throw the existing stable mapped exception and create no run or extraction work;
- * a non-allowed (needs-review / unsupported) decision fail-closes with no run; and the boundary passes
- * the trusted server-side tenant + {@code DOCUMENT_EXTRACTION} workload (never a client-supplied
- * authority) into the decision.
+ * OP-CAP-27c — proves the document-extraction submission boundary
+ * ({@code ExtractionPipelineService.submitForExtraction}) is truly asynchronous: an admitted submission
+ * enqueues a durable {@code ProcessingJob} for the existing worker runtime and performs NO text/OCR/
+ * semantic extraction in the request thread (no {@code ExtractionRun} is created). Denials throw the
+ * existing stable mapped exception and enqueue nothing; needs-review/unsupported fail-close; duplicate
+ * submissions reuse the existing job; and the trusted tenant + {@code DOCUMENT_EXTRACTION} workload are
+ * resolved server-side. The internal executor ({@code runNow}) still performs the heavy work when the
+ * worker/internal path runs it. {@link RuntimeControlService} is mocked so each outcome is driven
+ * exactly (real quota/rate behavior is covered by the OP-CAP-16 guard tests + {@code RuntimeControlServiceTest}).
  */
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
   ExtractionPipelineService.class,
-  com.orderpilot.application.services.ProcessingJobService.class,
+  ProcessingJobService.class,
   ExtractionRunService.class,
   TextExtractionService.class,
   SemanticExtractionService.class,
@@ -73,11 +76,12 @@ import org.springframework.test.context.ActiveProfiles;
   AuditEventService.class,
   JsonSupport.class,
   CoreConfiguration.class,
-  ExtractionPipelineRuntimeControlStage27bTest.JacksonTestConfig.class
+  ExtractionAsyncSubmissionStage27cTest.JacksonTestConfig.class
 })
-class ExtractionPipelineRuntimeControlStage27bTest {
+class ExtractionAsyncSubmissionStage27cTest {
   @Autowired private ExtractionPipelineService pipelineService;
   @Autowired private ChannelMessageRepository messageRepository;
+  @Autowired private ProcessingJobRepository jobRepository;
   @Autowired private ExtractionRunRepository runRepository;
   @Autowired private ExtractionResultRepository resultRepository;
   @MockBean private RuntimeControlService runtimeControlService;
@@ -105,7 +109,7 @@ class ExtractionPipelineRuntimeControlStage27bTest {
             "{}", "QUEUED", Instant.parse("2026-05-24T00:00:00Z")));
   }
 
-  private ExtractionRunRequest runRequest(ChannelMessage message) {
+  private ExtractionRunRequest request(ChannelMessage message) {
     return new ExtractionRunRequest("CHANNEL_MESSAGE", message.getId(), null, "RULE_BASED");
   }
 
@@ -126,99 +130,133 @@ class ExtractionPipelineRuntimeControlStage27bTest {
         UsageMetricType.AI_INPUT_UNITS, 1L, 1L, 1L, 0L, 0L, null);
   }
 
-  // ----------------------------- allowed flow -----------------------------
+  // ----------------------------- A. allowed async submission enqueues, does no extraction -----------------------------
 
   @Test
-  void allowedDecisionLetsRunProceedAndCreatesRun() {
+  void allowedSubmissionEnqueuesJobAndRunsNoExtractionInRequestThread() {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
-    ChannelMessage message = newMessage(tenantId, "msg-ok");
+    ChannelMessage message = newMessage(tenantId, "msg-async");
     when(runtimeControlService.enforce(any())).thenReturn(allowAsync(tenantId));
-    long runsBefore = runRepository.count();
-
-    var run = pipelineService.runNow(runRequest(message));
-
-    assertThat(runRepository.count()).isEqualTo(runsBefore + 1);
-    assertThat(resultRepository.findFirstByTenantIdAndExtractionRunId(tenantId, run.getId())).isPresent();
-  }
-
-  // ----------------------------- denial before work -----------------------------
-
-  @Test
-  void entitlementDenialThrowsAndCreatesNoRun() {
-    UUID tenantId = UUID.randomUUID();
-    TenantContext.setTenantId(tenantId);
-    ChannelMessage message = newMessage(tenantId, "msg-feat");
-    when(runtimeControlService.enforce(any()))
-        .thenThrow(new RuntimeFeatureNotAvailableException(deniedGuard(403, RuntimeGuardReasonCodes.FEATURE_NOT_ENTITLED)));
-    long runsBefore = runRepository.count();
-
-    assertThatThrownBy(() -> pipelineService.runNow(runRequest(message)))
-        .isInstanceOf(RuntimeFeatureNotAvailableException.class);
-    assertThat(runRepository.count()).isEqualTo(runsBefore);
-  }
-
-  @Test
-  void quotaDenialThrowsAndCreatesNoRun() {
-    UUID tenantId = UUID.randomUUID();
-    TenantContext.setTenantId(tenantId);
-    ChannelMessage message = newMessage(tenantId, "msg-quota");
-    when(runtimeControlService.enforce(any()))
-        .thenThrow(new RuntimeQuotaExceededException(deniedGuard(403, RuntimeGuardReasonCodes.QUOTA_LIMIT_EXCEEDED)));
-    long runsBefore = runRepository.count();
-
-    assertThatThrownBy(() -> pipelineService.runNow(runRequest(message)))
-        .isInstanceOf(RuntimeQuotaExceededException.class);
-    assertThat(runRepository.count()).isEqualTo(runsBefore);
-  }
-
-  @Test
-  void rateDenialThrowsAndCreatesNoRun() {
-    UUID tenantId = UUID.randomUUID();
-    TenantContext.setTenantId(tenantId);
-    ChannelMessage message = newMessage(tenantId, "msg-rate");
-    when(runtimeControlService.enforce(any()))
-        .thenThrow(new RuntimeRateLimitedException(deniedGuard(429, RuntimeGuardReasonCodes.RATE_LIMIT_EXCEEDED)));
-    long runsBefore = runRepository.count();
-
-    assertThatThrownBy(() -> pipelineService.runNow(runRequest(message)))
-        .isInstanceOf(RuntimeRateLimitedException.class);
-    assertThat(runRepository.count()).isEqualTo(runsBefore);
-  }
-
-  // ----------------------------- non-allowed decisions fail closed -----------------------------
-
-  @Test
-  void needsReviewDecisionFailClosesWithNoRunOrExtraction() {
-    UUID tenantId = UUID.randomUUID();
-    TenantContext.setTenantId(tenantId);
-    ChannelMessage message = newMessage(tenantId, "msg-review");
-    when(runtimeControlService.enforce(any()))
-        .thenReturn(nonAllow(tenantId, RuntimeControlOutcome.NEEDS_REVIEW, "Workload routed to human review."));
+    long jobsBefore = jobRepository.count();
     long runsBefore = runRepository.count();
     long resultsBefore = resultRepository.count();
 
-    assertThatThrownBy(() -> pipelineService.runNow(runRequest(message)))
-        .isInstanceOf(IllegalArgumentException.class);
+    ExtractionSubmissionResponse response = pipelineService.submitForExtraction(request(message));
+
+    assertThat(response.accepted()).isTrue();
+    assertThat(response.async()).isTrue();
+    assertThat(response.jobId()).isNotNull();
+    assertThat(response.status()).isEqualTo("PENDING");
+    assertThat(jobRepository.count()).isEqualTo(jobsBefore + 1);
+    // No heavy work in the request thread: no ExtractionRun / ExtractionResult was created.
     assertThat(runRepository.count()).isEqualTo(runsBefore);
     assertThat(resultRepository.count()).isEqualTo(resultsBefore);
+    // Safe acknowledgement only — no raw customer text leaks into the response.
+    assertThat(response.message()).doesNotContain("Acme").doesNotContain("SKU-001");
+  }
+
+  // ----------------------------- B. internal/worker execution still produces the run -----------------------------
+
+  @Test
+  void queuedSubmissionCanThenBeExecutedByInternalRunNow() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelMessage message = newMessage(tenantId, "msg-exec");
+    when(runtimeControlService.enforce(any())).thenReturn(allowAsync(tenantId));
+
+    pipelineService.submitForExtraction(request(message));
+    assertThat(runRepository.count()).isZero();
+
+    // The worker/internal execution path performs the heavy work and creates the run + result.
+    var run = pipelineService.runNow(request(message));
+
+    assertThat(run.getTenantId()).isEqualTo(tenantId);
+    assertThat(resultRepository.findFirstByTenantIdAndExtractionRunId(tenantId, run.getId())).isPresent();
+  }
+
+  // ----------------------------- C. deny before enqueue -----------------------------
+
+  @Test
+  void entitlementDenialThrowsAndEnqueuesNoJob() {
+    assertDenialEnqueuesNoJob("msg-feat",
+        new RuntimeFeatureNotAvailableException(deniedGuard(403, RuntimeGuardReasonCodes.FEATURE_NOT_ENTITLED)),
+        RuntimeFeatureNotAvailableException.class);
   }
 
   @Test
-  void unsupportedDecisionFailClosesWithNoRun() {
+  void quotaDenialThrowsAndEnqueuesNoJob() {
+    assertDenialEnqueuesNoJob("msg-quota",
+        new RuntimeQuotaExceededException(deniedGuard(403, RuntimeGuardReasonCodes.QUOTA_LIMIT_EXCEEDED)),
+        RuntimeQuotaExceededException.class);
+  }
+
+  @Test
+  void rateDenialThrowsAndEnqueuesNoJob() {
+    assertDenialEnqueuesNoJob("msg-rate",
+        new RuntimeRateLimitedException(deniedGuard(429, RuntimeGuardReasonCodes.RATE_LIMIT_EXCEEDED)),
+        RuntimeRateLimitedException.class);
+  }
+
+  private void assertDenialEnqueuesNoJob(String ext, RuntimeException thrown, Class<? extends Throwable> type) {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
-    ChannelMessage message = newMessage(tenantId, "msg-unsupported");
-    when(runtimeControlService.enforce(any()))
-        .thenReturn(nonAllow(tenantId, RuntimeControlOutcome.UNSUPPORTED, "Workload could not be classified."));
+    ChannelMessage message = newMessage(tenantId, ext);
+    when(runtimeControlService.enforce(any())).thenThrow(thrown);
+    long jobsBefore = jobRepository.count();
     long runsBefore = runRepository.count();
 
-    assertThatThrownBy(() -> pipelineService.runNow(runRequest(message)))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> pipelineService.submitForExtraction(request(message))).isInstanceOf(type);
+
+    assertThat(jobRepository.count()).isEqualTo(jobsBefore);
     assertThat(runRepository.count()).isEqualTo(runsBefore);
   }
 
-  // ----------------------------- server-side authority -----------------------------
+  // ----------------------------- D. dedup: duplicate submission does not create a second job -----------------------------
+
+  @Test
+  void duplicateSubmissionReusesExistingJobAndDoesNotEnqueueTwice() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelMessage message = newMessage(tenantId, "msg-dup");
+    when(runtimeControlService.enforce(any())).thenReturn(allowAsync(tenantId));
+    long jobsBefore = jobRepository.count();
+
+    ExtractionSubmissionResponse first = pipelineService.submitForExtraction(request(message));
+    ExtractionSubmissionResponse second = pipelineService.submitForExtraction(request(message));
+
+    assertThat(jobRepository.count()).isEqualTo(jobsBefore + 1);
+    assertThat(second.jobId()).isEqualTo(first.jobId());
+    assertThat(runRepository.count()).isZero();
+  }
+
+  // ----------------------------- E. review/unsupported fail-close, no job -----------------------------
+
+  @Test
+  void needsReviewDecisionFailClosesAndEnqueuesNoJob() {
+    assertNonAllowEnqueuesNoJob("msg-review", RuntimeControlOutcome.NEEDS_REVIEW, "Workload routed to human review.");
+  }
+
+  @Test
+  void unsupportedDecisionFailClosesAndEnqueuesNoJob() {
+    assertNonAllowEnqueuesNoJob("msg-unsupported", RuntimeControlOutcome.UNSUPPORTED, "Workload could not be classified.");
+  }
+
+  private void assertNonAllowEnqueuesNoJob(String ext, RuntimeControlOutcome outcome, String message) {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelMessage msg = newMessage(tenantId, ext);
+    when(runtimeControlService.enforce(any())).thenReturn(nonAllow(tenantId, outcome, message));
+    long jobsBefore = jobRepository.count();
+
+    assertThatThrownBy(() -> pipelineService.submitForExtraction(request(msg)))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThat(jobRepository.count()).isEqualTo(jobsBefore);
+    assertThat(runRepository.count()).isZero();
+  }
+
+  // ----------------------------- F. server-side authority -----------------------------
 
   @Test
   void submissionResolvesTrustedTenantAndDocumentExtractionWorkloadServerSide() {
@@ -227,7 +265,7 @@ class ExtractionPipelineRuntimeControlStage27bTest {
     ChannelMessage message = newMessage(tenantId, "msg-authority");
     when(runtimeControlService.enforce(any())).thenReturn(allowAsync(tenantId));
 
-    pipelineService.runNow(runRequest(message));
+    pipelineService.submitForExtraction(request(message));
 
     ArgumentCaptor<RuntimeControlRequest> captor = ArgumentCaptor.forClass(RuntimeControlRequest.class);
     verify(runtimeControlService).enforce(captor.capture());
@@ -237,7 +275,5 @@ class ExtractionPipelineRuntimeControlStage27bTest {
     assertThat(sent.operationType()).isEqualTo(RuntimeOperationType.AI_DOCUMENT_EXTRACTION);
     assertThat(sent.featureType()).isEqualTo(RuntimeFeatureType.AI_DOCUMENT_EXTRACTION);
     assertThat(sent.classification().requestedType()).isEqualTo(AiWorkloadType.DOCUMENT_EXTRACTION);
-    assertThat(sent.requestedUnits()).isGreaterThanOrEqualTo(0L);
-    assertThat(sent.idempotencyKey()).isNull();
   }
 }

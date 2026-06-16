@@ -58,6 +58,7 @@ import org.springframework.test.context.ActiveProfiles;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
   ExtractionPipelineService.class,
+  com.orderpilot.application.services.ProcessingJobService.class,
   ExtractionRunService.class,
   TextExtractionService.class,
   SemanticExtractionService.class,

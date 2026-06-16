@@ -1,7 +1,9 @@
 package com.orderpilot.application.services.extraction;
 
 import com.orderpilot.api.dto.Stage4Dtos.ExtractionRunRequest;
+import com.orderpilot.api.dto.Stage4Dtos.ExtractionSubmissionResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.ProcessingJobService;
 import com.orderpilot.application.services.runtime.AiWorkloadClassificationRequest;
 import com.orderpilot.application.services.runtime.AiWorkloadType;
 import com.orderpilot.application.services.runtime.RuntimeControlDecision;
@@ -14,6 +16,7 @@ import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.*;
 import com.orderpilot.domain.intake.InboundDocumentRepository;
+import com.orderpilot.domain.intake.ProcessingJob;
 import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -21,8 +24,48 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExtractionPipelineService implements AiUnderstandingPipeline {
-  private final ExtractionRunService runService; private final TextExtractionService textService; private final SemanticExtractionService semanticService; private final AuditEventService auditEventService; private final SemanticExtractionProvider provider; private final RuntimeControlService runtimeControlService; private final RuntimeUnitEstimator runtimeUnitEstimator; private final InboundDocumentRepository inboundDocumentRepository; private final Clock clock;
-  public ExtractionPipelineService(ExtractionRunService runService, TextExtractionService textService, SemanticExtractionService semanticService, AuditEventService auditEventService, SemanticExtractionProvider provider, RuntimeControlService runtimeControlService, RuntimeUnitEstimator runtimeUnitEstimator, InboundDocumentRepository inboundDocumentRepository, Clock clock){this.runService=runService; this.textService=textService; this.semanticService=semanticService; this.auditEventService=auditEventService; this.provider=provider; this.runtimeControlService=runtimeControlService; this.runtimeUnitEstimator=runtimeUnitEstimator; this.inboundDocumentRepository=inboundDocumentRepository; this.clock=clock;}
+  private final ExtractionRunService runService; private final TextExtractionService textService; private final SemanticExtractionService semanticService; private final AuditEventService auditEventService; private final SemanticExtractionProvider provider; private final RuntimeControlService runtimeControlService; private final ProcessingJobService processingJobService; private final RuntimeUnitEstimator runtimeUnitEstimator; private final InboundDocumentRepository inboundDocumentRepository; private final Clock clock;
+  public ExtractionPipelineService(ExtractionRunService runService, TextExtractionService textService, SemanticExtractionService semanticService, AuditEventService auditEventService, SemanticExtractionProvider provider, RuntimeControlService runtimeControlService, ProcessingJobService processingJobService, RuntimeUnitEstimator runtimeUnitEstimator, InboundDocumentRepository inboundDocumentRepository, Clock clock){this.runService=runService; this.textService=textService; this.semanticService=semanticService; this.auditEventService=auditEventService; this.provider=provider; this.runtimeControlService=runtimeControlService; this.processingJobService=processingJobService; this.runtimeUnitEstimator=runtimeUnitEstimator; this.inboundDocumentRepository=inboundDocumentRepository; this.clock=clock;}
+
+  /**
+   * OP-CAP-27c — the async document-extraction submission boundary. Runs the OP-CAP-27 runtime-control
+   * admission gate (entitlement -&gt; quota -&gt; rate; a denial throws the existing stable mapped
+   * exception BEFORE any enqueue) and, when admitted, enqueues durable work onto the existing
+   * {@link ProcessingJobService} runtime for the out-of-process worker to process. It performs NO
+   * text/OCR/semantic extraction in the request thread and creates NO {@link ExtractionRun} — the heavy
+   * work happens later via the worker (which returns results through the AI-worker result intake) or the
+   * internal executor {@link #runNow}. A non-allowed decision (needs-review / unsupported / duplicate)
+   * fail-closes without enqueueing. Tenant is resolved server-side; the actor is the trusted system/job
+   * actor; the workload is fixed to {@code DOCUMENT_EXTRACTION}. The request transaction only creates a
+   * job + audit row — never OCR/semantic work. {@code enqueue} is idempotent per (tenant, target,
+   * PENDING), so a re-submission returns the existing job rather than creating a second one.
+   */
+  @Transactional public ExtractionSubmissionResponse submitForExtraction(ExtractionRunRequest request) {
+    UUID tenantId = TenantContext.requireTenantId();
+    if (request == null || request.sourceType() == null || request.sourceId() == null) {
+      throw new IllegalArgumentException("sourceType and sourceId are required");
+    }
+    Long knownSizeBytes = knownDocumentSizeBytes(tenantId, request);
+    int requestedUnits =
+        runtimeUnitEstimator.estimate(
+            RuntimeUnitEstimateRequest.forDocumentExtraction(tenantId, null, knownSizeBytes, null));
+    RuntimeControlDecision decision = runtimeControlService.enforce(
+        new RuntimeControlRequest(
+            tenantId, null, RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
+            RuntimeFeatureType.AI_DOCUMENT_EXTRACTION, documentExtractionWorkload(),
+            requestedUnits, null, false));
+    if (!decision.allowed()) {
+      // needs-review / unsupported / duplicate: enqueue nothing and do no work. Safe message only.
+      throw new IllegalArgumentException(decision.safeMessage());
+    }
+    ProcessingJob job = processingJobService.enqueue(
+        tenantId, "DOCUMENT_EXTRACTION", request.sourceType(), request.sourceId());
+    auditEventService.record("extraction.submitted_async", "processing_job", job.getId().toString(), null,
+        "{\"sourceType\":\"" + request.sourceType() + "\",\"async\":true,\"advisoryOnly\":true}");
+    return new ExtractionSubmissionResponse(job.getId(), job.getJobType(), job.getTargetType(),
+        job.getTargetId(), job.getStatus(), true, true, "Accepted for asynchronous extraction.");
+  }
+
   @Override
   @Transactional public ExtractionRun runNow(ExtractionRunRequest request) {
     // OP-CAP-16D/16F runtime guard: entitlement -> quota -> rate, BEFORE any run/job creation or
