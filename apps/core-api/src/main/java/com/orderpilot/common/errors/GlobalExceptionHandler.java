@@ -5,8 +5,12 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import com.orderpilot.common.tenant.TenantContextMissingException;
+import com.orderpilot.common.idempotency.IdempotencyConflictException;
+import com.orderpilot.common.idempotency.IdempotencyInProgressException;
+import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
+import com.orderpilot.security.ActorVerificationException;
 import com.orderpilot.security.policy.TenantPolicyException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +67,23 @@ public class GlobalExceptionHandler {
     ));
   }
 
+  @ExceptionHandler(RuntimeLimitException.class)
+  ResponseEntity<ApiErrorResponse> handleRuntimeLimit(RuntimeLimitException ex, HttpServletRequest request) {
+    // OP-CAP-16C: stable runtime guard denials — 403 RUNTIME_QUOTA_EXCEEDED / 429 RUNTIME_RATE_LIMITED.
+    HttpStatus status = HttpStatus.valueOf(ex.getHttpStatus());
+    ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
+    if (ex.getRetryAfterSeconds() > 0) {
+      builder.header("Retry-After", Long.toString(ex.getRetryAfterSeconds()));
+    }
+    return builder.body(new ApiErrorResponse(
+        ex.getErrorCode(),
+        ex.getMessage(),
+        status.value(),
+        request.getRequestURI(),
+        clock.instant(),
+        List.of()));
+  }
+
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<ApiErrorResponse> handleUnreadableMessage(HttpMessageNotReadableException ex, HttpServletRequest request) {
     return build(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "Request body is not valid JSON", request, List.of());
@@ -73,6 +94,21 @@ public class GlobalExceptionHandler {
     return build(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request, List.of());
   }
 
+  @ExceptionHandler(ConflictException.class)
+  ResponseEntity<ApiErrorResponse> handleConflict(ConflictException ex, HttpServletRequest request) {
+    return build(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(IdempotencyConflictException.class)
+  ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(IdempotencyConflictException ex, HttpServletRequest request) {
+    return build(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_CONFLICT", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(IdempotencyInProgressException.class)
+  ResponseEntity<ApiErrorResponse> handleIdempotencyInProgress(IdempotencyInProgressException ex, HttpServletRequest request) {
+    return build(HttpStatus.CONFLICT, "IDEMPOTENCY_REQUEST_IN_PROGRESS", ex.getMessage(), request, List.of());
+  }
+
   @ExceptionHandler(TenantContextMissingException.class)
   ResponseEntity<ApiErrorResponse> handleMissingTenant(TenantContextMissingException ex, HttpServletRequest request) {
     return build(HttpStatus.BAD_REQUEST, "TENANT_REQUIRED", "Missing tenant header X-Tenant-Id", request, List.of());
@@ -81,6 +117,13 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(TenantPolicyException.class)
   ResponseEntity<ApiErrorResponse> handleTenantPolicy(TenantPolicyException ex, HttpServletRequest request) {
     return build(HttpStatus.FORBIDDEN, "TENANT_POLICY_DENIED", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(ActorVerificationException.class)
+  ResponseEntity<ApiErrorResponse> handleActorVerification(ActorVerificationException ex, HttpServletRequest request) {
+    // OP-CAP-16K: signed actor verification failed (missing/invalid/stale signature). Stable 401; the
+    // message never contains the expected signature or the signing secret.
+    return build(HttpStatus.UNAUTHORIZED, "ACTOR_VERIFICATION_FAILED", ex.getMessage(), request, List.of());
   }
 
   @ExceptionHandler(Exception.class)

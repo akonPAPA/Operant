@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.analytics.RoiAssumptionsService;
+import com.orderpilot.application.services.runtime.FeatureEntitlementGuard;
+import com.orderpilot.application.services.runtime.QuotaGuard;
+import com.orderpilot.application.services.runtime.RateLimitService;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.application.services.pilot.PilotDemoScenarioService.DemoScenario;
 import com.orderpilot.application.services.pilot.PilotDemoScenarioService.DemoScenarioPack;
 import com.orderpilot.application.services.pilot.PilotDemoScenarioService.DemoScenarioReadiness;
@@ -23,7 +28,8 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({PilotDemoScenarioService.class, PilotShadowModeService.class, AuditEventService.class, RoiAssumptionsService.class, CoreConfiguration.class})
+@Import({PilotDemoScenarioService.class, PilotShadowModeService.class, AuditEventService.class, RoiAssumptionsService.class, CoreConfiguration.class,
+  RuntimeGuardService.class, QuotaGuard.class, RateLimitService.class, FeatureEntitlementGuard.class, UsageMeterService.class})
 class PilotDemoScenarioServiceTest {
   private static final List<String> EXPECTED_ORDER = List.of(
       "TELEGRAM_RFQ_SUBSTITUTION", "PDF_PO_EXCEPTION", "DISCOUNT_MARGIN_GUARDRAIL", "INVENTORY_MISMATCH", "BAD_AI_OUTPUT_REJECTED");

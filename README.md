@@ -1,10 +1,11 @@
-# OrderPilot Core
+# Operant Core
 
-The developers contributors: akonPAPA, Ayan2k6, almuhxmed
+Operant is intelligent o2c/e2e/intelligent e-commercesoftware
+The developers contributors: akonPAPA, Ayan2k6, almuhxmed,jobegamests-code
 
 ## License and proprietary notice
 
-OrderPilot is proprietary and confidential software.
+Operant is proprietary and confidential software.
 
 Copyright (c) 2026 OrderPilot / Akan Mukhametgali. All rights reserved.
 
@@ -14,7 +15,7 @@ THIRD_PARTY_NOTICES.md, and docs/legal/ for details.
 
 Status note: This document is historical/superseded for current-stage tracking. The canonical current-stage source is `docs/product/current-stage.md`, which points to `docs/product/STAGE_STATUS_RECONCILIATION.md`. Do not use this file alone to determine the active implementation stage.
 
-OrderPilot Core is the Stage 1 foundation for an investor-grade transaction intelligence platform for auto and industrial parts distributors.
+Operant Core is the Stage 1 foundation for an investor-grade transaction intelligence platform for auto and industrial parts distributors.
 
 This repository is intentionally scoped to platform foundation only:
 

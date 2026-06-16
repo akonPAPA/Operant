@@ -4,8 +4,11 @@ import com.orderpilot.api.dto.Stage10CDtos.*;
 import com.orderpilot.api.dto.Stage11EDtos.*;
 import com.orderpilot.application.services.integration.ChangeRequestService;
 import com.orderpilot.application.services.workspace.QuoteExternalWritePreparationService;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.integration.ChangeRequest;
 import com.orderpilot.domain.integration.OutboxEvent;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -16,15 +19,21 @@ import org.springframework.web.bind.annotation.*;
 public class ChangeRequestController {
   private final ChangeRequestService service;
   private final QuoteExternalWritePreparationService externalWritePreparationService;
+  private final RequestActorResolver actorResolver;
 
-  public ChangeRequestController(ChangeRequestService service, QuoteExternalWritePreparationService externalWritePreparationService) {
+  public ChangeRequestController(ChangeRequestService service, QuoteExternalWritePreparationService externalWritePreparationService, RequestActorResolver actorResolver) {
     this.service = service;
     this.externalWritePreparationService = externalWritePreparationService;
+    this.actorResolver = actorResolver;
   }
 
   @PostMapping("/change-requests")
-  public ChangeRequestResponse create(@RequestBody ChangeRequestCreateRequest request) {
-    return toChangeRequest(service.createChangeRequest(request.targetSystem(), request.targetEntity(), request.requestedAction(), request.sourceType(), request.sourceId(), request.requestPayloadJson(), request.idempotencyKey(), request.createdByUserId()));
+  public ChangeRequestResponse create(@RequestBody ChangeRequestCreateRequest request, HttpServletRequest http) {
+    // OP-CAP-17F: createdBy is an authority field (it stamps who originated an external-write
+    // ChangeRequest). It is resolved from the trusted (optionally signed) actor context, never from
+    // the request body, so a caller cannot forge the creator. The body carries business intent only.
+    UUID createdByUserId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return toChangeRequest(service.createChangeRequest(request.targetSystem(), request.targetEntity(), request.requestedAction(), request.sourceType(), request.sourceId(), request.requestPayloadJson(), request.idempotencyKey(), createdByUserId));
   }
 
   @GetMapping("/change-requests")
@@ -43,14 +52,20 @@ public class ChangeRequestController {
   }
 
   @PostMapping("/change-requests/{id}/approve")
-  public ChangeRequestResponse approve(@PathVariable UUID id, @RequestBody(required = false) ChangeRequestApprovalRequest request) {
-    UUID approvedByUserId = request == null ? null : request.approvedByUserId();
+  public ChangeRequestResponse approve(@PathVariable UUID id, HttpServletRequest http) {
+    // OP-CAP-17E: the approver of an external-write ChangeRequest is an authority field. It is
+    // resolved from the trusted (optionally signed) actor context, never from the request body, so
+    // a caller cannot forge who approved an external write.
+    UUID approvedByUserId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
     return toChangeRequest(service.approveChangeRequest(id, approvedByUserId));
   }
 
   @PostMapping("/change-requests/{id}/approve-internal")
-  public QuoteHandoffResponse approveInternal(@PathVariable UUID id, @RequestBody(required = false) QuoteHandoffCommand request) {
-    return externalWritePreparationService.approveInternal(id, request == null ? null : request.actorId());
+  public QuoteHandoffResponse approveInternal(@PathVariable UUID id, HttpServletRequest http) {
+    // OP-CAP-17E: internal approval actor is server-resolved from the trusted actor context, never
+    // from the request body.
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return externalWritePreparationService.approveInternal(id, actorId);
   }
 
   @PostMapping("/change-requests/{id}/cancel")

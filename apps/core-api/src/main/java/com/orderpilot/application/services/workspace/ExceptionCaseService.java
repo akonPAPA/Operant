@@ -1,6 +1,9 @@
 package com.orderpilot.application.services.workspace;
 
+import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
 import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.domain.journey.JourneySourceType;
+import com.orderpilot.domain.journey.events.JourneyProjectionEventType;
 import com.orderpilot.domain.validation.*;
 import com.orderpilot.domain.workspace.*;
 import java.time.Clock;
@@ -11,8 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExceptionCaseService {
-  private final ValidationRunRepository runRepository; private final ValidationIssueRepository issueRepository; private final ApprovalRequirementRepository approvalRepository; private final CustomerMatchResultRepository customerMatchRepository; private final ExceptionCaseRepository caseRepository; private final ExceptionCaseIssueRepository caseIssueRepository; private final OperatorActionService actionService; private final Clock clock;
-  public ExceptionCaseService(ValidationRunRepository runRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, CustomerMatchResultRepository customerMatchRepository, ExceptionCaseRepository caseRepository, ExceptionCaseIssueRepository caseIssueRepository, OperatorActionService actionService, Clock clock){this.runRepository=runRepository;this.issueRepository=issueRepository;this.approvalRepository=approvalRepository;this.customerMatchRepository=customerMatchRepository;this.caseRepository=caseRepository;this.caseIssueRepository=caseIssueRepository;this.actionService=actionService;this.clock=clock;}
+  private final ValidationRunRepository runRepository; private final ValidationIssueRepository issueRepository; private final ApprovalRequirementRepository approvalRepository; private final CustomerMatchResultRepository customerMatchRepository; private final ExceptionCaseRepository caseRepository; private final ExceptionCaseIssueRepository caseIssueRepository; private final OperatorActionService actionService; private final OrderJourneyProjectionPublisher journeyProjectionPublisher; private final Clock clock;
+  public ExceptionCaseService(ValidationRunRepository runRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, CustomerMatchResultRepository customerMatchRepository, ExceptionCaseRepository caseRepository, ExceptionCaseIssueRepository caseIssueRepository, OperatorActionService actionService, OrderJourneyProjectionPublisher journeyProjectionPublisher, Clock clock){this.runRepository=runRepository;this.issueRepository=issueRepository;this.approvalRepository=approvalRepository;this.customerMatchRepository=customerMatchRepository;this.caseRepository=caseRepository;this.caseIssueRepository=caseIssueRepository;this.actionService=actionService;this.journeyProjectionPublisher=journeyProjectionPublisher;this.clock=clock;}
   @Transactional
   public ExceptionCase createFromValidation(UUID validationRunId) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -24,6 +27,9 @@ public class ExceptionCaseService {
     ExceptionCase c = caseRepository.save(new ExceptionCase(tenantId, "CASE-" + clock.instant().toEpochMilli(), "VALIDATION_RUN", validationRunId, run.getExtractionResultId(), validationRunId, customerId, "Validation review for " + run.getExtractionResultId(), waitingApproval ? "WAITING_APPROVAL" : "OPEN", priority, severity, issues.size() + " open validation issue(s)", clock.instant()));
     issues.forEach(i -> caseIssueRepository.save(new ExceptionCaseIssue(tenantId, c.getId(), i.getId(), i.getIssueType(), i.getSeverity(), "OPEN", i.getMessage(), clock.instant())));
     actionService.record(null, "EXCEPTION_CASE", c.getId(), "CASE_OPENED", "Exception case created from validation run", "{\"validationRunId\":\"" + validationRunId + "\"}");
+    // OP-CAP-24: publish a durable, idempotent journey projection event for the validation-review source.
+    journeyProjectionPublisher.publishSourceEvent(tenantId, JourneyProjectionEventType.VALIDATION_REVIEW_REGISTERED,
+        JourneySourceType.VALIDATION_REVIEW, c.getId(), null);
     return c;
   }
   @Transactional(readOnly = true) public List<ExceptionCase> list(){return caseRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());}

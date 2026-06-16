@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "quote-review-api.ts"), "utf8");
+const coreApiClient = readFileSync(join(root, "lib", "core-api-client.ts"), "utf8");
 const cockpit = readFileSync(join(root, "components", "conversion-review-cockpit.tsx"), "utf8");
 const listPage = readFileSync(join(root, "app", "(dashboard)", "conversion-review", "page.tsx"), "utf8");
 const detailPage = readFileSync(join(root, "app", "(dashboard)", "conversion-review", "[attemptId]", "page.tsx"), "utf8");
@@ -17,7 +18,8 @@ test("conversion review client uses read-only quote review endpoints", () => {
   assert.match(apiClient, /QuoteConversionAttemptReviewDetail/);
   assert.match(apiClient, /\/api\/v1\/quote-review\/conversion-attempts/);
   assert.match(apiClient, /\/api\/v1\/quote-review\/conversion-attempts\/\$\{attemptId\}/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assert.match(apiClient, /demoScopeHeaders/);
+  assert.match(coreApiClient, /X-Tenant-Id/);
 });
 
 test("conversion review routes render list and detail cockpit", () => {

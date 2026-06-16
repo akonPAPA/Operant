@@ -6,11 +6,7 @@ This file is the canonical roadmap and instruction source for OrderPilot Core v1
 
 ## Product Thesis
 
-OrderPilot Core v1 is a controlled B2B transaction intelligence platform for companies that sell physical goods through messy requests, documents, messengers, email, spreadsheets, ERP/CRM/WMS/accounting systems, and manual workflows. The first vertical wedge is parts and industrial supplies because SKU aliases, compatibility, substitutions, stock risk, and margin control are painful there, but the generic core must serve SKU-heavy B2B sellers, distributors, wholesalers, and enterprise commerce teams.
-
-Parts, auto, and industrial-specific logic belongs in optional Industry Packs. Generic customer, product catalog, alias, inventory, pricing, discount, margin, RFQ, quote, draft order, validation, intake, integration, audit, and analytics behavior belongs in the platform core.
-
-OrderPilot turns inbound customer demand from messages, documents, files, and channel integrations into validated quote/order work without giving AI, chatbots, frontend clients, or connectors direct authority over business records.
+OrderPilot Core v1 is a controlled o2c/e2e commerce intelligent software transaction intelligence platform for auto and industrial parts distributors. It turns inbound customer demand from messages, documents, files, and channel integrations into validated quote/order work without giving AI, chatbots, frontend clients, or connectors direct authority over business records.
 
 The product thesis is trust before autonomy: AI can understand and suggest, but deterministic backend services decide. Every risky business mutation must be tenant-scoped, validated, approval-gated where required, audited, and routed through typed command services.
 

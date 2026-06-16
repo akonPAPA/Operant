@@ -2,6 +2,12 @@ package com.orderpilot.application.services.pilot;
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.analytics.RoiAssumptionsService;
+import com.orderpilot.application.services.runtime.RuntimeFeatureType;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
+import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.api.dto.Stage8Dtos.RoiAssumptionsResponse;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -25,13 +31,17 @@ public class PilotShadowModeService {
   private final HumanCorrectionRepository humanCorrectionRepository;
   private final AuditEventService auditEventService;
   private final RoiAssumptionsService roiAssumptionsService;
+  private final RuntimeGuardService runtimeGuardService;
+  private final RuntimeUnitEstimator runtimeUnitEstimator;
   private final Clock clock;
 
-  public PilotShadowModeService(ShadowRunRepository shadowRunRepository, HumanCorrectionRepository humanCorrectionRepository, AuditEventService auditEventService, RoiAssumptionsService roiAssumptionsService, Clock clock) {
+  public PilotShadowModeService(ShadowRunRepository shadowRunRepository, HumanCorrectionRepository humanCorrectionRepository, AuditEventService auditEventService, RoiAssumptionsService roiAssumptionsService, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, Clock clock) {
     this.shadowRunRepository = shadowRunRepository;
     this.humanCorrectionRepository = humanCorrectionRepository;
     this.auditEventService = auditEventService;
     this.roiAssumptionsService = roiAssumptionsService;
+    this.runtimeGuardService = runtimeGuardService;
+    this.runtimeUnitEstimator = runtimeUnitEstimator;
     this.clock = clock;
   }
 
@@ -130,6 +140,20 @@ public class PilotShadowModeService {
   @Transactional(readOnly = true)
   public EvidenceReport evidenceReport() {
     UUID tenantId = TenantContext.requireTenantId();
+    // OP-CAP-16G runtime guard: entitlement -> quota only (operator-initiated, low-frequency report
+    // export — rate limiting is reserved for high-frequency automated paths), BEFORE the heavier
+    // metrics/breakdown aggregation below. A disabled REPORT_EXPORT entitlement or an exhausted quota
+    // throws a stable mapped 403 and no report work runs. Requested units come from a cheap
+    // tenant-scoped COUNT of shadow runs (the report's expected row volume); no rows are loaded for
+    // the estimate.
+    int requestedUnits =
+        runtimeUnitEstimator.estimate(
+            RuntimeUnitEstimateRequest.forReport(
+                tenantId, (int) Math.min(shadowRunRepository.countByTenantId(tenantId), Integer.MAX_VALUE)));
+    runtimeGuardService.enforceWithoutRate(
+        RuntimeGuardRequest.of(tenantId, RuntimeOperationType.REPORT_GENERATED, requestedUnits),
+        RuntimeFeatureType.REPORT_EXPORT);
+
     PilotMetrics metrics = metrics();
     List<ExceptionCategorySlice> breakdown = exceptionBreakdown();
     long totalCorrections = humanCorrectionRepository.countByTenantId(tenantId);

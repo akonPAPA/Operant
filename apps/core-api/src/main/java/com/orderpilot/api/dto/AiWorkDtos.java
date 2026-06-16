@@ -20,17 +20,20 @@ public final class AiWorkDtos {
       String sourceType,
       UUID sourceId,
       String contextText,
-      String idempotencyKey,
-      UUID createdByUserId) {}
+      String idempotencyKey) {}
+
+  /** Create an advisory suggestion from a backend-resolved resource context. */
+  public record CreateContextualAiWorkSuggestionRequest(
+      String workType,
+      String idempotencyKey) {}
 
   /** Operator accept/reject decision. Advisory only — never approves business state. */
-  public record AiWorkDecisionRequest(UUID decidedByUserId, String reason) {}
+  public record AiWorkDecisionRequest(String reason) {}
 
   public record AiWorkSuggestionResponse(
       UUID id,
       String workType,
       String sourceType,
-      UUID sourceId,
       String status,
       String strategyVersion,
       String riskLevel,
@@ -39,10 +42,8 @@ public final class AiWorkDtos {
       String structuredPayloadJson,
       String evidenceRefsJson,
       boolean advisoryOnly,
-      UUID createdByUserId,
       Instant createdAt,
       Instant updatedAt,
-      UUID decidedByUserId,
       Instant decidedAt,
       String decisionReason) {}
 }

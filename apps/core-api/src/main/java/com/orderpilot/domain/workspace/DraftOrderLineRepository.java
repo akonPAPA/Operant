@@ -6,4 +6,7 @@ public interface DraftOrderLineRepository extends JpaRepository<DraftOrderLine, 
   // One grouped query for queue line counts — avoids N+1 line-array loading.
   @Query("select l.draftOrderId, count(l) from DraftOrderLine l where l.tenantId = :tenantId and l.draftOrderId in :ids group by l.draftOrderId")
   List<Object[]> countByDraftOrderIds(@Param("tenantId") UUID tenantId, @Param("ids") Collection<UUID> ids);
+  // OP-CAP-15G: batch-load (draftOrderId, sourceExtractedLineItemId) pairs for remediation lineage — avoids N+1.
+  @Query("select l.draftOrderId, l.sourceExtractedLineItemId from DraftOrderLine l where l.tenantId = :tenantId and l.draftOrderId in :ids")
+  List<Object[]> sourceLineIdsByDraftOrderIds(@Param("tenantId") UUID tenantId, @Param("ids") Collection<UUID> ids);
 }

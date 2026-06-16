@@ -3,18 +3,13 @@
 import { useState } from "react";
 import {
   acceptAiWorkSuggestion,
-  createAiWorkSuggestion,
   extractNextActions,
   listRecentAiWork,
   rejectAiWorkSuggestion,
   riskClass,
   statusClass,
   workTypeLabel,
-  AI_WORK_SOURCE_TYPES,
-  AI_WORK_TYPES,
-  type AiWorkSourceType,
   type AiWorkSuggestion,
-  type AiWorkType
 } from "@/lib/ai-work-api";
 
 type ActionStatus = "idle" | "loading" | "success" | "error";
@@ -44,41 +39,12 @@ export function AiWorkAssistantWorkspace({
   });
   const [busy, setBusy] = useState(false);
 
-  // Generate form
-  const [workType, setWorkType] = useState<AiWorkType>("REQUEST_SUMMARY");
-  const [sourceType, setSourceType] = useState<AiWorkSourceType>("CHANNEL_MESSAGE");
-  const [sourceId, setSourceId] = useState("");
-  const [contextText, setContextText] = useState("");
-
   const selected = suggestions.find((s) => s.id === selectedId) ?? null;
 
   async function refresh() {
     const { data, error } = await listRecentAiWork(50);
     setSuggestions(data);
     if (error) setAction({ status: "error", message: error });
-  }
-
-  async function onGenerate() {
-    if (!sourceId.trim()) {
-      setAction({ status: "error", message: "Source ID is required to anchor the suggestion." });
-      return;
-    }
-    setBusy(true);
-    setAction({ status: "loading", message: "Generating advisory suggestion…" });
-    const { data, error } = await createAiWorkSuggestion({
-      workType,
-      sourceType,
-      sourceId: sourceId.trim(),
-      contextText: contextText.trim() || undefined
-    });
-    if (error || !data) {
-      setAction({ status: "error", message: error ?? "Generation failed." });
-    } else {
-      setSuggestions((prev) => [data, ...prev.filter((s) => s.id !== data.id)]);
-      setSelectedId(data.id);
-      setAction({ status: "success", message: "Advisory suggestion generated. Review before acting." });
-    }
-    setBusy(false);
   }
 
   async function onAccept(id: string) {
@@ -108,52 +74,14 @@ export function AiWorkAssistantWorkspace({
   return (
     <div className="demo-stack">
       <section className="panel">
-        <h2>Generate advisory suggestion</h2>
+        <h2>Advisory suggestion review</h2>
         <p className="risk-note">
           The AI Work Assistant produces advisory suggestions only. It never approves quotes, orders,
           discounts, or substitutes, and never writes to ERP or business records. Every suggestion is
-          anchored to a source object and must be reviewed by a human before any action is taken.
+          anchored to a backend-resolved source object and must be reviewed by a human before any
+          action is taken.
         </p>
-        <div className="form-grid">
-          <label>
-            Work type
-            <select value={workType} onChange={(e) => setWorkType(e.target.value as AiWorkType)} disabled={busy}>
-              {AI_WORK_TYPES.map((t) => (
-                <option key={t} value={t}>{workTypeLabel(t)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Source type
-            <select value={sourceType} onChange={(e) => setSourceType(e.target.value as AiWorkSourceType)} disabled={busy}>
-              {AI_WORK_SOURCE_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Source ID
-            <input
-              type="text"
-              value={sourceId}
-              onChange={(e) => setSourceId(e.target.value)}
-              placeholder="UUID of the channel message, review, or quote"
-              disabled={busy}
-            />
-          </label>
-        </div>
-        <label className="full-width">
-          Context (optional)
-          <textarea
-            value={contextText}
-            onChange={(e) => setContextText(e.target.value)}
-            placeholder="Operator-supplied context. Do not paste secrets, tokens, or credentials."
-            rows={3}
-            disabled={busy}
-          />
-        </label>
         <div className="tag-row">
-          <button type="button" onClick={onGenerate} disabled={busy}>Generate suggestion</button>
           <button type="button" className="secondary" onClick={refresh} disabled={busy}>Refresh list</button>
         </div>
         {action.status !== "idle" && (
@@ -167,7 +95,7 @@ export function AiWorkAssistantWorkspace({
         <section className="panel">
           <h2>Recent suggestions</h2>
           {suggestions.length === 0 ? (
-            <p className="muted">No advisory suggestions yet. Generate one above to get started.</p>
+            <p className="muted">No advisory suggestions are available for the active review context.</p>
           ) : (
             <ul className="record-list">
               {suggestions.map((s) => (
@@ -253,7 +181,7 @@ function AiWorkDetail({
       )}
 
       <dl className="detail-grid">
-        <dt>Source</dt><dd>{suggestion.sourceType} · {suggestion.sourceId}</dd>
+        <dt>Source</dt><dd>{suggestion.sourceType}</dd>
         <dt>Strategy version</dt><dd>{suggestion.strategyVersion}</dd>
         {typeof suggestion.confidence === "number" && (
           <>

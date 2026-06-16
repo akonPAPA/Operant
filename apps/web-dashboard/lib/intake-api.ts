@@ -38,7 +38,8 @@ export type InboundEvent = {
   eventType: string;
   fingerprintSha256?: string;
   status: string;
-  rawPayloadStorageKey?: string;
+  // OP-CAP-17E: backend exposes only a safe boolean; raw object storage keys never reach the client.
+  rawPayloadStored?: boolean;
 };
 
 export type IntakeApiResult<T> = {

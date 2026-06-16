@@ -3,10 +3,16 @@ import jakarta.persistence.LockModeType; import java.time.Instant; import java.u
 public interface DraftQuoteRepository extends JpaRepository<DraftQuote, UUID> {
   @Query("select q from DraftQuote q where q.tenantId = :tenantId and (:status is null or q.status = :status) and (:caseId is null or q.sourceExceptionCaseId = :caseId) and (:customerRef is null or lower(q.customerDisplayName) like lower(concat('%', :customerRef, '%'))) order by q.createdAt desc")
   List<DraftQuote> searchReviewQueue(@Param("tenantId") UUID tenantId, @Param("status") String status, @Param("caseId") UUID caseId, @Param("customerRef") String customerRef, Pageable pageable);
-  List<DraftQuote> findByTenantIdOrderByCreatedAtDesc(UUID tenantId); Optional<DraftQuote> findByIdAndTenantId(UUID id, UUID tenantId); long countByTenantIdAndStatus(UUID tenantId, String status);
+  List<DraftQuote> findByTenantIdOrderByCreatedAtDesc(UUID tenantId); Optional<DraftQuote> findByIdAndTenantId(UUID id, UUID tenantId); long countByTenantIdAndStatus(UUID tenantId, String status); long countByTenantId(UUID tenantId);
+  // OP-CAP-15J: bounded recent-window draft fetch (any source) for the recent remediation rollup tile.
+  List<DraftQuote> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable pageable);
   @Lock(LockModeType.PESSIMISTIC_WRITE) Optional<DraftQuote> findWithLockByIdAndTenantId(UUID id, UUID tenantId);
   Optional<DraftQuote> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
   Optional<DraftQuote> findFirstByTenantIdAndSourceExceptionCaseIdOrderByCreatedAtAsc(UUID tenantId, UUID sourceExceptionCaseId);
+  Optional<DraftQuote> findFirstByTenantIdAndSourceValidationRunIdOrderByCreatedAtAsc(UUID tenantId, UUID sourceValidationRunId);
+  // OP-CAP-15C: review-origin draft queue (validation-review-backed quotes only), tenant-scoped, paginated.
+  @Query("select q from DraftQuote q where q.tenantId = :tenantId and q.sourceValidationRunId is not null and (:status is null or q.status = :status) order by q.createdAt desc")
+  List<DraftQuote> findReviewOriginDrafts(@Param("tenantId") UUID tenantId, @Param("status") String status, Pageable pageable);
   List<DraftQuote> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, String status);
   List<DraftQuote> findByTenantIdAndSourceTypeOrderByCreatedAtDesc(UUID tenantId, String sourceType);
   List<DraftQuote> findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDesc(UUID tenantId, String status, String sourceType);
