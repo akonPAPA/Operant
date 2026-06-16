@@ -78,7 +78,6 @@ public class OrderJourneyProjectionDrainService {
         ? staleProcessingSeconds : DEFAULT_STALE_PROCESSING_SECONDS;
   }
 
-  /** Drains using the configured (clamped) tenant and per-tenant limits. Used by the scheduled drain. */
   public OrderJourneyProjectionDrainSummary drainOnce() {
     return trackDrain(() -> drainTenantsInternal(configuredTenantsPerCycle, configuredBatchSize));
   }

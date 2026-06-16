@@ -312,5 +312,5 @@ class QuoteReviewControllerTest {
     assertThat(command.productId()).isEqualTo(productId);
     assertThat(command.reasonCode()).isEqualTo("LINE_CORRECTED");
     assertThat(command.note()).isEqualTo("operator corrected visible line data");
-  }
+   }
 }

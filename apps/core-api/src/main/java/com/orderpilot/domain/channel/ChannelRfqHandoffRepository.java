@@ -9,7 +9,6 @@ import org.springframework.data.jpa.repository.Lock;
 
 public interface ChannelRfqHandoffRepository extends JpaRepository<ChannelRfqHandoff, UUID> {
 
-  /** Tenant-scoped fetch by id. Used by the operator read path; never trust an id alone. */
   Optional<ChannelRfqHandoff> findByIdAndTenantId(UUID id, UUID tenantId);
 
   /**
