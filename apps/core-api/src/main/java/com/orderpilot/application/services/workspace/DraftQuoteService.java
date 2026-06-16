@@ -1,7 +1,10 @@
 package com.orderpilot.application.services.workspace;
 
+import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.*;
+import com.orderpilot.domain.journey.JourneySourceType;
+import com.orderpilot.domain.journey.events.JourneyProjectionEventType;
 import com.orderpilot.domain.validation.*;
 import com.orderpilot.domain.workspace.*;
 import java.math.BigDecimal;
@@ -14,8 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DraftQuoteService {
-  private final ValidationRunRepository runRepository; private final ExtractedLineItemRepository lineRepository; private final CustomerMatchResultRepository customerRepository; private final ProductMatchResultRepository productRepository; private final PriceCheckResultRepository priceRepository; private final UomNormalizationResultRepository uomRepository; private final MarginCheckResultRepository marginRepository; private final ValidationIssueRepository issueRepository; private final ApprovalRequirementRepository approvalRepository; private final DraftQuoteRepository quoteRepository; private final DraftQuoteLineRepository lineOutRepository; private final OperatorActionService actionService; private final Clock clock;
-  public DraftQuoteService(ValidationRunRepository runRepository, ExtractedLineItemRepository lineRepository, CustomerMatchResultRepository customerRepository, ProductMatchResultRepository productRepository, PriceCheckResultRepository priceRepository, UomNormalizationResultRepository uomRepository, MarginCheckResultRepository marginRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, DraftQuoteRepository quoteRepository, DraftQuoteLineRepository lineOutRepository, OperatorActionService actionService, Clock clock){this.runRepository=runRepository;this.lineRepository=lineRepository;this.customerRepository=customerRepository;this.productRepository=productRepository;this.priceRepository=priceRepository;this.uomRepository=uomRepository;this.marginRepository=marginRepository;this.issueRepository=issueRepository;this.approvalRepository=approvalRepository;this.quoteRepository=quoteRepository;this.lineOutRepository=lineOutRepository;this.actionService=actionService;this.clock=clock;}
+  private final ValidationRunRepository runRepository; private final ExtractedLineItemRepository lineRepository; private final CustomerMatchResultRepository customerRepository; private final ProductMatchResultRepository productRepository; private final PriceCheckResultRepository priceRepository; private final UomNormalizationResultRepository uomRepository; private final MarginCheckResultRepository marginRepository; private final ValidationIssueRepository issueRepository; private final ApprovalRequirementRepository approvalRepository; private final DraftQuoteRepository quoteRepository; private final DraftQuoteLineRepository lineOutRepository; private final OperatorActionService actionService; private final OrderJourneyProjectionPublisher journeyProjectionPublisher; private final Clock clock;
+  public DraftQuoteService(ValidationRunRepository runRepository, ExtractedLineItemRepository lineRepository, CustomerMatchResultRepository customerRepository, ProductMatchResultRepository productRepository, PriceCheckResultRepository priceRepository, UomNormalizationResultRepository uomRepository, MarginCheckResultRepository marginRepository, ValidationIssueRepository issueRepository, ApprovalRequirementRepository approvalRepository, DraftQuoteRepository quoteRepository, DraftQuoteLineRepository lineOutRepository, OperatorActionService actionService, OrderJourneyProjectionPublisher journeyProjectionPublisher, Clock clock){this.runRepository=runRepository;this.lineRepository=lineRepository;this.customerRepository=customerRepository;this.productRepository=productRepository;this.priceRepository=priceRepository;this.uomRepository=uomRepository;this.marginRepository=marginRepository;this.issueRepository=issueRepository;this.approvalRepository=approvalRepository;this.quoteRepository=quoteRepository;this.lineOutRepository=lineOutRepository;this.actionService=actionService;this.journeyProjectionPublisher=journeyProjectionPublisher;this.clock=clock;}
   @Transactional
   public DraftQuote createFromValidation(UUID validationRunId) {
     return createFromValidation(validationRunId, null, null, null);
@@ -45,7 +48,12 @@ public class DraftQuoteService {
     quote.setTotals(subtotal, BigDecimal.ZERO, subtotal, null, clock.instant());
     quote.appendNote(operatorNote, clock.instant());
     actionService.record(null, "DRAFT_QUOTE", quote.getId(), "QUOTE_DRAFT_CREATED", "Internal draft quote created from validation run", "{\"validationRunId\":\"" + validationRunId + "\",\"selectedLineCount\":" + includedLines + ",\"notePresent\":" + (operatorNote != null && !operatorNote.isBlank()) + ",\"noteLength\":" + (operatorNote == null ? 0 : operatorNote.length()) + "}");
-    return quoteRepository.save(quote);
+    DraftQuote saved = quoteRepository.save(quote);
+    // OP-CAP-24: publish a durable, idempotent journey projection event inside this transaction. No projector
+    // run, no journey mutation, no external write here — the explicit projector runner consumes it later.
+    journeyProjectionPublisher.publishSourceEvent(tenantId, JourneyProjectionEventType.DRAFT_QUOTE_CREATED,
+        JourneySourceType.DRAFT_QUOTE, saved.getId(), null);
+    return saved;
   }
   @Transactional(readOnly = true) public List<DraftQuote> list(){return quoteRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());}
   @Transactional(readOnly = true) public DraftQuote get(UUID id){return quoteRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow();}

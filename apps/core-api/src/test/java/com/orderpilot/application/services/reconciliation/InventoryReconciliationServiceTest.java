@@ -34,6 +34,8 @@ import org.springframework.test.context.ActiveProfiles;
 @Import({
     InventoryReconciliationService.class,
     AuditEventService.class,
+    // OP-CAP-24: reconciliation case create/update now publishes a durable journey projection event.
+    com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher.class,
     CoreConfiguration.class,
     // OP-CAP-16F: reconciliation refresh now depends on the runtime guard chain.
     com.orderpilot.application.services.runtime.RuntimeGuardService.class,

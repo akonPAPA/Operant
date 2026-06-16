@@ -27,9 +27,12 @@ public class ExtractionController {
     return toRun(runService.create(request, provider.providerName(), provider.schemaVersion()));
   }
 
+  // OP-CAP-27c: heavy document extraction is no longer executed synchronously in the request thread.
+  // This endpoint routes through the runtime-control admission gate and enqueues durable async work on
+  // the existing ProcessingJob runtime, returning a safe accepted/job-status acknowledgement.
   @PostMapping("/runs/execute")
-  public ExtractionRunResponse executeRun(@RequestBody ExtractionRunRequest request) {
-    return toRun(pipelineService.runNow(request));
+  public ExtractionSubmissionResponse executeRun(@RequestBody ExtractionRunRequest request) {
+    return pipelineService.submitForExtraction(request);
   }
 
   @GetMapping("/runs")

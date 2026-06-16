@@ -52,6 +52,8 @@ public class DocumentTrustService {
   private final AuditEventRepository auditEvents;
   private final JsonSupport jsonSupport;
   private final CounterpartyTrustProfileService counterpartyTrustProfileService;
+  // OP-CAP-19 Layer A: emit a bounded DOCUMENT_TRUST_COMPLETED event after the run is persisted.
+  private final TrustAiEventAutoPublishService eventAutoPublish;
   private final Clock clock;
 
   public DocumentTrustService(
@@ -62,6 +64,7 @@ public class DocumentTrustService {
       AuditEventRepository auditEvents,
       JsonSupport jsonSupport,
       CounterpartyTrustProfileService counterpartyTrustProfileService,
+      TrustAiEventAutoPublishService eventAutoPublish,
       Clock clock) {
     this.fingerprintService = fingerprintService;
     this.runs = runs;
@@ -70,6 +73,7 @@ public class DocumentTrustService {
     this.auditEvents = auditEvents;
     this.jsonSupport = jsonSupport;
     this.counterpartyTrustProfileService = counterpartyTrustProfileService;
+    this.eventAutoPublish = eventAutoPublish;
     this.clock = clock;
   }
 
@@ -148,6 +152,10 @@ public class DocumentTrustService {
       counterpartyTrustProfileService.applyDocumentTrustResult(
           tenantId, customerAccountId, run, specs.stream().map(TrustSignalSpec::code).toList());
     }
+
+    // OP-CAP-19 Layer A: the trust run is persisted and authoritative — publish a bounded advisory event.
+    eventAutoPublish.publishDocumentTrustCompleted(tenantId, run.getId(),
+        "Document trust run completed: " + run.getRiskLevel().name() + " (" + specs.size() + " signals)");
     return run;
   }
 

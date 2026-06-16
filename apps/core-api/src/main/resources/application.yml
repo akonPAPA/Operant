@@ -36,6 +36,17 @@ orderpilot:
     actor-signing-secret: "${ORDERPILOT_ACTOR_SIGNING_SECRET:}"
     actor-signature-max-skew-seconds: 300
   runtime:
+    # OP-CAP-25: controlled Order Journey projection drain. Disabled by default — the runtime stays on
+    # explicit/manual projection processing (OP-CAP-23) and the bounded current-tenant drain endpoint until
+    # this is turned on. When enabled=true a single config-gated, fixed-delay Spring scheduled task drains a
+    # clamped number of tenants/events per cycle through the existing projector runner. No daemon, no queue,
+    # no new infrastructure. Limits are clamped in code even if configured too high.
+    order-journey-projection:
+      enabled: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_ENABLED:false}"
+      batch-size: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_BATCH_SIZE:25}"
+      max-tenants-per-cycle: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_MAX_TENANTS:10}"
+      fixed-delay-ms: "${ORDERPILOT_ORDER_JOURNEY_DRAIN_FIXED_DELAY_MS:30000}"
+      recovery-stale-processing-seconds: "${ORDERPILOT_ORDER_JOURNEY_RECOVERY_STALE_PROCESSING_SECONDS:900}"
     rate:
       # in-memory (default, single-node/dev/test) | redis (distributed counters across instances)
       store: "${ORDERPILOT_RUNTIME_RATE_STORE:in-memory}"

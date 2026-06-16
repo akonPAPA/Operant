@@ -58,6 +58,7 @@ import org.springframework.test.context.ActiveProfiles;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
   ExtractionPipelineService.class,
+  com.orderpilot.application.services.ProcessingJobService.class,
   ExtractionRunService.class,
   TextExtractionService.class,
   SemanticExtractionService.class,
@@ -70,6 +71,8 @@ import org.springframework.test.context.ActiveProfiles;
   AuditEventService.class,
   JsonSupport.class,
   CoreConfiguration.class,
+  com.orderpilot.application.services.runtime.RuntimeControlService.class,
+  com.orderpilot.application.services.runtime.AiWorkloadClassifier.class,
   RuntimeGuardService.class,
   QuotaGuard.class,
   RateLimitService.class,

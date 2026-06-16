@@ -1,16 +1,22 @@
 package com.orderpilot.application.services.extraction;
 
 import com.orderpilot.api.dto.Stage4Dtos.ExtractionRunRequest;
+import com.orderpilot.api.dto.Stage4Dtos.ExtractionSubmissionResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.ProcessingJobService;
+import com.orderpilot.application.services.runtime.AiWorkloadClassificationRequest;
+import com.orderpilot.application.services.runtime.AiWorkloadType;
+import com.orderpilot.application.services.runtime.RuntimeControlDecision;
+import com.orderpilot.application.services.runtime.RuntimeControlRequest;
+import com.orderpilot.application.services.runtime.RuntimeControlService;
 import com.orderpilot.application.services.runtime.RuntimeFeatureType;
-import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
-import com.orderpilot.application.services.runtime.RuntimeGuardService;
 import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.*;
 import com.orderpilot.domain.intake.InboundDocumentRepository;
+import com.orderpilot.domain.intake.ProcessingJob;
 import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -18,8 +24,48 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExtractionPipelineService implements AiUnderstandingPipeline {
-  private final ExtractionRunService runService; private final TextExtractionService textService; private final SemanticExtractionService semanticService; private final AuditEventService auditEventService; private final SemanticExtractionProvider provider; private final RuntimeGuardService runtimeGuardService; private final RuntimeUnitEstimator runtimeUnitEstimator; private final InboundDocumentRepository inboundDocumentRepository; private final Clock clock;
-  public ExtractionPipelineService(ExtractionRunService runService, TextExtractionService textService, SemanticExtractionService semanticService, AuditEventService auditEventService, SemanticExtractionProvider provider, RuntimeGuardService runtimeGuardService, RuntimeUnitEstimator runtimeUnitEstimator, InboundDocumentRepository inboundDocumentRepository, Clock clock){this.runService=runService; this.textService=textService; this.semanticService=semanticService; this.auditEventService=auditEventService; this.provider=provider; this.runtimeGuardService=runtimeGuardService; this.runtimeUnitEstimator=runtimeUnitEstimator; this.inboundDocumentRepository=inboundDocumentRepository; this.clock=clock;}
+  private final ExtractionRunService runService; private final TextExtractionService textService; private final SemanticExtractionService semanticService; private final AuditEventService auditEventService; private final SemanticExtractionProvider provider; private final RuntimeControlService runtimeControlService; private final ProcessingJobService processingJobService; private final RuntimeUnitEstimator runtimeUnitEstimator; private final InboundDocumentRepository inboundDocumentRepository; private final Clock clock;
+  public ExtractionPipelineService(ExtractionRunService runService, TextExtractionService textService, SemanticExtractionService semanticService, AuditEventService auditEventService, SemanticExtractionProvider provider, RuntimeControlService runtimeControlService, ProcessingJobService processingJobService, RuntimeUnitEstimator runtimeUnitEstimator, InboundDocumentRepository inboundDocumentRepository, Clock clock){this.runService=runService; this.textService=textService; this.semanticService=semanticService; this.auditEventService=auditEventService; this.provider=provider; this.runtimeControlService=runtimeControlService; this.processingJobService=processingJobService; this.runtimeUnitEstimator=runtimeUnitEstimator; this.inboundDocumentRepository=inboundDocumentRepository; this.clock=clock;}
+
+  /**
+   * OP-CAP-27c — the async document-extraction submission boundary. Runs the OP-CAP-27 runtime-control
+   * admission gate (entitlement -&gt; quota -&gt; rate; a denial throws the existing stable mapped
+   * exception BEFORE any enqueue) and, when admitted, enqueues durable work onto the existing
+   * {@link ProcessingJobService} runtime for the out-of-process worker to process. It performs NO
+   * text/OCR/semantic extraction in the request thread and creates NO {@link ExtractionRun} — the heavy
+   * work happens later via the worker (which returns results through the AI-worker result intake) or the
+   * internal executor {@link #runNow}. A non-allowed decision (needs-review / unsupported / duplicate)
+   * fail-closes without enqueueing. Tenant is resolved server-side; the actor is the trusted system/job
+   * actor; the workload is fixed to {@code DOCUMENT_EXTRACTION}. The request transaction only creates a
+   * job + audit row — never OCR/semantic work. {@code enqueue} is idempotent per (tenant, target,
+   * PENDING), so a re-submission returns the existing job rather than creating a second one.
+   */
+  @Transactional public ExtractionSubmissionResponse submitForExtraction(ExtractionRunRequest request) {
+    UUID tenantId = TenantContext.requireTenantId();
+    if (request == null || request.sourceType() == null || request.sourceId() == null) {
+      throw new IllegalArgumentException("sourceType and sourceId are required");
+    }
+    Long knownSizeBytes = knownDocumentSizeBytes(tenantId, request);
+    int requestedUnits =
+        runtimeUnitEstimator.estimate(
+            RuntimeUnitEstimateRequest.forDocumentExtraction(tenantId, null, knownSizeBytes, null));
+    RuntimeControlDecision decision = runtimeControlService.enforce(
+        new RuntimeControlRequest(
+            tenantId, null, RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
+            RuntimeFeatureType.AI_DOCUMENT_EXTRACTION, documentExtractionWorkload(),
+            requestedUnits, null, false));
+    if (!decision.allowed()) {
+      // needs-review / unsupported / duplicate: enqueue nothing and do no work. Safe message only.
+      throw new IllegalArgumentException(decision.safeMessage());
+    }
+    ProcessingJob job = processingJobService.enqueue(
+        tenantId, "DOCUMENT_EXTRACTION", request.sourceType(), request.sourceId());
+    auditEventService.record("extraction.submitted_async", "processing_job", job.getId().toString(), null,
+        "{\"sourceType\":\"" + request.sourceType() + "\",\"async\":true,\"advisoryOnly\":true}");
+    return new ExtractionSubmissionResponse(job.getId(), job.getJobType(), job.getTargetType(),
+        job.getTargetId(), job.getStatus(), true, true, "Accepted for asynchronous extraction.");
+  }
+
   @Override
   @Transactional public ExtractionRun runNow(ExtractionRunRequest request) {
     // OP-CAP-16D/16F runtime guard: entitlement -> quota -> rate, BEFORE any run/job creation or
@@ -36,10 +82,23 @@ public class ExtractionPipelineService implements AiUnderstandingPipeline {
     int requestedUnits =
         runtimeUnitEstimator.estimate(
             RuntimeUnitEstimateRequest.forDocumentExtraction(tenantId, null, knownSizeBytes, null));
-    runtimeGuardService.enforce(
-        RuntimeGuardRequest.of(
-            tenantId, RuntimeOperationType.AI_DOCUMENT_EXTRACTION, requestedUnits),
-        RuntimeFeatureType.AI_DOCUMENT_EXTRACTION);
+    // OP-CAP-27b: route document-extraction admission through the centralized runtime-control decision
+    // spine (classification + entitlement -> quota -> rate) instead of calling the guard directly. A
+    // guard denial still throws the existing stable mapped exception (403 feature/quota, 429 rate)
+    // BEFORE any run/extraction work, and a non-allowed decision (unsupported / needs-review /
+    // duplicate) fail-closes without creating a run or invoking a provider. Tenant is resolved
+    // server-side; actorId is null here because this is a trusted internal/system pipeline call. The
+    // estimator-derived requestedUnits are passed through so quota math is unchanged. No raw document
+    // content is read for the decision.
+    RuntimeControlDecision decision = runtimeControlService.enforce(
+        new RuntimeControlRequest(
+            tenantId, null, RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
+            RuntimeFeatureType.AI_DOCUMENT_EXTRACTION, documentExtractionWorkload(),
+            requestedUnits, null, false));
+    if (!decision.allowed()) {
+      // Unsupported / needs-review / duplicate: do no work and create no run. Safe message only.
+      throw new IllegalArgumentException(decision.safeMessage());
+    }
 
     ExtractionRun run = runService.create(request, provider.providerName(), provider.schemaVersion());
     try {
@@ -59,6 +118,18 @@ public class ExtractionPipelineService implements AiUnderstandingPipeline {
       auditEventService.record("extraction_run.failed", "extraction_run", run.getId().toString(), null, "{\"stage\":\"4\"}");
       throw ex;
     }
+  }
+
+  /**
+   * OP-CAP-27b: the runtime-control workload descriptor for an extraction submission. Pre-extraction we
+   * do not yet have parsed text or page count (those exist only after parse/OCR), so the submission is
+   * represented as a single supported {@code DOCUMENT_EXTRACTION} document — a real, non-empty,
+   * heavy-class workload. No raw content is read here; admission is still gated by entitlement → quota →
+   * rate via the runtime-control decision. Quota magnitude continues to come from the size-aware unit
+   * estimator (passed as {@code requestedUnits}), not from this descriptor.
+   */
+  private static AiWorkloadClassificationRequest documentExtractionWorkload() {
+    return new AiWorkloadClassificationRequest(AiWorkloadType.DOCUMENT_EXTRACTION, null, 0, 1, false, false);
   }
 
   /**

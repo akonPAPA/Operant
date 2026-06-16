@@ -19,6 +19,6 @@ public class IntakeMessageController {
   @GetMapping("/events") public List<InboundEventResponse> events(){ return eventService.listLedger().stream().map(this::toEvent).toList(); }
   @GetMapping("/events/{id}") public InboundEventResponse event(@PathVariable UUID id){ return toEvent(eventService.getLedger(id)); }
   private ChannelMessageResponse toResponse(ChannelMessage m){ return new ChannelMessageResponse(m.getId(), m.getChannel(), m.getExternalMessageId(), m.getConversationId(), m.getSenderHandle(), m.getMessageType(), m.getTextContent(), m.getStatus(), m.getReceivedAt()); }
-  private InboundEventResponse toEvent(InboundEventLedger event){ return new InboundEventResponse(event.getId(), event.getSource(), event.getExternalEventId(), event.getEventType(), event.getFingerprintSha256(), event.getStatus(), event.getRawPayloadStorageKey()); }
+  private InboundEventResponse toEvent(InboundEventLedger event){ return new InboundEventResponse(event.getId(), event.getSource(), event.getExternalEventId(), event.getEventType(), event.getFingerprintSha256(), event.getStatus(), event.getRawPayloadStorageKey() != null && !event.getRawPayloadStorageKey().isBlank()); }
   private String writeJson(Object value){ try { return objectMapper.writeValueAsString(value); } catch (Exception ex) { throw new IllegalArgumentException("Unable to serialize API upload payload"); } }
 }
