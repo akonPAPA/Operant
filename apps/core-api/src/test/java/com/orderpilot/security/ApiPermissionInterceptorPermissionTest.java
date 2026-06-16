@@ -390,6 +390,17 @@ class ApiPermissionInterceptorPermissionTest {
   }
 
   @Test
+  void contextualRfqHandoffAiWorkRequiresAiWorkActionNotReviewRead() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest(
+        "POST", "/api/v1/ai-work/rfq-handoffs/123e4567-e89b-12d3-a456-426614174000/suggestions");
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("AI_WORK_ACTION");
+  }
+
+  @Test
   void aiWorkAcceptWithReviewReadAloneIsRejected() throws Exception {
     // Read permission must NOT be sufficient to accept/reject an AI suggestion.
     MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/ai-work/suggestions/some-id/accept");

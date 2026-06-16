@@ -245,11 +245,9 @@ export function RfqHandoffWorkspace({
           <dl className="detail-list">
             <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(detail.status)}`}>{statusLabel(detail.status)}</span></dd></div>
             <div><dt>Source channel</dt><dd>{detail.sourceChannel}</dd></div>
-            <div><dt>Source event ID</dt><dd>{detail.sourceExternalEventId ?? "n/a"}</dd></div>
             <div><dt>Sender / contact hint</dt><dd>{detail.sourceActorExternalId ?? "n/a"}</dd></div>
             <div><dt>Detected intent</dt><dd>{detail.detectedIntent ?? "—"}</dd></div>
             <div><dt>Request text</dt><dd>{detail.requestText ?? "—"}</dd></div>
-            {detail.reviewerUserId ? (<div><dt>Reviewer</dt><dd>{detail.reviewerUserId}</dd></div>) : null}
             {detail.reviewStartedAt ? (<div><dt>Review started</dt><dd>{formatTimestamp(detail.reviewStartedAt)}</dd></div>) : null}
             {detail.dismissReason ? (<div><dt>Dismiss reason</dt><dd>{detail.dismissReason}</dd></div>) : null}
             {detail.dismissedAt ? (<div><dt>Dismissed at</dt><dd>{formatTimestamp(detail.dismissedAt)}</dd></div>) : null}

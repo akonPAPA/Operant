@@ -101,6 +101,12 @@ test("workspace exposes loading, empty, and error states", () => {
   assert.match(workspace, /form-message/);
 });
 
+test("workspace detail does not render low-level source or internal actor identifiers", () => {
+  assert.doesNotMatch(workspace, /Source event ID/);
+  assert.doesNotMatch(workspace, /detail\.sourceExternalEventId/);
+  assert.doesNotMatch(workspace, /detail\.reviewerUserId/);
+});
+
 test("workspace wires only the three safe transitions, no quote/order/ERP action calls", () => {
   // Only the three controlled transition submitters exist.
   assert.match(workspace, /submitStartReview/);
