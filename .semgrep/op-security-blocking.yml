@@ -1,0 +1,128 @@
+rules:
+  - id: op.frontend.no-database-env-access
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: process.env.DATABASE_URL
+          - pattern: process.env.POSTGRES_URL
+          - pattern: process.env.PGHOST
+          - pattern: process.env.PGPASSWORD
+          - pattern: process.env.MYSQL_URL
+    message: >
+      OP architecture violation: web-dashboard must not access database
+      connection settings. Frontend must call Core API only.
+
+  - id: op.frontend.no-direct-db-client-imports
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: |
+              import $X from "pg"
+          - pattern: |
+              import $X from "mysql"
+          - pattern: |
+              import $X from "mysql2"
+          - pattern: |
+              import $X from "@prisma/client"
+          - pattern: |
+              const $X = require("pg")
+          - pattern: |
+              const $X = require("@prisma/client")
+    message: >
+      OP architecture violation: frontend must not import DB clients. Use Core
+      API boundaries, tenant checks, validation, audit, and service logic.
+
+  - id: op.java.no-runtime-exec
+    languages: [java]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    patterns:
+      - pattern-either:
+          - pattern: Runtime.getRuntime().exec(...)
+          - pattern: new ProcessBuilder(...)
+    message: >
+      Dangerous process execution. This requires explicit security review,
+      strict input control, and sandboxing.
+
+  - id: op.java.no-raw-sql-string-concat
+    languages: [java]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $EM.createQuery($A + $B)
+          - pattern: |
+              $EM.createNativeQuery($A + $B)
+          - pattern: |
+              $ST.executeQuery($A + $B)
+          - pattern: |
+              $ST.executeUpdate($A + $B)
+    message: >
+      Possible SQL/JPQL injection through string concatenation. Use parameters,
+      repositories, criteria APIs, or prepared statements.
+
+  - id: op.java.no-permissive-cors-star
+    languages: [java]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    pattern-regex: 'allowedOrigins\s*\(\s*"\*"\s*\)|addAllowedOrigin\s*\(\s*"\*"\s*\)'
+    message: >
+      Permissive CORS wildcard detected. Configure explicit trusted origins per environment.
+
+  - id: op.ts.no-eval-or-new-function
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+    message: >
+      Dangerous dynamic code execution. Avoid eval/new Function in frontend.
+
+  - id: op.github-actions.no-snyk-master-action
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - .github/workflows/**
+    pattern-regex: 'uses:\s*snyk/actions/setup@master'
+    message: >
+      Supply-chain risk: snyk/actions/setup must not use @master.
+
+  - id: op.github-actions.no-unscoped-write-all-permissions
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - .github/workflows/**
+    pattern-regex: 'permissions:\s*write-all'
+    message: >
+      GitHub Actions permissions must be least-privilege. Avoid write-all.
+
+  - id: op.github-actions.no-pull-request-target-with-checkout
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - .github/workflows/**
+    pattern-regex: 'pull_request_target:'
+    message: >
+      pull_request_target is dangerous for untrusted PRs. Use only with explicit security review.

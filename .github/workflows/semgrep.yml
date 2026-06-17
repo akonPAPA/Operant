@@ -66,10 +66,10 @@ jobs:
             --config p/typescript
           )
 
-          if [ -f ".semgrep/op-security.yml" ]; then
-            CONFIG_ARGS+=(--config .semgrep/op-security.yml)
+          if [ -f ".semgrep/op-security-blocking.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security-blocking.yml)
           else
-            echo "Local OP Semgrep config not found; running registry configs only."
+            echo "Local OP blocking Semgrep config not found; running registry configs only."
           fi
 
           semgrep scan \
@@ -93,10 +93,10 @@ jobs:
             --config auto
           )
 
-          if [ -f ".semgrep/op-security.yml" ]; then
-            CONFIG_ARGS+=(--config .semgrep/op-security.yml)
+          if [ -f ".semgrep/op-security-advisory.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security-advisory.yml)
           else
-            echo "Local OP Semgrep config not found; running auto config only."
+            echo "Local OP advisory Semgrep config not found; running auto config only."
           fi
 
           semgrep scan \
