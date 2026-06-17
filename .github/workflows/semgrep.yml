@@ -46,9 +46,11 @@ jobs:
 
       - name: Install pinned Semgrep CLI
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install "semgrep==1.127.0"
+          python -m pip install --upgrade pip wheel
+          python -m pip install "setuptools<82" "semgrep==1.127.0"
+          python -c "import pkg_resources; import opentelemetry.instrumentation.dependencies; print('pkg_resources/opentelemetry import OK')"
           semgrep --version
+          python -m pip check
 
       - name: Blocking scan - high-signal security and OP invariants
         run: |
