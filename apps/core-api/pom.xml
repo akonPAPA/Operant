@@ -90,6 +90,23 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
+      <!-- OP-SEC-SCAN: OWASP Dependency-Check for CVE scanning -->
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <version>12.2.2</version>
+        <configuration>
+          <failBuildOnCVSS>7</failBuildOnCVSS>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- OP-SEC-SCAN: OWASP Dependency-Check for CVE scanning ther the end for easy backup SON-->
     </plugins>
   </build>
 </project>
