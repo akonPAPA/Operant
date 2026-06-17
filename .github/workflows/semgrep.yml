@@ -16,7 +16,6 @@ on:
       - ".github/workflows/**"
       - ".semgrep/**"
   schedule:
-    # Weekly full scan. Use a non-round random-ish time to avoid global CI peaks.
     - cron: "37 3 * * 1"
   workflow_dispatch:
 
@@ -32,7 +31,6 @@ jobs:
     name: Semgrep SAST / OP policy scan
     runs-on: ubuntu-latest
 
-    # Avoid token/permission edge cases on Dependabot PRs.
     if: github.actor != 'dependabot[bot]'
 
     steps:
@@ -42,7 +40,6 @@ jobs:
       - name: Setup Python for pinned Semgrep CLI
         uses: actions/setup-python@v5
         with:
-          # Semgrep 1.127.0 dependency stack is safer on 3.11 than 3.12.
           python-version: "3.11"
 
       - name: Install pinned Semgrep CLI
@@ -59,17 +56,26 @@ jobs:
           semgrep --version
           python -m pip check
 
-      - name: Blocking scan - high-signal security and OP invariants
+      - name: Blocking scan - high-signal security rules
         run: |
+          CONFIG_ARGS=(
+            --config p/security-audit
+            --config p/owasp-top-ten
+            --config p/java
+            --config p/javascript
+            --config p/typescript
+          )
+
+          if [ -f ".semgrep/op-security.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security.yml)
+          else
+            echo "Local OP Semgrep config not found; running registry configs only."
+          fi
+
           semgrep scan \
             --error \
             --severity ERROR \
-            --config p/security-audit \
-            --config p/owasp-top-ten \
-            --config p/java \
-            --config p/javascript \
-            --config p/typescript \
-            --config .semgrep/op-security.yml \
+            "${CONFIG_ARGS[@]}" \
             --exclude node_modules \
             --exclude .next \
             --exclude dist \
@@ -83,11 +89,20 @@ jobs:
       - name: Advisory scan - broader findings, non-blocking
         continue-on-error: true
         run: |
+          CONFIG_ARGS=(
+            --config auto
+          )
+
+          if [ -f ".semgrep/op-security.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security.yml)
+          else
+            echo "Local OP Semgrep config not found; running auto config only."
+          fi
+
           semgrep scan \
             --severity WARNING \
             --severity INFO \
-            --config auto \
-            --config .semgrep/op-security.yml \
+            "${CONFIG_ARGS[@]}" \
             --exclude node_modules \
             --exclude .next \
             --exclude dist \
