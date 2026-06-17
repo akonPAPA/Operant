@@ -45,7 +45,7 @@ jobs:
       - name: Install pinned Semgrep CLI
         run: |
           python -m pip install --upgrade "pip<26" wheel
-          python -m pip install --no-cache-dir --upgrade --force-reinstall "setuptools<82" "semgrep==1.127.0"
+          python -m pip install --no-cache-dir --upgrade --force-reinstall "setuptools<81" "semgrep==1.127.0"
 
           python - <<'PY'
           import pkg_resources
