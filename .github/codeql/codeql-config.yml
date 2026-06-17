@@ -1,5 +1,14 @@
 name: "OrderPilot CodeQL config"
 
+
+disable-default-queries: false
+
+
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+
 paths:
   - apps/core-api/src
   - apps/web-dashboard
@@ -23,3 +32,4 @@ paths-ignore:
   - "**/failsafe-reports/**"
   - "**/*.generated.*"
   - "**/generated/**"
+  - "**/*.min.js"
