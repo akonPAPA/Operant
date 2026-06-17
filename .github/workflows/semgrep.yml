@@ -1,0 +1,90 @@
+name: Semgrep Security Scan
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "apps/core-api/**"
+      - "apps/web-dashboard/**"
+      - ".github/workflows/**"
+      - ".semgrep/**"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "apps/core-api/**"
+      - "apps/web-dashboard/**"
+      - ".github/workflows/**"
+      - ".semgrep/**"
+  schedule:
+    # Weekly full scan. Use a non-round random-ish time to avoid global CI peaks.
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semgrep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep SAST / OP policy scan
+    runs-on: ubuntu-latest
+
+    # Avoid token/permission edge cases on Dependabot PRs.
+    if: github.actor != 'dependabot[bot]'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python for pinned Semgrep CLI
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned Semgrep CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "semgrep==1.127.0"
+          semgrep --version
+
+      - name: Blocking scan - high-signal security and OP invariants
+        run: |
+          semgrep scan \
+            --error \
+            --severity ERROR \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/java \
+            --config p/javascript \
+            --config p/typescript \
+            --config .semgrep/op-security.yml \
+            --exclude node_modules \
+            --exclude .next \
+            --exclude dist \
+            --exclude build \
+            --exclude target \
+            --exclude coverage \
+            --exclude "**/*.min.js" \
+            --exclude "**/generated/**" \
+            .
+
+      - name: Advisory scan - broader findings, non-blocking
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --severity WARNING \
+            --severity INFO \
+            --config auto \
+            --config .semgrep/op-security.yml \
+            --exclude node_modules \
+            --exclude .next \
+            --exclude dist \
+            --exclude build \
+            --exclude target \
+            --exclude coverage \
+            --exclude "**/*.min.js" \
+            --exclude "**/generated/**" \
+            .
