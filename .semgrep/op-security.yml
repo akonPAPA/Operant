@@ -4,7 +4,7 @@ rules:
   # ---------------------------------------------------------------------------
 
   - id: op.frontend.no-authority-fields-in-client-payload
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
@@ -40,7 +40,7 @@ rules:
       internal identifiers unless this is an explicit admin/debug-only surface.
 
   - id: op.frontend.no-database-env-access
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
@@ -57,7 +57,7 @@ rules:
       connection settings. Frontend must call Core API only.
 
   - id: op.frontend.no-direct-db-client-imports
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
@@ -197,7 +197,7 @@ rules:
   # ---------------------------------------------------------------------------
 
   - id: op.ts.no-eval-or-new-function
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
@@ -210,7 +210,7 @@ rules:
       Dangerous dynamic code execution. Avoid eval/new Function in frontend.
 
   - id: op.react.no-dangerously-set-inner-html
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: WARNING
     paths:
       include:
@@ -222,7 +222,7 @@ rules:
       sanitization and security review.
 
   - id: op.ts.no-console-error-leaking-raw-response
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: WARNING
     paths:
       include:

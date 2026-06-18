@@ -1,6 +1,6 @@
 rules:
   - id: op.frontend.no-database-env-access
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
@@ -17,7 +17,7 @@ rules:
       connection settings. Frontend must call Core API only.
 
   - id: op.frontend.no-direct-db-client-imports
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
@@ -85,7 +85,7 @@ rules:
       Permissive CORS wildcard detected. Configure explicit trusted origins per environment.
 
   - id: op.ts.no-eval-or-new-function
-    languages: [typescript, tsx, javascript, jsx]
+    languages: [typescript, javascript]
     severity: ERROR
     paths:
       include:
