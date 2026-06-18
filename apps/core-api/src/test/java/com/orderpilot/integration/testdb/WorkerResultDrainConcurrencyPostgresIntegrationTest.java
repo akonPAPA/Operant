@@ -177,7 +177,43 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
   }
 
   // ----------------------------------------------------------------------------------------------
-  // 4. Cross-tenant drain guard under concurrency: tenant B drains racing on tenant A's job (by id) are
+  // 4. Stale recovery and result intake both write terminal job state. They must serialize on the
+  //    processing_job row so the final job status can never disagree with advisory run/result side
+  //    effects.
+  // ----------------------------------------------------------------------------------------------
+  @Test
+  void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
+    ProcessingJob job = staleProcessingJob(TENANT_A);
+    AiProcessingResultIntakeRequest request = successResult(job);
+
+    RaceResult race = runRecoveryAndIntakeRace(TENANT_A, request);
+
+    ProcessingJob fresh = jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
+    assertThat(fresh.getStatus()).isIn("SUCCEEDED", "FAILED");
+    assertThat(runRepository.count()).isLessThanOrEqualTo(1);
+    assertThat(resultRepository.count()).isLessThanOrEqualTo(1);
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isLessThanOrEqualTo(1);
+
+    if ("SUCCEEDED".equals(fresh.getStatus())) {
+      assertThat(race.intake().ok()).isTrue();
+      assertThat(runRepository.count()).isEqualTo(1);
+      assertThat(resultRepository.count()).isEqualTo(1);
+      assertThat(runRepository.findAll().get(0).getStatus()).isEqualTo("SUCCEEDED");
+      assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isEqualTo(1);
+      assertThat(race.recovery().recovered()).isZero();
+    } else {
+      assertThat(race.recovery().ok()).isTrue();
+      assertThat(race.recovery().recovered()).isEqualTo(1);
+      assertThat(runRepository.count()).isZero();
+      assertThat(resultRepository.count()).isZero();
+      assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isZero();
+      assertThat(race.intake().ok()).isFalse();
+      assertThat(race.intake().error()).contains("job_not_in_processable_state");
+    }
+  }
+
+  // ----------------------------------------------------------------------------------------------
+  // 5. Cross-tenant drain guard under concurrency: tenant B drains racing on tenant A's job (by id) are
   //    all denied as not-found and never mutate tenant A's job or create any run.
   // ----------------------------------------------------------------------------------------------
   @Test
@@ -242,6 +278,35 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
     return runConcurrentDrains(tenant, i -> request.get());
   }
 
+  private RaceResult runRecoveryAndIntakeRace(UUID tenant, AiProcessingResultIntakeRequest request) throws Exception {
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      CountDownLatch ready = new CountDownLatch(2);
+      CountDownLatch start = new CountDownLatch(1);
+      Future<RecoveryOutcome> recovery = pool.submit(() -> {
+        ready.countDown();
+        start.await(10, TimeUnit.SECONDS);
+        try {
+          return new RecoveryOutcome(leaseService.recoverStaleProcessing(BASE.minusSeconds(900), 10), null);
+        } catch (RuntimeException ex) {
+          return new RecoveryOutcome(0, ex.getMessage());
+        }
+      });
+      Future<Outcome> intake = pool.submit(() -> {
+        ready.countDown();
+        start.await(10, TimeUnit.SECONDS);
+        return drainOnce(tenant, request);
+      });
+
+      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      return new RaceResult(recovery.get(30, TimeUnit.SECONDS), intake.get(30, TimeUnit.SECONDS));
+    } finally {
+      pool.shutdownNow();
+      assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
   private Outcome drainOnce(UUID tenant, AiProcessingResultIntakeRequest request) {
     TenantContext.setTenantId(tenant);
     try {
@@ -270,6 +335,12 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
         new ProcessingJob(tenant, "DOCUMENT_EXTRACTION", "CHANNEL_MESSAGE", UUID.randomUUID(), 100, BASE));
   }
 
+  private ProcessingJob staleProcessingJob(UUID tenant) {
+    ProcessingJob job = newPendingJob(tenant);
+    job.markProcessing(BASE.minusSeconds(3_600));
+    return jobRepository.saveAndFlush(job);
+  }
+
   private long countAudit(UUID tenant, String action) {
     return auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenant).stream()
         .map(AuditEvent::getAction).filter(action::equals).count();
@@ -290,5 +361,13 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", BASE, BASE.plusMillis(10), 10L, safeReason);
+  }
+
+  private record RaceResult(RecoveryOutcome recovery, Outcome intake) {}
+
+  private record RecoveryOutcome(int recovered, String error) {
+    boolean ok() {
+      return error == null;
+    }
   }
 }

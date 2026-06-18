@@ -1,5 +1,5 @@
 package com.orderpilot.domain.intake;
-import jakarta.persistence.LockModeType; import jakarta.persistence.QueryHint; import java.time.Instant; import java.util.*; import org.springframework.data.domain.Pageable; import org.springframework.data.jpa.repository.JpaRepository; import org.springframework.data.jpa.repository.Lock; import org.springframework.data.jpa.repository.QueryHints;
+import jakarta.persistence.LockModeType; import jakarta.persistence.QueryHint; import java.time.Instant; import java.util.*; import org.springframework.data.domain.Pageable; import org.springframework.data.jpa.repository.JpaRepository; import org.springframework.data.jpa.repository.Lock; import org.springframework.data.jpa.repository.Query; import org.springframework.data.jpa.repository.QueryHints; import org.springframework.data.repository.query.Param;
 public interface ProcessingJobRepository extends JpaRepository<ProcessingJob, UUID> {
   List<ProcessingJob> findByTenantIdOrderByQueuedAtDesc(UUID tenantId);
   // OP-CAP-28: bounded, tenant-scoped, most-recent-first page for the safe status/list contract (no full scan).
@@ -28,6 +28,20 @@ public interface ProcessingJobRepository extends JpaRepository<ProcessingJob, UU
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
   List<ProcessingJob> findWithLockByTenantIdAndStatusOrderByQueuedAtAsc(UUID tenantId, String status, Pageable pageable);
-  // OP-CAP-29: bounded stale-PROCESSING reaper selection (system maintenance; oldest in-flight first).
-  List<ProcessingJob> findByStatusAndStartedAtBeforeOrderByStartedAtAsc(String status, Instant cutoff, Pageable pageable);
+  // OP-CAP-30.1: bounded stale-PROCESSING reaper selection. This reaper is also a terminal-state writer
+  // (PROCESSING -> FAILED), so it must wait on the same row-level lock protocol as result intake instead
+  // of racing an unlocked stale read against the result drain's PROCESSING -> terminal transition.
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("""
+      select j
+      from ProcessingJob j
+      where j.status = :status
+      and j.startedAt is not null
+      and j.startedAt < :cutoff
+      order by j.startedAt asc
+      """)
+  List<ProcessingJob> findStaleProcessingWithLock(
+      @Param("status") String status,
+      @Param("cutoff") Instant cutoff,
+      Pageable pageable);
 }
