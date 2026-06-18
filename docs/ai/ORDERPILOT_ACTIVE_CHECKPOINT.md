@@ -102,6 +102,25 @@ Update at the start of a task only when needed:
 
 ## Current Development Direction
 
+### Current next slice: OP-CAP-31 Secure Business Contract Layer
+
+- Root cause: public contracts still allow/represent client-owned authority and internal response
+  leaks (frontend/request DTOs accepting tenant/actor/role; response DTOs exposing internal IDs,
+  source IDs, audit/outbox/payload internals).
+- Required invariant: all client-originated inputs are untrusted — frontend, Postman, curl, CLI,
+  bot, connector, AI worker alike. "Hidden in the UI" is not security.
+- Required path: `public DTO -> trusted tenant/actor resolver -> clean command -> service
+  validation -> safe response DTO`.
+- Instruction spine added/updated: root `AGENTS.md` (section 21), `apps/core-api/AGENTS.md`,
+  `apps/web-dashboard/AGENTS.md`. Read the area `AGENTS.md` before editing that area.
+- Done in this slice: removed body-owned actor from channel-to-quote conversion (actor now from
+  `RequestActorResolver`); split public RFQ/approval request DTOs from internal commands; trimmed
+  `QuoteSourceContextDto` and `ChangeRequest`/outbox default responses to operator-safe fields;
+  removed editable Tenant ID and raw source/actor IDs from the quote source panel and removed
+  tenant/actor fields from frontend JSON payloads.
+- Remaining (follow-up): Stage9 connector change-request/sync/audit response DTOs still expose some
+  connector/actor internals; harden behind an admin diagnostic DTO/permission in a later slice.
+
 Preferred agent split:
 
 - Claude Code: backend truth, domain, policy, API contracts, migrations, targeted backend tests.

@@ -9,7 +9,11 @@ This runbook defines the default workflow for Codex, Claude, and other AI coding
 ```powershell
 Get-Content AGENTS.md
 Get-Content apps/core-api/AGENTS.md
+Get-Content apps/web-dashboard/AGENTS.md
 ```
+
+The area-specific `AGENTS.md` files (`apps/core-api/AGENTS.md`, `apps/web-dashboard/AGENTS.md`)
+carry the OP-CAP-31 secure business contract rules. Read the area file before editing that area.
 
 2. Confirm the active repository and current diff:
 

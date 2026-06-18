@@ -89,10 +89,13 @@ public class ChangeRequestController {
   }
 
   private ChangeRequestResponse toChangeRequest(ChangeRequest request) {
-    return new ChangeRequestResponse(request.getId(),request.getTargetSystem(),request.getTargetEntity(),request.getRequestedAction(),request.getSourceType(),request.getSourceId(),request.getRequestPayloadJson(),request.getValidationStatus(),request.getApprovalStatus(),request.getExecutionStatus(),request.getIdempotencyKey(),request.getPayloadHash(),request.getCreatedByUserId(),request.getApprovedByUserId(),request.getCreatedAt(),request.getValidatedAt(),request.getApprovedAt(),request.getRejectedAt(),request.getExecutedAt(),request.getExternalReference(),request.getFailureReason(),request.getCancellationReason());
+    // OP-CAP-31: map only operator-safe fields. Raw payload, idempotency key, payload hash, and
+    // internal createdBy/approvedBy actor ids are intentionally not exposed on this response.
+    return new ChangeRequestResponse(request.getId(),request.getTargetSystem(),request.getTargetEntity(),request.getRequestedAction(),request.getSourceType(),request.getSourceId(),request.getValidationStatus(),request.getApprovalStatus(),request.getExecutionStatus(),request.getCreatedAt(),request.getValidatedAt(),request.getApprovedAt(),request.getRejectedAt(),request.getExecutedAt(),request.getExternalReference(),request.getFailureReason(),request.getCancellationReason());
   }
 
   private OutboxEventResponse toOutboxEvent(OutboxEvent event) {
-    return new OutboxEventResponse(event.getId(), event.getAggregateType(), event.getAggregateId(), event.getEventType(), event.getPayloadJson(), event.getStatus(), event.getCreatedAt(), event.getPublishedAt(), event.getAttemptCount(), event.getLastError());
+    // OP-CAP-31: the raw outbox payload is intentionally not exposed on this response.
+    return new OutboxEventResponse(event.getId(), event.getAggregateType(), event.getAggregateId(), event.getEventType(), event.getStatus(), event.getCreatedAt(), event.getPublishedAt(), event.getAttemptCount(), event.getLastError());
   }
 }

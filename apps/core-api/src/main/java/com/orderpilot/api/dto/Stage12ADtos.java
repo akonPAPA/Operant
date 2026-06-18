@@ -12,6 +12,25 @@ import java.util.UUID;
 public final class Stage12ADtos {
   private Stage12ADtos() {}
 
+  // OP-CAP-31: public request DTOs carry business intent only. Tenant/actor/role and the
+  // idempotency key are backend-owned — tenant comes from TenantContext, actor from
+  // RequestActorResolver, the idempotency key from the Idempotency-Key header. The controller maps
+  // these public requests into the internal *Command records below using trusted context, so a
+  // direct API caller (Postman/curl/CLI) cannot set tenantId/actorId/actorRole via the body.
+  public record CreateDraftQuoteFromRfqRequest(
+      String customerExternalRef,
+      String customerName,
+      List<RequestedItem> requestedItems,
+      String requestedLocation,
+      BigDecimal requestedDiscountPercent) {}
+
+  public record QuoteApprovalDecisionRequest(
+      UUID approvalRequestId,
+      String reason,
+      String comment) {}
+
+  // Internal command records — never bound directly to a public @RequestBody. tenantId/actorId are
+  // resolved server-side from trusted context; actorRole is an internal classification only.
   public record CreateDraftQuoteFromRfqCommand(
       UUID tenantId,
       UUID actorId,

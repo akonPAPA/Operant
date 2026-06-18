@@ -120,19 +120,21 @@ export type ChannelToQuoteResponse = {
   auditEventIds: string[];
 };
 
+// OP-CAP-31: operator-safe source summary. Raw internal identifiers (sourceId, conversionAttemptId,
+// triggeredBy/createdBy actor) are no longer part of the contract.
 export type QuoteSourceContext = {
   sourceType: string;
-  sourceId: string;
   sourceChannel?: string | null;
   sourceExternalRef?: string | null;
   sourceReceivedAt?: string | null;
-  triggeredBy?: string | null;
-  createdByType?: string | null;
-  conversionAttemptId?: string | null;
   conversionStatus?: string | null;
+  candidateLineCount: number;
+  reviewRequired: boolean;
   validationIssues: ChannelToQuoteResponse["validationIssues"];
 };
 
+// OP-CAP-31: business intent only. Tenant is sent via the X-Tenant-Id header and actor is resolved
+// by the backend from trusted context — never in the JSON body.
 export type ChannelToQuotePayload = {
   idempotencyKey?: string;
   requestedCustomerAccountId?: string;
@@ -142,13 +144,11 @@ export type ChannelToQuotePayload = {
   forceReview?: boolean;
   selectedLineItemIds?: string[];
   selectedSubstituteIds?: Record<string, string>;
-  actorId?: string;
-  actorType?: "USER" | "BOT" | "SYSTEM" | "API" | string;
 };
 
+// OP-CAP-31: tenantId is used only to set the X-Tenant-Id header and is stripped from the JSON body.
 export type CreateDraftQuoteFromRfqPayload = {
   tenantId: string;
-  actorRole: string;
   customerExternalRef: string;
   requestedLocation: string;
   requestedDiscountPercent: number;
@@ -161,10 +161,10 @@ export type CreateDraftQuoteFromRfqPayload = {
   }>;
 };
 
+// OP-CAP-31: tenantId is used only for the X-Tenant-Id header. The body carries business intent
+// only (approvalRequestId/reason/comment); actor/role are backend-owned authority.
 export type QuoteApprovalDecisionPayload = {
   tenantId: string;
-  actorId?: string;
-  actorRole?: string;
   approvalRequestId?: string;
   reason?: string;
   comment?: string;
@@ -174,12 +174,13 @@ export type QuoteApprovalDecisionPayload = {
 const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
 
 export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPayload): Promise<QuoteTransactionResponse> {
-  const { idempotencyKey, ...body } = payload;
+  // OP-CAP-31: tenantId goes through the header only; it is never serialized into the JSON body.
+  const { idempotencyKey, tenantId, ...body } = payload;
   const response = await fetch(`${baseUrl}/api/v1/quotes/from-rfq`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": payload.tenantId,
+      "X-Tenant-Id": tenantId,
       "Idempotency-Key": idempotencyKey
     },
     body: JSON.stringify(body)
@@ -223,7 +224,12 @@ export function getQuoteSourceContext(tenantId: string, quoteId: string): Promis
 }
 
 async function requestQuoteApproval<T>(tenantId: string, path: string, payload?: QuoteApprovalDecisionPayload): Promise<T> {
-  const { idempotencyKey, ...body } = payload ?? {};
+  // OP-CAP-31: tenant goes through the header; the body carries business intent only. tenantId and
+  // the idempotency key are never serialized into the JSON body.
+  const idempotencyKey = payload?.idempotencyKey;
+  const body = payload
+    ? { approvalRequestId: payload.approvalRequestId, reason: payload.reason, comment: payload.comment }
+    : undefined;
   const response = await fetch(`${baseUrl}${path}`, {
     method: payload ? "POST" : "GET",
     headers: {
@@ -234,8 +240,8 @@ async function requestQuoteApproval<T>(tenantId: string, path: string, payload?:
     body: payload ? JSON.stringify(body) : undefined
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Core API returned ${response.status}`);
+    // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
+    throw new Error(safeErrorMessage(response.status));
   }
   return response.json() as Promise<T>;
 }
@@ -252,8 +258,18 @@ async function requestQuoteTransaction<T>(tenantId: string, path: string, payloa
     body: JSON.stringify(body)
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Core API returned ${response.status}`);
+    // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
+    throw new Error(safeErrorMessage(response.status));
   }
   return response.json() as Promise<T>;
+}
+
+// OP-CAP-31: operator-safe error text. Non-2xx responses are mapped to a curated message keyed by
+// HTTP status; raw backend stack traces / JSON payload dumps are never rendered to the operator.
+function safeErrorMessage(status: number): string {
+  if (status === 401 || status === 403) return "You do not have permission to perform this action.";
+  if (status === 404) return "The requested record was not found.";
+  if (status === 409) return "This action conflicts with the current record state.";
+  if (status === 400 || status === 422) return "The request was rejected by backend validation.";
+  return `Request failed (status ${status}).`;
 }

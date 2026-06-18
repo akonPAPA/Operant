@@ -10,6 +10,9 @@ import java.util.UUID;
 public final class Stage12BDtos {
   private Stage12BDtos() {}
 
+  // OP-CAP-31: public request carries business intent only. Actor (id/type) is backend-owned
+  // authority resolved from RequestActorResolver / the trusted call site, never from the body —
+  // a direct API caller (Postman/curl/CLI/bot) cannot forge who performed the conversion.
   public record ChannelToQuoteRequest(
       String idempotencyKey,
       UUID requestedCustomerAccountId,
@@ -18,9 +21,7 @@ public final class Stage12BDtos {
       boolean dryRun,
       boolean forceReview,
       List<UUID> selectedLineItemIds,
-      Map<UUID, UUID> selectedSubstituteIds,
-      UUID actorId,
-      String actorType) {}
+      Map<UUID, UUID> selectedSubstituteIds) {}
 
   public record ChannelToQuoteResponse(
       String status,
@@ -35,19 +36,18 @@ public final class Stage12BDtos {
       boolean reviewRequired,
       List<UUID> auditEventIds) {}
 
+  // OP-CAP-31: operator-safe source summary. Internal identifiers (sourceId, conversionAttemptId,
+  // triggeredBy/createdBy actor id, sourceEvidenceId, raw metadata) are not exposed on the default
+  // operator response. Diagnostics must live behind a separate admin endpoint/permission.
   public record QuoteSourceContextDto(
       String sourceType,
-      UUID sourceId,
       String sourceChannel,
       String sourceExternalRef,
       Instant sourceReceivedAt,
-      String triggeredBy,
-      String createdByType,
-      UUID conversionAttemptId,
       String conversionStatus,
-      List<QuoteCandidateLineDto> candidateLines,
-      List<QuoteValidationIssueDto> validationIssues,
-      Map<String, Object> metadata) {}
+      int candidateLineCount,
+      boolean reviewRequired,
+      List<QuoteValidationIssueDto> validationIssues) {}
 
   public record QuoteCandidateLineDto(
       UUID sourceLineItemId,

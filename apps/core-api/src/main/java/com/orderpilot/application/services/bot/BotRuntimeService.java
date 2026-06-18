@@ -345,7 +345,7 @@ public class BotRuntimeService {
     UUID quoteId = null;
     if (!simulation && channelToQuoteWiringService != null) {
       try {
-        ChannelToQuoteResponse response = channelToQuoteWiringService.createFromChannelMessage(channelMessage.getId(), new ChannelToQuoteRequest("bot:" + message.getId(), channelMessage.getCustomerAccountId(), "STANDARD", "Created by controlled bot runtime for operator review", false, true, List.of(), Map.of(), null, "BOT"));
+        ChannelToQuoteResponse response = channelToQuoteWiringService.createFromChannelMessage(channelMessage.getId(), new ChannelToQuoteRequest("bot:" + message.getId(), channelMessage.getCustomerAccountId(), "STANDARD", "Created by controlled bot runtime for operator review", false, true, List.of(), Map.of()), null, "BOT");
         quoteId = response.quoteId();
         auditEventService.record("BOT_QUOTE_DRAFT_REQUESTED", "QUOTE_CONVERSION_ATTEMPT", response.conversionAttemptId().toString(), null, auditJson(connection.getId(), conversation.getId(), channelMessage.getId(), channelMessage.getCustomerAccountId(), intent, flow, response.status(), quoteId, null, "BOT", "DISABLED"));
       } catch (RuntimeException ex) {

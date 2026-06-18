@@ -346,7 +346,7 @@ class ChannelToQuoteWiringServiceTest {
     stubAttemptSave();
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
 
-    var response = service.createFromInboundDocument(documentId, new ChannelToQuoteRequest("foreign-line", customerId, "RFQ", null, false, false, List.of(foreignLineId), Map.of(), UUID.randomUUID(), "USER"));
+    var response = service.createFromInboundDocument(documentId, new ChannelToQuoteRequest("foreign-line", customerId, "RFQ", null, false, false, List.of(foreignLineId), Map.of()));
 
     assertThat(response.status()).isEqualTo("REJECTED_NO_LINE_ITEMS");
     assertThat(response.validationIssues()).extracting("code").contains("SELECTED_LINE_NOT_IN_SOURCE");
@@ -405,14 +405,16 @@ class ChannelToQuoteWiringServiceTest {
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
     when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of()));
 
-    var response = service.createFromChannelMessage(messageId, request("bot-1", customerId, false, "BOT"));
+    var response = service.createFromChannelMessage(messageId, request("bot-1", customerId, false, "BOT"), null, "BOT");
 
     assertThat(response.quoteId()).isEqualTo(quoteId);
     verify(quoteDraftService).createFromRfq(argThat(command -> !"APPROVED".equals(command.actorRole())));
   }
 
+  // OP-CAP-31: actor (id/type) is no longer part of the public request body; the actorType arg is
+  // retained only for call-site readability and is passed to the service via the trusted overload.
   private ChannelToQuoteRequest request(String key, UUID customerId, boolean dryRun, String actorType) {
-    return new ChannelToQuoteRequest(key, customerId, "RFQ", null, dryRun, false, List.of(), Map.of(), UUID.randomUUID(), actorType);
+    return new ChannelToQuoteRequest(key, customerId, "RFQ", null, dryRun, false, List.of(), Map.of());
   }
 
   private void stubAttemptSave() {

@@ -92,7 +92,7 @@ class QuoteTransactionSecurityTest {
   void channelToQuoteMutationRequiresQuoteActionPermission() throws Exception {
     UUID messageId = UUID.randomUUID();
     UUID attemptId = UUID.randomUUID();
-    when(channelToQuoteWiringService.createFromChannelMessage(eq(messageId), any())).thenReturn(new ChannelToQuoteResponse("NEEDS_REVIEW", null, attemptId, "CHANNEL_MESSAGE", messageId, "UNRESOLVED", 0, 0, List.of(), true, List.of()));
+    when(channelToQuoteWiringService.createFromChannelMessage(eq(messageId), any(), any(), any())).thenReturn(new ChannelToQuoteResponse("NEEDS_REVIEW", null, attemptId, "CHANNEL_MESSAGE", messageId, "UNRESOLVED", 0, 0, List.of(), true, List.of()));
 
     mockMvc.perform(post("/api/v1/quote-transactions/from-channel-message/" + messageId)
             .contentType(MediaType.APPLICATION_JSON)
