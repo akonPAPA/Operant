@@ -34,10 +34,20 @@ test("source detail pages render create quote draft wiring", () => {
   assert.match(panel, /validationIssues/);
 });
 
-test("quote detail page renders source context panel", () => {
+test("quote detail page renders source summary panel", () => {
   assert.match(quotePage, /QuoteSourceContextPanel/);
-  assert.match(sourcePanel, /Source Context/);
-  assert.match(sourcePanel, /Load Source Context/);
+  assert.match(sourcePanel, /Request Source Summary/);
+  assert.match(sourcePanel, /Load Source Summary/);
   assert.match(sourcePanel, /sourceExternalRef/);
-  assert.match(sourcePanel, /conversionAttemptId/);
+});
+
+// OP-CAP-31: the source summary panel must not expose an editable Tenant ID or raw internal
+// identifiers (sourceId, conversionAttemptId, triggeredBy/internal actor).
+test("source summary panel does not expose editable tenant id or raw internal identifiers", () => {
+  assert.doesNotMatch(sourcePanel, /<span>Tenant ID<\/span>/);
+  assert.doesNotMatch(sourcePanel, /onChange=\{\(event\) => setTenantId/);
+  assert.doesNotMatch(sourcePanel, /context\.sourceId/);
+  assert.doesNotMatch(sourcePanel, /context\.conversionAttemptId/);
+  assert.doesNotMatch(sourcePanel, /context\.triggeredBy/);
+  assert.doesNotMatch(sourcePanel, /context\.createdByType/);
 });

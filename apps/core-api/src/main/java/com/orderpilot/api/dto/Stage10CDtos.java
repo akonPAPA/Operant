@@ -28,6 +28,10 @@ public final class Stage10CDtos {
 
   public static record ChangeRequestExecutionDisabledRequest(String reason) {}
 
+  // OP-CAP-31: operator-safe default response. The raw external-write payload
+  // (requestPayloadJson), the dedupe/integrity internals (idempotencyKey, payloadHash) and the
+  // internal actor ids (createdByUserId, approvedByUserId) are NOT exposed on the default response.
+  // Those belong on a separate admin/diagnostic DTO behind a stronger permission if ever needed.
   public static record ChangeRequestResponse(
       UUID id,
       String targetSystem,
@@ -35,14 +39,9 @@ public final class Stage10CDtos {
       String requestedAction,
       String sourceType,
       UUID sourceId,
-      String requestPayloadJson,
       String validationStatus,
       String approvalStatus,
       String executionStatus,
-      String idempotencyKey,
-      String payloadHash,
-      UUID createdByUserId,
-      UUID approvedByUserId,
       Instant createdAt,
       Instant validatedAt,
       Instant approvedAt,
@@ -52,12 +51,13 @@ public final class Stage10CDtos {
       String failureReason,
       String cancellationReason) {}
 
+  // OP-CAP-31: the raw outbox payload (payloadJson) is an internal external-write artifact and is
+  // not exposed on the default operator response.
   public static record OutboxEventResponse(
       UUID id,
       String aggregateType,
       UUID aggregateId,
       String eventType,
-      String payloadJson,
       String status,
       Instant createdAt,
       Instant publishedAt,

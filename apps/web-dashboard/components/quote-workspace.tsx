@@ -47,7 +47,6 @@ export function QuoteWorkspace() {
     try {
       const response = await createDraftQuoteFromRfq({
         tenantId: String(form.get("tenantId") || demoTenantId),
-        actorRole: "OPERATOR",
         customerExternalRef: String(form.get("customerExternalRef") || "CUST-001"),
         requestedLocation: String(form.get("requestedLocation") || "WH-ALM"),
         requestedDiscountPercent: Number(form.get("requestedDiscountPercent") || 0),
@@ -95,7 +94,6 @@ export function QuoteWorkspace() {
     setMessage("");
     const payload = {
       tenantId,
-      actorRole: "OPERATOR",
       reason: decisionReason,
       comment: decisionReason,
       idempotencyKey: approvalActionKeyRef.current.get(actionKey)!

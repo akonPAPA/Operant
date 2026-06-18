@@ -119,16 +119,15 @@ public class Stage9IntegrationController {
   }
 
   private Stage9IntegrationConnectionResponse toIntegration(IntegrationConnection connection) {
-    return new Stage9IntegrationConnectionResponse(connection.getId(), connection.getProviderType().name(), connection.getDisplayName(), connection.getStatus(), connection.getMode(), connection.getConnectionKind(), connection.getEndpointRef(), connection.getLastSyncAt(), connection.getCreatedAt(), connection.getUpdatedAt());
+    return new Stage9IntegrationConnectionResponse(connection.getId(), connection.getProviderType().name(), connection.getDisplayName(), connection.getStatus(), connection.getMode(), connection.getConnectionKind(), connection.getLastSyncAt(), connection.getCreatedAt(), connection.getUpdatedAt());
   }
 
   private Stage9ChangeRequestResponse toChangeRequest(ChangeRequest request) {
-    String idempotencyKeyHash = request.getConnectorIdempotencyKey() == null ? safetyService.connectorIdempotencyKeyHash(request) : request.getConnectorIdempotencyKey();
-    return new Stage9ChangeRequestResponse(request.getId(), status(request), request.getTargetSystem(), request.getTargetEntity(), request.getRequestedAction(), request.getSourceType(), request.getSourceId(), request.getValidationStatus(), request.getApprovalStatus(), request.getExecutionStatus(), request.getExternalReference(), request.getFailureReason(), request.getCreatedByUserId(), request.getApprovedByUserId(), request.getCreatedAt(), request.getApprovedAt(), request.getRejectedAt(), request.getExecutedAt(), idempotencyKeyHash, request.getConnectorAttemptCount(), request.getConnectorMaxAttempts(), request.getConnectorLastAttemptAt(), request.getConnectorNextRetryAt(), request.getConnectorFailureType() == null ? null : request.getConnectorFailureType().name(), request.isConnectorRetryable());
+    return new Stage9ChangeRequestResponse(request.getId(), status(request), request.getTargetSystem(), request.getTargetEntity(), request.getRequestedAction(), request.getSourceType(), request.getValidationStatus(), request.getApprovalStatus(), request.getExecutionStatus(), request.getExternalReference(), request.getFailureReason(), request.getCreatedAt(), request.getApprovedAt(), request.getRejectedAt(), request.getExecutedAt(), request.getConnectorFailureType() == null ? null : request.getConnectorFailureType().name(), request.isConnectorRetryable());
   }
 
   private Stage9ConnectorSyncRunResponse toSyncRun(ConnectorSyncEvent event) {
-    return new Stage9ConnectorSyncRunResponse(event.getId(), event.getIntegrationConnectionId(), event.getProviderType().name(), event.getSyncType(), event.getDirection(), event.getStatus(), event.getRecordsRead(), event.getRecordsWritten(), event.getRecordsFailed(), event.getErrorCode(), event.getErrorMessage(), event.getStartedAt(), event.getFinishedAt());
+    return new Stage9ConnectorSyncRunResponse(event.getId(), event.getProviderType().name(), event.getSyncType(), event.getDirection(), event.getStatus(), event.getRecordsRead(), event.getRecordsWritten(), event.getRecordsFailed(), event.getErrorCode(), event.getStartedAt(), event.getFinishedAt());
   }
 
   private String status(ChangeRequest request) {

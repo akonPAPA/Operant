@@ -9,7 +9,6 @@ import {
 } from "@/lib/quote-transaction-api";
 
 const demoTenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
-const demoActorId = process.env.NEXT_PUBLIC_DEMO_ACTOR_ID ?? "22222222-2222-4222-8222-222222222222";
 
 type Props = {
   sourceId: string;
@@ -31,9 +30,7 @@ export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
       const payload = {
         idempotencyKey: `${sourceType.toLowerCase()}-${sourceId}-${dryRun ? "preview" : "draft"}`,
         requestedCustomerAccountId: customerId || undefined,
-        dryRun,
-        actorId: demoActorId,
-        actorType: "USER"
+        dryRun
       };
       const response = sourceType === "CHANNEL_MESSAGE"
         ? await createQuoteFromChannelMessage(tenantId, sourceId, payload)

@@ -83,31 +83,48 @@ public class ChannelToQuoteWiringService {
     this.clock = clock;
   }
 
+  // OP-CAP-31: back-compat default entry — trusted actor defaults to an operator (USER, no id).
+  // Production call sites must use the trusted-actor overloads below so a body cannot set the actor.
   @Transactional
   public ChannelToQuoteResponse createFromChannelMessage(UUID messageId, ChannelToQuoteRequest request) {
+    return createFromChannelMessage(messageId, request, null, "USER");
+  }
+
+  @Transactional
+  public ChannelToQuoteResponse createFromChannelMessage(UUID messageId, ChannelToQuoteRequest request, UUID actorId, String actorType) {
     UUID tenantId = TenantContext.requireTenantId();
     ChannelMessage message = channelMessageRepository.findByIdAndTenantId(messageId, tenantId)
         .orElseThrow(() -> new NotFoundException("Channel message not found: " + messageId));
     SourceContext source = new SourceContext("CHANNEL_MESSAGE", message.getId(), message.getChannel(), message.getExternalMessageId(), message.getReceivedAt(), message.getCustomerAccountId(), firstNonBlank(message.getNormalizedText(), message.getTextContent(), message.getSenderDisplayName()));
-    return convert(source, request);
+    return convert(source, request, actorId, actorType);
   }
 
   @Transactional
   public ChannelToQuoteResponse createFromInboundDocument(UUID documentId, ChannelToQuoteRequest request) {
+    return createFromInboundDocument(documentId, request, null, "USER");
+  }
+
+  @Transactional
+  public ChannelToQuoteResponse createFromInboundDocument(UUID documentId, ChannelToQuoteRequest request, UUID actorId, String actorType) {
     UUID tenantId = TenantContext.requireTenantId();
     InboundDocument document = inboundDocumentRepository.findByIdAndTenantId(documentId, tenantId)
         .orElseThrow(() -> new NotFoundException("Inbound document not found: " + documentId));
     SourceContext source = new SourceContext("INBOUND_DOCUMENT", document.getId(), document.getSourceChannel(), document.getSha256Fingerprint(), document.getReceivedAt(), null, firstNonBlank(document.getOriginalFilename(), document.getObjectStorageKey()));
-    return convert(source, request);
+    return convert(source, request, actorId, actorType);
   }
 
   @Transactional
   public ChannelToQuoteResponse createFromExtraction(UUID extractionId, ChannelToQuoteRequest request) {
+    return createFromExtraction(extractionId, request, null, "USER");
+  }
+
+  @Transactional
+  public ChannelToQuoteResponse createFromExtraction(UUID extractionId, ChannelToQuoteRequest request, UUID actorId, String actorType) {
     UUID tenantId = TenantContext.requireTenantId();
     ExtractionResult extraction = extractionResultRepository.findByIdAndTenantId(extractionId, tenantId)
         .orElseThrow(() -> new NotFoundException("Extraction result not found: " + extractionId));
     SourceContext source = new SourceContext("EXTRACTION_RESULT", extraction.getId(), extraction.getSourceType(), extraction.getSourceId().toString(), clock.instant(), null, extraction.getResultJson());
-    return convert(source, request);
+    return convert(source, request, actorId, actorType);
   }
 
   @Transactional(readOnly = true)
@@ -116,38 +133,63 @@ public class ChannelToQuoteWiringService {
     QuoteConversionAttempt attempt = attemptRepository.findByIdAndTenantId(attemptId, tenantId)
         .orElseThrow(() -> new NotFoundException("Quote conversion attempt not found: " + attemptId));
     List<QuoteValidationIssueDto> issues = issuesFromJson(attempt.getValidationSummaryJson());
-    return new ChannelToQuoteResponse(attempt.getStatus(), attempt.getQuoteId(), attempt.getId(), attempt.getSourceType(), attempt.getSourceId(), null, 0, 0, issues, "NEEDS_REVIEW".equals(attempt.getStatus()), List.of());
+    return new ChannelToQuoteResponse(attempt.getStatus(), attempt.getQuoteId(), attempt.getId(), attempt.getSourceType(), null, 0, 0, issues, "NEEDS_REVIEW".equals(attempt.getStatus()));
   }
 
   @Transactional(readOnly = true)
   public QuoteSourceContextDto sourceContext(UUID quoteId) {
+    QuoteSourceContextSnapshot snapshot = sourceContextSnapshot(quoteId);
+    return new QuoteSourceContextDto(
+        snapshot.sourceType(),
+        snapshot.sourceChannel(),
+        snapshot.sourceExternalRef(),
+        snapshot.sourceReceivedAt(),
+        snapshot.conversionStatus(),
+        snapshot.candidateLineCount(),
+        snapshot.reviewRequired(),
+        snapshot.validationIssues().stream()
+            .map(issue -> new QuoteValidationIssueDto(issue.code(), issue.severity(), issue.blocking(), issue.message(), issue.lineId()))
+            .toList());
+  }
+
+  @Transactional(readOnly = true)
+  public QuoteSourceContextSnapshot sourceContextSnapshot(UUID quoteId) {
     UUID tenantId = TenantContext.requireTenantId();
     draftQuoteRepository.findByIdAndTenantId(quoteId, tenantId).orElseThrow(() -> new NotFoundException("Draft quote not found: " + quoteId));
     QuoteSourceLink link = sourceLinkRepository.findFirstByTenantIdAndQuoteId(tenantId, quoteId)
         .orElseThrow(() -> new NotFoundException("Quote source context not found: " + quoteId));
     Optional<QuoteConversionAttempt> attempt = attemptRepository.findFirstByTenantIdAndQuoteIdOrderByCreatedAtDesc(tenantId, quoteId);
-    return new QuoteSourceContextDto(
+    String conversionStatus = attempt.map(QuoteConversionAttempt::getStatus).orElse(null);
+    List<QuoteValidationIssueDto> issues = attempt.map(QuoteConversionAttempt::getValidationSummaryJson).map(this::issuesFromJson).orElse(List.of());
+    boolean reviewRequired = "NEEDS_REVIEW".equals(conversionStatus) || issues.stream().anyMatch(QuoteValidationIssueDto::blocking);
+    List<QuoteCandidateLineDto> candidateLines = candidateLinesFor(link.getSourceType(), link.getSourceId());
+    return new QuoteSourceContextSnapshot(
         link.getSourceType(),
-        link.getSourceId(),
         link.getSourceChannel(),
         link.getSourceExternalRef(),
         link.getSourceReceivedAt(),
-        link.getCreatedBy() == null ? null : link.getCreatedBy().toString(),
+        conversionStatus,
+        candidateLines.size(),
+        reviewRequired,
+        issues.stream()
+            .map(issue -> new QuoteSourceContextSnapshot.ValidationIssueSnapshot(issue.code(), issue.severity(), issue.blocking(), issue.message(), issue.lineId()))
+            .toList(),
         link.getCreatedByType(),
-        attempt.map(QuoteConversionAttempt::getId).orElse(null),
-        attempt.map(QuoteConversionAttempt::getStatus).orElse(null),
-        candidateLinesFor(link.getSourceType(), link.getSourceId()),
-        attempt.map(QuoteConversionAttempt::getValidationSummaryJson).map(this::issuesFromJson).orElse(List.of()),
-        readMap(link.getMetadataJson()));
+        candidateLines.stream()
+            .map(line -> new QuoteSourceContextSnapshot.CandidateLineSnapshot(line.lineNumber(), line.rawSkuOrAlias(), line.description(), line.quantity(), line.uom(), line.requestedDate(), line.status()))
+            .toList());
   }
 
-  private ChannelToQuoteResponse convert(SourceContext source, ChannelToQuoteRequest nullableRequest) {
-    ChannelToQuoteRequest request = nullableRequest == null ? new ChannelToQuoteRequest(null, null, null, null, false, false, List.of(), Map.of(), null, "USER") : nullableRequest;
+  private ChannelToQuoteResponse convert(SourceContext source, ChannelToQuoteRequest nullableRequest, UUID actorId, String rawActorType) {
+    ChannelToQuoteRequest request = nullableRequest == null ? new ChannelToQuoteRequest(null, null, null, null, false, false, List.of(), Map.of()) : nullableRequest;
+    // OP-CAP-31: actor is backend-owned authority; it is supplied by the trusted call site
+    // (controller -> RequestActorResolver, or the controlled bot runtime), never from the body.
+    String actorType = actorType(rawActorType);
     UUID tenantId = TenantContext.requireTenantId();
     try {
-      requireCreatePermission(tenantId, request);
+      requireCreatePermission(tenantId, actorId);
     } catch (TenantPolicyException ex) {
-      auditEventService.record("CHANNEL_TO_QUOTE_CONVERSION_REJECTED", source.sourceType, source.sourceId.toString(), request.actorId(), auditJson(source, request, null, List.of("POLICY_DENIED"), null, null));
+      auditEventService.record("CHANNEL_TO_QUOTE_CONVERSION_REJECTED", source.sourceType, source.sourceId.toString(), actorId, auditJson(source, request, null, List.of("POLICY_DENIED"), null, null, actorType));
       throw ex;
     }
     String requestMode = request.dryRun() ? "DRY_RUN" : "CREATE";
@@ -156,8 +198,8 @@ public class ChannelToQuoteWiringService {
         ? Optional.empty()
         : attemptRepository.findFirstByTenantIdAndSourceTypeAndSourceIdAndIdempotencyKeyAndRequestModeOrderByCreatedAtDesc(tenantId, source.sourceType, source.sourceId, request.idempotencyKey().trim(), requestMode);
     if (replay.isPresent()) {
-      AuditEvent audit = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", replay.get().getId().toString(), request.actorId(), auditJson(source, request, replay.get().getId(), List.of("IDEMPOTENT_REPLAY"), replay.get().getQuoteId(), null));
-      return new ChannelToQuoteResponse(replay.get().getStatus(), replay.get().getQuoteId(), replay.get().getId(), source.sourceType, source.sourceId, null, 0, 0, issuesFromJson(replay.get().getValidationSummaryJson()), "NEEDS_REVIEW".equals(replay.get().getStatus()), List.of(audit.getId()));
+      AuditEvent audit = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", replay.get().getId().toString(), actorId, auditJson(source, request, replay.get().getId(), List.of("IDEMPOTENT_REPLAY"), replay.get().getQuoteId(), null, actorType));
+      return new ChannelToQuoteResponse(replay.get().getStatus(), replay.get().getQuoteId(), replay.get().getId(), source.sourceType, null, 0, 0, issuesFromJson(replay.get().getValidationSummaryJson()), "NEEDS_REVIEW".equals(replay.get().getStatus()));
     }
 
     List<QuoteCandidateLineDto> availableLines = candidateLinesFor(source.sourceType, source.sourceId);
@@ -166,13 +208,13 @@ public class ChannelToQuoteWiringService {
     List<QuoteValidationIssueDto> issues = previewIssues(lines, customer, availableLines, request.selectedLineItemIds());
     String candidateStatus = candidateStatus(lines, customer, issues, request.forceReview());
     String summary = validationSummaryJson(issues, lines.size(), customer);
-    QuoteConversionAttempt attempt = attemptRepository.save(new QuoteConversionAttempt(tenantId, source.sourceType, source.sourceId, candidateStatus, summary, request.actorId(), actorType(request.actorType()), request.idempotencyKey(), requestMode, clock.instant()));
-    AuditEvent attempted = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null, customer));
+    QuoteConversionAttempt attempt = attemptRepository.save(new QuoteConversionAttempt(tenantId, source.sourceType, source.sourceId, candidateStatus, summary, actorId, actorType, request.idempotencyKey(), requestMode, clock.instant()));
+    AuditEvent attempted = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), actorId, auditJson(source, request, attempt.getId(), reasonCodes(issues), null, customer, actorType));
 
     if (request.dryRun()) {
       attempt.markTerminal(candidateStatus, null, null, summary);
       attemptRepository.save(attempt);
-      AuditEvent dryRun = auditEventService.record("CHANNEL_TO_QUOTE_DRY_RUN", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(issues), null, customer));
+      AuditEvent dryRun = auditEventService.record("CHANNEL_TO_QUOTE_DRY_RUN", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), actorId, auditJson(source, request, attempt.getId(), reasonCodes(issues), null, customer, actorType));
       return response(candidateStatus, null, attempt.getId(), source, customer, lines, issues, List.of(attempted.getId(), dryRun.getId()));
     }
     if (!"READY_FOR_DRAFT_QUOTE".equals(candidateStatus)) {
@@ -181,14 +223,14 @@ public class ChannelToQuoteWiringService {
       attemptRepository.save(attempt);
       List<UUID> auditIds = new ArrayList<>();
       auditIds.add(attempted.getId());
-      auditIds.addAll(recordPreDraftRejectionEvidence(source, request, attempt, customer, issues, candidateStatus));
+      auditIds.addAll(recordPreDraftRejectionEvidence(source, request, attempt, customer, issues, candidateStatus, actorId, actorType));
       return response(candidateStatus, null, attempt.getId(), source, customer, lines, issues, auditIds);
     }
 
     Stage12ADtos.QuoteTransactionResponse quote = quoteDraftService.createFromRfq(new Stage12ADtos.CreateDraftQuoteFromRfqCommand(
         tenantId,
-        request.actorId(),
-        actorType(request.actorType()),
+        actorId,
+        actorType,
         customer == null ? null : customer.getAccountCode(),
         customer == null ? null : customer.getDisplayName(),
         lines.stream().map(line -> new Stage12ADtos.RequestedItem(line.rawSkuOrAlias(), line.description(), line.quantity(), line.uom())).toList(),
@@ -202,20 +244,20 @@ public class ChannelToQuoteWiringService {
         : "READY_FOR_DRAFT_QUOTE";
     attempt.markDraftCreated(quote.draftQuoteId(), finalStatus, validationSummaryJson(mergedIssues, lines.size(), customer));
     attemptRepository.save(attempt);
-    sourceLinkRepository.save(new QuoteSourceLink(tenantId, quote.draftQuoteId(), source.sourceType, source.sourceId, source.channel, source.externalRef, source.receivedAt, request.actorId(), actorType(request.actorType()), metadataJson(source, attempt.getId(), lines), clock.instant()));
-    AuditEvent created = auditEventService.record("CHANNEL_TO_QUOTE_DRAFT_CREATED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId(), customer));
-    AuditEvent linked = auditEventService.record("QUOTE_SOURCE_LINKED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId(), customer));
+    sourceLinkRepository.save(new QuoteSourceLink(tenantId, quote.draftQuoteId(), source.sourceType, source.sourceId, source.channel, source.externalRef, source.receivedAt, actorId, actorType, metadataJson(source, attempt.getId(), lines), clock.instant()));
+    AuditEvent created = auditEventService.record("CHANNEL_TO_QUOTE_DRAFT_CREATED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), actorId, auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId(), customer, actorType));
+    AuditEvent linked = auditEventService.record("QUOTE_SOURCE_LINKED", "DRAFT_QUOTE", quote.draftQuoteId().toString(), actorId, auditJson(source, request, attempt.getId(), reasonCodes(mergedIssues), quote.draftQuoteId(), customer, actorType));
     return response(finalStatus, quote.draftQuoteId(), attempt.getId(), source, customer, lines, mergedIssues, List.of(attempted.getId(), created.getId(), linked.getId()));
   }
 
-  private List<UUID> recordPreDraftRejectionEvidence(SourceContext source, ChannelToQuoteRequest request, QuoteConversionAttempt attempt, CustomerAccount customer, List<QuoteValidationIssueDto> issues, String candidateStatus) {
+  private List<UUID> recordPreDraftRejectionEvidence(SourceContext source, ChannelToQuoteRequest request, QuoteConversionAttempt attempt, CustomerAccount customer, List<QuoteValidationIssueDto> issues, String candidateStatus, UUID actorId, String actorType) {
     List<UUID> auditIds = new ArrayList<>();
     for (QuoteValidationIssueDto issue : issues) {
-      AuditEvent issueEvent = auditEventService.record("CHANNEL_TO_QUOTE_VALIDATION_ISSUE_CREATED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), issueAuditJson(source, request, attempt.getId(), customer, issue));
+      AuditEvent issueEvent = auditEventService.record("CHANNEL_TO_QUOTE_VALIDATION_ISSUE_CREATED", "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), actorId, issueAuditJson(source, request, attempt.getId(), customer, issue, actorType));
       auditIds.add(issueEvent.getId());
     }
     String action = "NEEDS_REVIEW".equals(candidateStatus) ? "CHANNEL_TO_QUOTE_REVIEW_REQUIRED" : "CHANNEL_TO_QUOTE_CONVERSION_REJECTED";
-    AuditEvent terminal = auditEventService.record(action, "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), request.actorId(), auditJson(source, request, attempt.getId(), reasonCodesOrStatus(issues, candidateStatus), null, customer));
+    AuditEvent terminal = auditEventService.record(action, "QUOTE_CONVERSION_ATTEMPT", attempt.getId().toString(), actorId, auditJson(source, request, attempt.getId(), reasonCodesOrStatus(issues, candidateStatus), null, customer, actorType));
     auditIds.add(terminal.getId());
     return auditIds;
   }
@@ -305,13 +347,12 @@ public class ChannelToQuoteWiringService {
     return "READY_FOR_DRAFT_QUOTE";
   }
 
-  private void requireCreatePermission(UUID tenantId, ChannelToQuoteRequest request) {
-    ActorRole role = "BOT".equalsIgnoreCase(actorType(request.actorType())) ? ActorRole.OPERATOR : ActorRole.OPERATOR;
+  private void requireCreatePermission(UUID tenantId, UUID actorId) {
     tenantPolicyService.requireAllowed(TenantPolicyContext.builder()
         .tenantId(tenantId)
         .targetTenantId(tenantId)
-        .actorId(request.actorId())
-        .actorRoles(java.util.Set.of(role))
+        .actorId(actorId)
+        .actorRoles(java.util.Set.of(ActorRole.OPERATOR))
         .action(TenantPolicyAction.CREATE_DRAFT_QUOTE)
         .resourceType(ResourceType.QUOTE)
         .systemActor(false)
@@ -319,7 +360,7 @@ public class ChannelToQuoteWiringService {
   }
 
   private ChannelToQuoteResponse response(String status, UUID quoteId, UUID attemptId, SourceContext source, CustomerAccount customer, List<QuoteCandidateLineDto> lines, List<QuoteValidationIssueDto> issues, List<UUID> auditEventIds) {
-    return new ChannelToQuoteResponse(status, quoteId, attemptId, source.sourceType, source.sourceId, customer == null ? "UNRESOLVED" : "RESOLVED", lines.size(), issues.stream().noneMatch(QuoteValidationIssueDto::blocking) ? lines.size() : 0, issues, !"READY_FOR_DRAFT_QUOTE".equals(status), auditEventIds);
+    return new ChannelToQuoteResponse(status, quoteId, attemptId, source.sourceType, customer == null ? "UNRESOLVED" : "RESOLVED", lines.size(), issues.stream().noneMatch(QuoteValidationIssueDto::blocking) ? lines.size() : 0, issues, !"READY_FOR_DRAFT_QUOTE".equals(status));
   }
 
   private String validationSummaryJson(List<QuoteValidationIssueDto> issues, int lineCount, CustomerAccount customer) {
@@ -359,9 +400,9 @@ public class ChannelToQuoteWiringService {
     }
   }
 
-  private String auditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, List<String> reasonCodes, UUID quoteId, CustomerAccount customer) {
+  private String auditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, List<String> reasonCodes, UUID quoteId, CustomerAccount customer, String actorType) {
     try {
-      Map<String, Object> metadata = baseAuditMetadata(source, request, conversionAttemptId, customer);
+      Map<String, Object> metadata = baseAuditMetadata(source, request, conversionAttemptId, customer, actorType);
       metadata.put("quoteId", quoteId == null ? null : quoteId.toString());
       metadata.put("draftQuoteId", quoteId == null ? null : quoteId.toString());
       metadata.put("reasonCodes", reasonCodes == null ? List.of() : reasonCodes);
@@ -372,9 +413,9 @@ public class ChannelToQuoteWiringService {
     }
   }
 
-  private String issueAuditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, CustomerAccount customer, QuoteValidationIssueDto issue) {
+  private String issueAuditJson(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, CustomerAccount customer, QuoteValidationIssueDto issue, String actorType) {
     try {
-      Map<String, Object> metadata = baseAuditMetadata(source, request, conversionAttemptId, customer);
+      Map<String, Object> metadata = baseAuditMetadata(source, request, conversionAttemptId, customer, actorType);
       metadata.put("draftQuoteId", null);
       metadata.put("quoteId", null);
       metadata.put("issueCode", issue.code());
@@ -389,7 +430,7 @@ public class ChannelToQuoteWiringService {
     }
   }
 
-  private Map<String, Object> baseAuditMetadata(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, CustomerAccount customer) {
+  private Map<String, Object> baseAuditMetadata(SourceContext source, ChannelToQuoteRequest request, UUID conversionAttemptId, CustomerAccount customer, String actorType) {
     Map<String, Object> metadata = new LinkedHashMap<>();
     metadata.put("sourceType", source.sourceType);
     metadata.put("sourceId", source.sourceId == null ? null : source.sourceId.toString());
@@ -397,7 +438,7 @@ public class ChannelToQuoteWiringService {
     metadata.put("sourceExternalRef", source.externalRef == null ? "" : source.externalRef);
     metadata.put("normalizedIntent", normalizedIntent(request.requestedQuoteType()));
     metadata.put("conversionAttemptId", conversionAttemptId == null ? null : conversionAttemptId.toString());
-    metadata.put("actorType", actorType(request.actorType()));
+    metadata.put("actorType", actorType(actorType));
     metadata.put("customerId", customer == null ? null : customer.getId().toString());
     metadata.put("externalExecution", "DISABLED");
     return metadata;

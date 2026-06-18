@@ -167,8 +167,7 @@ class ConnectorExecutionSafetyStage9Test {
     TenantContext.setTenantId(tenantA);
     ChangeRequest requestA = approvedChangeRequest(tenantA, "{}");
     changeRequestService.executeStage9DemoChangeRequest(requestA.getId());
-    assertThat(safetyService.policies().maskedCredentialRef()).startsWith("placeholder:");
-    assertThat(safetyService.policies().maskedCredentialRef()).doesNotContain("secretValue");
+    assertThat(safetyService.policies().executionMode()).isEqualTo(ConnectorExecutionMode.DEMO_ONLY.name());
     assertThat(safetyService.audit().events()).isNotEmpty();
 
     TenantContext.setTenantId(tenantB);

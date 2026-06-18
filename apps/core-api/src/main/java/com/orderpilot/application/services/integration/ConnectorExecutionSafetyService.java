@@ -29,9 +29,6 @@ public class ConnectorExecutionSafetyService {
     ConnectorExecutionPolicy policy = ConnectorExecutionPolicy.stage9DemoPolicy();
     return new Stage9ConnectorPolicyResponse(
         policy.executionMode().name(),
-        policy.capabilities().stream().map(Enum::name).toList(),
-        "CONFIGURED_PLACEHOLDER",
-        ConnectorCredentialRef.mask("demo-erp-placeholder"),
         policy.productionWritesEnabled(),
         policy.networkCallsAllowed(),
         "Production ERP/1C connectors remain disabled until separate security acceptance.");
@@ -55,7 +52,7 @@ public class ConnectorExecutionSafetyService {
   public Stage9ConnectorAuditResponse audit() {
     List<Stage9ConnectorAuditEventResponse> events = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(TenantContext.requireTenantId()).stream()
         .filter(event -> event.getAction().startsWith("CHANGE_REQUEST") || event.getAction().startsWith("DEMO_ERP") || event.getAction().startsWith("CONNECTOR"))
-        .map(event -> new Stage9ConnectorAuditEventResponse(event.getId(), event.getAction(), event.getEntityType(), event.getEntityId(), event.getMetadata(), event.getOccurredAt()))
+        .map(event -> new Stage9ConnectorAuditEventResponse(event.getAction(), event.getEntityType(), event.getOccurredAt()))
         .toList();
     return new Stage9ConnectorAuditResponse(events);
   }
@@ -63,21 +60,15 @@ public class ConnectorExecutionSafetyService {
   public Stage9ExecutionSafetyResponse toSafety(ChangeRequest request) {
     String failureType = request.getConnectorFailureType() == null ? null : request.getConnectorFailureType().name();
     return new Stage9ExecutionSafetyResponse(
-        request.getId(),
         ConnectorExecutionMode.DEMO_ONLY.name(),
-        ConnectorExecutionPolicy.stage9DemoPolicy().capabilities().stream().map(Enum::name).toList(),
-        request.getConnectorIdempotencyKey() == null ? connectorIdempotencyKeyHash(request) : request.getConnectorIdempotencyKey(),
         request.getConnectorAttemptCount(),
         request.getConnectorMaxAttempts(),
         request.getConnectorLastAttemptAt(),
         request.getConnectorNextRetryAt(),
         failureType,
-        request.getFailureReason(),
         request.isConnectorRetryable(),
         canRetry(request),
         canCancel(request),
-        "CONFIGURED_PLACEHOLDER",
-        ConnectorCredentialRef.mask("demo-erp-placeholder"),
         false,
         false);
   }
@@ -99,7 +90,7 @@ public class ConnectorExecutionSafetyService {
   }
 
   private Stage9ConnectorSyncRunResponse toSyncRun(ConnectorSyncEvent event) {
-    return new Stage9ConnectorSyncRunResponse(event.getId(), event.getIntegrationConnectionId(), event.getProviderType().name(), event.getSyncType(), event.getDirection(), event.getStatus(), event.getRecordsRead(), event.getRecordsWritten(), event.getRecordsFailed(), event.getErrorCode(), event.getErrorMessage(), event.getStartedAt(), event.getFinishedAt());
+    return new Stage9ConnectorSyncRunResponse(event.getId(), event.getProviderType().name(), event.getSyncType(), event.getDirection(), event.getStatus(), event.getRecordsRead(), event.getRecordsWritten(), event.getRecordsFailed(), event.getErrorCode(), event.getStartedAt(), event.getFinishedAt());
   }
 
   private static String sha256(String value) {

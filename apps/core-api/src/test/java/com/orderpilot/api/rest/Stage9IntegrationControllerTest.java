@@ -9,6 +9,10 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.orderpilot.api.dto.Stage9Dtos.Stage9ConnectorAuditEventResponse;
+import com.orderpilot.api.dto.Stage9Dtos.Stage9ConnectorAuditResponse;
+import com.orderpilot.api.dto.Stage9Dtos.Stage9ConnectorPolicyResponse;
+import com.orderpilot.api.dto.Stage9Dtos.Stage9ExecutionSafetyResponse;
 import com.orderpilot.application.services.integration.ChangeRequestService;
 import com.orderpilot.application.services.integration.ConnectorExecutionSafetyService;
 import com.orderpilot.application.services.integration.ConnectorSyncEventService;
@@ -69,14 +73,19 @@ class Stage9IntegrationControllerTest {
     mockMvc.perform(get("/api/stage9/integrations").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.integrations[0].displayName").value("Demo ERP Adapter"))
-        .andExpect(jsonPath("$.integrations[0].mode").value("READ_ONLY"));
+        .andExpect(jsonPath("$.integrations[0].mode").value("READ_ONLY"))
+        .andExpect(jsonPath("$.integrations[0].endpointRef").doesNotExist());
     mockMvc.perform(post("/api/stage9/integrations/demo-erp").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.connectionKind").value("DEMO_ERP_LOCAL"));
     mockMvc.perform(get("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.changeRequests[0].status").value("EXECUTED"))
-        .andExpect(jsonPath("$.changeRequests[0].externalReference").value("DEMO-QUOTE-123"));
+        .andExpect(jsonPath("$.changeRequests[0].externalReference").value("DEMO-QUOTE-123"))
+        .andExpect(jsonPath("$.changeRequests[0].sourceId").doesNotExist())
+        .andExpect(jsonPath("$.changeRequests[0].createdByUserId").doesNotExist())
+        .andExpect(jsonPath("$.changeRequests[0].approvedByUserId").doesNotExist())
+        .andExpect(jsonPath("$.changeRequests[0].connectorIdempotencyKeyHash").doesNotExist());
     mockMvc.perform(post("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE").contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.targetSystem").value("DEMO_ERP"));
@@ -88,7 +97,43 @@ class Stage9IntegrationControllerTest {
         .andExpect(jsonPath("$.executionStatus").value("EXECUTED"));
     mockMvc.perform(get("/api/stage9/connector-sync-runs").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.syncRuns[0].direction").value("OUTBOUND_DEMO"));
+        .andExpect(jsonPath("$.syncRuns[0].direction").value("OUTBOUND_DEMO"))
+        .andExpect(jsonPath("$.syncRuns[0].integrationConnectionId").doesNotExist())
+        .andExpect(jsonPath("$.syncRuns[0].errorMessage").doesNotExist());
+  }
+
+  @Test
+  void stage9ConnectorPolicySafetyAndAuditResponsesDoNotExposeInternals() throws Exception {
+    UUID requestId = UUID.randomUUID();
+    Instant now = Instant.parse("2026-05-27T00:00:00Z");
+    when(safetyService.policies()).thenReturn(new Stage9ConnectorPolicyResponse("DEMO_ONLY", false, false, "External writes disabled."));
+    when(safetyService.safety(requestId)).thenReturn(new Stage9ExecutionSafetyResponse("DEMO_ONLY", 1, 3, now, null, "TRANSIENT_ERROR", true, true, true, false, false));
+    when(safetyService.audit()).thenReturn(new Stage9ConnectorAuditResponse(List.of(new Stage9ConnectorAuditEventResponse("CHANGE_REQUEST_CREATED", "CHANGE_REQUEST", now))));
+
+    mockMvc.perform(get("/api/stage9/connectors/policies").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.executionMode").value("DEMO_ONLY"))
+        .andExpect(jsonPath("$.capabilities").doesNotExist())
+        .andExpect(jsonPath("$.credentialStatus").doesNotExist())
+        .andExpect(jsonPath("$.maskedCredentialRef").doesNotExist());
+
+    mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.executionMode").value("DEMO_ONLY"))
+        .andExpect(jsonPath("$.changeRequestId").doesNotExist())
+        .andExpect(jsonPath("$.capabilities").doesNotExist())
+        .andExpect(jsonPath("$.connectorIdempotencyKeyHash").doesNotExist())
+        .andExpect(jsonPath("$.failureMessage").doesNotExist())
+        .andExpect(jsonPath("$.credentialStatus").doesNotExist())
+        .andExpect(jsonPath("$.maskedCredentialRef").doesNotExist());
+
+    mockMvc.perform(get("/api/stage9/connector-audit").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.events[0].action").value("CHANGE_REQUEST_CREATED"))
+        .andExpect(jsonPath("$.events[0].id").doesNotExist())
+        .andExpect(jsonPath("$.events[0].entityId").doesNotExist())
+        .andExpect(jsonPath("$.events[0].metadata").doesNotExist());
   }
 
   // OP-CAP-17E: the connector ChangeRequest approver must be taken from the trusted actor header,
