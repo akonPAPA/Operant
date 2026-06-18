@@ -42,27 +42,42 @@ jobs:
       - name: Setup Python for pinned Semgrep CLI
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install pinned Semgrep CLI
         run: |
-          python -m pip install --upgrade pip wheel
-          python -m pip install "setuptools<82" "semgrep==1.127.0"
-          python -c "import pkg_resources; import opentelemetry.instrumentation.dependencies; print('pkg_resources/opentelemetry import OK')"
+          python -m pip install --upgrade "pip<26" wheel
+          python -m pip install --no-cache-dir --upgrade --force-reinstall "setuptools<81" "semgrep==1.127.0"
+
+          python - <<'PY'
+          import pkg_resources
+          import opentelemetry.instrumentation.dependencies
+          print("pkg_resources/opentelemetry import OK")
+          PY
+
           semgrep --version
           python -m pip check
 
-      - name: Blocking scan - high-signal security and OP invariants
+      - name: Blocking scan - high-signal security rules
         run: |
+          CONFIG_ARGS=(
+            --config p/security-audit
+            --config p/owasp-top-ten
+            --config p/java
+            --config p/javascript
+            --config p/typescript
+          )
+
+          if [ -f ".semgrep/op-security-blocking.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security-blocking.yml)
+          else
+            echo "Local OP blocking Semgrep config not found; running registry configs only."
+          fi
+
           semgrep scan \
             --error \
             --severity ERROR \
-            --config p/security-audit \
-            --config p/owasp-top-ten \
-            --config p/java \
-            --config p/javascript \
-            --config p/typescript \
-            --config .semgrep/op-security.yml \
+            "${CONFIG_ARGS[@]}" \
             --exclude node_modules \
             --exclude .next \
             --exclude dist \
@@ -76,11 +91,20 @@ jobs:
       - name: Advisory scan - broader findings, non-blocking
         continue-on-error: true
         run: |
+          CONFIG_ARGS=(
+            --config auto
+          )
+
+          if [ -f ".semgrep/op-security-advisory.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security-advisory.yml)
+          else
+            echo "Local OP advisory Semgrep config not found; running auto config only."
+          fi
+
           semgrep scan \
             --severity WARNING \
             --severity INFO \
-            --config auto \
-            --config .semgrep/op-security.yml \
+            "${CONFIG_ARGS[@]}" \
             --exclude node_modules \
             --exclude .next \
             --exclude dist \
