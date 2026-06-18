@@ -5,6 +5,15 @@ public interface ProcessingJobRepository extends JpaRepository<ProcessingJob, UU
   // OP-CAP-28: bounded, tenant-scoped, most-recent-first page for the safe status/list contract (no full scan).
   List<ProcessingJob> findByTenantIdOrderByQueuedAtDesc(UUID tenantId, Pageable pageable);
   Optional<ProcessingJob> findByIdAndTenantId(UUID id, UUID tenantId);
+  // OP-CAP-30: tenant-scoped, row-locked single-job lookup for result drain. A pessimistic write lock
+  // (FOR UPDATE on PostgreSQL and H2) serializes concurrent/duplicate result drains for the SAME job on
+  // the database row itself — the first drain creates the advisory run + terminal transition and commits,
+  // a racing duplicate blocks here, and once it acquires the lock it observes the committed run and is
+  // handled as an idempotent duplicate. No SKIP LOCKED here: the drain must WAIT for the in-flight winner
+  // (and then see its committed state), not skip the row like the claim path does. Wrong-tenant lookups
+  // match no row and lock nothing, preserving the existing cross-tenant not-found behavior.
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  Optional<ProcessingJob> findWithLockByIdAndTenantId(UUID id, UUID tenantId);
   Optional<ProcessingJob> findFirstByTenantIdAndTargetTypeAndTargetIdAndStatus(UUID tenantId, String targetType, UUID targetId, String status);
   // OP-CAP-21: bounded counts + most-recent-job lookup for the Command Center runtime health summary.
   long countByTenantIdAndStatus(UUID tenantId, String status);

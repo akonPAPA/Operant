@@ -20,6 +20,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +39,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AiWorkerResultIntakeService {
+  private static final Logger log = LoggerFactory.getLogger(AiWorkerResultIntakeService.class);
+
   static final String PROVIDER_TYPE = "AI_WORKER";
 
   // Bounds — fail closed above these. Snippets/inputs are already bounded by the worker; these are
@@ -93,7 +97,15 @@ public class AiWorkerResultIntakeService {
     validateEnvelope(request, tenantId);
 
     // Correlation against trusted Core API state. The worker's tenantRef is never the authority.
-    ProcessingJob job = processingJobRepository.findByIdAndTenantId(request.jobId(), tenantId)
+    //
+    // OP-CAP-30: take a tenant-scoped pessimistic row lock on the job for the life of this transaction so
+    // that concurrent or racing duplicate result drains for the SAME job serialize on the database row
+    // (FOR UPDATE), not on an after-the-fact status read. The winner creates the advisory run + terminal
+    // transition and commits; a racing duplicate blocks on this lock and, once it acquires it, reads the
+    // winner's committed run and is handled as an idempotent duplicate below — so exactly one terminal
+    // transition / run / result / audit-succeeded / handoff event is ever committed. A wrong-tenant lookup
+    // matches no row and locks nothing, preserving the existing cross-tenant not-found behavior.
+    ProcessingJob job = processingJobRepository.findWithLockByIdAndTenantId(request.jobId(), tenantId)
         .orElseThrow(() -> rejected(request, "processing_job_not_found"));
     if (!job.getTargetType().equalsIgnoreCase(request.sourceType())) {
       throw rejected(request, "source_type_mismatch");
@@ -113,6 +125,11 @@ public class AiWorkerResultIntakeService {
       ExtractionRun run = existing.get();
       UUID resultId = resultRepository.findFirstByTenantIdAndExtractionRunId(tenantId, run.getId())
           .map(ExtractionResult::getId).orElse(null);
+      // Bounded, non-sensitive duplicate-drain signal for production diagnosis (identifiers + statuses
+      // only; never payload, document text, prompts, or secrets). The duplicate is absorbed idempotently
+      // and emits no terminal side effect — only this audit row + log line.
+      log.info("ai_worker_result.duplicate_drain tenantId={} jobId={} workerStatus={} existingRunStatus={}",
+          tenantId, job.getId(), status, run.getStatus());
       auditEventService.record("ai_processing_result.intake_duplicate", "extraction_run",
           run.getId().toString(), null, auditMetadata(request, status));
       return new AiProcessingResultIntakeResponse(
@@ -125,6 +142,10 @@ public class AiWorkerResultIntakeService {
     // through another path — e.g. the stale-PROCESSING reaper marked it FAILED — a late/runless result
     // must not resurrect or overwrite it. Fail closed, audited, no run/result created, no business write.
     if (!job.isActiveForResult()) {
+      // Stale/late drain against a job that already reached a terminal state (e.g. reaper-FAILED) with no
+      // surviving advisory run. Bounded, non-sensitive signal only; the rejection is also audited below.
+      log.warn("ai_worker_result.stale_drain_rejected tenantId={} jobId={} jobStatus={} workerStatus={}",
+          tenantId, job.getId(), job.getStatus(), status);
       throw rejected(request, "job_not_in_processable_state");
     }
 
