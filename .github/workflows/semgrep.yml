@@ -16,6 +16,7 @@ on:
       - ".github/workflows/**"
       - ".semgrep/**"
   schedule:
+    # Weekly full scan. Use a non-round random-ish time to avoid global CI peaks.
     - cron: "37 3 * * 1"
   workflow_dispatch:
 
@@ -31,6 +32,7 @@ jobs:
     name: Semgrep SAST / OP policy scan
     runs-on: ubuntu-latest
 
+    # Avoid token/permission edge cases on Dependabot PRs.
     if: github.actor != 'dependabot[bot]'
 
     steps:
