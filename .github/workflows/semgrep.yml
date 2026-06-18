@@ -1,0 +1,114 @@
+name: Semgrep Security Scan
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "apps/core-api/**"
+      - "apps/web-dashboard/**"
+      - ".github/workflows/**"
+      - ".semgrep/**"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "apps/core-api/**"
+      - "apps/web-dashboard/**"
+      - ".github/workflows/**"
+      - ".semgrep/**"
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semgrep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep SAST / OP policy scan
+    runs-on: ubuntu-latest
+
+    if: github.actor != 'dependabot[bot]'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python for pinned Semgrep CLI
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned Semgrep CLI
+        run: |
+          python -m pip install --upgrade "pip<26" wheel
+          python -m pip install --no-cache-dir --upgrade --force-reinstall "setuptools<81" "semgrep==1.127.0"
+
+          python - <<'PY'
+          import pkg_resources
+          import opentelemetry.instrumentation.dependencies
+          print("pkg_resources/opentelemetry import OK")
+          PY
+
+          semgrep --version
+          python -m pip check
+
+      - name: Blocking scan - high-signal security rules
+        run: |
+          CONFIG_ARGS=(
+            --config p/security-audit
+            --config p/owasp-top-ten
+            --config p/java
+            --config p/javascript
+            --config p/typescript
+          )
+
+          if [ -f ".semgrep/op-security-blocking.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security-blocking.yml)
+          else
+            echo "Local OP blocking Semgrep config not found; running registry configs only."
+          fi
+
+          semgrep scan \
+            --error \
+            --severity ERROR \
+            "${CONFIG_ARGS[@]}" \
+            --exclude node_modules \
+            --exclude .next \
+            --exclude dist \
+            --exclude build \
+            --exclude target \
+            --exclude coverage \
+            --exclude "**/*.min.js" \
+            --exclude "**/generated/**" \
+            .
+
+      - name: Advisory scan - broader findings, non-blocking
+        continue-on-error: true
+        run: |
+          CONFIG_ARGS=(
+            --config auto
+          )
+
+          if [ -f ".semgrep/op-security-advisory.yml" ]; then
+            CONFIG_ARGS+=(--config .semgrep/op-security-advisory.yml)
+          else
+            echo "Local OP advisory Semgrep config not found; running auto config only."
+          fi
+
+          semgrep scan \
+            --severity WARNING \
+            --severity INFO \
+            "${CONFIG_ARGS[@]}" \
+            --exclude node_modules \
+            --exclude .next \
+            --exclude dist \
+            --exclude build \
+            --exclude target \
+            --exclude coverage \
+            --exclude "**/*.min.js" \
+            --exclude "**/generated/**" \
+            .

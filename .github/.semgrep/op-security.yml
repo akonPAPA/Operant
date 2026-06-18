@@ -1,0 +1,273 @@
+rules:
+  # ---------------------------------------------------------------------------
+  # OP frontend authority boundary
+  # ---------------------------------------------------------------------------
+
+  - id: op.frontend.no-authority-fields-in-client-payload
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: |
+              tenantId: $VALUE
+          - pattern: |
+              actorId: $VALUE
+          - pattern: |
+              userId: $VALUE
+          - pattern: |
+              sourceId: $VALUE
+          - pattern: |
+              createdBy: $VALUE
+          - pattern: |
+              triggeredBy: $VALUE
+    message: >
+      OP boundary violation: frontend must not send tenant/actor/source authority
+      fields in request payloads. Tenant and actor must be resolved server-side
+      from trusted context, not from UI/body fields.
+
+  - id: op.frontend.no-authority-id-labels-in-ui
+    languages: [generic]
+    severity: WARNING
+    paths:
+      include:
+        - apps/web-dashboard/**
+    pattern-regex: '(Tenant ID|Source ID|Actor ID|User ID|tenantId|sourceId|actorId|userId)'
+    message: >
+      OP UX/security warning: user-facing UI should not expose raw authority or
+      internal identifiers unless this is an explicit admin/debug-only surface.
+
+  - id: op.frontend.no-database-env-access
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: process.env.DATABASE_URL
+          - pattern: process.env.POSTGRES_URL
+          - pattern: process.env.PGHOST
+          - pattern: process.env.PGPASSWORD
+          - pattern: process.env.MYSQL_URL
+    message: >
+      OP architecture violation: web-dashboard must not access database
+      connection settings. Frontend must call Core API only.
+
+  - id: op.frontend.no-direct-db-client-imports
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: |
+              import $X from "pg"
+          - pattern: |
+              import $X from "mysql"
+          - pattern: |
+              import $X from "mysql2"
+          - pattern: |
+              import $X from "@prisma/client"
+          - pattern: |
+              const $X = require("pg")
+          - pattern: |
+              const $X = require("@prisma/client")
+    message: >
+      OP architecture violation: frontend must not import DB clients. Use Core
+      API boundaries, tenant checks, validation, audit, and service logic.
+
+  # ---------------------------------------------------------------------------
+  # OP backend tenant / authority boundary
+  # ---------------------------------------------------------------------------
+
+  - id: op.backend.no-controller-x-tenant-id-direct-read
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    pattern-regex: '@RequestHeader\s*\(\s*"X-Tenant-Id"\s*\)'
+    message: >
+      OP backend boundary violation: controllers should not directly trust
+      X-Tenant-Id. Tenant must be resolved through the trusted tenant context
+      filter/context layer.
+
+  - id: op.backend.no-request-body-authority-fields
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    pattern-regex: '\b(tenantId|actorId|userId|sourceId|createdBy|triggeredBy)\b'
+    message: >
+      OP backend warning: authority-like field detected. Verify this is not
+      accepted from request body as trusted authority. Controllers/services must
+      resolve tenant/actor/source from trusted context or existing server-side
+      records.
+
+  - id: op.backend.no-controller-returning-jpa-entity-directly
+    languages: [java]
+    severity: WARNING
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @RestController
+              class $C {
+                ...
+                public $ENTITY $METHOD(...) {
+                  ...
+                }
+                ...
+              }
+          - pattern: |
+              @RestController
+              class $C {
+                ...
+                public ResponseEntity<$ENTITY> $METHOD(...) {
+                  ...
+                }
+                ...
+              }
+      - metavariable-regex:
+          metavariable: $ENTITY
+          regex: '.*Entity'
+    message: >
+      OP API contract warning: controller appears to return an Entity type.
+      Prefer DTO/read-model response types to avoid leaking internal fields,
+      audit IDs, tenant IDs, or persistence structure.
+
+  # ---------------------------------------------------------------------------
+  # Unsafe Java / Spring / API patterns
+  # ---------------------------------------------------------------------------
+
+  - id: op.java.no-runtime-exec
+    languages: [java]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    patterns:
+      - pattern-either:
+          - pattern: Runtime.getRuntime().exec(...)
+          - pattern: new ProcessBuilder(...)
+    message: >
+      Dangerous process execution. This requires explicit security review,
+      strict input control, and sandboxing.
+
+  - id: op.java.no-raw-sql-string-concat
+    languages: [java]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $EM.createQuery($A + $B)
+          - pattern: |
+              $EM.createNativeQuery($A + $B)
+          - pattern: |
+              $ST.executeQuery($A + $B)
+          - pattern: |
+              $ST.executeUpdate($A + $B)
+    message: >
+      Possible SQL/JPQL injection through string concatenation. Use parameters,
+      repositories, criteria APIs, or prepared statements.
+
+  - id: op.java.no-permissive-cors-star
+    languages: [java]
+    severity: ERROR
+    paths:
+      include:
+        - apps/core-api/src/main/java/**
+    pattern-regex: 'allowedOrigins\s*\(\s*"\*"\s*\)|addAllowedOrigin\s*\(\s*"\*"\s*\)'
+    message: >
+      Permissive CORS wildcard detected. For OP, configure explicit trusted
+      origins per environment.
+
+  # ---------------------------------------------------------------------------
+  # Unsafe TypeScript / React patterns
+  # ---------------------------------------------------------------------------
+
+  - id: op.ts.no-eval-or-new-function
+    languages: [typescript, tsx, javascript, jsx]
+    severity: ERROR
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+    message: >
+      Dangerous dynamic code execution. Avoid eval/new Function in frontend.
+
+  - id: op.react.no-dangerously-set-inner-html
+    languages: [typescript, tsx, javascript, jsx]
+    severity: WARNING
+    paths:
+      include:
+        - apps/web-dashboard/**
+    pattern: |
+      dangerouslySetInnerHTML={...}
+    message: >
+      XSS-sensitive React API detected. Only allow this with explicit
+      sanitization and security review.
+
+  - id: op.ts.no-console-error-leaking-raw-response
+    languages: [typescript, tsx, javascript, jsx]
+    severity: WARNING
+    paths:
+      include:
+        - apps/web-dashboard/**
+    patterns:
+      - pattern-either:
+          - pattern: console.error($ERR)
+          - pattern: console.log($ERR)
+          - pattern: console.warn($ERR)
+    message: >
+      Verify logs do not expose raw backend response bodies, tokens, tenant IDs,
+      auth headers, or internal IDs to the browser console.
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions hardening
+  # ---------------------------------------------------------------------------
+
+  - id: op.github-actions.no-snyk-master-action
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - .github/workflows/**
+    pattern-regex: 'uses:\s*snyk/actions/setup@master'
+    message: >
+      Supply-chain risk: snyk/actions/setup must not use @master. Pin to a full
+      commit SHA or install a pinned Snyk CLI version.
+
+  - id: op.github-actions.no-unscoped-write-all-permissions
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - .github/workflows/**
+    pattern-regex: 'permissions:\s*write-all'
+    message: >
+      GitHub Actions permissions must be least-privilege. Avoid write-all.
+
+  - id: op.github-actions.no-pull-request-target-with-checkout
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - .github/workflows/**
+    pattern-regex: 'pull_request_target:'
+    message: >
+      pull_request_target is dangerous for untrusted PRs. Use only with explicit
+      security review, no untrusted checkout, and minimal token permissions.
