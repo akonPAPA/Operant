@@ -157,20 +157,39 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
   @Test
   void staleLeaseResultCannotOverwriteTerminalState() {
     ProcessingJob job = newPendingJob(TENANT_A);
+
     TenantContext.setTenantId(TENANT_A);
     try {
       leaseService.claim(1); // -> PROCESSING
-      leaseService.recoverStaleProcessing(BASE.plusSeconds(86_400), null); // lease stale -> terminal FAILED
-      assertThat(jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow().getStatus())
-          .isEqualTo("FAILED");
+
+      ProcessingJob processing =
+          jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
+
+      assertThat(processing.getStatus()).isEqualTo("PROCESSING");
+      assertThat(processing.getStartedAt()).isNotNull();
+
+      Instant staleCutoff = processing.getStartedAt().plusSeconds(1);
+
+      int recovered = leaseService.recoverStaleProcessing(staleCutoff, null);
+
+      assertThat(recovered).isEqualTo(1);
+
+      ProcessingJob failed =
+          jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
+
+      assertThat(failed.getStatus()).isEqualTo("FAILED");
 
       Outcome late = drainOnce(TENANT_A, successResult(job));
 
       assertThat(late.ok()).isFalse();
       assertThat(late.error).contains("job_not_in_processable_state");
-      assertThat(jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow().getStatus())
-          .isEqualTo("FAILED"); // unchanged — no resurrection
-      assertThat(runRepository.count()).isZero(); // no advisory run created
+
+      ProcessingJob afterLateResult =
+          jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
+
+      assertThat(afterLateResult.getStatus()).isEqualTo("FAILED");
+      assertThat(runRepository.count()).isZero();
+      assertThat(resultRepository.count()).isZero();
     } finally {
       TenantContext.clear();
     }
@@ -182,35 +201,43 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
   //    effects.
   // ----------------------------------------------------------------------------------------------
   @Test
-  void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
-    ProcessingJob job = staleProcessingJob(TENANT_A);
-    AiProcessingResultIntakeRequest request = successResult(job);
+void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
+  ProcessingJob job = staleProcessingJob(TENANT_A);
+  AiProcessingResultIntakeRequest request = successResult(job);
 
-    RaceResult race = runRecoveryAndIntakeRace(TENANT_A, request);
+  ProcessingJob processing =
+      jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
 
-    ProcessingJob fresh = jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
-    assertThat(fresh.getStatus()).isIn("SUCCEEDED", "FAILED");
-    assertThat(runRepository.count()).isLessThanOrEqualTo(1);
-    assertThat(resultRepository.count()).isLessThanOrEqualTo(1);
-    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isLessThanOrEqualTo(1);
+  assertThat(processing.getStatus()).isEqualTo("PROCESSING");
+  assertThat(processing.getStartedAt()).isNotNull();
 
-    if ("SUCCEEDED".equals(fresh.getStatus())) {
-      assertThat(race.intake().ok()).isTrue();
-      assertThat(runRepository.count()).isEqualTo(1);
-      assertThat(resultRepository.count()).isEqualTo(1);
-      assertThat(runRepository.findAll().get(0).getStatus()).isEqualTo("SUCCEEDED");
-      assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isEqualTo(1);
-      assertThat(race.recovery().recovered()).isZero();
-    } else {
-      assertThat(race.recovery().ok()).isTrue();
-      assertThat(race.recovery().recovered()).isEqualTo(1);
-      assertThat(runRepository.count()).isZero();
-      assertThat(resultRepository.count()).isZero();
-      assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isZero();
-      assertThat(race.intake().ok()).isFalse();
-      assertThat(race.intake().error()).contains("job_not_in_processable_state");
-    }
+  Instant staleCutoff = processing.getStartedAt().plusSeconds(1);
+
+  RaceResult race = runRecoveryAndIntakeRace(TENANT_A, request, staleCutoff);
+
+  ProcessingJob fresh = jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow();
+  assertThat(fresh.getStatus()).isIn("SUCCEEDED", "FAILED");
+  assertThat(runRepository.count()).isLessThanOrEqualTo(1);
+  assertThat(resultRepository.count()).isLessThanOrEqualTo(1);
+  assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isLessThanOrEqualTo(1);
+
+  if ("SUCCEEDED".equals(fresh.getStatus())) {
+    assertThat(race.intake().ok()).isTrue();
+    assertThat(runRepository.count()).isEqualTo(1);
+    assertThat(resultRepository.count()).isEqualTo(1);
+    assertThat(runRepository.findAll().get(0).getStatus()).isEqualTo("SUCCEEDED");
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isEqualTo(1);
+    assertThat(race.recovery().recovered()).isZero();
+  } else {
+    assertThat(race.recovery().ok()).isTrue();
+    assertThat(race.recovery().recovered()).isEqualTo(1);
+    assertThat(runRepository.count()).isZero();
+    assertThat(resultRepository.count()).isZero();
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isZero();
+    assertThat(race.intake().ok()).isFalse();
+    assertThat(race.intake().error()).contains("job_not_in_processable_state");
   }
+}
 
   // ----------------------------------------------------------------------------------------------
   // 5. Cross-tenant drain guard under concurrency: tenant B drains racing on tenant A's job (by id) are
@@ -278,7 +305,11 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
     return runConcurrentDrains(tenant, i -> request.get());
   }
 
-  private RaceResult runRecoveryAndIntakeRace(UUID tenant, AiProcessingResultIntakeRequest request) throws Exception {
+  private RaceResult runRecoveryAndIntakeRace(
+    UUID tenant,
+    AiProcessingResultIntakeRequest request,
+    Instant staleCutoff
+  ) throws Exception {
     ExecutorService pool = Executors.newFixedThreadPool(2);
     try {
       CountDownLatch ready = new CountDownLatch(2);
@@ -287,7 +318,7 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
         ready.countDown();
         start.await(10, TimeUnit.SECONDS);
         try {
-          return new RecoveryOutcome(leaseService.recoverStaleProcessing(BASE.minusSeconds(900), 10), null);
+          return new RecoveryOutcome(leaseService.recoverStaleProcessing(staleCutoff, 10), null);
         } catch (RuntimeException ex) {
           return new RecoveryOutcome(0, ex.getMessage());
         }
@@ -298,14 +329,14 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
         return drainOnce(tenant, request);
       });
 
-      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-      start.countDown();
-      return new RaceResult(recovery.get(30, TimeUnit.SECONDS), intake.get(30, TimeUnit.SECONDS));
-    } finally {
-      pool.shutdownNow();
-      assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
-    }
+    assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+    start.countDown();
+    return new RaceResult(recovery.get(30, TimeUnit.SECONDS), intake.get(30, TimeUnit.SECONDS));
+  } finally {
+    pool.shutdownNow();
+    assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
   }
+}
 
   private Outcome drainOnce(UUID tenant, AiProcessingResultIntakeRequest request) {
     TenantContext.setTenantId(tenant);
