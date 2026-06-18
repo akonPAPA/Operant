@@ -84,7 +84,7 @@ public class WorkerJobLeaseService {
   @Transactional
   public int recoverStaleProcessing(Instant cutoff, Integer limit) {
     int clamped = clamp(limit, DEFAULT_RECOVERY_LIMIT, MAX_RECOVERY_LIMIT);
-    List<ProcessingJob> stale = repository.findByStatusAndStartedAtBeforeOrderByStartedAtAsc(
+    List<ProcessingJob> stale = repository.findStaleProcessingWithLock(
         ProcessingJobStatus.PROCESSING.name(), cutoff, PageRequest.of(0, clamped));
     Instant now = clock.instant();
     int recovered = 0;
@@ -93,6 +93,9 @@ public class WorkerJobLeaseService {
       // PROCESSING. The query already filters on PROCESSING, but a result-intake completion committed
       // between selection and flush could have moved it to a terminal state — never overwrite that.
       if (!ProcessingJobStatus.PROCESSING.name().equals(job.getStatus())) {
+        continue;
+      }
+      if (job.getStartedAt() == null || !job.getStartedAt().isBefore(cutoff)) {
         continue;
       }
       // No audit row here: this reaper is a deliberately cross-tenant system sweep with no single
