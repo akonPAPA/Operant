@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orderpilot.api.dto.Stage12BDtos.ChannelToQuoteResponse;
@@ -62,7 +63,26 @@ class ChannelToQuoteAuthorityContractTest {
     assertThat(actorTypeCaptor.getValue()).isEqualTo("USER");
   }
 
+  @Test
+  void channelToQuoteResponseDoesNotExposeInternalHandles() throws Exception {
+    UUID messageId = UUID.randomUUID();
+    UUID internalAttemptId = UUID.randomUUID();
+    when(wiringService.createFromChannelMessage(eq(messageId), any(), any(), any()))
+        .thenReturn(new ChannelToQuoteResponse("NEEDS_REVIEW", null, internalAttemptId, "CHANNEL_MESSAGE", "UNRESOLVED", 0, 0, List.of(), true));
+
+    mockMvc.perform(post("/api/v1/quote-transactions/from-channel-message/" + messageId)
+            .contentType("application/json")
+            .header("X-Tenant-Id", UUID.randomUUID().toString())
+            .content("{\"dryRun\":true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("NEEDS_REVIEW"))
+        .andExpect(jsonPath("$.sourceType").value("CHANNEL_MESSAGE"))
+        .andExpect(jsonPath("$.conversionAttemptId").doesNotExist())
+        .andExpect(jsonPath("$.sourceId").doesNotExist())
+        .andExpect(jsonPath("$.auditEventIds").doesNotExist());
+  }
+
   private ChannelToQuoteResponse response(UUID messageId) {
-    return new ChannelToQuoteResponse("NEEDS_REVIEW", null, UUID.randomUUID(), "CHANNEL_MESSAGE", messageId, "UNRESOLVED", 0, 0, List.of(), true, List.of());
+    return new ChannelToQuoteResponse("NEEDS_REVIEW", null, UUID.randomUUID(), "CHANNEL_MESSAGE", "UNRESOLVED", 0, 0, List.of(), true);
   }
 }

@@ -1,5 +1,6 @@
 package com.orderpilot.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -26,15 +27,14 @@ public final class Stage12BDtos {
   public record ChannelToQuoteResponse(
       String status,
       UUID quoteId,
+      @JsonIgnore
       UUID conversionAttemptId,
       String sourceType,
-      UUID sourceId,
       String customerResolution,
       int lineCount,
       int acceptedLineCount,
       List<QuoteValidationIssueDto> validationIssues,
-      boolean reviewRequired,
-      List<UUID> auditEventIds) {}
+      boolean reviewRequired) {}
 
   // OP-CAP-31: operator-safe source summary. Internal identifiers (sourceId, conversionAttemptId,
   // triggeredBy/createdBy actor id, sourceEvidenceId, raw metadata) are not exposed on the default

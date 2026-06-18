@@ -133,11 +133,27 @@ public class ChannelToQuoteWiringService {
     QuoteConversionAttempt attempt = attemptRepository.findByIdAndTenantId(attemptId, tenantId)
         .orElseThrow(() -> new NotFoundException("Quote conversion attempt not found: " + attemptId));
     List<QuoteValidationIssueDto> issues = issuesFromJson(attempt.getValidationSummaryJson());
-    return new ChannelToQuoteResponse(attempt.getStatus(), attempt.getQuoteId(), attempt.getId(), attempt.getSourceType(), attempt.getSourceId(), null, 0, 0, issues, "NEEDS_REVIEW".equals(attempt.getStatus()), List.of());
+    return new ChannelToQuoteResponse(attempt.getStatus(), attempt.getQuoteId(), attempt.getId(), attempt.getSourceType(), null, 0, 0, issues, "NEEDS_REVIEW".equals(attempt.getStatus()));
   }
 
   @Transactional(readOnly = true)
   public QuoteSourceContextDto sourceContext(UUID quoteId) {
+    QuoteSourceContextSnapshot snapshot = sourceContextSnapshot(quoteId);
+    return new QuoteSourceContextDto(
+        snapshot.sourceType(),
+        snapshot.sourceChannel(),
+        snapshot.sourceExternalRef(),
+        snapshot.sourceReceivedAt(),
+        snapshot.conversionStatus(),
+        snapshot.candidateLineCount(),
+        snapshot.reviewRequired(),
+        snapshot.validationIssues().stream()
+            .map(issue -> new QuoteValidationIssueDto(issue.code(), issue.severity(), issue.blocking(), issue.message(), issue.lineId()))
+            .toList());
+  }
+
+  @Transactional(readOnly = true)
+  public QuoteSourceContextSnapshot sourceContextSnapshot(UUID quoteId) {
     UUID tenantId = TenantContext.requireTenantId();
     draftQuoteRepository.findByIdAndTenantId(quoteId, tenantId).orElseThrow(() -> new NotFoundException("Draft quote not found: " + quoteId));
     QuoteSourceLink link = sourceLinkRepository.findFirstByTenantIdAndQuoteId(tenantId, quoteId)
@@ -146,15 +162,22 @@ public class ChannelToQuoteWiringService {
     String conversionStatus = attempt.map(QuoteConversionAttempt::getStatus).orElse(null);
     List<QuoteValidationIssueDto> issues = attempt.map(QuoteConversionAttempt::getValidationSummaryJson).map(this::issuesFromJson).orElse(List.of());
     boolean reviewRequired = "NEEDS_REVIEW".equals(conversionStatus) || issues.stream().anyMatch(QuoteValidationIssueDto::blocking);
-    return new QuoteSourceContextDto(
+    List<QuoteCandidateLineDto> candidateLines = candidateLinesFor(link.getSourceType(), link.getSourceId());
+    return new QuoteSourceContextSnapshot(
         link.getSourceType(),
         link.getSourceChannel(),
         link.getSourceExternalRef(),
         link.getSourceReceivedAt(),
         conversionStatus,
-        candidateLinesFor(link.getSourceType(), link.getSourceId()).size(),
+        candidateLines.size(),
         reviewRequired,
-        issues);
+        issues.stream()
+            .map(issue -> new QuoteSourceContextSnapshot.ValidationIssueSnapshot(issue.code(), issue.severity(), issue.blocking(), issue.message(), issue.lineId()))
+            .toList(),
+        link.getCreatedByType(),
+        candidateLines.stream()
+            .map(line -> new QuoteSourceContextSnapshot.CandidateLineSnapshot(line.lineNumber(), line.rawSkuOrAlias(), line.description(), line.quantity(), line.uom(), line.requestedDate(), line.status()))
+            .toList());
   }
 
   private ChannelToQuoteResponse convert(SourceContext source, ChannelToQuoteRequest nullableRequest, UUID actorId, String rawActorType) {
@@ -176,7 +199,7 @@ public class ChannelToQuoteWiringService {
         : attemptRepository.findFirstByTenantIdAndSourceTypeAndSourceIdAndIdempotencyKeyAndRequestModeOrderByCreatedAtDesc(tenantId, source.sourceType, source.sourceId, request.idempotencyKey().trim(), requestMode);
     if (replay.isPresent()) {
       AuditEvent audit = auditEventService.record("CHANNEL_TO_QUOTE_ATTEMPTED", "QUOTE_CONVERSION_ATTEMPT", replay.get().getId().toString(), actorId, auditJson(source, request, replay.get().getId(), List.of("IDEMPOTENT_REPLAY"), replay.get().getQuoteId(), null, actorType));
-      return new ChannelToQuoteResponse(replay.get().getStatus(), replay.get().getQuoteId(), replay.get().getId(), source.sourceType, source.sourceId, null, 0, 0, issuesFromJson(replay.get().getValidationSummaryJson()), "NEEDS_REVIEW".equals(replay.get().getStatus()), List.of(audit.getId()));
+      return new ChannelToQuoteResponse(replay.get().getStatus(), replay.get().getQuoteId(), replay.get().getId(), source.sourceType, null, 0, 0, issuesFromJson(replay.get().getValidationSummaryJson()), "NEEDS_REVIEW".equals(replay.get().getStatus()));
     }
 
     List<QuoteCandidateLineDto> availableLines = candidateLinesFor(source.sourceType, source.sourceId);
@@ -337,7 +360,7 @@ public class ChannelToQuoteWiringService {
   }
 
   private ChannelToQuoteResponse response(String status, UUID quoteId, UUID attemptId, SourceContext source, CustomerAccount customer, List<QuoteCandidateLineDto> lines, List<QuoteValidationIssueDto> issues, List<UUID> auditEventIds) {
-    return new ChannelToQuoteResponse(status, quoteId, attemptId, source.sourceType, source.sourceId, customer == null ? "UNRESOLVED" : "RESOLVED", lines.size(), issues.stream().noneMatch(QuoteValidationIssueDto::blocking) ? lines.size() : 0, issues, !"READY_FOR_DRAFT_QUOTE".equals(status), auditEventIds);
+    return new ChannelToQuoteResponse(status, quoteId, attemptId, source.sourceType, customer == null ? "UNRESOLVED" : "RESOLVED", lines.size(), issues.stream().noneMatch(QuoteValidationIssueDto::blocking) ? lines.size() : 0, issues, !"READY_FOR_DRAFT_QUOTE".equals(status));
   }
 
   private String validationSummaryJson(List<QuoteValidationIssueDto> issues, int lineCount, CustomerAccount customer) {

@@ -1,7 +1,6 @@
 package com.orderpilot.application.services.workspace;
 
 import com.orderpilot.api.dto.Stage12ADtos.*;
-import com.orderpilot.api.dto.Stage12BDtos.QuoteSourceContextDto;
 import com.orderpilot.api.dto.Stage12CDtos.*;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.ProductSubstitutionService;
@@ -104,8 +103,8 @@ public class QuoteReviewService {
     List<QuoteValidationIssue> issues = issues(tenantId, quoteId);
     List<QuoteApprovalRequest> approvals = approvalRepository.findByTenantIdAndDraftQuoteIdOrderByCreatedAtAsc(tenantId, quoteId);
     QuoteConversionAttempt attempt = attemptRepository.findFirstByTenantIdAndQuoteIdOrderByCreatedAtDesc(tenantId, quoteId).orElse(null);
-    QuoteSourceContextDto sourceContext = sourceLinkRepository.findFirstByTenantIdAndQuoteId(tenantId, quoteId).isPresent()
-        ? channelToQuoteWiringService.sourceContext(quoteId)
+    QuoteSourceContextSnapshot sourceContext = sourceLinkRepository.findFirstByTenantIdAndQuoteId(tenantId, quoteId).isPresent()
+        ? channelToQuoteWiringService.sourceContextSnapshot(quoteId)
         : null;
     return new QuoteReviewDetail(
         QuoteHeader.from(quote),
@@ -329,7 +328,7 @@ public class QuoteReviewService {
         nextAction(quote, issues));
   }
 
-  private QuoteReviewSourceContext safeSourceContext(QuoteSourceContextDto sourceContext) {
+  private QuoteReviewSourceContext safeSourceContext(QuoteSourceContextSnapshot sourceContext) {
     if (sourceContext == null) return null;
     return new QuoteReviewSourceContext(
         sourceContext.sourceType(),
@@ -339,7 +338,7 @@ public class QuoteReviewService {
         sourceContext.conversionStatus());
   }
 
-  private List<QuoteReviewCandidateLine> safeCandidateLines(QuoteSourceContextDto sourceContext) {
+  private List<QuoteReviewCandidateLine> safeCandidateLines(QuoteSourceContextSnapshot sourceContext) {
     if (sourceContext == null) return List.of();
     return sourceContext.candidateLines().stream()
         .map(line -> new QuoteReviewCandidateLine(
