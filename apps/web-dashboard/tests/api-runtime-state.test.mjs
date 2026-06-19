@@ -47,7 +47,11 @@ test("quote review reads return typed ApiResult via the shared client", () => {
 });
 
 test("quote review command path maps errors to safe messages, not raw body text", () => {
-  assert.match(quoteReviewApi, /throw new Error\(coreApiStatusMessage\(response\.status\)\)/);
+  assert.match(quoteReviewApi, /new Error\(coreApiStatusMessage\(response\.status\)\)/);
+  assert.match(quoteReviewApi, /status:\s*response\.status/);
+  assert.match(quoteReviewApi, /throw error/);
+  assert.doesNotMatch(quoteReviewApi, /await response\.text\(\)/);
+  assert.doesNotMatch(quoteReviewApi, /throw new Error\(await response\.text\(\)\)/);
   assert.doesNotMatch(quoteReviewApi, /const message = await response\.text\(\)/);
 });
 

@@ -19,9 +19,9 @@ Do not treat this file as an archive. Keep it short.
 
 Update at the start of a task only when needed:
 
-- Branch:
-- HEAD:
-- Dirty state:
+- Branch: OP-CAP-35
+- HEAD: (OP-CAP-35 completion)
+- Dirty state: clean
 
 ## Completed / Known State
 
@@ -145,29 +145,19 @@ Update at the start of a task only when needed:
   - Tests: added Stage9 reject/cancel body-actor-ignored coverage and a frontend response-leak
     assertion (see Test files below).
 
-### Current next slice: OP-CAP-34 Operator Action Runtime Foundation — in progress
+### Current next slice: OP-CAP-35 Quote Review Operator Action Runtime Integration — completed
 
-- Goal: create a safe, reusable frontend runtime for operator mutation actions so future screens
-  do not reimplement loading state, duplicate-click prevention, idempotency, safe error mapping,
-  and bad-layer payload boundaries differently each time.
-- Foundation created: `lib/operator-action-runtime.ts`
-  - `OperatorActionResult<T>` — typed result (ok/data/safeMessage | errorCode/safeMessage)
-  - `mapOperatorActionError(status)` — status-based safe error mapper (400/422/401/403/404/409/429/500+)
-  - `createOperatorIdempotencyKey(actionName, resourceHandle?)` — deterministic idempotency key
-  - `useOperatorAction<T>` — React hook with pending/disabled state, duplicate-click guard, safe
-    success/error callbacks
-- Applied to: `channel-quote-conversion-panel.tsx` — submit action uses the shared runtime
-- New mutation buttons must use the runtime or explicitly justify why not:
-  - duplicate-click guard
-  - loading/disabled state
-  - idempotency key path via shared helper
-  - safe operator error mapping
-  - business-intent-only payload
-  - no raw internal response rendering
-- Quote Review cockpit (`quote-review-cockpit.tsx`) already uses pattern-compliant local `mutate()`
-  wrapper — not migrated this slice, noted as next candidate.
-- Conversion Review cockpit (`conversion-review-cockpit.tsx`) is read-only — out of scope.
-- AI Work Assistant (`ai-work-assistant-workspace.tsx`) is advisory-only — out of scope.
+- Goal: migrate Quote Review cockpit mutation actions from local ad-hoc mutation handling to the shared `useOperatorAction` / operator-action runtime created in OP-CAP-34.
+- OP-CAP-34 created the reusable runtime foundation (`useOperatorAction`, `OperatorActionResult`, `createOperatorIdempotencyKey`, `mapOperatorActionError`).
+- Quote Review previously had a local `mutate()` wrapper that was pattern-compliant but duplicated the loading/disabled state, duplicate-click guard, and error handling.
+- Done this slice:
+  - `components/quote-review-cockpit.tsx`: replaced the local `mutate()` wrapper and `mutationInFlight`/`mutationInFlightRef` state with the shared `useOperatorAction` hook. All 7 Quote Review mutation actions (resolve issue, escalate issue, fix qty, set EA, follow-up, select substitute, reject substitute) now use `execute()` with `mapOperatorActionError` for safe error mapping. Idempotency keeps the existing UUID-per-action pattern via `generateIdempotencyKey` (not weakening to the deterministic runtime helper). Message styling uses `messageKind` state ("done"/"error") instead of content-based substring matching.
+  - `lib/quote-review-api.ts`: `requestQuoteReview` now attaches HTTP `status` to thrown errors so callers can use `mapOperatorActionError` for status-specific safe messages.
+  - `lib/operator-action-runtime.ts`: no changes needed (the existing hook is sufficient).
+  - Tests: `tests/quote-review-cockpit.test.mjs` — added 9 OP-CAP-35 tests (runtime import, hook usage, disabled state, duplicate-click guard, idempotency key approach, business-intent-only payloads, error mapping via `mapOperatorActionError`, API client status attachment, safe message rendering). Total 13 tests, 0 failures.
+  - Verification: `npm run tsc` clean, `npm run lint` clean, `npm run build` success, all regression tests pass (quote-transaction-contract 8/8, channel-to-quote-ui 13/13, conversion-review 3/3).
+
+### Current next slice: TBD
 
 - Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making
   AGENTS.md instruction files durable (tracked, not local-only) and removing the last editable
