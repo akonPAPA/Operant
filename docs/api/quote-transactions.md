@@ -16,10 +16,15 @@ All calls require `X-Tenant-Id`.
   "operatorNotes": "Customer asked for urgent delivery",
   "dryRun": true,
   "forceReview": false,
-  "actorId": "00000000-0000-0000-0000-000000000000",
-  "actorType": "USER"
+  "selectedLineItemIds": [],
+  "selectedSubstituteIds": {}
 }
 ```
+
+The request body carries **business intent only**. The tenant is supplied via the `X-Tenant-Id`
+header and the acting user is resolved by the backend from the trusted actor context. `actorId`,
+`actorType`, `tenantId`, `sourceId`, and any approval/execution/status fields are backend-owned
+authority and are **never** read from the request body; if supplied they are ignored.
 
 ## Create From Inbound Document
 
@@ -37,13 +42,16 @@ Uses extracted line items directly from the selected extraction result.
 
 `GET /api/v1/quote-transactions/conversion-attempts/{attemptId}`
 
-Returns the conversion status, quote id when created, source reference, and validation issues.
+Returns the conversion status, quote id when created, source type, and validation issues (the same operator-safe shape documented under Response Shape).
 
 ## Get Quote Source Context
 
 `GET /api/v1/quotes/{quoteId}/source-context`
 
-Returns source type, source id, channel, external reference, received timestamp, conversion attempt, actor type, candidate lines, and validation summary.
+Returns an operator-safe source summary: source type, source channel, source external reference,
+received timestamp, conversion status, candidate line count, review flag, and validation summary.
+Internal identifiers (raw source id, conversion attempt id, triggering/creating actor id, raw source
+metadata) are **not** part of this response — diagnostics live behind a separate admin endpoint.
 
 ## Response Shape
 
@@ -51,17 +59,19 @@ Returns source type, source id, channel, external reference, received timestamp,
 {
   "status": "READY_FOR_DRAFT_QUOTE",
   "quoteId": "00000000-0000-0000-0000-000000000000",
-  "conversionAttemptId": "00000000-0000-0000-0000-000000000000",
   "sourceType": "CHANNEL_MESSAGE",
-  "sourceId": "00000000-0000-0000-0000-000000000000",
   "customerResolution": "RESOLVED",
   "lineCount": 1,
   "acceptedLineCount": 1,
   "validationIssues": [],
-  "reviewRequired": false,
-  "auditEventIds": []
+  "reviewRequired": false
 }
 ```
+
+The response returns operator-safe workflow output only. The conversion attempt id exists internally
+for runtime/bot correlation but is `@JsonIgnore`d on the public response, so it is not part of the
+public JSON. Raw `sourceId`, `auditEventIds`, and other internal/storage/audit identifiers are not
+exposed on the public response.
 
 `dryRun=true` never creates a quote. Review and rejection statuses do not approve quotes or execute external writes.
 

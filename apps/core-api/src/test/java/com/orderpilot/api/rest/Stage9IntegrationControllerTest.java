@@ -185,6 +185,47 @@ class Stage9IntegrationControllerTest {
     assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
   }
 
+  // OP-CAP-32: reject carries business intent only (reason). A body-supplied actorId is backend-owned
+  // authority and must be ignored — the service is called with the reason only and never an actor.
+  @Test
+  void connectorRejectIgnoresBodyActorIdAndUsesReasonOnly() throws Exception {
+    UUID requestId = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    Instant now = Instant.parse("2026-05-27T00:00:00Z");
+    ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "DEMO_ERP", "DRAFT_QUOTE", "CREATE_DRAFT_QUOTE", "DRAFT_QUOTE", UUID.randomUUID(), "{}", "key", null, now);
+    when(changeRequestService.rejectChangeRequest(eq(requestId), any())).thenReturn(changeRequest);
+
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/reject")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_REJECT")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"actorId\":\"" + spoofActor + "\",\"reason\":\"not authorised\"}"))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+    verify(changeRequestService).rejectChangeRequest(eq(requestId), reasonCaptor.capture());
+    assertThat(reasonCaptor.getValue()).isEqualTo("not authorised").doesNotContain(spoofActor.toString());
+  }
+
+  // OP-CAP-32: cancel carries business intent only (reason). A body-supplied actorId must be ignored.
+  @Test
+  void connectorCancelIgnoresBodyActorIdAndUsesReasonOnly() throws Exception {
+    UUID requestId = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    Instant now = Instant.parse("2026-05-27T00:00:00Z");
+    ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "DEMO_ERP", "DRAFT_QUOTE", "CREATE_DRAFT_QUOTE", "DRAFT_QUOTE", UUID.randomUUID(), "{}", "key", null, now);
+    when(changeRequestService.cancelStage9DemoChangeRequest(eq(requestId), any())).thenReturn(changeRequest);
+
+    mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/cancel")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_REJECT")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"actorId\":\"" + spoofActor + "\",\"reason\":\"operator cancelled\"}"))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+    verify(changeRequestService).cancelStage9DemoChangeRequest(eq(requestId), reasonCaptor.capture());
+    assertThat(reasonCaptor.getValue()).isEqualTo("operator cancelled").doesNotContain(spoofActor.toString());
+  }
+
   @Test
   void changeRequestListWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
     MvcResult result = mockMvc.perform(get("/api/stage9/change-requests"))

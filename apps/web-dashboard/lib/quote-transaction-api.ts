@@ -100,12 +100,13 @@ export type QuoteApprovalCommandResponse = {
   auditCorrelationId: string;
 };
 
+// OP-CAP-32: operator-safe conversion result. The backend deliberately withholds internal
+// identifiers — conversionAttemptId is @JsonIgnore'd, and sourceId/auditEventIds are not part of the
+// response DTO — so the frontend contract must not declare or render them.
 export type ChannelToQuoteResponse = {
   status: string;
   quoteId?: string | null;
-  conversionAttemptId: string;
   sourceType: string;
-  sourceId: string;
   customerResolution?: string | null;
   lineCount: number;
   acceptedLineCount: number;
@@ -117,7 +118,6 @@ export type ChannelToQuoteResponse = {
     lineId?: string | null;
   }>;
   reviewRequired: boolean;
-  auditEventIds: string[];
 };
 
 // OP-CAP-31: operator-safe source summary. Raw internal identifiers (sourceId, conversionAttemptId,
