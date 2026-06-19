@@ -94,6 +94,10 @@ export type QuoteDraftSummary = {
   operatorMessage: string;
   externalExecution: string;
   assembledAt: string;
+  // OP-CAP-37: safe business status of the internal external-sync candidate.
+  // "PREPARED" or "PENDING_INTERNAL_APPROVAL". Never carries a connector id,
+  // change-request id, or any execution control.
+  externalSyncCandidateStatus?: string | null;
 };
 
 export type QuoteReviewCommandPayload = {

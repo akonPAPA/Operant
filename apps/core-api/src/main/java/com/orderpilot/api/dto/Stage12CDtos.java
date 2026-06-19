@@ -198,7 +198,12 @@ public final class Stage12CDtos {
       String nextAction,
       String operatorMessage,
       String externalExecution,
-      Instant assembledAt) {}
+      Instant assembledAt,
+      // OP-CAP-37: safe business status of the internal external-sync ChangeRequest
+      // candidate. "PREPARED" once a tenant-scoped, non-executed candidate exists;
+      // "PENDING_INTERNAL_APPROVAL" while approval is still required (no candidate
+      // this slice). Never exposes the candidate id, target system, or connector data.
+      String externalSyncCandidateStatus) {}
 
   public record ResolveValidationIssueRequest(String reasonCode, String note) {}
   public record RejectValidationIssueSuggestionRequest(String reasonCode, String note) {}

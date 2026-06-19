@@ -343,7 +343,8 @@ class QuoteReviewControllerTest {
             "READY_FOR_INTERNAL_APPROVAL",
             "Draft quote assembled and ready for the internal approval step.",
             "DISABLED",
-            Instant.parse("2026-06-19T00:00:00Z")));
+            Instant.parse("2026-06-19T00:00:00Z"),
+            "PREPARED"));
 
     String response = mockMvc.perform(post("/api/v1/quote-review/{quoteId}/assemble-draft", quoteId)
             .header(TENANT_HEADER, tenant.toString())
@@ -373,6 +374,10 @@ class QuoteReviewControllerTest {
         .andExpect(jsonPath("$.draftStatus").value("DRAFT_ASSEMBLED"))
         .andExpect(jsonPath("$.approvalRequired").value(false))
         .andExpect(jsonPath("$.externalExecution").value("DISABLED"))
+        .andExpect(jsonPath("$.externalSyncCandidateStatus").value("PREPARED"))
+        .andExpect(jsonPath("$.changeRequestId").doesNotExist())
+        .andExpect(jsonPath("$.candidateId").doesNotExist())
+        .andExpect(jsonPath("$.connectorId").doesNotExist())
         .andExpect(jsonPath("$.tenantId").doesNotExist())
         .andExpect(jsonPath("$.actorId").doesNotExist())
         .andExpect(jsonPath("$.createdBy").doesNotExist())
