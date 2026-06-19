@@ -313,4 +313,88 @@ class QuoteReviewControllerTest {
     assertThat(command.reasonCode()).isEqualTo("LINE_CORRECTED");
     assertThat(command.note()).isEqualTo("operator corrected visible line data");
    }
+
+  @Test
+  void assembleDraftUsesTrustedActorIgnoresClientAuthorityAndReturnsSafeSummary() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    UUID quoteId = UUID.randomUUID();
+    UUID customerId = UUID.randomUUID();
+    when(quoteReviewService.assembleDraft(any(), any()))
+        .thenReturn(new com.orderpilot.api.dto.Stage12CDtos.QuoteDraftSummary(
+            quoteId,
+            "DQ-1001",
+            "DRAFT_ASSEMBLED",
+            new com.orderpilot.api.dto.Stage12CDtos.CustomerSummary(customerId, "Acme Parts", "RESOLVED"),
+            "USD",
+            new BigDecimal("200.00"),
+            BigDecimal.ZERO,
+            new BigDecimal("200.00"),
+            new BigDecimal("40.0000"),
+            1,
+            0,
+            0,
+            0,
+            false,
+            "LOW",
+            "OK",
+            "openIssues=0,blockingIssues=0,openApprovals=0",
+            "READY_FOR_INTERNAL_APPROVAL",
+            "Draft quote assembled and ready for the internal approval step.",
+            "DISABLED",
+            Instant.parse("2026-06-19T00:00:00Z")));
+
+    String response = mockMvc.perform(post("/api/v1/quote-review/{quoteId}/assemble-draft", quoteId)
+            .header(TENANT_HEADER, tenant.toString())
+            .header(ACTOR_HEADER, trustedActor.toString())
+            .header(IDEMPOTENCY_HEADER, "assemble-draft-key")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "tenantId": "00000000-0000-4000-8000-000000000010",
+                  "actorId": "%s",
+                  "actorRole": "TENANT_ADMIN",
+                  "status": "APPROVED",
+                  "draftStatus": "APPROVED",
+                  "approvalRequired": false,
+                  "riskLevel": "NONE",
+                  "marginPercent": 99,
+                  "totalAmount": 1,
+                  "subtotalAmount": 1,
+                  "stockWarningCount": 0,
+                  "auditEventIds": ["spoof"],
+                  "reasonCode": "OPERATOR_REVIEW",
+                  "note": "validated by operator"
+                }
+                """.formatted(spoofActor)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.quoteId").value(quoteId.toString()))
+        .andExpect(jsonPath("$.draftStatus").value("DRAFT_ASSEMBLED"))
+        .andExpect(jsonPath("$.approvalRequired").value(false))
+        .andExpect(jsonPath("$.externalExecution").value("DISABLED"))
+        .andExpect(jsonPath("$.tenantId").doesNotExist())
+        .andExpect(jsonPath("$.actorId").doesNotExist())
+        .andExpect(jsonPath("$.createdBy").doesNotExist())
+        .andExpect(jsonPath("$.approvedBy").doesNotExist())
+        .andExpect(jsonPath("$.sourceId").doesNotExist())
+        .andExpect(jsonPath("$.auditEventIds").doesNotExist())
+        .andExpect(content().string(not(containsString(tenant.toString()))))
+        .andExpect(content().string(not(containsString(spoofActor.toString()))))
+        .andExpect(content().string(not(containsString("00000000-0000-4000-8000-000000000010"))))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    assertThat(response).doesNotContain("auditEventIds", "tenantId", "actorId");
+    ArgumentCaptor<com.orderpilot.api.dto.Stage12CDtos.AssembleQuoteDraftCommand> commandCaptor =
+        ArgumentCaptor.forClass(com.orderpilot.api.dto.Stage12CDtos.AssembleQuoteDraftCommand.class);
+    verify(quoteReviewService).assembleDraft(any(), commandCaptor.capture());
+    com.orderpilot.api.dto.Stage12CDtos.AssembleQuoteDraftCommand command = commandCaptor.getValue();
+    assertThat(command.tenantId()).isNull();
+    assertThat(command.actorId()).isEqualTo(trustedActor);
+    assertThat(command.actorRole()).isNull();
+    assertThat(command.reasonCode()).isEqualTo("OPERATOR_REVIEW");
+    assertThat(command.note()).isEqualTo("validated by operator");
+  }
 }

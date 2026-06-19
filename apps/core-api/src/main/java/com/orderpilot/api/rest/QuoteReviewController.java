@@ -133,6 +133,22 @@ public class QuoteReviewController {
     return execute(idempotencyKey, actorId, "QUOTE_REVIEW_SUBSTITUTE_REJECT", quoteId, lineId, command, () -> service.rejectSubstitute(quoteId, lineId, command));
   }
 
+  @PostMapping("/{quoteId}/assemble-draft")
+  public QuoteDraftSummary assembleDraft(@PathVariable UUID quoteId, @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @RequestBody(required = false) AssembleQuoteDraftRequest request, HttpServletRequest http) {
+    UUID actorId = trustedActor(http);
+    AssembleQuoteDraftCommand command = command(request, actorId);
+    return idempotencyService.execute(
+        TenantContext.requireTenantId(),
+        actorId,
+        idempotencyKey,
+        "QUOTE_REVIEW_ASSEMBLE_DRAFT",
+        "DRAFT_QUOTE",
+        quoteId + ":" + quoteId,
+        command,
+        QuoteDraftSummary.class,
+        () -> service.assembleDraft(quoteId, command));
+  }
+
   private QuoteReviewCommandResult execute(String idempotencyKey, UUID actorId, String commandType, UUID quoteId, UUID targetId, Object command, java.util.function.Supplier<QuoteReviewCommandResult> action) {
     return idempotencyService.execute(
         TenantContext.requireTenantId(),
@@ -181,5 +197,9 @@ public class QuoteReviewController {
   private QuoteLineSubstituteCommand command(QuoteLineSubstituteRequest request, UUID actorId) {
     if (request == null) return null;
     return new QuoteLineSubstituteCommand(null, actorId, null, request.substituteProductId(), request.reasonCode(), request.note());
+  }
+
+  private AssembleQuoteDraftCommand command(AssembleQuoteDraftRequest request, UUID actorId) {
+    return new AssembleQuoteDraftCommand(null, actorId, null, request == null ? null : request.reasonCode(), request == null ? null : request.note());
   }
 }

@@ -222,6 +222,83 @@ class QuoteReviewServiceTest {
         .isInstanceOf(QuoteLifecycleViolation.class);
   }
 
+  @Test
+  void assembleDraftFromCleanReviewProducesAssembledDraftWithoutApproval() {
+    Scenario s = cleanQuoteScenario();
+
+    QuoteDraftSummary summary = service.assembleDraft(s.quote().draftQuoteId(), new AssembleQuoteDraftCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Validated by operator"));
+
+    assertThat(summary.quoteId()).isEqualTo(s.quote().draftQuoteId());
+    assertThat(summary.draftStatus()).isEqualTo("DRAFT_ASSEMBLED");
+    assertThat(summary.approvalRequired()).isFalse();
+    assertThat(summary.unresolvedBlockingIssueCount()).isZero();
+    assertThat(summary.riskLevel()).isEqualTo("LOW");
+    assertThat(summary.lineCount()).isEqualTo(1);
+    assertThat(summary.externalExecution()).isEqualTo("DISABLED");
+    assertThat(summary.nextAction()).isEqualTo("READY_FOR_INTERNAL_APPROVAL");
+    assertThat(quotes.findByIdAndTenantId(s.quote().draftQuoteId(), TenantContext.requireTenantId()).orElseThrow().getStatus()).isEqualTo("DRAFT_ASSEMBLED");
+    assertThat(auditEvents.findByTenantIdOrderByOccurredAtDesc(TenantContext.requireTenantId())).extracting("action").contains("QUOTE_DRAFT_ASSEMBLED");
+  }
+
+  @Test
+  void assembleDraftIsBlockedWhileUnresolvedBlockingIssueRemains() {
+    Scenario s = pricedQuoteWithInvalidLine();
+
+    assertThatThrownBy(() -> service.assembleDraft(s.quote().draftQuoteId(), new AssembleQuoteDraftCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Try assemble with blocker")))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+    assertThat(quotes.findByIdAndTenantId(s.quote().draftQuoteId(), TenantContext.requireTenantId()).orElseThrow().getStatus()).isNotEqualTo("DRAFT_ASSEMBLED");
+  }
+
+  @Test
+  void assembleDraftAfterEscalationRequiresApprovalAndStaysPendingApproval() {
+    Scenario s = marginRiskScenario();
+    // Escalate the single blocking margin issue to the approval path. This clears
+    // the open blocking issue (it becomes ESCALATED) and opens an approval request,
+    // so the readiness gate passes but approval is still required.
+    UUID issueId = s.quote().validationIssues().stream().filter(issue -> "MARGIN_BELOW_GUARDRAIL".equals(issue.issueCode())).findFirst().orElseThrow().id();
+    service.escalateIssue(s.quote().draftQuoteId(), issueId, new EscalateValidationIssueCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "MANAGER_REVIEW", "Escalate"));
+
+    QuoteDraftSummary summary = service.assembleDraft(s.quote().draftQuoteId(), new AssembleQuoteDraftCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Assemble after escalation"));
+
+    assertThat(summary.approvalRequired()).isTrue();
+    assertThat(summary.draftStatus()).isEqualTo("PENDING_APPROVAL");
+    assertThat(summary.riskLevel()).isEqualTo("HIGH");
+    assertThat(summary.nextAction()).isEqualTo("APPROVAL_DECISION_REQUIRED");
+    assertThat(summary.unresolvedBlockingIssueCount()).isZero();
+  }
+
+  @Test
+  void assembleDraftCannotAssembleTerminalQuote() {
+    Scenario s = cleanQuoteScenario();
+    DraftQuote quote = quotes.findByIdAndTenantId(s.quote().draftQuoteId(), TenantContext.requireTenantId()).orElseThrow();
+    quote.transition("APPROVED", "VALIDATED", false, UUID.randomUUID(), NOW);
+    quotes.save(quote);
+
+    assertThatThrownBy(() -> service.assembleDraft(s.quote().draftQuoteId(), new AssembleQuoteDraftCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Assemble terminal")))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+  }
+
+  @Test
+  void assembleDraftCrossTenantAccessBlocked() {
+    Scenario s = cleanQuoteScenario();
+    UUID quoteId = s.quote().draftQuoteId();
+    TenantContext.setTenantId(UUID.randomUUID());
+
+    assertThatThrownBy(() -> service.assembleDraft(quoteId, new AssembleQuoteDraftCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Cross tenant")))
+        .isInstanceOf(NotFoundException.class);
+  }
+
+  private Scenario cleanQuoteScenario() {
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("BRK-001", "Brake pads", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "10");
+    margin(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = quoteDraftService.createFromRfq(command(tenantId, "CUST-1", "BRK-001", "2", "0.00", "clean-" + UUID.randomUUID()));
+    return new Scenario(quote, product, null);
+  }
+
   private Scenario unresolvedQuoteScenario() {
     UUID tenantId = tenant();
     QuoteTransactionResponse quote = quoteDraftService.createFromRfq(command(tenantId, "MISSING", "UNKNOWN-SKU", "1", "0.00", "unresolved-" + UUID.randomUUID()));

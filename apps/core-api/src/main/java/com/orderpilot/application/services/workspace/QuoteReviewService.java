@@ -310,6 +310,70 @@ public class QuoteReviewService {
     return result(ctx.tenantId(), previousStatus, quote, "QUOTE_SUBSTITUTE_REJECTED");
   }
 
+  // OP-CAP-36: Quote Draft Assembly. Assemble an operator-safe draft quote
+  // candidate from the reviewed/validated quote. The DraftQuote already exists
+  // (it is the entity under review); assembly is the explicit operator step that
+  // gates on review readiness, recalculates backend-owned status/risk/approval,
+  // and returns a safe summary. Backend owns every calculated field — the client
+  // supplies business intent (reasonCode/note) only.
+  @Transactional
+  public QuoteDraftSummary assembleDraft(UUID quoteId, AssembleQuoteDraftCommand command) {
+    CommandContext ctx = context(command == null ? null : command.tenantId(), command == null ? null : command.actorId());
+    DraftQuote quote = quoteRepository.findWithLockByIdAndTenantId(quoteId, ctx.tenantId())
+        .orElseThrow(() -> new NotFoundException("Draft quote not found: " + quoteId));
+    requireCorrectableLifecycle(quote);
+    // Deterministic readiness gate: throws QuoteLifecycleViolation (409) when
+    // unresolved blocking issues, pending substitutes, or rejected/blocked
+    // substitutes remain. Frontend cannot assert resolution — backend derives it.
+    lifecycleService.requireReadyForApproval(ctx.tenantId(), quote);
+    String previousStatus = quote.getStatus();
+    List<QuoteValidationIssue> issues = issues(ctx.tenantId(), quoteId);
+    List<QuoteApprovalRequest> approvals = approvalRepository.findByTenantIdAndDraftQuoteIdOrderByCreatedAtAsc(ctx.tenantId(), quoteId);
+    List<DraftQuoteLine> lines = lineRepository.findByTenantIdAndDraftQuoteId(ctx.tenantId(), quoteId);
+    boolean approvalRequired = approvals.stream().anyMatch(approval -> "OPEN".equals(approval.getStatus()));
+    String newStatus = approvalRequired ? "PENDING_APPROVAL" : "DRAFT_ASSEMBLED";
+    quote.transition(newStatus, "VALIDATED", approvalRequired, ctx.actorId(), clock.instant());
+    quote = quoteRepository.save(quote);
+    audit("QUOTE_DRAFT_ASSEMBLED", quote, ctx.actorId(), null, null, previousStatus, newStatus, command == null ? null : command.reasonCode(), command == null ? null : command.note());
+    return draftSummary(quote, lines, issues, approvals, approvalRequired);
+  }
+
+  private QuoteDraftSummary draftSummary(DraftQuote quote, List<DraftQuoteLine> lines, List<QuoteValidationIssue> issues, List<QuoteApprovalRequest> approvals, boolean approvalRequired) {
+    int lineCount = (int) lines.stream().filter(line -> !"REMOVED".equals(line.getStatus())).count();
+    int blockingCount = (int) issues.stream().filter(issue -> "OPEN".equals(issue.getStatus()) && issue.isBlocking()).count();
+    int warningCount = (int) issues.stream().filter(issue -> "OPEN".equals(issue.getStatus()) && !issue.isBlocking()).count();
+    int stockWarningCount = (int) issues.stream().filter(issue -> "OPEN".equals(issue.getStatus()) && issue.getIssueCode() != null && issue.getIssueCode().contains("STOCK")).count();
+    boolean marginApprovalOpen = approvals.stream().anyMatch(approval -> "OPEN".equals(approval.getStatus()) && approval.getReasonCode() != null && approval.getReasonCode().contains("MARGIN"));
+    String marginStatus = marginApprovalOpen ? "APPROVAL_REQUIRED" : "OK";
+    String riskLevel = approvalRequired ? "HIGH" : warningCount > 0 ? "MEDIUM" : "LOW";
+    String nextAction = approvalRequired ? "APPROVAL_DECISION_REQUIRED" : "READY_FOR_INTERNAL_APPROVAL";
+    String operatorMessage = approvalRequired
+        ? "Draft quote assembled. Approval is required before any internal order conversion."
+        : "Draft quote assembled and ready for the internal approval step. No external ERP/1C write is executed.";
+    return new QuoteDraftSummary(
+        quote.getId(),
+        quote.getQuoteNumber(),
+        quote.getStatus(),
+        new CustomerSummary(quote.getCustomerAccountId(), quote.getCustomerDisplayName(), quote.getCustomerAccountId() == null ? "UNRESOLVED" : "RESOLVED"),
+        quote.getCurrency(),
+        quote.getSubtotalAmount(),
+        quote.getDiscountAmount(),
+        quote.getTotalAmount(),
+        quote.getMarginPercent(),
+        lineCount,
+        blockingCount,
+        warningCount,
+        stockWarningCount,
+        approvalRequired,
+        riskLevel,
+        marginStatus,
+        validationSummary(issues, approvals),
+        nextAction,
+        operatorMessage,
+        "DISABLED",
+        quote.getUpdatedAt());
+  }
+
   private QuoteReviewQueueRow queueRow(UUID tenantId, DraftQuote quote) {
     List<DraftQuoteLine> lines = lineRepository.findByTenantIdAndDraftQuoteId(tenantId, quote.getId());
     List<QuoteValidationIssue> issues = issues(tenantId, quote.getId());

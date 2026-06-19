@@ -3,10 +3,12 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  assembleQuoteDraft,
   correctQuoteReviewLine,
   escalateQuoteReviewIssue,
   getQuoteReviewDetail,
   getQuoteReviewQueue,
+  QuoteDraftSummary,
   QuoteReviewDetail,
   QuoteReviewCommandResult,
   QuoteReviewQueueRow,
@@ -112,6 +114,7 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"done" | "error">("done");
+  const [draftSummary, setDraftSummary] = useState<QuoteDraftSummary | null>(null);
   const mutationKeysRef = useRef<Map<string, string>>(new Map());
 
   const applyResult = useCallback((result: Awaited<ReturnType<typeof getQuoteReviewDetail>>) => {
@@ -130,7 +133,7 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   // provided by useOperatorAction. Idempotency key generation keeps the existing
   // UUID-per-action pattern via generateIdempotencyKey (random, cached per
   // actionKey) — not weakening it to the deterministic runtime helper.
-  const { execute, pending, disabled } = useOperatorAction<QuoteReviewCommandResult>({
+  const { execute, pending, disabled } = useOperatorAction<QuoteReviewCommandResult | QuoteDraftSummary>({
     onSuccess: async (_data, safeMessage) => {
       setMessageKind("done");
       setMessage(safeMessage);
@@ -169,9 +172,9 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   // OP-CAP-35: wraps an API call with the shared useOperatorAction execute,
   // idempotency key caching (UUID-per-actionKey, generateIdempotencyKey),
   // and status-specific safe error mapping via mapOperatorActionError.
-  async function doAction(
+  async function doAction<T extends QuoteReviewCommandResult | QuoteDraftSummary>(
     actionKey: string,
-    operation: (idempotencyKey: string) => Promise<QuoteReviewCommandResult>,
+    operation: (idempotencyKey: string) => Promise<T>,
     doneMessage: string
   ) {
     let idempotencyKey = mutationKeysRef.current.get(actionKey);
@@ -205,6 +208,24 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
       mutationKeysRef.current.delete(actionKey);
     }
   }
+
+  // OP-CAP-36: assemble a safe draft quote candidate. Sends business intent only.
+  // The backend owns status/totals/risk/approval/stock; the returned summary is a
+  // backend-calculated snapshot rendered in the draft summary panel. The detail is
+  // reloaded by the shared onSuccess handler so the workspace reflects new state.
+  async function assembleDraft() {
+    await doAction(
+      "assemble-draft",
+      async (idempotencyKey) => {
+        const summary = await assembleQuoteDraft(quoteId, { reasonCode: reason, note, idempotencyKey });
+        setDraftSummary(summary);
+        return summary;
+      },
+      "Draft quote assembled. Backend-owned draft summary is shown below."
+    );
+  }
+
+  const hasOpenBlockingIssue = !!detail && detail.validationIssues.some((issue) => issue.blocking && issue.status === "OPEN");
 
   return (
     <div className="stack">
@@ -314,6 +335,35 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
             <p>Open requirements: {formatList(detail.approvalRequirements.filter((approval) => approval.status === "OPEN").map((approval) => approval.reasonCode))}</p>
             <p>External execution: DISABLED until an approved connector flow exists.</p>
           </section>
+
+          <section className="panel">
+            <h2>Assemble Draft Quote</h2>
+            <p>Assemble a draft quote candidate once review data is valid. The backend recalculates totals, risk, approval requirement and draft status — this action sends operator intent only and never any totals, status, or approval state.</p>
+            {hasOpenBlockingIssue
+              ? <p className="form-message error">Resolve all open blocking validation issues before assembling the draft quote.</p>
+              : null}
+            <button className="button" disabled={hasOpenBlockingIssue || disabled} onClick={assembleDraft}>{pending ? "Working..." : "Assemble Draft Quote"}</button>
+          </section>
+
+          {draftSummary ? (
+            <section className="panel">
+              <h2>Draft Quote Summary</h2>
+              <p>Draft status: {humanize(draftSummary.draftStatus)}</p>
+              <p>Customer: {draftSummary.customer.displayName ?? draftSummary.customer.resolutionStatus}</p>
+              <p>Lines: {draftSummary.lineCount}</p>
+              <p>Subtotal: {draftSummary.subtotalAmount ?? "n/a"} {draftSummary.currency ?? ""}</p>
+              <p>Total: {draftSummary.totalAmount ?? "n/a"} {draftSummary.currency ?? ""}</p>
+              <p>Margin: {draftSummary.marginPercent ?? "n/a"}</p>
+              <p>Risk level: {humanize(draftSummary.riskLevel)}</p>
+              <p>Approval required: {draftSummary.approvalRequired ? "Yes" : "No"}</p>
+              <p>Margin status: {humanize(draftSummary.marginStatus)}</p>
+              <p>Unresolved blocking issues: {draftSummary.unresolvedBlockingIssueCount}</p>
+              <p>Warnings: {draftSummary.warningCount} (stock {draftSummary.stockWarningCount})</p>
+              <p>Next action: {humanize(draftSummary.nextAction)}</p>
+              <p>{draftSummary.operatorMessage}</p>
+              <p>External execution: {draftSummary.externalExecution}</p>
+            </section>
+          ) : null}
 
           <section className="panel table-panel">
             <h2>Audit Timeline</h2>

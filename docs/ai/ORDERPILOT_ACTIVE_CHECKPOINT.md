@@ -19,9 +19,9 @@ Do not treat this file as an archive. Keep it short.
 
 Update at the start of a task only when needed:
 
-- Branch: OP-CAP-35
-- HEAD: (OP-CAP-35 completion)
-- Dirty state: clean
+- Branch: op-36-quote-draft-assembly-workflow (from OP-CAP-35)
+- HEAD: (OP-CAP-36 implementation)
+- Dirty state: uncommitted OP-CAP-36 changes
 
 ## Completed / Known State
 
@@ -156,6 +156,51 @@ Update at the start of a task only when needed:
   - `lib/operator-action-runtime.ts`: no changes needed (the existing hook is sufficient).
   - Tests: `tests/quote-review-cockpit.test.mjs` — added 9 OP-CAP-35 tests (runtime import, hook usage, disabled state, duplicate-click guard, idempotency key approach, business-intent-only payloads, error mapping via `mapOperatorActionError`, API client status attachment, safe message rendering). Total 13 tests, 0 failures.
   - Verification: `npm run tsc` clean, `npm run lint` clean, `npm run build` success, all regression tests pass (quote-transaction-contract 8/8, channel-to-quote-ui 13/13, conversion-review 3/3).
+
+### OP-CAP-36 Quote Draft Assembly Workflow v1 — implemented and test-proven
+
+- Goal: move from "operator reviews validation issues" to "operator can assemble a
+  safe draft quote candidate after review." Real product workflow step, backend-owned.
+- Backend draft assembly endpoint/service did NOT exist before this slice; it was
+  added as a narrow command over the existing `DraftQuote`/`QuoteReviewService`/
+  `QuoteLifecycleService`. No new draft entity and no migration (the `DraftQuote`
+  under review *is* the draft; `draft_quote.status` is an unconstrained column).
+- New endpoint `POST /api/v1/quote-review/{quoteId}/assemble-draft` (REVIEW_ACTION,
+  auto-covered by the existing `/api/v1/quote-review` non-GET interceptor rule).
+  Request body is business intent only (`reasonCode`/`note`); `Idempotency-Key`
+  header required; tenant from `X-Tenant-Id`, actor from `RequestActorResolver`.
+  Body-supplied authority/state/total fields are ignored (malicious-override test).
+- Service `QuoteReviewService.assembleDraft`: locked fetch, reject terminal
+  (`requireCorrectableLifecycle`), readiness gate via
+  `QuoteLifecycleService.requireReadyForApproval` (blocks on open blocking issues /
+  pending / rejected / blocked substitutes → `409`). Draft status =
+  `DRAFT_ASSEMBLED` when no open approval remains, else `PENDING_APPROVAL`
+  (approvalRequired = any OPEN `quote_approval_request`). Re-assembly recalculates
+  the same draft. Audit `QUOTE_DRAFT_ASSEMBLED` (ids + prev/new status + reason +
+  validation summary). No outbox / ChangeRequest / ERP-1C write (future OP-CAP-37).
+- Response `Stage12CDtos.QuoteDraftSummary`: operator-safe, backend-calculated
+  (quoteId public handle, quoteNumber, draftStatus, customer summary, currency,
+  subtotal/discount/total/margin, lineCount, unresolvedBlockingIssueCount,
+  warningCount, stockWarningCount, approvalRequired, riskLevel, marginStatus,
+  validationSummary, nextAction, operatorMessage, externalExecution=DISABLED,
+  assembledAt). No tenantId/actorId/createdBy/approvedBy/sourceId/auditEventIds.
+- Frontend: `lib/quote-review-api.ts` adds `QuoteDraftSummary` + `assembleQuoteDraft`
+  (reuses `requestQuoteReview` — header tenant, status-attached errors). Cockpit
+  `components/quote-review-cockpit.tsx` adds an "Assemble Draft Quote" action through
+  the shared `useOperatorAction`/`doAction` runtime (idempotency-key lifecycle,
+  duplicate-click guard, `mapOperatorActionError`); button gated by
+  `hasOpenBlockingIssue`; a "Draft Quote Summary" panel renders safe fields only.
+- Tests: backend `QuoteReviewServiceTest` (+5 → 16: clean assemble→DRAFT_ASSEMBLED,
+  blocking-issue blocked, escalation→PENDING_APPROVAL/HIGH, terminal blocked,
+  cross-tenant denied) and `QuoteReviewControllerTest` (+1 → 6: trusted-actor +
+  malicious-override ignored + response leak checks). Frontend
+  `tests/quote-review-cockpit.test.mjs` (+4 → 19). Verification: backend targeted
+  6+16 (and Postgres integration 4) pass; FE `tsc` clean, `lint` clean, `build` OK,
+  regression `quote-transaction-contract`/`channel-to-quote-ui`/`conversion-review`
+  27/27 pass.
+- Not proven / remaining risk: header totals are read from the existing
+  backend-calculated `DraftQuote` (no new pricing engine; not recomputed at assembly
+  time). Outbox/ChangeRequest emission on draft-assembled is deferred to OP-CAP-37.
 
 ### Current next slice: TBD
 
