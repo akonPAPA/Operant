@@ -2,6 +2,16 @@
 
 This runbook defines the default workflow for Codex, Claude, and other AI coding agents working on OrderPilot.
 
+## Agent Guardrails (AGENTS.md)
+
+AGENTS.md files are **tracked guardrails**, not local-only configuration. Every clone includes them.
+
+- Root `AGENTS.md` — surgical-agent rules + OP project overlay + OP-CAP-31 secure business contract law.
+- `apps/core-api/AGENTS.md` — backend-specific rules: request/response DTO contract law, tenant isolation, audit/idempotency/outbox invariants, test requirements.
+- `apps/web-dashboard/AGENTS.md` — frontend-specific rules: business-intent-only payloads, header-borne tenant, no editable authority fields, safe error mapping.
+
+`.claude/`, local `CLAUDE.md`, dumps, and secrets remain gitignored. The tracked `AGENTS.md` files are the authoritative agent instruction source.
+
 ## Start Every Task
 
 1. Read the relevant instruction files before editing:

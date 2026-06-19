@@ -125,7 +125,7 @@ Update at the start of a task only when needed:
   audit metadata/entity ids. Connector approve/create actor comes from the trusted header, not the
   body (two malicious-override tests).
 
-### Current next slice: OP-CAP-32 Contract Stabilization & Bad-Layer Regression Fix — done
+### OP-CAP-32 Contract Stabilization & Bad-Layer Regression Fix — done
 
 - Goal: stop the "fix one visible bug, reintroduce the bad layer nearby" cycle by making docs,
   checkpoint, runbook, request/response DTOs, frontend types, and tests all agree with the safe code.
@@ -144,10 +144,26 @@ Update at the start of a task only when needed:
     `apps/web-dashboard/AGENTS.md`).
   - Tests: added Stage9 reject/cancel body-actor-ignored coverage and a frontend response-leak
     assertion (see Test files below).
-- Remaining / not yet proven: the editable Tenant ID input in `channel-quote-conversion-panel.tsx`
-  (demo conversion tool) is retained because it feeds the legitimate `X-Tenant-Id` header and there
-  is no parent tenant context for this standalone panel; backend tenant validation is the boundary.
-  A dedicated admin diagnostic endpoint/permission for connector internals remains a future option.
+
+### Current next slice: OP-CAP-33 Agent Instruction Policy and Tenant Context UI Boundary — done
+
+- Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making
+  AGENTS.md instruction files durable (tracked, not local-only) and removing the last editable
+  Tenant ID from the frontend channel-to-quote conversion panel.
+- Done:
+  - `.gitignore`: removed blanket `*AGENTS.md` ignore; AGENTS.md files are now tracked guardrails.
+    `.claude/`, `*CLAUDE.md`, dumps, secrets, and graphify-out/ remain ignored.
+  - `AGENTS.md` (root), `apps/core-api/AGENTS.md`, `apps/web-dashboard/AGENTS.md` — now version-controlled;
+    content already carried the full OP-CAP-31 secure business contract law.
+  - `components/channel-quote-conversion-panel.tsx`: editable Tenant ID input removed; tenant is
+    resolved from `NEXT_PUBLIC_DEMO_TENANT_ID` env config as a module-level const (same pattern as
+    `quote-source-context-panel.tsx`). A non-editable tenant display label remains for context.
+    `tenantId` still flows through `X-Tenant-Id` header via the existing API client — body payload
+    carries business intent only.
+  - `docs/runbooks/ai-agent-workflow.md`: added "Agent Guardrails (AGENTS.md)" section documenting
+    that AGENTS.md files are tracked guardrails, not local-only.
+  - Tests: added no-editable-tenant-input assertion to `channel-to-quote-ui.test.mjs`.
+  - No backend changes, no auth/session system, no new dependencies.
 
 Preferred agent split:
 
