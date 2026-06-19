@@ -3,10 +3,16 @@
 import { useState } from "react";
 
 import {
+  ChannelToQuotePayload,
   ChannelToQuoteResponse,
   createQuoteFromChannelMessage,
   createQuoteFromInboundDocument
 } from "@/lib/quote-transaction-api";
+import {
+  createOperatorIdempotencyKey,
+  OperatorActionResult,
+  useOperatorAction
+} from "@/lib/operator-action-runtime";
 
 // OP-CAP-33: tenant is resolved from env/config, not from an editable operator input.
 // The backend validates the X-Tenant-Id header — the UI must not offer a tenant override.
@@ -20,37 +26,41 @@ type Props = {
 export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
   const [customerId, setCustomerId] = useState("");
   const [dryRun, setDryRun] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ChannelToQuoteResponse | null>(null);
   const [message, setMessage] = useState("");
 
+  const actionName =
+    sourceType === "CHANNEL_MESSAGE" ? "channel-to-quote" : "document-to-quote";
+
+  const { execute, pending, disabled } = useOperatorAction<ChannelToQuoteResponse>({
+    onSuccess: (_data, safeMessage) => setMessage(safeMessage),
+    onError: (_errorCode, safeMessage) => setMessage(safeMessage)
+  });
+
   async function submit() {
-    setLoading(true);
     setMessage("");
-    try {
-      const payload = {
-        idempotencyKey: `${sourceType.toLowerCase()}-${sourceId}-${dryRun ? "preview" : "draft"}`,
+    // Deterministic key: same source + same mode (preview vs draft) reuses the key
+    // so a retry after a lost response is deduped by the backend instead of creating
+    // a duplicate. Preview and draft are kept distinct so they never collide.
+    const idempotencyKey = createOperatorIdempotencyKey(
+      actionName,
+      `${sourceId}-${dryRun ? "preview" : "draft"}`
+    );
+
+    await execute(async (): Promise<OperatorActionResult<ChannelToQuoteResponse>> => {
+      const payload: ChannelToQuotePayload = {
+        idempotencyKey,
         requestedCustomerAccountId: customerId || undefined,
         dryRun
       };
       const response = sourceType === "CHANNEL_MESSAGE"
         ? await createQuoteFromChannelMessage(tenantId, sourceId, payload)
         : await createQuoteFromInboundDocument(tenantId, sourceId, payload);
+
       setResult(response);
-      if (response.quoteId) {
-        setMessage(response.reviewRequired ? "Draft quote created for review." : "Draft quote created.");
-      } else if (response.status.startsWith("REJECTED")) {
-        setMessage("Conversion rejected by backend validation.");
-      } else if (response.reviewRequired) {
-        setMessage("Review required before draft quote creation.");
-      } else {
-        setMessage("Conversion preview ready.");
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Quote conversion failed.");
-    } finally {
-      setLoading(false);
-    }
+      const safeMessage = computeConversionMessage(response);
+      return { ok: true, data: response, safeMessage };
+    });
   }
 
   return (
@@ -60,7 +70,7 @@ export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
         <p className="tenant-context-info">Tenant: {tenantId}</p>
         <label><span>Customer account ID</span><input value={customerId} onChange={(event) => setCustomerId(event.target.value)} placeholder="Required unless source resolves customer" /></label>
         <label className="checkbox-row"><input type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} /> <span>Dry run preview</span></label>
-        <button className="button" disabled={loading} type="button" onClick={submit}>{loading ? "Preparing..." : dryRun ? "Prepare Quote" : "Create Quote Draft"}</button>
+        <button className="button" disabled={disabled} type="button" onClick={submit}>{pending ? "Preparing..." : dryRun ? "Prepare Quote" : "Create Quote Draft"}</button>
       </div>
       {message ? <p className={result?.quoteId ? "form-message done" : "form-message"}>{message}</p> : null}
       {result ? (
@@ -79,4 +89,19 @@ export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
       ) : null}
     </section>
   );
+}
+
+function computeConversionMessage(response: ChannelToQuoteResponse): string {
+  if (response.quoteId) {
+    return response.reviewRequired
+      ? "Draft quote created for review."
+      : "Draft quote created.";
+  }
+  if (response.status.startsWith("REJECTED")) {
+    return "Conversion rejected by backend validation.";
+  }
+  if (response.reviewRequired) {
+    return "Review required before draft quote creation.";
+  }
+  return "Conversion preview ready.";
 }
