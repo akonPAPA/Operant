@@ -66,7 +66,6 @@ export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
         <div className="result-panel">
           <p>Status: {result.status}</p>
           <p>Quote: {result.quoteId ?? "Not created"}</p>
-          <p>Attempt: {result.conversionAttemptId}</p>
           <p>Customer: {result.customerResolution ?? "Unknown"}</p>
           <p>Lines: {result.acceptedLineCount} accepted / {result.lineCount} detected</p>
           <p>Review required: {result.reviewRequired ? "Yes" : "No"}</p>

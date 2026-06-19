@@ -32,7 +32,11 @@ public final class Stage9Dtos {
       String requestPayloadJson
   ) {}
 
-  public record Stage9ApprovalRequest(UUID actorId, String reason) {}
+  // OP-CAP-32: reject/cancel carry business intent only (the operator's reason). The acting user is
+  // backend-owned authority resolved server-side from the trusted actor context (see
+  // Stage9IntegrationController / RequestActorResolver), never from the request body — so this DTO
+  // no longer carries an actorId. A body-supplied actorId is ignored (unknown property).
+  public record Stage9ApprovalRequest(String reason) {}
 
   public record Stage9ChangeRequestResponse(
       UUID id,

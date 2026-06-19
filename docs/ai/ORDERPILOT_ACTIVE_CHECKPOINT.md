@@ -102,24 +102,52 @@ Update at the start of a task only when needed:
 
 ## Current Development Direction
 
-### Current next slice: OP-CAP-31 Secure Business Contract Layer
+### OP-CAP-31 Secure Business Contract Layer — implemented and test-proven
 
-- Root cause: public contracts still allow/represent client-owned authority and internal response
-  leaks (frontend/request DTOs accepting tenant/actor/role; response DTOs exposing internal IDs,
-  source IDs, audit/outbox/payload internals).
+- Root cause (historical): public contracts allowed/represented client-owned authority and internal
+  response leaks (frontend/request DTOs accepting tenant/actor/role; response DTOs exposing internal
+  IDs, source IDs, audit/outbox/payload internals).
 - Required invariant: all client-originated inputs are untrusted — frontend, Postman, curl, CLI,
   bot, connector, AI worker alike. "Hidden in the UI" is not security.
 - Required path: `public DTO -> trusted tenant/actor resolver -> clean command -> service
   validation -> safe response DTO`.
-- Instruction spine added/updated: root `AGENTS.md` (section 21), `apps/core-api/AGENTS.md`,
-  `apps/web-dashboard/AGENTS.md`. Read the area `AGENTS.md` before editing that area.
-- Done in this slice: removed body-owned actor from channel-to-quote conversion (actor now from
+- Instruction spine: root `AGENTS.md` (section 21), `apps/core-api/AGENTS.md`,
+  `apps/web-dashboard/AGENTS.md` (the area files were (re)created in OP-CAP-32). Read the area
+  `AGENTS.md` before editing that area.
+- Done and proven: removed body-owned actor from channel-to-quote conversion (actor now from
   `RequestActorResolver`); split public RFQ/approval request DTOs from internal commands; trimmed
   `QuoteSourceContextDto` and `ChangeRequest`/outbox default responses to operator-safe fields;
   removed editable Tenant ID and raw source/actor IDs from the quote source panel and removed
-  tenant/actor fields from frontend JSON payloads.
-- Remaining (follow-up): Stage9 connector change-request/sync/audit response DTOs still expose some
-  connector/actor internals; harden behind an admin diagnostic DTO/permission in a later slice.
+  tenant/actor fields from frontend JSON payloads. The Stage9 connector change-request/sync/
+  policy/safety/audit response DTOs are operator-safe: `Stage9IntegrationControllerTest` proves the
+  responses do not expose `sourceId`, `createdByUserId`/`approvedByUserId`, `connectorIdempotencyKey
+  Hash`, `credentialStatus`/`maskedCredentialRef`, connector capabilities, raw failure messages, or
+  audit metadata/entity ids. Connector approve/create actor comes from the trusted header, not the
+  body (two malicious-override tests).
+
+### Current next slice: OP-CAP-32 Contract Stabilization & Bad-Layer Regression Fix — done
+
+- Goal: stop the "fix one visible bug, reintroduce the bad layer nearby" cycle by making docs,
+  checkpoint, runbook, request/response DTOs, frontend types, and tests all agree with the safe code.
+- Done this slice:
+  - Code: removed the dead `actorId` authority field from `Stage9Dtos.Stage9ApprovalRequest`
+    (reject/cancel only ever used `reason()`; the acting user is server-resolved). Body-supplied
+    `actorId` is ignored (unknown property).
+  - Docs: `docs/api/quote-transactions.md` no longer documents `actorId`/`actorType` in the request
+    body or `conversionAttemptId`/`sourceId`/`auditEventIds` in the response; it states intent-only
+    requests, header-borne tenant, server-resolved actor, and operator-safe responses.
+  - Frontend: `lib/quote-transaction-api.ts` `ChannelToQuoteResponse` no longer declares
+    `conversionAttemptId`/`sourceId`/`auditEventIds`; `channel-quote-conversion-panel.tsx` no longer
+    renders the (now hidden) conversion attempt id.
+  - Runbook: the missing area `AGENTS.md` files referenced by `docs/runbooks/ai-agent-workflow.md`
+    and root `AGENTS.md` §21.1 were created (`apps/core-api/AGENTS.md`,
+    `apps/web-dashboard/AGENTS.md`).
+  - Tests: added Stage9 reject/cancel body-actor-ignored coverage and a frontend response-leak
+    assertion (see Test files below).
+- Remaining / not yet proven: the editable Tenant ID input in `channel-quote-conversion-panel.tsx`
+  (demo conversion tool) is retained because it feeds the legitimate `X-Tenant-Id` header and there
+  is no parent tenant context for this standalone panel; backend tenant validation is the boundary.
+  A dedicated admin diagnostic endpoint/permission for connector internals remains a future option.
 
 Preferred agent split:
 

@@ -51,3 +51,11 @@ test("source summary panel does not expose editable tenant id or raw internal id
   assert.doesNotMatch(sourcePanel, /context\.triggeredBy/);
   assert.doesNotMatch(sourcePanel, /context\.createdByType/);
 });
+
+// OP-CAP-32: the conversion result panel must not render the (intentionally @JsonIgnore'd)
+// conversion attempt id or any raw source/audit identifier.
+test("conversion result panel does not render hidden internal identifiers", () => {
+  assert.doesNotMatch(panel, /result\.conversionAttemptId/);
+  assert.doesNotMatch(panel, /result\.sourceId/);
+  assert.doesNotMatch(panel, /result\.auditEventIds/);
+});

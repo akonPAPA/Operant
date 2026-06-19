@@ -54,6 +54,16 @@ test("source summary contract exposes no raw internal identifiers", () => {
   assert.match(block, /reviewRequired/);
 });
 
+// OP-CAP-32: the backend withholds internal identifiers on the conversion response
+// (conversionAttemptId is @JsonIgnore'd; sourceId/auditEventIds are not in the DTO), so the
+// frontend response contract must not declare them either.
+test("channel-to-quote response contract exposes no raw internal identifiers", () => {
+  const block = typeBlock(apiClient, "ChannelToQuoteResponse");
+  assert.doesNotMatch(block, /\b(sourceId|conversionAttemptId|auditEventIds)\??:/);
+  assert.match(block, /status:/);
+  assert.match(block, /reviewRequired/);
+});
+
 test("non-2xx responses map to safe messages, never raw backend body dumps", () => {
   assert.match(apiClient, /function safeErrorMessage\(status: number\)/);
   assert.match(apiClient, /throw new Error\(safeErrorMessage\(response\.status\)\)/);
