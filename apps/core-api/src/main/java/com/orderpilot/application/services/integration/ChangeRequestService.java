@@ -75,6 +75,51 @@ public class ChangeRequestService {
     return request;
   }
 
+  // OP-CAP-37: prepare (or reuse) exactly one tenant-scoped, non-executed external-sync
+  // ChangeRequest candidate for an assembled draft quote. This is NOT execution: the
+  // candidate is created with executionStatus=EXECUTION_DISABLED and a neutral target
+  // system that the demo executor refuses (executeStage9DemoChangeRequest requires
+  // DEMO_ERP + APPROVED), so it can never reach a connector in this slice. No outbox
+  // event is emitted (audit + candidate only) to keep the no-external-execution proof
+  // unambiguous. Dedup is by a deterministic per-quote idempotency key, so repeated
+  // assemble-draft calls (any request Idempotency-Key) never create a duplicate active
+  // candidate for the same quote + target action.
+  public static final String EXTERNAL_SYNC_CANDIDATE_TARGET = "INTERNAL_SYNC_CANDIDATE";
+  public static final String EXTERNAL_SYNC_CANDIDATE_ACTION = "QUOTE_EXTERNAL_SYNC_CANDIDATE";
+  public static final String EXTERNAL_SYNC_CANDIDATE_SOURCE_TYPE = "QUOTE_REVIEW";
+
+  @Transactional
+  public ChangeRequest prepareQuoteExternalSyncCandidate(UUID quoteId, String snapshotJson, UUID actorId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    requireValue(quoteId, "quoteId");
+    String idempotencyKey = "opcap37:quote-external-sync-candidate:" + tenantId + ":" + quoteId;
+    var existing = changeRequestRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+    if (existing.isPresent()) {
+      ChangeRequest candidate = existing.get();
+      auditEventService.record("QUOTE_DRAFT_EXTERNAL_SYNC_CANDIDATE_REUSED", "CHANGE_REQUEST", candidate.getId().toString(), actorId, candidateAuditMetadata(tenantId, quoteId, candidate));
+      return candidate;
+    }
+    ChangeRequest candidate = changeRequestRepository.save(new ChangeRequest(
+        tenantId,
+        EXTERNAL_SYNC_CANDIDATE_TARGET,
+        "DRAFT_QUOTE",
+        EXTERNAL_SYNC_CANDIDATE_ACTION,
+        EXTERNAL_SYNC_CANDIDATE_SOURCE_TYPE,
+        quoteId,
+        snapshotJson,
+        idempotencyKey,
+        actorId,
+        clock.instant()));
+    auditEventService.record("QUOTE_DRAFT_EXTERNAL_SYNC_CANDIDATE_CREATED", "CHANGE_REQUEST", candidate.getId().toString(), actorId, candidateAuditMetadata(tenantId, quoteId, candidate));
+    return candidate;
+  }
+
+  private String candidateAuditMetadata(UUID tenantId, UUID quoteId, ChangeRequest candidate) {
+    return "{\"tenantId\":\"" + tenantId + "\",\"quoteId\":\"" + quoteId + "\",\"candidateId\":\"" + candidate.getId()
+        + "\",\"approvalStatus\":\"" + candidate.getApprovalStatus() + "\",\"executionStatus\":\"" + candidate.getExecutionStatus()
+        + "\",\"externalExecution\":\"DISABLED\",\"connectorExecution\":\"NONE\"}";
+  }
+
   @Transactional
   public ChangeRequest createStage9DemoChangeRequest(String sourceType, UUID sourceId, String requestedAction, String requestPayloadJson, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();

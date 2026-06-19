@@ -20,6 +20,7 @@ import com.orderpilot.domain.location.Location;
 import com.orderpilot.domain.location.LocationRepository;
 import com.orderpilot.domain.pricing.*;
 import com.orderpilot.domain.product.*;
+import com.orderpilot.domain.workspace.DraftQuote;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.domain.workspace.QuoteInternalOrderBoundaryRepository;
 import com.orderpilot.domain.workspace.QuoteApprovalDecisionRepository;
@@ -431,6 +432,37 @@ class QuoteDraftServiceStage12ATest {
     assertThat(replay.internalDraftOrderId()).isEqualTo(converted.internalDraftOrderId());
     assertThat(internalOrderBoundaries.findByTenantIdAndDraftQuoteId(tenantId, quote.draftQuoteId())).isPresent();
     assertThat(auditEvents.findAll()).extracting("action").contains("quote.converted_to_internal_order");
+  }
+
+  @Test
+  void draftAssembledQuoteCannotConvertButCanStillBeApproved() {
+    // OP-CAP-36 closure: DRAFT_ASSEMBLED is a non-terminal status. External order
+    // conversion must still require APPROVED (cannot run directly from DRAFT_ASSEMBLED),
+    // while the approval state machine must accept DRAFT_ASSEMBLED and advance to APPROVED.
+    UUID tenantId = tenant();
+    CustomerAccount customer = customer("CUST-1", "ACME", "Acme Parts");
+    Product product = product("ASM-001", "Assembled", "Brake", "60.00");
+    price(product, customer, "100.00");
+    inventory(product, "ALM", "10");
+    marginRule(product, "20.00", "25.00");
+    QuoteTransactionResponse quote = service.createFromRfq(command(tenantId, "CUST-1", null, "ASM-001", "1", "0.00", "stage12-draft-assembled"));
+    DraftQuote stored = quotes.findByIdAndTenantId(quote.draftQuoteId(), tenantId).orElseThrow();
+    stored.transition("DRAFT_ASSEMBLED", "VALIDATED", false, UUID.randomUUID(), NOW);
+    quotes.save(stored);
+
+    // Conversion is gated on APPROVED and is blocked from DRAFT_ASSEMBLED.
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"))))
+        .isInstanceOf(QuoteLifecycleViolation.class);
+    assertThat(internalOrderBoundaries.findByTenantIdAndDraftQuoteId(tenantId, quote.draftQuoteId())).isEmpty();
+
+    // Approval continues from DRAFT_ASSEMBLED (not treated as terminal/failed/unknown).
+    QuoteApprovalCommandResponse approved = approvalService.approveQuote(quote.draftQuoteId(), decision(tenantId, "approved"));
+    assertThat(approved.newStatus()).isEqualTo("APPROVED");
+
+    // Only after APPROVED does conversion to the internal-only boundary succeed.
+    QuoteApprovalCommandResponse converted = approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"));
+    assertThat(converted.newStatus()).isEqualTo("CONVERTED_TO_INTERNAL_ORDER");
+    assertThat(converted.externalExecutionStatus()).isEqualTo("EXTERNAL_EXECUTION_DISABLED");
   }
 
   private UUID tenant() {

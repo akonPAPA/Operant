@@ -4,6 +4,7 @@ import com.orderpilot.api.dto.Stage12ADtos.*;
 import com.orderpilot.api.dto.Stage12CDtos.*;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.ProductSubstitutionService;
+import com.orderpilot.application.services.integration.ChangeRequestService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.common.tenant.TenantContextMissingException;
@@ -54,9 +55,10 @@ public class QuoteReviewService {
   private final AuditEventService auditEventService;
   private final AuditEventRepository auditEventRepository;
   private final LocationRepository locationRepository;
+  private final ChangeRequestService changeRequestService;
   private final Clock clock;
 
-  public QuoteReviewService(DraftQuoteRepository quoteRepository, DraftQuoteLineRepository lineRepository, QuoteValidationIssueRepository issueRepository, QuoteApprovalRequestRepository approvalRepository, QuoteConversionAttemptRepository attemptRepository, QuoteSourceLinkRepository sourceLinkRepository, CustomerAccountRepository customerRepository, ProductRepository productRepository, PricingService pricingService, QuoteInventoryValidationService inventoryService, QuoteMarginValidationService marginService, ProductSubstitutionService substitutionService, QuoteLifecycleService lifecycleService, ChannelToQuoteWiringService channelToQuoteWiringService, AuditEventService auditEventService, AuditEventRepository auditEventRepository, LocationRepository locationRepository, Clock clock) {
+  public QuoteReviewService(DraftQuoteRepository quoteRepository, DraftQuoteLineRepository lineRepository, QuoteValidationIssueRepository issueRepository, QuoteApprovalRequestRepository approvalRepository, QuoteConversionAttemptRepository attemptRepository, QuoteSourceLinkRepository sourceLinkRepository, CustomerAccountRepository customerRepository, ProductRepository productRepository, PricingService pricingService, QuoteInventoryValidationService inventoryService, QuoteMarginValidationService marginService, ProductSubstitutionService substitutionService, QuoteLifecycleService lifecycleService, ChannelToQuoteWiringService channelToQuoteWiringService, AuditEventService auditEventService, AuditEventRepository auditEventRepository, LocationRepository locationRepository, ChangeRequestService changeRequestService, Clock clock) {
     this.quoteRepository = quoteRepository;
     this.lineRepository = lineRepository;
     this.issueRepository = issueRepository;
@@ -74,6 +76,7 @@ public class QuoteReviewService {
     this.auditEventService = auditEventService;
     this.auditEventRepository = auditEventRepository;
     this.locationRepository = locationRepository;
+    this.changeRequestService = changeRequestService;
     this.clock = clock;
   }
 
@@ -335,10 +338,34 @@ public class QuoteReviewService {
     quote.transition(newStatus, "VALIDATED", approvalRequired, ctx.actorId(), clock.instant());
     quote = quoteRepository.save(quote);
     audit("QUOTE_DRAFT_ASSEMBLED", quote, ctx.actorId(), null, null, previousStatus, newStatus, command == null ? null : command.reasonCode(), command == null ? null : command.note());
-    return draftSummary(quote, lines, issues, approvals, approvalRequired);
+    // OP-CAP-37: once (and only once) the quote is genuinely assembled (no approval
+    // pending), prepare a tenant-scoped, non-executed external-sync ChangeRequest
+    // candidate. When approval is still required the candidate is premature, so none
+    // is prepared this slice. externalExecution stays DISABLED; no connector is called.
+    String candidateStatus = "PENDING_INTERNAL_APPROVAL";
+    if (!approvalRequired) {
+      changeRequestService.prepareQuoteExternalSyncCandidate(quote.getId(), assembledCandidateSnapshot(quote, lines, issues, approvals, command), ctx.actorId());
+      candidateStatus = "PREPARED";
+    }
+    return draftSummary(quote, lines, issues, approvals, approvalRequired, candidateStatus);
   }
 
-  private QuoteDraftSummary draftSummary(DraftQuote quote, List<DraftQuoteLine> lines, List<QuoteValidationIssue> issues, List<QuoteApprovalRequest> approvals, boolean approvalRequired) {
+  // Internal canonical snapshot stored on the candidate for later review. Server-built
+  // and operator-safe: no client-supplied authority, no credentials, no raw audit/source
+  // IDs beyond the quote workflow handle already used across the Quote Review contract.
+  private String assembledCandidateSnapshot(DraftQuote quote, List<DraftQuoteLine> lines, List<QuoteValidationIssue> issues, List<QuoteApprovalRequest> approvals, AssembleQuoteDraftCommand command) {
+    int lineCount = (int) lines.stream().filter(line -> !"REMOVED".equals(line.getStatus())).count();
+    return "{\"quoteId\":\"" + quote.getId() + "\",\"quoteNumber\":\"" + escape(quote.getQuoteNumber())
+        + "\",\"sourceWorkflowType\":\"QUOTE_REVIEW\",\"assembledStatus\":\"" + quote.getStatus()
+        + "\",\"currency\":\"" + escape(quote.getCurrency()) + "\",\"subtotalAmount\":\"" + quote.getSubtotalAmount()
+        + "\",\"discountAmount\":\"" + quote.getDiscountAmount() + "\",\"totalAmount\":\"" + quote.getTotalAmount()
+        + "\",\"marginPercent\":\"" + quote.getMarginPercent() + "\",\"lineCount\":" + lineCount
+        + ",\"approvalRequired\":false,\"validationSummary\":\"" + escape(validationSummary(issues, approvals))
+        + "\",\"reasonCode\":\"" + escape(command == null ? null : command.reasonCode()) + "\",\"note\":\"" + escape(command == null ? null : command.note())
+        + "\",\"externalExecution\":\"DISABLED\"}";
+  }
+
+  private QuoteDraftSummary draftSummary(DraftQuote quote, List<DraftQuoteLine> lines, List<QuoteValidationIssue> issues, List<QuoteApprovalRequest> approvals, boolean approvalRequired, String externalSyncCandidateStatus) {
     int lineCount = (int) lines.stream().filter(line -> !"REMOVED".equals(line.getStatus())).count();
     int blockingCount = (int) issues.stream().filter(issue -> "OPEN".equals(issue.getStatus()) && issue.isBlocking()).count();
     int warningCount = (int) issues.stream().filter(issue -> "OPEN".equals(issue.getStatus()) && !issue.isBlocking()).count();
@@ -371,7 +398,8 @@ public class QuoteReviewService {
         nextAction,
         operatorMessage,
         "DISABLED",
-        quote.getUpdatedAt());
+        quote.getUpdatedAt(),
+        externalSyncCandidateStatus);
   }
 
   private QuoteReviewQueueRow queueRow(UUID tenantId, DraftQuote quote) {

@@ -202,7 +202,46 @@ Update at the start of a task only when needed:
   backend-calculated `DraftQuote` (no new pricing engine; not recomputed at assembly
   time). Outbox/ChangeRequest emission on draft-assembled is deferred to OP-CAP-37.
 
-### Current next slice: TBD
+### OP-CAP-36 closure + OP-CAP-37 Draft-Assembled ChangeRequest Candidate — implemented and test-proven
+
+- OP-CAP-36 closure: `draft_quote.status` is an unconstrained `VARCHAR(40)` with no
+  DB CHECK constraint, JPA enum converter, Java enum, or central code allowlist, so
+  `DRAFT_ASSEMBLED` needs **no migration**. Downstream gates confirmed safe:
+  conversion (`QuoteApprovalStateMachineService.convertApprovedQuoteToInternalDraftOrder`)
+  still requires exactly `APPROVED`; connector ChangeRequest creation
+  (`ChangeRequestService.requireEligibleQuote`) and handoff
+  (`QuoteHandoffReadinessService`) still require `APPROVED`/`APPROVED_INTERNAL`; the
+  order-journey projection treats `DRAFT_ASSEMBLED` as a non-terminal in-progress
+  status; and the approval state machine accepts `DRAFT_ASSEMBLED` → `APPROVED`. The
+  only real defect was a stale `docs/api/quote-review.md` line claiming command
+  payloads include `tenantId`/`actorId`/`actorRole` (false since OP-CAP-31/35) — fixed.
+  Added closure test `QuoteDraftServiceStage12ATest.draftAssembledQuoteCannotConvertButCanStillBeApproved`.
+- OP-CAP-37: on a successful `assemble-draft` that yields `DRAFT_ASSEMBLED` (no
+  approval pending), `QuoteReviewService.assembleDraft` now prepares exactly one
+  tenant-scoped, non-executed external-sync ChangeRequest candidate via the existing
+  `ChangeRequestService` (shape B — new narrow method
+  `prepareQuoteExternalSyncCandidate`). Candidate: `targetSystem=INTERNAL_SYNC_CANDIDATE`
+  (neutral target the demo executor refuses), `requestedAction=QUOTE_EXTERNAL_SYNC_CANDIDATE`,
+  `sourceType=QUOTE_REVIEW`, `sourceId=quoteId`, `approvalStatus=PENDING_APPROVAL`,
+  `executionStatus=EXECUTION_DISABLED`, with a server-built operator-safe snapshot.
+  Dedup via a deterministic per-quote idempotency key (no duplicate active candidate
+  under any request `Idempotency-Key`). Audit `QUOTE_DRAFT_EXTERNAL_SYNC_CANDIDATE_CREATED`/
+  `..._REUSED`. **No** connector call, **no** outbox event (audit + candidate only),
+  **no** external/ERP/1C write — externalExecution stays DISABLED. When approval is
+  still required, no candidate is prepared this slice.
+- Response: `Stage12CDtos.QuoteDraftSummary` gains `externalSyncCandidateStatus`
+  (`PREPARED`/`PENDING_INTERNAL_APPROVAL`) — no candidate/connector/change-request id.
+  Frontend cockpit renders it as safe business wording only ("External sync candidate
+  prepared … no external execution"); no execution button, no connector UI.
+- Tests: backend `QuoteReviewServiceTest` (+3 → 19: candidate prepared + tenant-scoped
+  + non-executed + negative-proof no outbox/connector-sync; repeated-assemble dedup;
+  pending-approval prepares none; cross-tenant denied creates no candidate),
+  `QuoteDraftServiceStage12ATest` (+1 → 22 closure), `QuoteReviewControllerTest` (6,
+  updated DTO + candidate-status/no-internal-id assertions), `ChangeRequestServiceTest`
+  (10) and `ChangeRequestServiceStage9Test` (6) regression green — 63/63 targeted.
+  Frontend `tests/quote-review-cockpit.test.mjs` (+1 → 20); `tsc` clean, `lint` clean.
+
+### Previous slice: TBD
 
 - Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making
   AGENTS.md instruction files durable (tracked, not local-only) and removing the last editable

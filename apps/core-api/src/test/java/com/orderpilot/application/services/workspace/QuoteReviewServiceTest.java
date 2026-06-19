@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.orderpilot.api.dto.Stage12ADtos.*;
 import com.orderpilot.api.dto.Stage12CDtos.*;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.integration.ChangeRequestService;
 import com.orderpilot.application.services.ProductCatalogMatchingService;
 import com.orderpilot.application.services.ProductCodeNormalizer;
 import com.orderpilot.application.services.ProductSubstitutionService;
@@ -55,6 +56,7 @@ import org.springframework.test.context.ActiveProfiles;
     ProductCatalogMatchingService.class,
     ProductSubstitutionService.class,
     AuditEventService.class,
+    ChangeRequestService.class,
     CoreConfiguration.class
 })
 class QuoteReviewServiceTest {
@@ -76,6 +78,9 @@ class QuoteReviewServiceTest {
   @Autowired private QuoteApprovalRequestRepository approvals;
   @Autowired private DraftQuoteRepository quotes;
   @Autowired private AuditEventRepository auditEvents;
+  @Autowired private com.orderpilot.domain.integration.ChangeRequestRepository changeRequests;
+  @Autowired private com.orderpilot.domain.integration.OutboxEventRepository outboxEvents;
+  @Autowired private com.orderpilot.domain.integration.ConnectorSyncEventRepository connectorSyncEvents;
 
   @MockBean private ChannelToQuoteWiringService channelToQuoteWiringService;
 
@@ -282,10 +287,72 @@ class QuoteReviewServiceTest {
   void assembleDraftCrossTenantAccessBlocked() {
     Scenario s = cleanQuoteScenario();
     UUID quoteId = s.quote().draftQuoteId();
-    TenantContext.setTenantId(UUID.randomUUID());
+    UUID otherTenant = UUID.randomUUID();
+    TenantContext.setTenantId(otherTenant);
 
     assertThatThrownBy(() -> service.assembleDraft(quoteId, new AssembleQuoteDraftCommand(TenantContext.requireTenantId(), UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Cross tenant")))
         .isInstanceOf(NotFoundException.class);
+    // OP-CAP-37: a denied cross-tenant assemble creates no candidate and no external effect.
+    assertThat(changeRequests.findByTenantIdOrderByCreatedAtDesc(otherTenant)).isEmpty();
+    assertThat(outboxEvents.findByTenantIdOrderByCreatedAtDesc(otherTenant)).isEmpty();
+  }
+
+  // ---- OP-CAP-37: Draft-Assembled external-sync ChangeRequest candidate ----
+
+  @Test
+  void assembleDraftPreparesTenantScopedNonExecutedSyncCandidate() {
+    Scenario s = cleanQuoteScenario();
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID quoteId = s.quote().draftQuoteId();
+
+    QuoteDraftSummary summary = service.assembleDraft(quoteId, new AssembleQuoteDraftCommand(tenantId, UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Assemble clean"));
+
+    assertThat(summary.externalSyncCandidateStatus()).isEqualTo("PREPARED");
+    assertThat(summary.externalExecution()).isEqualTo("DISABLED");
+
+    var candidates = changeRequests.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    assertThat(candidates).hasSize(1);
+    var candidate = candidates.get(0);
+    assertThat(candidate.getTenantId()).isEqualTo(tenantId);
+    assertThat(candidate.getSourceId()).isEqualTo(quoteId);
+    assertThat(candidate.getSourceType()).isEqualTo("QUOTE_REVIEW");
+    assertThat(candidate.getTargetSystem()).isEqualTo("INTERNAL_SYNC_CANDIDATE");
+    assertThat(candidate.getRequestedAction()).isEqualTo("QUOTE_EXTERNAL_SYNC_CANDIDATE");
+    assertThat(candidate.getExecutionStatus()).isEqualTo("EXECUTION_DISABLED");
+    assertThat(candidate.getApprovalStatus()).isEqualTo("PENDING_APPROVAL");
+    assertThat(candidate.getExecutedAt()).isNull();
+    assertThat(candidate.getExternalReference()).isNull();
+    assertThat(auditEvents.findByTenantIdOrderByOccurredAtDesc(tenantId)).extracting("action").contains("QUOTE_DRAFT_EXTERNAL_SYNC_CANDIDATE_CREATED");
+    // External-execution negative proof: no connector sync event, no outbox event from this path.
+    assertThat(connectorSyncEvents.findByTenantIdOrderByStartedAtDesc(tenantId)).isEmpty();
+    assertThat(outboxEvents.findByTenantIdOrderByCreatedAtDesc(tenantId)).isEmpty();
+  }
+
+  @Test
+  void repeatedAssembleDoesNotDuplicateActiveCandidate() {
+    Scenario s = cleanQuoteScenario();
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID quoteId = s.quote().draftQuoteId();
+
+    service.assembleDraft(quoteId, new AssembleQuoteDraftCommand(tenantId, UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "first"));
+    service.assembleDraft(quoteId, new AssembleQuoteDraftCommand(tenantId, UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "second"));
+
+    assertThat(changeRequests.findByTenantIdOrderByCreatedAtDesc(tenantId)).hasSize(1);
+    assertThat(auditEvents.findByTenantIdOrderByOccurredAtDesc(tenantId)).extracting("action").contains("QUOTE_DRAFT_EXTERNAL_SYNC_CANDIDATE_REUSED");
+  }
+
+  @Test
+  void assembleRequiringApprovalDoesNotPrepareCandidate() {
+    Scenario s = marginRiskScenario();
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID issueId = s.quote().validationIssues().stream().filter(issue -> "MARGIN_BELOW_GUARDRAIL".equals(issue.issueCode())).findFirst().orElseThrow().id();
+    service.escalateIssue(s.quote().draftQuoteId(), issueId, new EscalateValidationIssueCommand(tenantId, UUID.randomUUID(), "OPERATOR", "MANAGER_REVIEW", "Escalate"));
+
+    QuoteDraftSummary summary = service.assembleDraft(s.quote().draftQuoteId(), new AssembleQuoteDraftCommand(tenantId, UUID.randomUUID(), "OPERATOR", "OPERATOR_REVIEW", "Assemble pending approval"));
+
+    assertThat(summary.draftStatus()).isEqualTo("PENDING_APPROVAL");
+    assertThat(summary.externalSyncCandidateStatus()).isEqualTo("PENDING_INTERNAL_APPROVAL");
+    assertThat(changeRequests.findByTenantIdOrderByCreatedAtDesc(tenantId)).isEmpty();
   }
 
   private Scenario cleanQuoteScenario() {

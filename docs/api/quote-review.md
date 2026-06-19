@@ -23,7 +23,7 @@ Returns quote header, status, source context, conversion attempt summary, source
 - `POST /api/v1/quote-review/{quoteId}/issues/{issueId}/apply-fix`
 - `POST /api/v1/quote-review/{quoteId}/issues/{issueId}/escalate`
 
-Command payloads include `tenantId`, `actorId`, `actorRole`, `reasonCode`, and `note`. `apply-fix` also accepts `fixType` and `values`.
+Command payloads carry business intent only — `reasonCode` and `note` (`apply-fix` also accepts `fixType` and `values`). Tenant is resolved from the `X-Tenant-Id` header and the acting user is server-resolved via `RequestActorResolver`; request bodies do not carry `tenantId`, `actorId`, or `actorRole`, and any such fields are ignored on deserialization.
 
 ## Correction Commands
 
@@ -96,6 +96,55 @@ Response — `QuoteDraftSummary` (operator-safe, backend-calculated only):
 `totalAmount`, `marginPercent`, `lineCount`, `unresolvedBlockingIssueCount`,
 `warningCount`, `stockWarningCount`, `approvalRequired`, `riskLevel`,
 `marginStatus`, `validationSummary`, `nextAction`, `operatorMessage`,
-`externalExecution` (`DISABLED`), `assembledAt`. It does not expose `tenantId`,
-`actorId`, `createdBy`/`approvedBy`, `sourceId`, `auditEventIds`, or other raw
-internal IDs.
+`externalExecution` (`DISABLED`), `assembledAt`, and `externalSyncCandidateStatus`
+(OP-CAP-37, below). It does not expose `tenantId`, `actorId`,
+`createdBy`/`approvedBy`, `sourceId`, `auditEventIds`, change-request/connector IDs,
+or other raw internal IDs.
+
+### OP-CAP-36 closure
+
+Verified before OP-CAP-37: `draft_quote.status` has no DB CHECK constraint, JPA
+enum converter, Java enum, or central code allowlist — `DRAFT_ASSEMBLED` therefore
+needs no migration. Downstream gates were confirmed to treat `DRAFT_ASSEMBLED`
+correctly: external order conversion still requires `APPROVED` (blocked directly
+from `DRAFT_ASSEMBLED`), connector ChangeRequest creation and handoff still require
+`APPROVED`/`APPROVED_INTERNAL`, the order-journey projection treats it as a
+non-terminal in-progress status (never failed/rejected/unknown), and the approval
+state machine accepts `DRAFT_ASSEMBLED` and advances it to `APPROVED`. The only
+narrow fix was this doc's stale command-payload line (above).
+
+## External Sync Candidate (OP-CAP-37)
+
+When `assemble-draft` succeeds with `draftStatus = DRAFT_ASSEMBLED` (no approval
+pending), the backend prepares exactly one tenant-scoped, **non-executed**
+ChangeRequest candidate representing "this assembled quote may later be externally
+synchronized." This is candidate preparation, not execution.
+
+- No new endpoint and no new permission: candidate preparation is an internal
+  side effect of the existing `assemble-draft` command (REVIEW_ACTION).
+- The candidate is created via `ChangeRequestService.prepareQuoteExternalSyncCandidate`
+  with `targetSystem = INTERNAL_SYNC_CANDIDATE` (a neutral target the demo executor
+  refuses — execution requires `DEMO_ERP` + `APPROVED`), `requestedAction =
+  QUOTE_EXTERNAL_SYNC_CANDIDATE`, `sourceType = QUOTE_REVIEW`, `sourceId = quoteId`,
+  `approvalStatus = PENDING_APPROVAL`, and `executionStatus = EXECUTION_DISABLED`.
+- It stores a server-built, operator-safe canonical snapshot (quote handle, quote
+  number, assembled status, line count, totals, validation summary, reason/note,
+  `externalExecution=DISABLED`). No client-supplied authority, credentials, or raw
+  source/audit IDs are stored.
+- Dedup: a deterministic per-quote idempotency key
+  (`opcap37:quote-external-sync-candidate:{tenant}:{quote}`) guarantees that
+  repeated `assemble-draft` calls — under any request `Idempotency-Key` — reuse the
+  existing candidate rather than duplicating it.
+- Audit: `QUOTE_DRAFT_EXTERNAL_SYNC_CANDIDATE_CREATED` (or `..._REUSED`), recording
+  who/tenant/quote/candidate status with `externalExecution=DISABLED` and
+  `connectorExecution=NONE`.
+- No connector is called, no connector-consumed outbox event is enqueued (audit +
+  candidate only), and no external/ERP/1C write occurs. Future approval/execution is
+  out of scope for this slice.
+
+When approval is still required (`draftStatus = PENDING_APPROVAL`), no candidate is
+prepared this slice.
+
+The `QuoteDraftSummary.externalSyncCandidateStatus` field reflects this safely:
+`PREPARED` once a candidate exists, `PENDING_INTERNAL_APPROVAL` otherwise. It never
+carries the candidate id, target system, or any connector/execution control.

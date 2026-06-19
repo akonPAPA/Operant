@@ -19,10 +19,14 @@ import {
 import { generateIdempotencyKey } from "@/lib/security-idempotency";
 import {
   mapOperatorActionError,
+  OperatorActionResult,
   useOperatorAction
 } from "@/lib/operator-action-runtime";
 
 type LoadKind = "loading" | "ready" | "forbidden" | "not_found" | "error";
+type OperatorActionRuntime<T> = {
+  execute: (action: () => Promise<OperatorActionResult<T>>) => Promise<OperatorActionResult<T>>;
+};
 
 export function QuoteReviewQueue() {
   const [rows, setRows] = useState<QuoteReviewQueueRow[]>([]);
@@ -133,24 +137,9 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   // provided by useOperatorAction. Idempotency key generation keeps the existing
   // UUID-per-action pattern via generateIdempotencyKey (random, cached per
   // actionKey) — not weakening it to the deterministic runtime helper.
-  const { execute, pending, disabled } = useOperatorAction<QuoteReviewCommandResult | QuoteDraftSummary>({
-    onSuccess: async (_data, safeMessage) => {
-      setMessageKind("done");
-      setMessage(safeMessage);
-      try {
-        applyResult(await getQuoteReviewDetail(quoteId));
-      } catch {
-        // Reload failed — keep the success message but note the stale state.
-        setMessageKind("error");
-        setMessage("Action succeeded but review could not be reloaded. Refresh to see the latest state.");
-      }
-    },
-    onError: (_code, safeMessage) => {
-      setMessageKind("error");
-      setMessage(safeMessage);
-    }
-  });
-
+  const { execute, pending, disabled } = useOperatorAction<QuoteReviewCommandResult>();
+  const operatorAction = { execute, pending, disabled };
+  const draftAssemblyAction = useOperatorAction<QuoteDraftSummary>();
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     setLoadState("loading");
@@ -172,10 +161,11 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   // OP-CAP-35: wraps an API call with the shared useOperatorAction execute,
   // idempotency key caching (UUID-per-actionKey, generateIdempotencyKey),
   // and status-specific safe error mapping via mapOperatorActionError.
-  async function doAction<T extends QuoteReviewCommandResult | QuoteDraftSummary>(
+  async function doAction<T>(
     actionKey: string,
     operation: (idempotencyKey: string) => Promise<T>,
-    doneMessage: string
+    doneMessage: string,
+    actionRuntime?: OperatorActionRuntime<T>
   ) {
     let idempotencyKey = mutationKeysRef.current.get(actionKey);
     if (!idempotencyKey) {
@@ -189,7 +179,7 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
       }
     }
 
-    const result = await execute(async () => {
+    const runOperation = async (): Promise<OperatorActionResult<T>> => {
       try {
         const data = await operation(idempotencyKey);
         return { ok: true as const, data, safeMessage: doneMessage };
@@ -198,14 +188,42 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
         const { errorCode, safeMessage } = mapOperatorActionError(err.status ?? 500, err.message);
         return { ok: false as const, errorCode, safeMessage };
       }
-    });
+    };
 
-    // Clear the cached idempotency key only after a successful completion so the
-    // next intentional click on the same actionKey gets a fresh key (avoids the
-    // backend treating it as a duplicate/replay). Failed attempts and in-flight
-    // duplicate guards keep the key so a genuine retry stays idempotency-safe.
+    if (!actionRuntime) {
+      const result = await execute(runOperation as () => Promise<OperatorActionResult<QuoteReviewCommandResult>>);
+
+      // Clear the cached idempotency key only after a successful completion so the
+      // next intentional click on the same actionKey gets a fresh key (avoids the
+      // backend treating it as a duplicate/replay). Failed attempts and in-flight
+      // duplicate guards keep the key so a genuine retry stays idempotency-safe.
+      if (result.ok) {
+        mutationKeysRef.current.delete(actionKey);
+      }
+      await handleActionResult(result);
+      return;
+    }
+
+    const result = await actionRuntime.execute(runOperation);
     if (result.ok) {
       mutationKeysRef.current.delete(actionKey);
+    }
+    await handleActionResult(result);
+  }
+
+  async function handleActionResult<T>(result: OperatorActionResult<T>) {
+    if (result.ok) {
+      setMessageKind("done");
+      setMessage(result.safeMessage);
+      try {
+        applyResult(await getQuoteReviewDetail(quoteId));
+      } catch {
+        setMessageKind("error");
+        setMessage("Action succeeded but review could not be reloaded. Refresh to see the latest state.");
+      }
+    } else {
+      setMessageKind("error");
+      setMessage(result.safeMessage);
     }
   }
 
@@ -221,7 +239,8 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
         setDraftSummary(summary);
         return summary;
       },
-      "Draft quote assembled. Backend-owned draft summary is shown below."
+      "Draft quote assembled. Backend-owned draft summary is shown below.",
+      draftAssemblyAction
     );
   }
 
@@ -362,6 +381,11 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
               <p>Next action: {humanize(draftSummary.nextAction)}</p>
               <p>{draftSummary.operatorMessage}</p>
               <p>External execution: {draftSummary.externalExecution}</p>
+              {draftSummary.externalSyncCandidateStatus === "PREPARED" ? (
+                <p>External sync candidate prepared for review (no external execution).</p>
+              ) : draftSummary.externalSyncCandidateStatus === "PENDING_INTERNAL_APPROVAL" ? (
+                <p>External sync candidate pending internal approval.</p>
+              ) : null}
             </section>
           ) : null}
 

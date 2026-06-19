@@ -209,6 +209,23 @@ test("quote review draft summary renders only safe backend-owned fields", () => 
   assert.doesNotMatch(cockpit, /draftSummary\.sourceId/);
 });
 
+// OP-CAP-37: the draft summary may surface the external-sync candidate status as
+// safe business wording only — never connector IDs, change-request IDs, or any
+// execution control / "Send to ERP" button.
+test("quote review surfaces external sync candidate status as safe business wording only", () => {
+  assert.match(apiClient, /externalSyncCandidateStatus\??:/);
+  assert.match(cockpit, /draftSummary\.externalSyncCandidateStatus/);
+  assert.match(cockpit, /External sync candidate prepared/);
+  // No execution controls or connector identifiers anywhere in the cockpit.
+  assert.doesNotMatch(cockpit, /Send to ERP/i);
+  assert.doesNotMatch(cockpit, /Send to 1C/i);
+  assert.doesNotMatch(cockpit, /draftSummary\.changeRequestId/);
+  assert.doesNotMatch(cockpit, /draftSummary\.candidateId/);
+  assert.doesNotMatch(cockpit, /draftSummary\.connectorId/);
+  // The candidate status type must not introduce connector/authority fields.
+  assert.doesNotMatch(apiClient, /connectorId\??:/);
+});
+
 // UI renders safe messages only — never raw backend body, stack traces, or
 // internal identifiers.
 test("quote review UI renders safe messages only, never raw internals", () => {
