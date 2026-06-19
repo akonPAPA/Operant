@@ -8,12 +8,17 @@ import {
   getQuoteReviewDetail,
   getQuoteReviewQueue,
   QuoteReviewDetail,
+  QuoteReviewCommandResult,
   QuoteReviewQueueRow,
   rejectQuoteReviewSubstitute,
   resolveQuoteReviewIssue,
   selectQuoteReviewSubstitute
 } from "@/lib/quote-review-api";
 import { generateIdempotencyKey } from "@/lib/security-idempotency";
+import {
+  mapOperatorActionError,
+  useOperatorAction
+} from "@/lib/operator-action-runtime";
 
 type LoadKind = "loading" | "ready" | "forbidden" | "not_found" | "error";
 
@@ -106,8 +111,7 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
   const [reason, setReason] = useState("OPERATOR_REVIEW");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
-  const [mutationInFlight, setMutationInFlight] = useState(false);
-  const mutationInFlightRef = useRef(false);
+  const [messageKind, setMessageKind] = useState<"done" | "error">("done");
   const mutationKeysRef = useRef<Map<string, string>>(new Map());
 
   const applyResult = useCallback((result: Awaited<ReturnType<typeof getQuoteReviewDetail>>) => {
@@ -120,6 +124,29 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
       setMessage(result.message);
     }
   }, []);
+
+  // OP-CAP-35: Quote Review mutations use the shared operator-action runtime.
+  // Pending/disabled state, duplicate-click guard, and safe error mapping are
+  // provided by useOperatorAction. Idempotency key generation keeps the existing
+  // UUID-per-action pattern via generateIdempotencyKey (random, cached per
+  // actionKey) — not weakening it to the deterministic runtime helper.
+  const { execute, pending, disabled } = useOperatorAction<QuoteReviewCommandResult>({
+    onSuccess: async (_data, safeMessage) => {
+      setMessageKind("done");
+      setMessage(safeMessage);
+      try {
+        applyResult(await getQuoteReviewDetail(quoteId));
+      } catch {
+        // Reload failed — keep the success message but note the stale state.
+        setMessageKind("error");
+        setMessage("Action succeeded but review could not be reloaded. Refresh to see the latest state.");
+      }
+    },
+    onError: (_code, safeMessage) => {
+      setMessageKind("error");
+      setMessage(safeMessage);
+    }
+  });
 
   const load = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -139,31 +166,44 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
     };
   }, [quoteId, applyResult]);
 
-  async function mutate(actionKey: string, operation: (idempotencyKey: string) => Promise<unknown>, done: string) {
-    if (mutationInFlightRef.current) return;
+  // OP-CAP-35: wraps an API call with the shared useOperatorAction execute,
+  // idempotency key caching (UUID-per-actionKey, generateIdempotencyKey),
+  // and status-specific safe error mapping via mapOperatorActionError.
+  async function doAction(
+    actionKey: string,
+    operation: (idempotencyKey: string) => Promise<QuoteReviewCommandResult>,
+    doneMessage: string
+  ) {
     let idempotencyKey = mutationKeysRef.current.get(actionKey);
     if (!idempotencyKey) {
       try {
         idempotencyKey = generateIdempotencyKey();
         mutationKeysRef.current.set(actionKey, idempotencyKey);
       } catch (error) {
+        setMessageKind("error");
         setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
         return;
       }
     }
-    mutationInFlightRef.current = true;
-    setMutationInFlight(true);
-    setMessage("");
-    try {
-      await operation(idempotencyKey);
-      applyResult(await getQuoteReviewDetail(quoteId));
+
+    const result = await execute(async () => {
+      try {
+        const data = await operation(idempotencyKey);
+        return { ok: true as const, data, safeMessage: doneMessage };
+      } catch (error) {
+        const err = error as Error & { status?: number };
+        const { errorCode, safeMessage } = mapOperatorActionError(err.status ?? 500, err.message);
+        return { ok: false as const, errorCode, safeMessage };
+      }
+    });
+
+    // Clear the cached idempotency key only after a successful completion so the
+    // next intentional click on the same actionKey gets a fresh key (avoids the
+    // backend treating it as a duplicate/replay). Failed attempts and in-flight
+    // duplicate guards keep the key so a genuine retry stays idempotency-safe.
+    if (result.ok) {
       mutationKeysRef.current.delete(actionKey);
-      setMessage(done);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Review command failed.");
     }
-    mutationInFlightRef.current = false;
-    setMutationInFlight(false);
   }
 
   return (
@@ -175,7 +215,7 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
           <label><span>Operator note</span><input value={note} onChange={(event) => setNote(event.target.value)} /></label>
           <button className="button" type="submit">Reload Review</button>
         </form>
-        {message ? <p className={message.includes("failed") || message.includes("Could not") || message.includes("not found") || message.includes("do not have access") ? "form-message error" : "form-message done"}>{message}</p> : null}
+        {message ? <p className={messageKind === "error" ? "form-message error" : "form-message done"}>{message}</p> : null}
       </section>
 
       {loadState === "loading" ? <section className="panel"><h2>Loading</h2><p>Loading quote review detail...</p></section> : null}
@@ -218,8 +258,8 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
                     <td>{issue.status}</td>
                     <td>{issue.message}</td>
                     <td className="action-row">
-                      <button className="button secondary-button" disabled={issue.status !== "OPEN" || mutationInFlight} onClick={() => mutate(`resolve-issue-${issue.id}`, (idempotencyKey) => resolveQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note, idempotencyKey }), "Issue resolution persisted and quote revalidated.")}>Resolve</button>
-                      <button className="button secondary-button" disabled={issue.status !== "OPEN" || mutationInFlight} onClick={() => mutate(`escalate-issue-${issue.id}`, (idempotencyKey) => escalateQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note, idempotencyKey }), "Issue escalated to approval/review path.")}>Escalate</button>
+                      <button className="button secondary-button" disabled={issue.status !== "OPEN" || disabled} onClick={() => doAction(`resolve-issue-${issue.id}`, (idempotencyKey) => resolveQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note, idempotencyKey }), "Issue resolution persisted and quote revalidated.")}>Resolve</button>
+                      <button className="button secondary-button" disabled={issue.status !== "OPEN" || disabled} onClick={() => doAction(`escalate-issue-${issue.id}`, (idempotencyKey) => escalateQuoteReviewIssue(quoteId, issue.id, { reasonCode: reason, note, idempotencyKey }), "Issue escalated to approval/review path.")}>Escalate</button>
                     </td>
                   </tr>
                 )) : <tr><td colSpan={5}>No validation issues.</td></tr>}
@@ -239,9 +279,9 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
                   <td>{line.uom}</td>
                   <td>{humanize(line.validationStatus)}</td>
                   <td className="action-row">
-                    <button className="button secondary-button" disabled={mutationInFlight} onClick={() => mutate(`line-qty-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { quantity: Number(line.quantity) > 0 ? Number(line.quantity) : 1, reasonCode: reason, note, idempotencyKey }), "Line quantity correction persisted and revalidated.")}>Fix qty</button>
-                    <button className="button secondary-button" disabled={mutationInFlight} onClick={() => mutate(`line-uom-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { uom: "EA", reasonCode: reason, note, idempotencyKey }), "Line UOM correction persisted and revalidated.")}>Set EA</button>
-                    <button className="button secondary-button" disabled={mutationInFlight} onClick={() => mutate(`line-follow-up-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { manualFollowUp: true, reasonCode: "MANUAL_FOLLOW_UP", note, idempotencyKey }), "Line marked for manual follow-up.")}>Follow-up</button>
+                    <button className="button secondary-button" disabled={disabled} onClick={() => doAction(`line-qty-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { quantity: Number(line.quantity) > 0 ? Number(line.quantity) : 1, reasonCode: reason, note, idempotencyKey }), "Line quantity correction persisted and revalidated.")}>Fix qty</button>
+                    <button className="button secondary-button" disabled={disabled} onClick={() => doAction(`line-uom-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { uom: "EA", reasonCode: reason, note, idempotencyKey }), "Line UOM correction persisted and revalidated.")}>Set EA</button>
+                    <button className="button secondary-button" disabled={disabled} onClick={() => doAction(`line-follow-up-${line.id}`, (idempotencyKey) => correctQuoteReviewLine(quoteId, line.id, { manualFollowUp: true, reasonCode: "MANUAL_FOLLOW_UP", note, idempotencyKey }), "Line marked for manual follow-up.")}>Follow-up</button>
                   </td>
                 </tr>
               ))}</tbody>
@@ -259,8 +299,8 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
                   <td>{candidate.stockStatus}</td>
                   <td>{humanize(candidate.reasonCode)}</td>
                   <td className="action-row">
-                    <button className="button secondary-button" disabled={!candidate.lineId || candidate.blocked || mutationInFlight} onClick={() => mutate(`substitute-select-${candidate.lineId}-${candidate.productId}`, (idempotencyKey) => selectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note, idempotencyKey }), candidate.requiresApproval ? "Substitute selected and routed to approval." : "Substitute selection persisted and revalidated.")}>Select</button>
-                    <button className="button secondary-button" disabled={!candidate.lineId || mutationInFlight} onClick={() => mutate(`substitute-reject-${candidate.lineId}-${candidate.productId}`, (idempotencyKey) => rejectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note, idempotencyKey }), "Substitute rejection persisted.")}>Reject</button>
+                    <button className="button secondary-button" disabled={!candidate.lineId || candidate.blocked || disabled} onClick={() => doAction(`substitute-select-${candidate.lineId}-${candidate.productId}`, (idempotencyKey) => selectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note, idempotencyKey }), candidate.requiresApproval ? "Substitute selected and routed to approval." : "Substitute selection persisted and revalidated.")}>Select</button>
+                    <button className="button secondary-button" disabled={!candidate.lineId || disabled} onClick={() => doAction(`substitute-reject-${candidate.lineId}-${candidate.productId}`, (idempotencyKey) => rejectQuoteReviewSubstitute(quoteId, candidate.lineId!, { substituteProductId: candidate.productId, reasonCode: reason, note, idempotencyKey }), "Substitute rejection persisted.")}>Reject</button>
                   </td>
                 </tr>
               )) : <tr><td colSpan={5}>Substitute selection is enabled only when backend-compatible candidates exist.</td></tr>}</tbody>

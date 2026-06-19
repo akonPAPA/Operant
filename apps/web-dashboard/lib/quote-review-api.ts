@@ -165,10 +165,10 @@ export function rejectQuoteReviewSubstitute(quoteId: string, lineId: string, pay
   return requestQuoteReview<QuoteReviewCommandResult>(`/api/v1/quote-review/${quoteId}/lines/${lineId}/substitutes/reject`, payload);
 }
 
-// Command (mutation) helper. Reads use coreApiGet/ApiResult; commands keep the
-// throw-based contract their callers already use, but map non-200 responses to
-// operator-safe messages so a 403/404 body (which may reference tenant/resource
-// ids) is never surfaced into the UI.
+// OP-CAP-35: command helper attaches the HTTP status to the thrown error so
+// callers can use mapOperatorActionError for status-specific safe messages.
+// Non-200 responses are mapped to operator-safe messages — a 403/404 body (which
+// may reference tenant/resource ids) is never surfaced into the UI.
 async function requestQuoteReview<T>(path: string, payload: QuoteReviewCommandPayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
   const response = await fetch(`${coreApiBaseUrl()}${path}`, {
@@ -181,7 +181,11 @@ async function requestQuoteReview<T>(path: string, payload: QuoteReviewCommandPa
     body: JSON.stringify(body)
   });
   if (!response.ok) {
-    throw new Error(coreApiStatusMessage(response.status));
+    const error = Object.assign(
+      new Error(coreApiStatusMessage(response.status)),
+      { status: response.status }
+    );
+    throw error;
   }
   return response.json() as Promise<T>;
 }
