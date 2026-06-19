@@ -52,6 +52,16 @@ test("source summary panel does not expose editable tenant id or raw internal id
   assert.doesNotMatch(sourcePanel, /context\.createdByType/);
 });
 
+// OP-CAP-33: the conversion panel must not offer an editable Tenant ID. Tenant is resolved from
+// env/config and the backend TenantContext is the authority boundary.
+test("conversion panel does not expose editable tenant id", () => {
+  assert.doesNotMatch(panel, /<span>Tenant ID<\/span>/);
+  assert.doesNotMatch(panel, /onChange=\{\(event\) => setTenantId/);
+  assert.doesNotMatch(panel, /setTenantId/);
+  assert.match(panel, /const tenantId = process\.env\.NEXT_PUBLIC_DEMO_TENANT_ID/);
+  assert.match(panel, /tenant-context-info/);
+});
+
 // OP-CAP-32: the conversion result panel must not render the (intentionally @JsonIgnore'd)
 // conversion attempt id or any raw source/audit identifier.
 test("conversion result panel does not render hidden internal identifiers", () => {

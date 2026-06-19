@@ -28,10 +28,20 @@ test("approval decision payload type carries business intent only (no actor/role
   assert.match(block, /reason\??:/);
 });
 
-test("channel-to-quote payload type carries business intent only (no actor)", () => {
+test("channel-to-quote payload type carries business intent only (no actor, no tenant)", () => {
   const block = typeBlock(apiClient, "ChannelToQuotePayload");
-  assert.doesNotMatch(block, /\b(actorId|actorType|actorRole|tenantId)\??:/);
+  assert.doesNotMatch(block, /\b(actorId|actorType|actorRole|tenantId|sourceId|status|risk|approval|conversionAttemptId|auditEventIds)\??:/);
   assert.match(block, /requestedCustomerAccountId\??:/);
+});
+
+test("channel-to-quote request sends tenant via X-Tenant-Id header only, never in body", () => {
+  // The requestQuoteTransaction helper strips the idempotency key from the body and puts
+  // tenantId in the X-Tenant-Id header — tenantId is never serialized to the JSON body.
+  assert.match(apiClient, /"X-Tenant-Id": tenantId/);
+  assert.match(apiClient, /const \{ idempotencyKey, \.\.\.body \} = payload;/);
+  // ChannelToQuotePayload must not declare tenantId.
+  const block = typeBlock(apiClient, "ChannelToQuotePayload");
+  assert.doesNotMatch(block, /tenantId/);
 });
 
 test("RFQ request strips tenantId from the JSON body (header only)", () => {

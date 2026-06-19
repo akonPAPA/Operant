@@ -8,7 +8,9 @@ import {
   createQuoteFromInboundDocument
 } from "@/lib/quote-transaction-api";
 
-const demoTenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
+// OP-CAP-33: tenant is resolved from env/config, not from an editable operator input.
+// The backend validates the X-Tenant-Id header — the UI must not offer a tenant override.
+const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
 
 type Props = {
   sourceId: string;
@@ -16,7 +18,6 @@ type Props = {
 };
 
 export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
-  const [tenantId, setTenantId] = useState(demoTenantId);
   const [customerId, setCustomerId] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -56,7 +57,7 @@ export function ChannelQuoteConversionPanel({ sourceId, sourceType }: Props) {
     <section className="panel">
       <h2>Channel-to-Quote</h2>
       <div className="upload-form">
-        <label><span>Tenant ID</span><input value={tenantId} onChange={(event) => setTenantId(event.target.value)} /></label>
+        <p className="tenant-context-info">Tenant: {tenantId}</p>
         <label><span>Customer account ID</span><input value={customerId} onChange={(event) => setCustomerId(event.target.value)} placeholder="Required unless source resolves customer" /></label>
         <label className="checkbox-row"><input type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} /> <span>Dry run preview</span></label>
         <button className="button" disabled={loading} type="button" onClick={submit}>{loading ? "Preparing..." : dryRun ? "Prepare Quote" : "Create Quote Draft"}</button>

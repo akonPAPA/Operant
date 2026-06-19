@@ -26,6 +26,10 @@ header and the acting user is resolved by the backend from the trusted actor con
 `actorType`, `tenantId`, `sourceId`, and any approval/execution/status fields are backend-owned
 authority and are **never** read from the request body; if supplied they are ignored.
 
+The frontend resolves tenant from environment/config (`NEXT_PUBLIC_DEMO_TENANT_ID`) via the
+existing API client header helper — the channel-to-quote conversion panel does not offer an
+editable Tenant ID input. The backend `TenantContext` is the final authority boundary.
+
 ## Create From Inbound Document
 
 `POST /api/v1/quote-transactions/from-inbound-document/{documentId}`
