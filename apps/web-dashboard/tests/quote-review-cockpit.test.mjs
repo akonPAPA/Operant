@@ -164,6 +164,51 @@ test("quote review API client attaches HTTP status to thrown command errors", ()
   assert.match(apiClient, /\{ status: response\.status \}/);
 });
 
+// ── OP-CAP-36: Quote Draft Assembly Workflow ──────────────────────────────────
+
+test("quote review API client exposes assemble-draft command with business-intent payload", () => {
+  assert.match(apiClient, /export function assembleQuoteDraft/);
+  assert.match(apiClient, /\/api\/v1\/quote-review\/\$\{quoteId\}\/assemble-draft/);
+  // Reuses the shared command helper (header tenant, status-attached errors).
+  assert.match(apiClient, /assembleQuoteDraft[\s\S]*requestQuoteReview<QuoteDraftSummary>/);
+  // Summary type exposes backend-owned safe fields only — no authority/internal IDs.
+  assert.match(apiClient, /export type QuoteDraftSummary = \{/);
+  assert.doesNotMatch(apiClient, /QuoteDraftSummary = \{[\s\S]*tenantId[\s\S]*\};/);
+  assert.doesNotMatch(apiClient, /QuoteDraftSummary = \{[\s\S]*actorId[\s\S]*\};/);
+  assert.doesNotMatch(apiClient, /QuoteDraftSummary = \{[\s\S]*auditEventIds[\s\S]*\};/);
+  assert.doesNotMatch(apiClient, /QuoteDraftSummary = \{[\s\S]*sourceId[\s\S]*\};/);
+});
+
+test("quote review cockpit wires assemble-draft through the operator-action runtime", () => {
+  assert.match(cockpit, /Assemble Draft Quote/);
+  assert.match(cockpit, /Draft Quote Summary/);
+  // Assemble goes through the shared doAction (idempotency-key lifecycle + execute).
+  assert.match(cockpit, /async function assembleDraft\(\)/);
+  assert.match(cockpit, /doAction\(\s*"assemble-draft"/);
+  // Payload is business intent only.
+  assert.match(cockpit, /assembleQuoteDraft\(quoteId, \{ reasonCode: reason, note, idempotencyKey \}\)/);
+});
+
+test("quote review assemble button is gated and uses hook pending/disabled state", () => {
+  assert.match(cockpit, /const hasOpenBlockingIssue =/);
+  assert.match(cockpit, /disabled=\{hasOpenBlockingIssue \|\| disabled\}/);
+  assert.match(cockpit, /onClick=\{assembleDraft\}/);
+  assert.match(cockpit, /\{pending \? "Working\.\.\." : "Assemble Draft Quote"\}/);
+});
+
+test("quote review draft summary renders only safe backend-owned fields", () => {
+  assert.match(cockpit, /draftSummary\.draftStatus/);
+  assert.match(cockpit, /draftSummary\.approvalRequired/);
+  assert.match(cockpit, /draftSummary\.riskLevel/);
+  assert.match(cockpit, /draftSummary\.externalExecution/);
+  // Must not render backend-owned authority/internal identifiers in the summary.
+  assert.doesNotMatch(cockpit, /draftSummary\.tenantId/);
+  assert.doesNotMatch(cockpit, /draftSummary\.actorId/);
+  assert.doesNotMatch(cockpit, /draftSummary\.createdBy/);
+  assert.doesNotMatch(cockpit, /draftSummary\.auditEventIds/);
+  assert.doesNotMatch(cockpit, /draftSummary\.sourceId/);
+});
+
 // UI renders safe messages only — never raw backend body, stack traces, or
 // internal identifiers.
 test("quote review UI renders safe messages only, never raw internals", () => {

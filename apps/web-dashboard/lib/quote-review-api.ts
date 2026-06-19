@@ -69,6 +69,33 @@ export type QuoteReviewCommandResult = {
   validationSummary: string;
 };
 
+// OP-CAP-36: operator-safe assembled draft quote summary. Mirrors the backend
+// QuoteDraftSummary DTO — display-safe, backend-owned fields only. No tenantId,
+// actorId, createdBy/approvedBy, sourceId, auditEventIds, or raw internal IDs.
+export type QuoteDraftSummary = {
+  quoteId: string;
+  quoteNumber: string;
+  draftStatus: string;
+  customer: QuoteReviewQueueRow["customer"];
+  currency?: string | null;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  totalAmount?: number | string | null;
+  marginPercent?: number | string | null;
+  lineCount: number;
+  unresolvedBlockingIssueCount: number;
+  warningCount: number;
+  stockWarningCount: number;
+  approvalRequired: boolean;
+  riskLevel: string;
+  marginStatus: string;
+  validationSummary: string;
+  nextAction: string;
+  operatorMessage: string;
+  externalExecution: string;
+  assembledAt: string;
+};
+
 export type QuoteReviewCommandPayload = {
   reasonCode?: string;
   note?: string;
@@ -163,6 +190,13 @@ export function selectQuoteReviewSubstitute(quoteId: string, lineId: string, pay
 
 export function rejectQuoteReviewSubstitute(quoteId: string, lineId: string, payload: QuoteReviewCommandPayload): Promise<QuoteReviewCommandResult> {
   return requestQuoteReview<QuoteReviewCommandResult>(`/api/v1/quote-review/${quoteId}/lines/${lineId}/substitutes/reject`, payload);
+}
+
+// OP-CAP-36: assemble a safe draft quote candidate from the reviewed quote.
+// Sends business intent only (reasonCode/note/idempotencyKey). Backend owns
+// status, totals, risk, approval requirement, stock warnings, and draft status.
+export function assembleQuoteDraft(quoteId: string, payload: QuoteReviewCommandPayload): Promise<QuoteDraftSummary> {
+  return requestQuoteReview<QuoteDraftSummary>(`/api/v1/quote-review/${quoteId}/assemble-draft`, payload);
 }
 
 // OP-CAP-35: command helper attaches the HTTP status to the thrown error so
