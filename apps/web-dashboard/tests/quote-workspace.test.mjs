@@ -87,13 +87,51 @@ test("quote transaction API sends idempotency key as header and strips it from J
   assert.match(apiClient, /body: JSON\.stringify\(body\)/);
 });
 
-test("quote review mutations use stable ref keys and ref in-flight lock", () => {
-  assert.match(quoteReviewCockpit, /const mutationInFlightRef = useRef\(false\)/);
-  assert.match(quoteReviewCockpit, /const mutationKeysRef = useRef<Map<string, string>>\(new Map\(\)\)/);
-  assert.match(quoteReviewCockpit, /if \(mutationInFlightRef\.current\) return/);
-  assert.match(quoteReviewCockpit, /mutationKeysRef\.current\.delete\(actionKey\)/);
-  assert.match(quoteReviewCockpit, /resolve-issue-\$\{issue\.id\}/);
-  assert.match(quoteReviewCockpit, /substitute-select-\$\{candidate\.lineId\}-\$\{candidate\.productId\}/);
+test("quote review mutations use stable ref keys and shared operator action runtime", () => {
+  assert.match(
+    quoteReviewCockpit,
+    /const mutationKeysRef = useRef<Map<string, string>>\(new Map\(\)\)/
+  );
+
+  assert.match(
+    quoteReviewCockpit,
+    /useOperatorAction<QuoteReviewCommandResult>/
+  );
+
+  assert.match(
+    quoteReviewCockpit,
+    /generateIdempotencyKey\(\)/
+  );
+
+  assert.match(
+    quoteReviewCockpit,
+    /mutationKeysRef\.current\.delete\(actionKey\)/
+  );
+
+  assert.match(
+    quoteReviewCockpit,
+    /resolve-issue-\$\{issue\.id\}/
+  );
+
+  assert.match(
+    quoteReviewCockpit,
+    /substitute-select-\$\{candidate\.lineId\}-\$\{candidate\.productId\}/
+  );
+
+  assert.match(
+    quoteReviewCockpit,
+    /mapOperatorActionError/
+  );
+
+  assert.doesNotMatch(
+    quoteReviewCockpit,
+    /const mutationInFlightRef = useRef\(false\)/
+  );
+
+  assert.doesNotMatch(
+    quoteReviewCockpit,
+    /if \(mutationInFlightRef\.current\) return/
+  );
 });
 
 test("quote review API sends idempotency key as header and strips it from command payload", () => {
