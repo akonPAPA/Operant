@@ -145,7 +145,29 @@ Update at the start of a task only when needed:
   - Tests: added Stage9 reject/cancel body-actor-ignored coverage and a frontend response-leak
     assertion (see Test files below).
 
-### Current next slice: OP-CAP-33 Agent Instruction Policy and Tenant Context UI Boundary — done
+### Current next slice: OP-CAP-34 Operator Action Runtime Foundation — in progress
+
+- Goal: create a safe, reusable frontend runtime for operator mutation actions so future screens
+  do not reimplement loading state, duplicate-click prevention, idempotency, safe error mapping,
+  and bad-layer payload boundaries differently each time.
+- Foundation created: `lib/operator-action-runtime.ts`
+  - `OperatorActionResult<T>` — typed result (ok/data/safeMessage | errorCode/safeMessage)
+  - `mapOperatorActionError(status)` — status-based safe error mapper (400/422/401/403/404/409/429/500+)
+  - `createOperatorIdempotencyKey(actionName, resourceHandle?)` — deterministic idempotency key
+  - `useOperatorAction<T>` — React hook with pending/disabled state, duplicate-click guard, safe
+    success/error callbacks
+- Applied to: `channel-quote-conversion-panel.tsx` — submit action uses the shared runtime
+- New mutation buttons must use the runtime or explicitly justify why not:
+  - duplicate-click guard
+  - loading/disabled state
+  - idempotency key path via shared helper
+  - safe operator error mapping
+  - business-intent-only payload
+  - no raw internal response rendering
+- Quote Review cockpit (`quote-review-cockpit.tsx`) already uses pattern-compliant local `mutate()`
+  wrapper — not migrated this slice, noted as next candidate.
+- Conversion Review cockpit (`conversion-review-cockpit.tsx`) is read-only — out of scope.
+- AI Work Assistant (`ai-work-assistant-workspace.tsx`) is advisory-only — out of scope.
 
 - Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making
   AGENTS.md instruction files durable (tracked, not local-only) and removing the last editable
