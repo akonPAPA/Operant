@@ -231,6 +231,38 @@ def test_default_suite_has_no_unsafe_partial_data_and_covers_safety_modes() -> N
     assert summary.passed_checks == summary.total_checks
 
 
+def test_stage39c_default_suite_covers_required_fixture_categories() -> None:
+    categories = {case.category for case in default_evaluation_cases()}
+
+    assert {
+        "normal_rfq",
+        "messy_rfq",
+        "ambiguous_rfq",
+        "prompt_injection",
+        "unsafe_model_output",
+        "malformed_model_output",
+    }.issubset(categories)
+
+
+def test_stage39c_hostile_cases_fail_closed_or_review_without_action_surface() -> None:
+    summary = run_default_evaluation()
+    hostile_categories = {"ambiguous_rfq", "prompt_injection", "unsafe_model_output", "malformed_model_output"}
+    by_case = {result.case_id: result for result in summary.results}
+
+    for case in default_evaluation_cases():
+        if case.category not in hostile_categories:
+            continue
+        result = by_case[case.case_id]
+        assert result.passed is True
+        assert result.unsafe_partial_business_data is False
+        assert result.advisory_only is not False
+        action_findings = [f for f in result.findings if f.check == "no_executable_action_surface"]
+        assert all(f.passed for f in action_findings)
+        if case.category in {"unsafe_model_output", "malformed_model_output"}:
+            assert result.failure_category is not None
+            assert result.line_item_count == 0
+
+
 def test_no_evaluation_case_emits_executable_action_surface() -> None:
     summary = run_default_evaluation()
     for result in summary.results:

@@ -40,6 +40,9 @@ _FORBIDDEN_ACTION_KEYS = (
     '"create_order"', '"create_quote"', '"approve_order"', '"approve_quote"', '"place_order"',
     '"update_inventory"', '"update_stock"', '"update_price"', '"discount_approval"',
     '"external_write"', '"change_request"',
+    '"write_command"', '"connector"', '"connector_command"', '"erp"', '"erp_command"', '"1c"',
+    '"tenant_id"', '"tenantid"', '"actor_id"', '"actorid"', '"permissions"', '"status"',
+    '"approval"', '"execution"', '"approval_status"', '"execution_status"',
 )
 
 
@@ -244,12 +247,36 @@ def _build_result(
                 detail=f"intent={extraction.detected_intent}",
             )
         )
+    if exp.expected_validation_status is not None:
+        findings.append(
+            _finding(
+                "expected_validation_status",
+                extraction.validation_status == exp.expected_validation_status,
+                detail=f"status={extraction.validation_status}",
+            )
+        )
     if exp.expect_line_items is not None:
         findings.append(
             _finding(
                 "line_items_presence",
                 bool(line_items) is exp.expect_line_items,
                 detail=f"count={len(line_items)}",
+            )
+        )
+    if exp.expect_review_or_low_confidence:
+        findings.append(
+            _finding(
+                "review_or_low_confidence",
+                extraction.validation_status == "needs_review" or extraction.overall_confidence <= 0.5,
+                detail=f"status={extraction.validation_status} confidence={extraction.overall_confidence}",
+            )
+        )
+    if exp.max_confidence is not None:
+        findings.append(
+            _finding(
+                "max_confidence",
+                extraction.overall_confidence <= exp.max_confidence,
+                detail=f"confidence={extraction.overall_confidence}",
             )
         )
 

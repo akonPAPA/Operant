@@ -60,7 +60,11 @@ _UNSAFE_KEYS = frozenset(
         "erp_write", "tool", "tool_call", "tool_calls", "function_call", "shell", "exec",
         "create_order", "create_quote", "approve_order", "approve_quote", "place_order",
         "update_inventory", "update_stock", "update_price", "change_price", "discount_approval",
-        "external_write", "change_request",
+        "external_write", "write_command", "change_request",
+        "tenant_id", "tenantid", "actor_id", "actorid", "user_id", "userid", "permissions",
+        "permission", "status", "approval", "approval_status", "execution", "execution_status",
+        "connector", "connector_command", "erp", "erp_command", "onec", "1c", "toolcall",
+        "functioncall",
     }
 )
 
