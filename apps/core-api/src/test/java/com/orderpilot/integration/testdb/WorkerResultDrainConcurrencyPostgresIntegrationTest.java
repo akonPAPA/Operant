@@ -57,7 +57,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>Like the other {@code *PostgresIntegrationTest} classes it boots the real application context
  * against a real PostgreSQL (Testcontainers) with Flyway, runs each drain on its own pooled connection,
- * and is SKIPPED (not errored) when no Docker daemon is present so the default H2 suite stays green.
+ * and is SKIPPED (not errored) when no Docker daemon is present so the default H2 suite stays green.1
  */
 @Testcontainers
 @EnabledIf("dockerAvailable")
