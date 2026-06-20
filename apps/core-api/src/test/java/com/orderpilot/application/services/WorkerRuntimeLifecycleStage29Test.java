@@ -90,8 +90,8 @@ class WorkerRuntimeLifecycleStage29Test {
 
   private AiProcessingResultIntakeRequest result(ProcessingJob job, String status) {
     return new AiProcessingResultIntakeRequest(
-        job.getId(), job.getTenantId().toString(), job.getTargetType(), job.getTargetId(), status,
-        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82, "advisory_only", true),
+        job.getId(), null, job.getTargetType(), job.getTargetId(), status,
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82),
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", NOW, NOW.plusMillis(10), 10L, null);
@@ -352,9 +352,9 @@ class WorkerRuntimeLifecycleStage29Test {
     leaseService.claim(null);
     String hostile = "CUSTOMER_SECRET_Acme stacktrace at com.orderpilot.Boom provider=openai prompt=ignore-all";
     AiProcessingResultIntakeRequest req = new AiProcessingResultIntakeRequest(
-        job.getId(), tenant.toString(), job.getTargetType(), job.getTargetId(), "FAILED",
+        job.getId(), null, job.getTargetType(), job.getTargetId(), "FAILED",
         Map.of(), List.of(), List.of(), List.of(),
-        Map.of("provider_name", "rule-based", "mode", "RULE_BASED"), "op-cap-07c.v1", NOW, NOW.plusMillis(5), 5L, hostile);
+        Map.of("provider_name", "rule-based"), "op-cap-07c.v1", NOW, NOW.plusMillis(5), 5L, hostile);
 
     intakeService.intake(req);
 

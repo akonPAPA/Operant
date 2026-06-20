@@ -38,8 +38,8 @@ A regression and safety harness for provider behavior. It:
 
 - `models.py` — typed `EvaluationCase`, `ExpectedExtraction`, `EvaluationResult`,
   `EvaluationFinding`, `EvaluationSummary` (pydantic, same style as the extraction schemas).
-- `evaluator.py` — `evaluate_case`, `evaluate_cases`, `summarize`, `run_default_evaluation`, the
-  in-process `_SpyTransport`, and Stage 39D bounded JSON report helpers.
+- `evaluator.py` — `evaluate_case`, `evaluate_cases`, `summarize`, `run_default_evaluation`, and the
+  in-process `_SpyTransport`.
 - `cases.py` — `default_evaluation_cases()`, the bundled inline fixture suite (no binary fixtures).
 
 ## Checks
@@ -90,15 +90,6 @@ summary = run_default_evaluation()
 assert summary.all_passed and summary.unsafe_partial_data_violations == 0
 print(summary.model_dump_json(indent=2))
 ```
-
-Stage 39D safe report output:
-
-```
-./.venv/Scripts/python.exe scripts/write_stage39_evaluation_report.py ./stage39-evaluation-report.json
-```
-
-The report includes case id, category, pass/fail, safe reason token, and safety status. It excludes
-raw hostile prompts and raw model output.
 
 ## Scope and limitations
 

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Mapping, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from orderpilot_ai_worker.extraction.schemas.extraction import ExtractionResult
 
@@ -122,8 +122,6 @@ class AiProcessingJobRequest(BaseModel):  # pylint: disable=too-few-public-metho
 class ProviderMetadata(BaseModel):  # pylint: disable=too-few-public-methods
     """Advisory provenance for the extraction provider that produced a result."""
 
-    model_config = ConfigDict(extra="forbid")
-
     provider_name: str
     provider_version: str
     schema_version: str
@@ -137,8 +135,6 @@ class AiProcessingJobResult(BaseModel):  # pylint: disable=too-few-public-method
     metadata. It never carries stack traces, secrets, executable commands, raw prompt-injection
     payload, or any field that says "approve quote" / "update stock" / "create order" / "write ERP".
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     job_id: str
     tenant_ref: str

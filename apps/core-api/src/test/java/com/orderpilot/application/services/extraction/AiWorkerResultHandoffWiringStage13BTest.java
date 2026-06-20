@@ -128,22 +128,21 @@ class AiWorkerResultHandoffWiringStage13BTest {
     UUID sourceId = UUID.randomUUID();
     ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
 
-    // Stage 39B rejects nested business-action keys at intake, before persistence or handoff.
+    // Nested business-action key inside a line item: passes the intake top-level guard but the 13A
+    // handoff deep-scan rejects it -> no decomposition, no validation run.
     Map<String, Object> line = new LinkedHashMap<>(line(1, "SKU-X", "Thing", "2", "EA", 0.9));
     line.put("create_order", Map.of("sku", "SKU-X"));
     Map<String, Object> extraction = new LinkedHashMap<>();
     extraction.put("detected_intent", "RFQ");
-    extraction.put("document_type", "message");
     extraction.put("overall_confidence", 0.9);
-    extraction.put("advisory_only", true);
     extraction.put("line_items", List.of(line));
 
-    assertThatThrownBy(() -> intakeService.intake(
-        request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", extraction, null)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("forbidden_action_key");
+    AiProcessingResultIntakeResponse response = intakeService.intake(
+        request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", extraction, null));
 
-    assertThat(extractionResults.findByTenantIdOrderByCreatedAtDesc(tenantId)).isEmpty();
+    UUID resultId = response.extractionResultId();
+    assertThat(lines.findByTenantIdAndExtractionResultId(tenantId, resultId)).isEmpty();
+    assertThat(validationRuns.findByTenantIdAndExtractionResultIdOrderByCreatedAtDesc(tenantId, resultId)).isEmpty();
   }
 
   @Test
@@ -217,9 +216,7 @@ class AiWorkerResultHandoffWiringStage13BTest {
     field.put("confidence", 0.9);
     Map<String, Object> extraction = new LinkedHashMap<>();
     extraction.put("detected_intent", "RFQ");
-    extraction.put("document_type", "message");
     extraction.put("overall_confidence", overall);
-    extraction.put("advisory_only", true);
     extraction.put("fields", List.of(field));
     extraction.put("line_items", List.of(line(1, "SKU-AUTO", description, "2", "EA", overall)));
     return extraction;
@@ -239,7 +236,7 @@ class AiWorkerResultHandoffWiringStage13BTest {
   private static AiProcessingResultIntakeRequest request(
       UUID jobId, String sourceType, UUID sourceId, String status, Map<String, Object> extraction, String safeFailureReason) {
     return new AiProcessingResultIntakeRequest(
-        jobId, TenantContext.requireTenantId().toString(), sourceType, sourceId, status, extraction,
+        jobId, null, sourceType, sourceId, status, extraction,
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", T0, T0.plusMillis(10), 10L, safeFailureReason);

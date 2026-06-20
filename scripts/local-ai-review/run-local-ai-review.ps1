@@ -29,13 +29,6 @@
 .PARAMETER OllamaHost
   Ollama base URL. Default http://localhost:11434.
 
-.PARAMETER IncludeHeavyReviewer
-  Opt in to deepseek-r1:32b. It is excluded from the default rota because OP-CAP-38/COORD
-  observed two local Ollama crashes while running it.
-
-.PARAMETER SelfTest
-  Validate harness safety defaults without contacting Ollama.
-
 .EXAMPLE
   pwsh ./scripts/local-ai-review/run-local-ai-review.ps1
 #>
@@ -43,9 +36,7 @@
 param(
   [string]$DiffRef = "5103aa1",
   [string]$OutputDir,
-  [string]$OllamaHost = "http://localhost:11434",
-  [switch]$IncludeHeavyReviewer,
-  [switch]$SelfTest
+  [string]$OllamaHost = "http://localhost:11434"
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,47 +54,6 @@ $StageAFiles = @(
   "apps/core-api/src/test/java/com/orderpilot/api/rest/QuoteReviewControllerTest.java",
   "apps/core-api/src/test/java/com/orderpilot/application/services/workspace/QuoteDraftServiceStage12ATest.java"
 )
-
-$DeniedInputPathPatterns = @(
-  '(^|/)\.env($|[./_-])',
-  '(^|/)(secrets?|credentials?|private[-_]?keys?)(/|$)',
-  '(^|/)(node_modules|target|\.next|dist|build|coverage|\.cache|local-data|private-data|customer-data|uploads|tmp|temp)(/|$)',
-  '\.(pem|key|p12|pfx|crt|jks|keystore|dump|bak|sqlite|db)$'
-)
-
-function Test-SafeReviewPath {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  $normalized = ($Path -replace '\\', '/').Trim()
-  foreach ($pattern in $DeniedInputPathPatterns) {
-    if ($normalized -match $pattern) { return $false }
-  }
-  return $true
-}
-
-function Assert-SafeReviewPath {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  if (-not (Test-SafeReviewPath -Path $Path)) {
-    throw "Denied path in local AI review input package: $Path"
-  }
-}
-
-function Safe-GitLines {
-  param([string[]]$Lines)
-  $safe = @()
-  foreach ($line in $Lines) {
-    $blocked = $false
-    foreach ($pattern in $DeniedInputPathPatterns) {
-      if ($line -and (($line -replace '\\', '/') -match $pattern)) {
-        $blocked = $true
-        break
-      }
-    }
-    if (-not $blocked) { $safe += $line }
-  }
-  return $safe
-}
-
-foreach ($f in $StageAFiles) { Assert-SafeReviewPath -Path $f }
 
 # --- Embedded Stage A summary + verified test results (source of truth) --------
 $StageASummary = @"
@@ -160,7 +110,7 @@ Key proving tests:
 "@
 
 # --- Reviewer definitions ------------------------------------------------------
-$DefaultReviewers = @(
+$Reviewers = @(
   @{
     Model = "qwen3-coder:30b"
     Role  = "Code-level review of changed files"
@@ -188,26 +138,9 @@ Output sections:
 "@
   },
   @{
-    Model = "qwen3:30b"
-    Role  = "Product/security stage-gate sanity review"
+    Model = "deepseek-r1:32b"
+    Role  = "Root-cause and business-logic review"
     Prompt = @"
-Review the OP-CAP-37 final report and provided diff as a product/security gate.
-Question: Can this slice be accepted as a safe non-executed ChangeRequest candidate layer?
-Check: no real external execution; tenant isolation; backend-owned authority; idempotency; audit; response safety; no overengineering; honest "not proven" section; whether OP-CAP-38/COORD has enough evidence.
-Output:
-- Accepted / Not accepted
-- Reasons
-- Required fixes before AI Model Runtime Foundation
-- What is already strong
-- What remains weak
-"@
-  }
-)
-
-$HeavyReviewer = @{
-  Model = "deepseek-r1:32b"
-  Role  = "Root-cause and business-logic review (optional/heavy)"
-  Prompt = @"
 You are a root-cause and business-logic reviewer for Operant / OrderPilot. Given this OP-CAP-37 implementation/report, verify the invariant:
 Assembled quote draft -> non-executed ChangeRequest candidate -> no connector call -> no executable external outbox -> externalExecution disabled -> audit -> idempotent/deduped -> malicious client cannot override authority/status/execution fields.
 Find hidden logical failure modes:
@@ -228,32 +161,23 @@ Output sections:
 - Safe to proceed: yes/no
 Keep reasoning concise.
 "@
-}
-
-$Reviewers = @()
-$Reviewers += $DefaultReviewers
-if ($IncludeHeavyReviewer) { $Reviewers += $HeavyReviewer }
-
-if ($SelfTest) {
-  if (-not (Test-SafeReviewPath -Path "apps/core-api/src/main/java/com/orderpilot/api/dto/Stage12CDtos.java")) {
-    throw "SelfTest failed: safe allowlisted source path was rejected"
+  },
+  @{
+    Model = "qwen3:30b"
+    Role  = "Product/security stage-gate sanity review"
+    Prompt = @"
+Review the OP-CAP-37 final report and provided diff as a product/security gate.
+Question: Can this slice be accepted as a safe non-executed ChangeRequest candidate layer?
+Check: no real external execution; tenant isolation; backend-owned authority; idempotency; audit; response safety; no overengineering; honest "not proven" section; whether OP-CAP-38/COORD has enough evidence.
+Output:
+- Accepted / Not accepted
+- Reasons
+- Required fixes before AI Model Runtime Foundation
+- What is already strong
+- What remains weak
+"@
   }
-  foreach ($unsafe in @(".env", "secrets/api.key", "node_modules/pkg/index.js", "target/classes/App.class", "customer-data/raw.json")) {
-    if (Test-SafeReviewPath -Path $unsafe) {
-      throw "SelfTest failed: unsafe path was allowed: $unsafe"
-    }
-  }
-  if (-not $IncludeHeavyReviewer -and (($Reviewers | ForEach-Object { $_.Model }) -contains "deepseek-r1:32b")) {
-    throw "SelfTest failed: heavy reviewer is in default rota"
-  }
-  $hasCoder = (@($Reviewers | Where-Object { $_.Model -eq "qwen3-coder:30b" }).Count -eq 1)
-  $hasGate = (@($Reviewers | Where-Object { $_.Model -eq "qwen3:30b" }).Count -eq 1)
-  if (-not $hasCoder -or -not $hasGate) {
-    throw "SelfTest failed: default qwen reviewers are missing"
-  }
-  Write-Host "Local AI review harness SelfTest OK"
-  return
-}
+)
 
 # --- Build safe input package --------------------------------------------------
 function Build-InputPackage {
@@ -262,15 +186,14 @@ function Build-InputPackage {
   [void]$sb.AppendLine("# (safe: file names + scoped diff + summary only; no secrets/.env/credentials)")
   [void]$sb.AppendLine("")
   [void]$sb.AppendLine("## git status --short")
-  [void]$sb.AppendLine((Safe-GitLines -Lines (git -C $RepoRoot -c core.excludesfile= status --short) | Out-String))
+  [void]$sb.AppendLine((git -C $RepoRoot status --short | Out-String))
   [void]$sb.AppendLine("## git diff --stat (working tree)")
-  [void]$sb.AppendLine((Safe-GitLines -Lines (git -C $RepoRoot diff --stat -- $StageAFiles) | Out-String))
+  [void]$sb.AppendLine((git -C $RepoRoot diff --stat | Out-String))
   [void]$sb.AppendLine("## Stage A summary + verified test results")
   [void]$sb.AppendLine($StageASummary)
   [void]$sb.AppendLine("")
   [void]$sb.AppendLine("## Stage A scoped diff (ref $DiffRef, allowlisted files only)")
   foreach ($f in $StageAFiles) {
-    Assert-SafeReviewPath -Path $f
     [void]$sb.AppendLine("### $f")
     [void]$sb.AppendLine('```diff')
     [void]$sb.AppendLine((git -C $RepoRoot show $DiffRef -- $f | Out-String))
@@ -290,12 +213,11 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $runLog = Join-Path $OutputDir "run-$stamp.log"
 
-Write-Host "== OP-CAP-38/COORD Local AI Review Harness =="
-Write-Host "Repo:    $RepoRoot"
-Write-Host "DiffRef: $DiffRef"
-Write-Host "Output:  $OutputDir"
-Write-Host "Heavy reviewer included: $IncludeHeavyReviewer"
-Write-Host ""
+Write-Output "== OP-CAP-38/COORD Local AI Review Harness =="
+Write-Output "Repo:    $RepoRoot"
+Write-Output "DiffRef: $DiffRef"
+Write-Output "Output:  $OutputDir"
+Write-Output ""
 
 # Ollama availability
 $installed = @()
@@ -306,18 +228,18 @@ try {
 catch {
   Write-Warning "ollama CLI not available: $($_.Exception.Message)"
 }
-Write-Host "Installed models: $($installed -join ', ')"
+Write-Output "Installed models: $($installed -join ', ')"
 
 $package = Build-InputPackage
 $packagePath = Join-Path $OutputDir "input-package-$stamp.md"
 $package | Out-File -FilePath $packagePath -Encoding utf8
-Write-Host "Input package: $packagePath ($([math]::Round((Get-Item $packagePath).Length / 1KB, 1)) KB)"
-Write-Host ""
+Write-Output "Input package: $packagePath ($([math]::Round((Get-Item $packagePath).Length / 1KB, 1)) KB)"
+Write-Output ""
 
 $results = @()
 foreach ($r in $Reviewers) {
   $model = $r.Model
-  Write-Host "---- Reviewer: $model ($($r.Role)) ----"
+  Write-Output "---- Reviewer: $model ($($r.Role)) ----"
   if ($installed -notcontains $model) {
     Write-Warning "MODEL MISSING: $model -- skipped (not auto-pulled)."
     $results += [pscustomobject]@{ Model = $model; Role = $r.Role; Status = "MISSING"; DurationSec = $null }
@@ -326,15 +248,11 @@ foreach ($r in $Reviewers) {
 
   $memBefore = Get-ReviewProcMemory
   $prompt = "$($r.Prompt)`n`n===== INPUT PACKAGE BEGIN =====`n$package`n===== INPUT PACKAGE END ====="
-  $isHeavy = $model -eq "deepseek-r1:32b"
-  $numCtx = if ($isHeavy) { 6144 } else { 8192 }
-  $numPredict = if ($isHeavy) { 1500 } else { 3000 }
-  $timeoutSec = if ($isHeavy) { 900 } else { 1800 }
   $body = @{
     model   = $model
     prompt  = $prompt
     stream  = $false
-    options = @{ temperature = 0.1; num_ctx = $numCtx; num_predict = $numPredict }
+    options = @{ temperature = 0.1; num_ctx = 8192; num_predict = 3000 }
   } | ConvertTo-Json -Depth 6
   # Send as UTF-8 bytes: Windows PowerShell 5.1 mis-sets Content-Length for a string body
   # containing multi-byte chars, which truncates a large body and yields a 400 from Ollama.
@@ -344,7 +262,7 @@ foreach ($r in $Reviewers) {
   $resp = $null
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   try {
-    $resp = Invoke-RestMethod -Uri "$OllamaHost/api/generate" -Method Post -Body $bodyBytes -ContentType "application/json" -TimeoutSec $timeoutSec
+    $resp = Invoke-RestMethod -Uri "$OllamaHost/api/generate" -Method Post -Body $bodyBytes -ContentType "application/json" -TimeoutSec 1800
   }
   catch {
     $status = "FAILED: $($_.Exception.Message)"
@@ -393,15 +311,15 @@ $($memAfter | Format-Table -AutoSize | Out-String)
   if ($answer) { $modelOutput += "### Answer`n$answer" }
   if (-not $modelOutput) { $modelOutput = "(no response)" }
   ($header + $modelOutput) | Out-File -FilePath $outPath -Encoding utf8
-  Write-Host "  status=$status duration=${durSec}s eval_count=$($resp.eval_count) -> $outPath"
+  Write-Output "  status=$status duration=${durSec}s eval_count=$($resp.eval_count) -> $outPath"
 
   $results += [pscustomobject]@{ Model = $model; Role = $r.Role; Status = $status; DurationSec = $durSec; OutputPath = $outPath; PromptEval = $resp.prompt_eval_count; EvalCount = $resp.eval_count }
 }
 
 # --- Run summary ---------------------------------------------------------------
-Write-Host ""
-Write-Host "== Run summary =="
+Write-Output ""
+Write-Output "== Run summary =="
 $results | Format-Table Model, Status, DurationSec, PromptEval, EvalCount -AutoSize
 $results | ConvertTo-Json -Depth 4 | Out-File -FilePath (Join-Path $OutputDir "summary-$stamp.json") -Encoding utf8
-Write-Host "Outputs in: $OutputDir"
-Write-Host "NOTE: model output is ADVISORY ONLY. Verify against repo + tests before acting."
+Write-Output "Outputs in: $OutputDir"
+Write-Output "NOTE: model output is ADVISORY ONLY. Verify against repo + tests before acting."

@@ -24,8 +24,7 @@ are the source of truth.
 
 1. **OP-CAP-37** — Non-executed ChangeRequest candidate (this slice).
 2. **OP-CAP-38/COORD** — Local AI Review + Metrics Gate.
-3. **OP-CAP-39A** â€” AI Model Runtime Foundation: bounded advisory roles/providers/policies,
-   safe run metadata, advisory-only output guard, no provider secrets, no AI writes.
+3. **AI Model Runtime Foundation**.
 4. **Local Ollama Review Harness hardening**.
 5. **Connector Capability Policy / Sandbox / Dry-run**.
 6. **ChangeRequest Approval / Execution Guard**.
@@ -39,9 +38,6 @@ gate 7.
 
 - AI / local models are **reviewers, not authority**. They suggest; they do not approve,
   validate, or write business truth.
-- Model runtime policies are advisory configuration only. A provider/model/role tuple does not
-  grant tenant, actor, approval, status, connector, outbox, pricing, stock, or business-table
-  authority.
 - Local repo + tests + stage docs are the **source of truth**.
 - ChatGPT / Codex / Claude / Ollama outputs are **advisory** unless verified by tests and code.
 - Engineering law: AI suggests. Rules validate. Human approves if risky. Backend writes.

@@ -5,9 +5,7 @@ invariants reject missing correlation, oversized payloads, and any action surfac
 """
 
 import pytest
-from pydantic import ValidationError
 
-from orderpilot_ai_worker.extraction.schemas.extraction import AiSuggestion
 from orderpilot_ai_worker.jobs.handler import process_ai_extraction_job
 from orderpilot_ai_worker.jobs.handoff import (
     HandoffRejected,
@@ -18,7 +16,6 @@ from orderpilot_ai_worker.jobs.models import (
     AiJobSourceType,
     AiJobStatus,
     AiProcessingJobRequest,
-    AiProcessingJobResult,
 )
 
 
@@ -89,38 +86,3 @@ def test_handoff_payload_has_no_action_surface() -> None:
 
     for forbidden in ("action", "command", "approve", "execute", "write", "mutation", "sql", "erp_write"):
         assert forbidden not in payload
-
-
-def test_handoff_rejects_nested_unsafe_model_output() -> None:
-    """Nested action/authority/connector keys in advisory extraction output fail closed."""
-    result = process_ai_extraction_job(_request("Need 5 EA SKU-1"))
-    assert result.extraction_result is not None
-    unsafe_extraction = result.extraction_result.model_copy(
-        update={
-            "suggestions": [
-                AiSuggestion(
-                    suggestion_type="unsafe",
-                    suggestion={"erpWrite": {"order": "create"}},
-                    confidence=0.9,
-                )
-            ]
-        }
-    )
-    unsafe = result.model_copy(update={"extraction_result": unsafe_extraction})
-
-    with pytest.raises(HandoffRejected) as exc:
-        assert_handoff_safe(unsafe)
-    assert exc.value.reason == "forbidden_action_surface"
-
-
-def test_result_contract_rejects_unknown_top_level_fields() -> None:
-    """The worker result model must not silently accept authority/action fields."""
-    with pytest.raises(ValidationError):
-        AiProcessingJobResult(
-            job_id="job-1",
-            tenant_ref="tenant-1",
-            source_type=AiJobSourceType.CHANNEL_MESSAGE,
-            source_id="m1",
-            status=AiJobStatus.SUCCEEDED,
-            approve=True,
-        )

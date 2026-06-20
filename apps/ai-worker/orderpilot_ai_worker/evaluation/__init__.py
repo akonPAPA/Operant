@@ -9,10 +9,8 @@ path, paid APIs, real network, or a real Ollama dependency. See ``docs/ai/AI_EVA
 from orderpilot_ai_worker.evaluation.evaluator import (
     evaluate_case,
     evaluate_cases,
-    evaluation_report,
     run_default_evaluation,
     summarize,
-    write_evaluation_report,
 )
 from orderpilot_ai_worker.evaluation.models import (
     EvaluationCase,
@@ -31,9 +29,7 @@ __all__ = [
     "EvaluationSummary",
     "evaluate_case",
     "evaluate_cases",
-    "evaluation_report",
     "summarize",
     "run_default_evaluation",
-    "write_evaluation_report",
     "default_evaluation_cases",
 ]

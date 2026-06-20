@@ -28,10 +28,7 @@ class ExpectedExtraction(BaseModel):  # pylint: disable=too-few-public-methods
     # Local-runtime only. None = not checked; True/False = transport must / must not be invoked.
     expect_transport_called: Optional[bool] = None
     expected_intent: Optional[str] = None
-    expected_validation_status: Optional[str] = None
     expect_line_items: Optional[bool] = None
-    expect_review_or_low_confidence: bool = False
-    max_confidence: Optional[float] = None
 
 
 class EvaluationCase(BaseModel):  # pylint: disable=too-few-public-methods
@@ -42,7 +39,6 @@ class EvaluationCase(BaseModel):  # pylint: disable=too-few-public-methods
     """
 
     case_id: str
-    category: str = "general"
     description: str = ""
     source_type: str = "message"  # message | document | pdf | email | ...
     raw_text: Optional[str] = None
@@ -67,7 +63,6 @@ class EvaluationResult(BaseModel):  # pylint: disable=too-few-public-methods
     """Observed advisory behavior for one case plus the checks evaluated against it."""
 
     case_id: str
-    category: str = "general"
     provider_mode: ProviderMode
     provider_name: Optional[str] = None
     model_name: Optional[str] = None

@@ -163,9 +163,8 @@ class WorkerResultDrainConcurrencyH2Test {
     List<Outcome> outcomes = runConcurrentDrains(i -> (i % 2 == 0) ? success : failure);
 
     assertThat(outcomes).hasSize(DRAINERS);
-    assertThat(outcomes).allMatch(o -> o.ok() || o.conflict());
-    assertThat(outcomes.stream().filter(o -> o.ok() && !o.duplicate).count()).isEqualTo(1);
-    assertThat(outcomes.stream().filter(Outcome::conflict).count()).isGreaterThanOrEqualTo(1);
+    assertThat(outcomes).allMatch(Outcome::ok);
+    assertThat(outcomes.stream().filter(o -> !o.duplicate).count()).isEqualTo(1);
     assertThat(runRepository.count()).isEqualTo(1);
     String runStatus = runRepository.findAll().get(0).getStatus();
     String jobStatus = jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow().getStatus();
@@ -178,10 +177,6 @@ class WorkerResultDrainConcurrencyH2Test {
   private record Outcome(boolean duplicate, String error) {
     boolean ok() {
       return error == null;
-    }
-
-    boolean conflict() {
-      return error != null && error.contains("conflicting_terminal_result");
     }
   }
 
@@ -252,8 +247,8 @@ class WorkerResultDrainConcurrencyH2Test {
 
   private AiProcessingResultIntakeRequest result(ProcessingJob job, String status, String safeReason) {
     return new AiProcessingResultIntakeRequest(
-        job.getId(), job.getTenantId().toString(), job.getTargetType(), job.getTargetId(), status,
-        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82, "advisory_only", true),
+        job.getId(), null, job.getTargetType(), job.getTargetId(), status,
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82),
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", BASE, BASE.plusMillis(10), 10L, safeReason);
