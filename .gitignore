@@ -38,6 +38,11 @@ ORDERPILOT_PRODUCTION_SHAPED_LAYER_DEVELOPMENT_STANDARD_V2.md
 Frontend design by Zaipulla Bratan/
 **/Frontend design by Zaipulla Bratan/
 
+# ===== Local AI review (OP-CAP-38/COORD) run outputs — never commit =====
+# Raw, noisy model run outputs / input packages are run-local evidence only.
+# The summarized, committed evidence lives in docs/reports/op-cap-38-coord-local-ai-review.md.
+scripts/local-ai-review/output/
+
 # ===== graphify (knowledge-graph output — never commit) =====
 graphify-out/
 **/graphify-out/
