@@ -12,13 +12,19 @@ import com.orderpilot.domain.extraction.ExtractionRunRepository;
 import com.orderpilot.domain.intake.ProcessingJob;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +57,9 @@ public class AiWorkerResultIntakeService {
 
   static final Set<String> SUPPORTED_SCHEMA_VERSIONS = Set.of("op-cap-07c.v1");
   static final Set<String> SUPPORTED_STATUSES = Set.of("SUCCEEDED", "NEEDS_REVIEW", "FAILED", "REJECTED");
+  static final Set<String> SUPPORTED_PIPELINES = Set.of("RULE_BASED", "MOCK_SEMANTIC", "LOCAL_OLLAMA");
+  static final Set<String> SUPPORTED_JOB_TYPES = Set.of(
+      "DOCUMENT_EXTRACTION", "MESSAGE_PROCESSING", "MESSAGE_RECEIVED", "DOCUMENT_RECEIVED");
 
   // OP-CAP-13B: worker statuses whose persisted advisory result is structurally usable and is
   // auto-handed-off into deterministic validation. FAILED/REJECTED are intentionally excluded —
@@ -64,7 +73,17 @@ public class AiWorkerResultIntakeService {
   // business-mutation key; presence of any of these fails the intake closed. Compared lower-cased.
   static final Set<String> FORBIDDEN_ACTION_KEYS = Set.of(
       "action", "command", "approve", "execute", "write", "mutation", "sql", "erpwrite",
-      "inventoryupdate", "priceupdate", "customerupdate", "ordercreate", "quoteapprove");
+      "inventoryupdate", "priceupdate", "customerupdate", "ordercreate", "createorder",
+      "quotecreate", "createquote", "quoteapprove");
+  static final Set<String> FORBIDDEN_AUTHORITY_KEYS = Set.of(
+      "tenantid", "actorid", "userid", "permissions", "permission", "roles", "role",
+      "status", "approval", "approvalstatus", "execution", "executionstatus", "approvedby",
+      "createdby", "risklevel", "margin", "stock", "audit", "auditmetadata",
+      "connectorcredentials", "connectorcapabilities", "externalwriteauthority");
+  static final Set<String> FORBIDDEN_CONNECTOR_COMMAND_KEYS = Set.of(
+      "connector", "connectorcommand", "erp", "erpcommand", "erpwrite", "onec", "1c",
+      "1ccommand", "externalwrite", "externalwritecommand", "writecommand", "toolcall",
+      "toolcalls", "functioncall", "functioncalls");
 
   private final ProcessingJobRepository processingJobRepository;
   private final ExtractionRunRepository runRepository;
@@ -113,8 +132,12 @@ public class AiWorkerResultIntakeService {
     if (!job.getTargetId().equals(request.sourceId())) {
       throw rejected(request, "source_id_mismatch");
     }
+    if (!SUPPORTED_JOB_TYPES.contains(job.getJobType())) {
+      throw rejected(request, "pipeline_job_type_mismatch");
+    }
 
     String status = request.status().trim().toUpperCase(Locale.ROOT);
+    String intakeFingerprint = intakeFingerprint(request, status);
     Instant now = clock.instant();
 
     // Idempotency: at most one advisory AI-worker run per job. A repeat delivery is a no-op that
@@ -123,8 +146,11 @@ public class AiWorkerResultIntakeService {
         tenantId, job.getId(), PROVIDER_TYPE);
     if (existing.isPresent()) {
       ExtractionRun run = existing.get();
-      UUID resultId = resultRepository.findFirstByTenantIdAndExtractionRunId(tenantId, run.getId())
-          .map(ExtractionResult::getId).orElse(null);
+      ExtractionResult result = resultRepository.findFirstByTenantIdAndExtractionRunId(tenantId, run.getId())
+          .orElseThrow(() -> rejected(request, "existing_result_missing"));
+      if (!fingerprintMatches(result, intakeFingerprint)) {
+        throw rejected(request, "conflicting_terminal_result");
+      }
       // Bounded, non-sensitive duplicate-drain signal for production diagnosis (identifiers + statuses
       // only; never payload, document text, prompts, or secrets). The duplicate is absorbed idempotently
       // and emits no terminal side effect — only this audit row + log line.
@@ -133,7 +159,7 @@ public class AiWorkerResultIntakeService {
       auditEventService.record("ai_processing_result.intake_duplicate", "extraction_run",
           run.getId().toString(), null, auditMetadata(request, status));
       return new AiProcessingResultIntakeResponse(
-          job.getId(), run.getId(), resultId, job.getStatus(), run.getStatus(), true, true, now);
+          job.getId(), run.getId(), result.getId(), job.getStatus(), run.getStatus(), true, true, now);
     }
 
     // OP-CAP-29: lifecycle guard. By this point there is no surviving advisory run for the job (the
@@ -158,7 +184,8 @@ public class AiWorkerResultIntakeService {
         null, request.schemaVersion(), now));
     applyRunStatus(run, status, request.safeFailureReason(), now);
 
-    ExtractionResult result = resultRepository.save(buildAdvisoryResult(tenantId, run, request, status, now));
+    ExtractionResult result = resultRepository.save(buildAdvisoryResult(
+        tenantId, run, request, status, intakeFingerprint, now));
     applyJobStatus(job, status, request.safeFailureReason(), now);
 
     auditEventService.record("ai_processing_result.intake_succeeded", "extraction_run",
@@ -186,6 +213,9 @@ public class AiWorkerResultIntakeService {
     if (request.sourceId() == null) {
       throw rejected(request, "missing_source_id");
     }
+    if (isBlank(request.tenantRef())) {
+      throw rejected(request, "missing_tenant_ref");
+    }
     if (isBlank(request.sourceType()) || !SUPPORTED_SOURCE_TYPES.contains(request.sourceType().trim().toUpperCase(Locale.ROOT))) {
       throw rejected(request, "unsupported_source_type");
     }
@@ -195,16 +225,57 @@ public class AiWorkerResultIntakeService {
     if (isBlank(request.schemaVersion()) || !SUPPORTED_SCHEMA_VERSIONS.contains(request.schemaVersion().trim())) {
       throw rejected(request, "unsupported_schema_version");
     }
-    // tenantRef is correlation-only, but if present it must agree with the trusted tenant.
-    if (!isBlank(request.tenantRef()) && !request.tenantRef().trim().equals(tenantId.toString())) {
+    // tenantRef is correlation-only, but must agree with the trusted tenant resolved server-side.
+    if (!request.tenantRef().trim().equals(tenantId.toString())) {
       throw rejected(request, "tenant_correlation_mismatch");
     }
+    validatePipeline(request);
+    validateExtractionSchema(request);
     assertBoundedList(request.warnings(), request);
     assertBoundedList(request.errors(), request);
     assertBoundedList(request.promptInjectionSignals(), request);
     assertNoForbiddenKeys(request.extractionResult(), request);
     assertNoForbiddenKeys(request.providerMetadata(), request);
     assertPayloadBounded(request);
+  }
+
+  private void validatePipeline(AiProcessingResultIntakeRequest request) {
+    String mode = stringFrom(request.providerMetadata(), "mode", "pipeline", "requested_pipeline", "requestedPipeline");
+    if (isBlank(mode)) {
+      throw rejected(request, "missing_pipeline");
+    }
+    if (!SUPPORTED_PIPELINES.contains(mode.trim().toUpperCase(Locale.ROOT))) {
+      throw rejected(request, "unsupported_pipeline");
+    }
+  }
+
+  private void validateExtractionSchema(AiProcessingResultIntakeRequest request) {
+    String status = request.status() == null ? "" : request.status().trim().toUpperCase(Locale.ROOT);
+    Map<String, Object> extraction = request.extractionResult();
+    if ("FAILED".equals(status) || "REJECTED".equals(status)) {
+      return;
+    }
+    if (extraction == null || extraction.isEmpty()) {
+      throw rejected(request, "malformed_extraction_result");
+    }
+    if (isBlank(stringFrom(extraction, "detected_intent", "detectedIntent"))
+        || isBlank(stringFrom(extraction, "document_type", "documentType"))) {
+      throw rejected(request, "malformed_extraction_result");
+    }
+    if (!advisoryOnly(extraction.get("advisory_only"), extraction.get("advisoryOnly"))) {
+      throw rejected(request, "non_advisory_result");
+    }
+    Object confidence = extraction.get("overall_confidence");
+    if (confidence == null) {
+      confidence = extraction.get("overallConfidence");
+    }
+    if (!(confidence instanceof Number number) || number.doubleValue() < 0.0 || number.doubleValue() > 1.0) {
+      throw rejected(request, "malformed_extraction_result");
+    }
+    Object payloadSourceId = firstPresent(extraction, "source_id", "sourceId");
+    if (payloadSourceId != null && !request.sourceId().toString().equals(String.valueOf(payloadSourceId))) {
+      throw rejected(request, "payload_source_mismatch");
+    }
   }
 
   private void assertBoundedList(List<String> values, AiProcessingResultIntakeRequest request) {
@@ -225,9 +296,30 @@ public class AiWorkerResultIntakeService {
     if (map == null) {
       return;
     }
-    for (String key : map.keySet()) {
-      if (key != null && FORBIDDEN_ACTION_KEYS.contains(key.trim().toLowerCase(Locale.ROOT))) {
-        throw rejected(request, "forbidden_action_key");
+    assertNoForbiddenValue(map, request);
+  }
+
+  private void assertNoForbiddenValue(Object value, AiProcessingResultIntakeRequest request) {
+    if (value instanceof Map<?, ?> raw) {
+      for (Map.Entry<?, ?> entry : raw.entrySet()) {
+        String key = entry.getKey() == null ? "" : entry.getKey().toString();
+        String normalized = normalizeKey(key);
+        if (FORBIDDEN_ACTION_KEYS.contains(normalized)) {
+          throw rejected(request, "forbidden_action_key");
+        }
+        if (FORBIDDEN_AUTHORITY_KEYS.contains(normalized)) {
+          throw rejected(request, "forbidden_authority_key");
+        }
+        if (FORBIDDEN_CONNECTOR_COMMAND_KEYS.contains(normalized)) {
+          throw rejected(request, "forbidden_connector_command");
+        }
+        assertNoForbiddenValue(entry.getValue(), request);
+      }
+      return;
+    }
+    if (value instanceof List<?> list) {
+      for (Object item : list) {
+        assertNoForbiddenValue(item, request);
       }
     }
   }
@@ -242,7 +334,8 @@ public class AiWorkerResultIntakeService {
   }
 
   private ExtractionResult buildAdvisoryResult(
-      UUID tenantId, ExtractionRun run, AiProcessingResultIntakeRequest request, String status, Instant now) {
+      UUID tenantId, ExtractionRun run, AiProcessingResultIntakeRequest request, String status,
+      String intakeFingerprint, Instant now) {
     Map<String, Object> extraction = request.extractionResult() == null ? Map.of() : request.extractionResult();
     String detectedIntent = bounded(orDefault(stringFrom(extraction, "detected_intent", "detectedIntent"), "unknown"), 120);
     String documentType = bounded(orDefault(stringFrom(extraction, "document_type", "documentType"), "unknown"), 120);
@@ -254,6 +347,7 @@ public class AiWorkerResultIntakeService {
     wrapper.put("source", PROVIDER_TYPE);
     wrapper.put("untrustedUntilValidation", true);
     wrapper.put("workerStatus", status);
+    wrapper.put("intakeFingerprint", intakeFingerprint);
     wrapper.put("schemaVersion", request.schemaVersion());
     wrapper.put("providerMetadata", request.providerMetadata() == null ? Map.of() : request.providerMetadata());
     wrapper.put("warnings", request.warnings() == null ? List.of() : request.warnings());
@@ -329,6 +423,31 @@ public class AiWorkerResultIntakeService {
     return json.writeObject(metadata);
   }
 
+  private String intakeFingerprint(AiProcessingResultIntakeRequest request, String status) {
+    Map<String, Object> fingerprint = new LinkedHashMap<>();
+    fingerprint.put("jobId", request.jobId() == null ? null : request.jobId().toString());
+    fingerprint.put("sourceType", normalizedUpper(request.sourceType()));
+    fingerprint.put("sourceId", request.sourceId() == null ? null : request.sourceId().toString());
+    fingerprint.put("status", status);
+    fingerprint.put("schemaVersion", request.schemaVersion());
+    fingerprint.put("pipeline", normalizedUpper(stringFrom(
+        request.providerMetadata(), "mode", "pipeline", "requested_pipeline", "requestedPipeline")));
+    fingerprint.put("safeFailureReason", request.safeFailureReason());
+    fingerprint.put("warnings", request.warnings() == null ? List.of() : request.warnings());
+    fingerprint.put("errors", request.errors() == null ? List.of() : request.errors());
+    fingerprint.put("promptInjectionSignals",
+        request.promptInjectionSignals() == null ? List.of() : request.promptInjectionSignals());
+    fingerprint.put("providerMetadata", request.providerMetadata() == null ? Map.of() : request.providerMetadata());
+    fingerprint.put("extractionResult", request.extractionResult() == null ? Map.of() : request.extractionResult());
+    return sha256(json.writeObject(stable(fingerprint)));
+  }
+
+  private boolean fingerprintMatches(ExtractionResult result, String incoming) {
+    Map<String, Object> wrapper = json.parseObject(result.getResultJson());
+    Object existing = wrapper.get("intakeFingerprint");
+    return existing != null && incoming.equals(String.valueOf(existing));
+  }
+
   private IllegalArgumentException rejected(AiProcessingResultIntakeRequest request, String reason) {
     // Audit the fail-closed rejection with bounded metadata (REQUIRES_NEW commits independently of
     // the rolled-back intake transaction), then surface a safe 400 with the reason token only.
@@ -356,6 +475,23 @@ public class AiWorkerResultIntakeService {
     return null;
   }
 
+  private static Object firstPresent(Map<String, Object> map, String... keys) {
+    if (map == null) {
+      return null;
+    }
+    for (String key : keys) {
+      if (map.containsKey(key)) {
+        return map.get(key);
+      }
+    }
+    return null;
+  }
+
+  private static boolean advisoryOnly(Object snake, Object camel) {
+    Object value = snake != null ? snake : camel;
+    return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
+  }
+
   private static String orDefault(String value, String fallback) {
     return isBlank(value) ? fallback : value;
   }
@@ -369,5 +505,49 @@ public class AiWorkerResultIntakeService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  private static String normalizeKey(String key) {
+    return key == null ? "" : key.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+  }
+
+  private static String normalizedUpper(String value) {
+    return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private static Object stable(Object value) {
+    if (value instanceof Map<?, ?> raw) {
+      Map<String, Object> sorted = new TreeMap<>();
+      for (Map.Entry<?, ?> entry : raw.entrySet()) {
+        sorted.put(String.valueOf(entry.getKey()), stable(entry.getValue()));
+      }
+      return sorted;
+    }
+    if (value instanceof List<?> list) {
+      List<Object> normalized = new ArrayList<>();
+      for (Object item : list) {
+        normalized.add(stable(item));
+      }
+      return normalized;
+    }
+    if (value instanceof Set<?> set) {
+      return set.stream().map(AiWorkerResultIntakeService::stable)
+          .sorted(Comparator.comparing(String::valueOf)).toList();
+    }
+    return value;
+  }
+
+  private static String sha256(String value) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+      StringBuilder hex = new StringBuilder(bytes.length * 2);
+      for (byte b : bytes) {
+        hex.append(String.format("%02x", b));
+      }
+      return hex.toString();
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException("SHA-256 unavailable", ex);
+    }
   }
 }

@@ -387,8 +387,8 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
 
   private AiProcessingResultIntakeRequest result(ProcessingJob job, String status, String safeReason) {
     return new AiProcessingResultIntakeRequest(
-        job.getId(), null, job.getTargetType(), job.getTargetId(), status,
-        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82),
+        job.getId(), job.getTenantId().toString(), job.getTargetType(), job.getTargetId(), status,
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82, "advisory_only", true),
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", BASE, BASE.plusMillis(10), 10L, safeReason);

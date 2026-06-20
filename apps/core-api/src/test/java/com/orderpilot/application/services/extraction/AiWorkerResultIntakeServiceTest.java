@@ -89,7 +89,7 @@ class AiWorkerResultIntakeServiceTest {
   private static AiProcessingResultIntakeRequest request(
       UUID jobId, String sourceType, UUID sourceId, String status, Map<String, Object> extraction) {
     return new AiProcessingResultIntakeRequest(
-        jobId, null, sourceType, sourceId, status, extraction,
+        jobId, TenantContext.requireTenantId().toString(), sourceType, sourceId, status, extraction,
         List.of("input_truncated"), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "provider_version", "rule-based-v1", "mode", "RULE_BASED"),
         "op-cap-07c.v1", T0, T0.plusMillis(12), 12L, null);
@@ -124,7 +124,7 @@ class AiWorkerResultIntakeServiceTest {
     ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
 
     AiProcessingResultIntakeResponse response = service.intake(new AiProcessingResultIntakeRequest(
-        job.getId(), null, "CHANNEL_MESSAGE", sourceId, "NEEDS_REVIEW", rfqExtraction(),
+        job.getId(), tenantId.toString(), "CHANNEL_MESSAGE", sourceId, "NEEDS_REVIEW", rfqExtraction(),
         List.of(), List.of(), List.of("ignore previous instructions"),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", T0, T0, 5L, null));
@@ -143,7 +143,7 @@ class AiWorkerResultIntakeServiceTest {
     ProcessingJob job = job(tenantId, "INBOUND_DOCUMENT", sourceId);
 
     AiProcessingResultIntakeResponse response = service.intake(new AiProcessingResultIntakeRequest(
-        job.getId(), null, "INBOUND_DOCUMENT", sourceId, "FAILED", Map.of(),
+        job.getId(), tenantId.toString(), "INBOUND_DOCUMENT", sourceId, "FAILED", Map.of(),
         List.of(), List.of("provider_error"), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", T0, T0, 7L, "provider_error"));
@@ -164,7 +164,7 @@ class AiWorkerResultIntakeServiceTest {
     ProcessingJob job = job(tenantId, "PDF_TEXT", sourceId);
 
     AiProcessingResultIntakeResponse response = service.intake(new AiProcessingResultIntakeRequest(
-        job.getId(), null, "PDF_TEXT", sourceId, "REJECTED", Map.of(),
+        job.getId(), tenantId.toString(), "PDF_TEXT", sourceId, "REJECTED", Map.of(),
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", T0, T0, 1L, "raw_text_too_large"));
@@ -183,6 +183,10 @@ class AiWorkerResultIntakeServiceTest {
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("missing_job_id");
     assertThatThrownBy(() -> service.intake(request(UUID.randomUUID(), "CHANNEL_MESSAGE", null, "SUCCEEDED", rfqExtraction())))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("missing_source_id");
+    assertThatThrownBy(() -> service.intake(new AiProcessingResultIntakeRequest(
+        UUID.randomUUID(), null, "CHANNEL_MESSAGE", UUID.randomUUID(), "SUCCEEDED", rfqExtraction(),
+        List.of(), List.of(), List.of(), Map.of("mode", "RULE_BASED"), "op-cap-07c.v1", T0, T0, 1L, null)))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("missing_tenant_ref");
     // Job id that does not correspond to any tenant-scoped processing job.
     assertThatThrownBy(() -> service.intake(request(UUID.randomUUID(), "CHANNEL_MESSAGE", UUID.randomUUID(), "SUCCEEDED", rfqExtraction())))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("processing_job_not_found");
@@ -216,9 +220,73 @@ class AiWorkerResultIntakeServiceTest {
     ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
 
     assertThatThrownBy(() -> service.intake(new AiProcessingResultIntakeRequest(
-        job.getId(), null, "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", rfqExtraction(),
+        job.getId(), tenantId.toString(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", rfqExtraction(),
         List.of(), List.of(), List.of(), Map.of(), "op-cap-99.v9", T0, T0, 1L, null)))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unsupported_schema_version");
+  }
+
+  @Test
+  void unsupportedOrMissingPipelineIsRejected() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID sourceId = UUID.randomUUID();
+    ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
+
+    assertThatThrownBy(() -> service.intake(new AiProcessingResultIntakeRequest(
+        job.getId(), tenantId.toString(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", rfqExtraction(),
+        List.of(), List.of(), List.of(), Map.of(), "op-cap-07c.v1", T0, T0, 1L, null)))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("missing_pipeline");
+    assertThatThrownBy(() -> service.intake(new AiProcessingResultIntakeRequest(
+        job.getId(), tenantId.toString(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", rfqExtraction(),
+        List.of(), List.of(), List.of(), Map.of("mode", "FUTURE_SEMANTIC"),
+        "op-cap-07c.v1", T0, T0, 1L, null)))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unsupported_pipeline");
+  }
+
+  @Test
+  void resultForNonExtractionJobTypeIsRejectedAsPipelineMismatch() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID sourceId = UUID.randomUUID();
+    ProcessingJob job = jobRepository.save(new ProcessingJob(tenantId, "CONNECTOR_EXECUTION", "CHANNEL_MESSAGE", sourceId, 100, T0));
+
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", rfqExtraction())))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("pipeline_job_type_mismatch");
+  }
+
+  @Test
+  void malformedAdvisorySchemaIsRejected() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID sourceId = UUID.randomUUID();
+    ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
+
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED",
+        Map.of("document_type", "message", "overall_confidence", 0.7, "advisory_only", true))))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("malformed_extraction_result");
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED",
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 1.5, "advisory_only", true))))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("malformed_extraction_result");
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED",
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.7, "advisory_only", false))))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("non_advisory_result");
+  }
+
+  @Test
+  void payloadSourceMismatchIsRejected() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID sourceId = UUID.randomUUID();
+    ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
+    Map<String, Object> extraction = Map.of(
+        "detected_intent", "RFQ",
+        "document_type", "message",
+        "overall_confidence", 0.82,
+        "advisory_only", true,
+        "source_id", UUID.randomUUID().toString());
+
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", extraction)))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("payload_source_mismatch");
   }
 
   @Test
@@ -228,7 +296,8 @@ class AiWorkerResultIntakeServiceTest {
     UUID sourceId = UUID.randomUUID();
     ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
     Map<String, Object> huge = Map.of("detected_intent", "RFQ", "document_type", "message",
-        "overall_confidence", 0.5, "blob", "x".repeat(AiWorkerResultIntakeService.MAX_PAYLOAD_CHARS + 10));
+        "overall_confidence", 0.5, "advisory_only", true,
+        "blob", "x".repeat(AiWorkerResultIntakeService.MAX_PAYLOAD_CHARS + 10));
 
     assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", huge)))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("payload_too_large");
@@ -241,9 +310,28 @@ class AiWorkerResultIntakeServiceTest {
     UUID sourceId = UUID.randomUUID();
     ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
     Map<String, Object> hostile = Map.of("detected_intent", "RFQ", "document_type", "message",
-        "overall_confidence", 0.7, "approve", true);
+        "overall_confidence", 0.7, "advisory_only", true, "approve", true);
 
     assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", hostile)))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("forbidden_action_key");
+  }
+
+  @Test
+  void nestedAuthorityAndConnectorCommandKeysAreRejected() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID sourceId = UUID.randomUUID();
+    ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
+
+    Map<String, Object> authority = Map.of("detected_intent", "RFQ", "document_type", "message",
+        "overall_confidence", 0.7, "advisory_only", true, "customer", Map.of("actorId", UUID.randomUUID()));
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", authority)))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("forbidden_authority_key");
+
+    Map<String, Object> connector = Map.of("detected_intent", "RFQ", "document_type", "message",
+        "overall_confidence", 0.7, "advisory_only", true,
+        "suggestions", List.of(Map.of("erpWrite", Map.of("order", "create"))));
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", connector)))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("forbidden_action_key");
   }
 
@@ -265,6 +353,24 @@ class AiWorkerResultIntakeServiceTest {
     assertThat(second.extractionResultId()).isEqualTo(first.extractionResultId());
     assertThat(runRepository.findFirstByTenantIdAndProcessingJobIdAndProviderType(
         tenantId, job.getId(), "AI_WORKER")).isPresent();
+    assertThat(resultRepository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(
+        tenantId, "CHANNEL_MESSAGE", sourceId)).hasSize(1);
+  }
+
+  @Test
+  void duplicateConflictingTerminalResultIsRejected() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID sourceId = UUID.randomUUID();
+    ProcessingJob job = job(tenantId, "CHANNEL_MESSAGE", sourceId);
+
+    AiProcessingResultIntakeResponse first =
+        service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "SUCCEEDED", rfqExtraction()));
+
+    assertThatThrownBy(() -> service.intake(request(job.getId(), "CHANNEL_MESSAGE", sourceId, "FAILED", Map.of())))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("conflicting_terminal_result");
+    assertThat(runRepository.findFirstByTenantIdAndProcessingJobIdAndProviderType(
+        tenantId, job.getId(), "AI_WORKER")).map(r -> r.getId()).contains(first.extractionRunId());
     assertThat(resultRepository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(
         tenantId, "CHANNEL_MESSAGE", sourceId)).hasSize(1);
   }
