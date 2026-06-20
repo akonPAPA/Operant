@@ -213,11 +213,11 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $runLog = Join-Path $OutputDir "run-$stamp.log"
 
-Write-Host "== OP-CAP-38/COORD Local AI Review Harness =="
-Write-Host "Repo:    $RepoRoot"
-Write-Host "DiffRef: $DiffRef"
-Write-Host "Output:  $OutputDir"
-Write-Host ""
+Write-Output "== OP-CAP-38/COORD Local AI Review Harness =="
+Write-Output "Repo:    $RepoRoot"
+Write-Output "DiffRef: $DiffRef"
+Write-Output "Output:  $OutputDir"
+Write-Output ""
 
 # Ollama availability
 $installed = @()
@@ -228,18 +228,18 @@ try {
 catch {
   Write-Warning "ollama CLI not available: $($_.Exception.Message)"
 }
-Write-Host "Installed models: $($installed -join ', ')"
+Write-Output "Installed models: $($installed -join ', ')"
 
 $package = Build-InputPackage
 $packagePath = Join-Path $OutputDir "input-package-$stamp.md"
 $package | Out-File -FilePath $packagePath -Encoding utf8
-Write-Host "Input package: $packagePath ($([math]::Round((Get-Item $packagePath).Length / 1KB, 1)) KB)"
-Write-Host ""
+Write-Output "Input package: $packagePath ($([math]::Round((Get-Item $packagePath).Length / 1KB, 1)) KB)"
+Write-Output ""
 
 $results = @()
 foreach ($r in $Reviewers) {
   $model = $r.Model
-  Write-Host "---- Reviewer: $model ($($r.Role)) ----"
+  Write-Output "---- Reviewer: $model ($($r.Role)) ----"
   if ($installed -notcontains $model) {
     Write-Warning "MODEL MISSING: $model -- skipped (not auto-pulled)."
     $results += [pscustomobject]@{ Model = $model; Role = $r.Role; Status = "MISSING"; DurationSec = $null }
@@ -311,15 +311,15 @@ $($memAfter | Format-Table -AutoSize | Out-String)
   if ($answer) { $modelOutput += "### Answer`n$answer" }
   if (-not $modelOutput) { $modelOutput = "(no response)" }
   ($header + $modelOutput) | Out-File -FilePath $outPath -Encoding utf8
-  Write-Host "  status=$status duration=${durSec}s eval_count=$($resp.eval_count) -> $outPath"
+  Write-Output "  status=$status duration=${durSec}s eval_count=$($resp.eval_count) -> $outPath"
 
   $results += [pscustomobject]@{ Model = $model; Role = $r.Role; Status = $status; DurationSec = $durSec; OutputPath = $outPath; PromptEval = $resp.prompt_eval_count; EvalCount = $resp.eval_count }
 }
 
 # --- Run summary ---------------------------------------------------------------
-Write-Host ""
-Write-Host "== Run summary =="
+Write-Output ""
+Write-Output "== Run summary =="
 $results | Format-Table Model, Status, DurationSec, PromptEval, EvalCount -AutoSize
 $results | ConvertTo-Json -Depth 4 | Out-File -FilePath (Join-Path $OutputDir "summary-$stamp.json") -Encoding utf8
-Write-Host "Outputs in: $OutputDir"
-Write-Host "NOTE: model output is ADVISORY ONLY. Verify against repo + tests before acting."
+Write-Output "Outputs in: $OutputDir"
+Write-Output "NOTE: model output is ADVISORY ONLY. Verify against repo + tests before acting."
