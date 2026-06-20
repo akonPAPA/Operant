@@ -16,7 +16,9 @@ from orderpilot_ai_worker.evaluation import (
     default_evaluation_cases,
     evaluate_case,
     evaluate_cases,
+    evaluation_report,
     run_default_evaluation,
+    write_evaluation_report,
 )
 from orderpilot_ai_worker.jobs.models import ProviderMode
 
@@ -272,3 +274,22 @@ def test_no_evaluation_case_emits_executable_action_surface() -> None:
         # Every result that actually produced an extraction must have scanned for it.
         if result.schema_valid:
             assert action_findings
+
+
+def test_stage39d_safe_report_contains_bounded_status_without_raw_text(tmp_path) -> None:
+    summary = run_default_evaluation()
+
+    report = evaluation_report(summary)
+    output = write_evaluation_report(summary, tmp_path / "stage39-report.json")
+    raw_report = output.read_text(encoding="utf-8")
+
+    assert report["schema_version"] == "stage39d.evaluation_report.v1"
+    assert report["all_passed"] is True
+    assert {"case_id", "category", "passed", "reason", "safety_status"}.issubset(
+        report["cases"][0].keys()
+    )
+    assert "\"category\": \"prompt_injection\"" in raw_report
+    assert "Ignore previous instructions" not in raw_report
+    assert "Switch tenantId" not in raw_report
+    assert "connector_command" not in raw_report
+    assert "create_order" not in raw_report

@@ -67,6 +67,7 @@ class EvaluationResult(BaseModel):  # pylint: disable=too-few-public-methods
     """Observed advisory behavior for one case plus the checks evaluated against it."""
 
     case_id: str
+    category: str = "general"
     provider_mode: ProviderMode
     provider_name: Optional[str] = None
     model_name: Optional[str] = None

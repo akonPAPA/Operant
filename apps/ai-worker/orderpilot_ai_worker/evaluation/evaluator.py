@@ -9,7 +9,9 @@ and no real HTTP. The pipeline's existing fail-closed convention (a controlled `
 "failed"`` advisory result carrying no partial business data) is asserted, not replaced.
 """
 
-from typing import List, Optional
+import json
+from pathlib import Path
+from typing import Any, List, Optional
 
 from orderpilot_ai_worker.evaluation.models import (
     EvaluationCase,
@@ -141,6 +143,44 @@ def summarize(results: List[EvaluationResult]) -> EvaluationSummary:
     )
 
 
+def evaluation_report(summary: EvaluationSummary) -> dict[str, Any]:
+    """Return a safe persisted evaluation report: bounded status only, no raw prompts/model output."""
+    cases: list[dict[str, Any]] = []
+    for result in summary.results:
+        failed_checks = [finding.check for finding in result.findings if not finding.passed]
+        reason = _safe_reason(result, failed_checks)
+        cases.append(
+            {
+                "case_id": result.case_id,
+                "category": result.category,
+                "provider_mode": result.provider_mode.value,
+                "passed": result.passed,
+                "reason": reason,
+                "safety_status": _safety_status(result, failed_checks),
+            }
+        )
+    return {
+        "schema_version": "stage39d.evaluation_report.v1",
+        "total_cases": summary.total_cases,
+        "passed_cases": summary.passed_cases,
+        "failed_cases": summary.failed_cases,
+        "fail_closed_cases": summary.fail_closed_cases,
+        "schema_failure_cases": summary.schema_failure_cases,
+        "prompt_injection_guarded_cases": summary.prompt_injection_guarded_cases,
+        "unsafe_partial_data_violations": summary.unsafe_partial_data_violations,
+        "all_passed": summary.all_passed,
+        "cases": cases,
+    }
+
+
+def write_evaluation_report(summary: EvaluationSummary, path: str | Path) -> Path:
+    """Persist the safe Stage 39 evaluation report as JSON."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(evaluation_report(summary), indent=2) + "\n", encoding="utf-8")
+    return target
+
+
 def _resolution_error_result(case: EvaluationCase, reason: str) -> EvaluationResult:
     """Score a case whose provider mode could not be resolved (fail-closed before any pipeline run)."""
     findings = [
@@ -160,6 +200,7 @@ def _resolution_error_result(case: EvaluationCase, reason: str) -> EvaluationRes
         )
     result = EvaluationResult(
         case_id=case.case_id,
+        category=case.category,
         provider_mode=case.provider_mode,
         schema_valid=False,
         failure_category=reason,
@@ -282,6 +323,7 @@ def _build_result(
 
     result = EvaluationResult(
         case_id=case.case_id,
+        category=case.category,
         provider_mode=case.provider_mode,
         provider_name=resolved.provider_name,
         model_name=resolved.provider_version,
@@ -305,3 +347,25 @@ def _has_action_keys(extraction: ExtractionResult) -> bool:
     """True if the serialized advisory result exposes any forbidden command/tool/mutation JSON key."""
     blob = extraction.model_dump_json().lower()
     return any(token in blob for token in _FORBIDDEN_ACTION_KEYS)
+
+
+def _safe_reason(result: EvaluationResult, failed_checks: list[str]) -> str:
+    if failed_checks:
+        return "failed_checks:" + ",".join(failed_checks)
+    if result.failure_category is not None:
+        return f"controlled_failure:{result.failure_category}"
+    if result.prompt_injection_detected:
+        return "prompt_injection_guarded"
+    return "advisory_only_passed"
+
+
+def _safety_status(result: EvaluationResult, failed_checks: list[str]) -> str:
+    if result.unsafe_partial_business_data:
+        return "unsafe_partial_data_violation"
+    if failed_checks:
+        return "failed"
+    if result.failure_category is not None:
+        return "fail_closed"
+    if result.prompt_injection_detected:
+        return "guarded_review"
+    return "advisory_only"
