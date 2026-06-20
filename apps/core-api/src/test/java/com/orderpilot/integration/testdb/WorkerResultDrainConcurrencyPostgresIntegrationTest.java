@@ -15,6 +15,7 @@ import com.orderpilot.domain.extraction.ExtractionRunRepository;
 import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.intake.ProcessingJob;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
+import com.orderpilot.domain.validation.AiValidationHandoffRepository;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.jdbc.Sql;
@@ -55,7 +57,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>Like the other {@code *PostgresIntegrationTest} classes it boots the real application context
  * against a real PostgreSQL (Testcontainers) with Flyway, runs each drain on its own pooled connection,
- * and is SKIPPED (not errored) when no Docker daemon is present so the default H2 suite stays green.
+ * and is SKIPPED (not errored) when no Docker daemon is present so the default H2 suite stays green.1
  */
 @Testcontainers
 @EnabledIf("dockerAvailable")
@@ -90,6 +92,7 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
   @Autowired private ProcessingJobRepository jobRepository;
   @Autowired private ExtractionRunRepository runRepository;
   @Autowired private ExtractionResultRepository resultRepository;
+  @Autowired private AiValidationHandoffRepository handoffRepository;
   @Autowired private AuditEventRepository auditEventRepository;
 
   // ----------------------------------------------------------------------------------------------
@@ -121,8 +124,8 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
 
   // ----------------------------------------------------------------------------------------------
   // 2. Concurrent CONFLICTING drain: success + failure results race for the same job -> exactly one
-  //    terminal result is committed and the final state cannot oscillate; losers are deterministic
-  //    idempotent duplicates regardless of their own (conflicting) status.
+  //    terminal result is committed and the final state cannot oscillate; same-result losers are
+  //    idempotent duplicates, while conflicting terminal losers are rejected.
   // ----------------------------------------------------------------------------------------------
   @Test
   void concurrentConflictingDrainCommitsExactlyOneTerminalResult() throws Exception {
@@ -135,8 +138,15 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
         TENANT_A, i -> (i % 2 == 0) ? success : failure);
 
     assertThat(outcomes).hasSize(DRAINERS);
-    assertThat(outcomes).allMatch(Outcome::ok);
-    assertThat(outcomes.stream().filter(o -> !o.duplicate).count()).isEqualTo(1); // exactly one winner
+    List<Outcome> successfulCommits = outcomes.stream().filter(Outcome::terminalCommit).toList();
+    List<Outcome> duplicateReplays = outcomes.stream().filter(Outcome::duplicateReplay).toList();
+    List<Outcome> rejectedConflicts = outcomes.stream().filter(Outcome::conflict).toList();
+    List<Outcome> unexpected = outcomes.stream().filter(o ->
+        !o.terminalCommit() && !o.duplicateReplay() && !o.conflict()).toList();
+    assertThat(unexpected).isEmpty();
+    assertThat(successfulCommits).hasSize(1); // exactly one winner
+    assertThat(duplicateReplays).isNotEmpty(); // same terminal result replay remains idempotent
+    assertThat(rejectedConflicts).isNotEmpty();
 
     // Exactly one advisory run committed; the job's terminal status matches that single winning run and
     // is itself terminal (never PENDING/PROCESSING) — the state cannot oscillate between success/failure.
@@ -147,6 +157,7 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
     assertThat(jobStatus).isIn("SUCCEEDED", "FAILED");
     assertThat(jobStatus).isEqualTo("SUCCEEDED".equals(runStatus) ? "SUCCEEDED" : "FAILED");
     assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isEqualTo(1);
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_duplicate")).isEqualTo(duplicateReplays.size());
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -241,7 +252,7 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
 
   // ----------------------------------------------------------------------------------------------
   // 5. Cross-tenant drain guard under concurrency: tenant B drains racing on tenant A's job (by id) are
-  //    all denied as not-found and never mutate tenant A's job or create any run.
+  //    all denied as tenant-correlation mismatches and never mutate tenant A's job or tenant B state.
   // ----------------------------------------------------------------------------------------------
   @Test
   void concurrentCrossTenantDrainIsDeniedAndDoesNotMutate() throws Exception {
@@ -251,16 +262,24 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
     List<Outcome> outcomes = runConcurrentDrains(TENANT_B, () -> request); // wrong tenant context
 
     assertThat(outcomes).hasSize(DRAINERS);
-    assertThat(outcomes).noneMatch(Outcome::ok); // every cross-tenant drain rejected
-    assertThat(outcomes).allMatch(o -> o.error != null && o.error.contains("processing_job_not_found"));
+    List<Outcome> successfulCommits = outcomes.stream().filter(Outcome::terminalCommit).toList();
+    List<Outcome> duplicateReplays = outcomes.stream().filter(Outcome::duplicateReplay).toList();
+    List<Outcome> rejectedTenantMismatches = outcomes.stream().filter(Outcome::tenantMismatch).toList();
+    List<Outcome> unexpected = outcomes.stream().filter(o -> !o.tenantMismatch()).toList();
+    assertThat(successfulCommits).isEmpty();
+    assertThat(duplicateReplays).isEmpty();
+    assertThat(rejectedTenantMismatches).hasSize(DRAINERS);
+    assertThat(unexpected).isEmpty();
 
     assertThat(jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow().getStatus())
         .isEqualTo("PROCESSING"); // owner's job untouched
     assertThat(runRepository.count()).isZero(); // no advisory run created for anyone
-    assertThat(resultRepository.count()).isZero(); // no advisory result created for anyone
-    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isZero();
-    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_duplicate")).isZero();
-    assertThat(countAudit(TENANT_B, "ai_processing_result.intake_rejected")).isEqualTo(DRAINERS);
+    assertThat(resultRepository.count()).isZero();
+    assertThat(handoffRepository.count()).isZero();
+    assertThat(runRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_B)).isEmpty();
+    assertThat(resultRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_B)).isEmpty();
+    assertThat(handoffRepository.findByTenantIdOrderByUpdatedAtDesc(TENANT_B, PageRequest.of(0, 1))).isEmpty();
+    assertThat(auditEventRepository.findByTenantIdOrderByOccurredAtDesc(TENANT_B)).isEmpty();
   }
 
   // ----------------------------------------- helpers -----------------------------------------
@@ -268,6 +287,22 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
   private record Outcome(boolean duplicate, String error) {
     boolean ok() {
       return error == null;
+    }
+
+    boolean terminalCommit() {
+      return ok() && !duplicate;
+    }
+
+    boolean duplicateReplay() {
+      return ok() && duplicate;
+    }
+
+    boolean conflict() {
+      return error != null && error.contains("conflicting_terminal_result");
+    }
+
+    boolean tenantMismatch() {
+      return error != null && error.contains("tenant_correlation_mismatch");
     }
   }
 
