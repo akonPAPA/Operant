@@ -28,6 +28,47 @@ MAX_RESULT_PAYLOAD_BYTES = 256_000
 _FORBIDDEN_TOP_LEVEL_KEYS = frozenset(
     {"action", "command", "approve", "execute", "write", "mutation", "sql", "erp_write"}
 )
+_FORBIDDEN_NESTED_KEYS = frozenset(
+    {
+        "action",
+        "command",
+        "approve",
+        "execute",
+        "write",
+        "mutation",
+        "sql",
+        "erpwrite",
+        "inventoryupdate",
+        "priceupdate",
+        "customerupdate",
+        "ordercreate",
+        "createorder",
+        "quotecreate",
+        "createquote",
+        "quoteapprove",
+        "tenantid",
+        "actorid",
+        "userid",
+        "permissions",
+        "permission",
+        "status",
+        "approval",
+        "approvalstatus",
+        "execution",
+        "executionstatus",
+        "connector",
+        "connectorcommand",
+        "erp",
+        "erpcommand",
+        "onec",
+        "1c",
+        "externalwrite",
+        "writecommand",
+        "toolcall",
+        "functioncall",
+    }
+)
+_ALLOWED_PIPELINES = frozenset({"RULE_BASED", "MOCK_SEMANTIC", "LOCAL_OLLAMA"})
 
 
 class HandoffRejected(Exception):
@@ -81,7 +122,25 @@ def assert_handoff_safe(result: AiProcessingJobResult) -> None:
     forbidden = _FORBIDDEN_TOP_LEVEL_KEYS.intersection(payload)
     if forbidden:
         raise HandoffRejected("forbidden_action_surface")
+    if result.provider_metadata is not None and result.provider_metadata.mode.value not in _ALLOWED_PIPELINES:
+        raise HandoffRejected("unsupported_pipeline")
+    if result.extraction_result is not None and result.extraction_result.advisory_only is not True:
+        raise HandoffRejected("non_advisory_result")
+    _assert_no_unsafe_nested_keys(payload.get("extraction_result"))
 
     encoded = json.dumps(payload).encode("utf-8")
     if len(encoded) > MAX_RESULT_PAYLOAD_BYTES:
         raise HandoffRejected("payload_too_large")
+
+
+def _assert_no_unsafe_nested_keys(value: object) -> None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = "".join(ch for ch in str(key) if ch.isalnum()).lower()
+            if normalized in _FORBIDDEN_NESTED_KEYS:
+                raise HandoffRejected("forbidden_action_surface")
+            _assert_no_unsafe_nested_keys(nested)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _assert_no_unsafe_nested_keys(item)

@@ -230,8 +230,8 @@ class WorkerStaleRecoveryRaceH2Test {
 
   private AiProcessingResultIntakeRequest successResult(ProcessingJob job) {
     return new AiProcessingResultIntakeRequest(
-        job.getId(), null, job.getTargetType(), job.getTargetId(), "SUCCEEDED",
-        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82),
+        job.getId(), job.getTenantId().toString(), job.getTargetType(), job.getTargetId(), "SUCCEEDED",
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82, "advisory_only", true),
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", BASE, BASE.plusMillis(10), 10L, null);

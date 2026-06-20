@@ -257,6 +257,10 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
     assertThat(jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow().getStatus())
         .isEqualTo("PROCESSING"); // owner's job untouched
     assertThat(runRepository.count()).isZero(); // no advisory run created for anyone
+    assertThat(resultRepository.count()).isZero(); // no advisory result created for anyone
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isZero();
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_duplicate")).isZero();
+    assertThat(countAudit(TENANT_B, "ai_processing_result.intake_rejected")).isEqualTo(DRAINERS);
   }
 
   // ----------------------------------------- helpers -----------------------------------------
@@ -387,8 +391,8 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
 
   private AiProcessingResultIntakeRequest result(ProcessingJob job, String status, String safeReason) {
     return new AiProcessingResultIntakeRequest(
-        job.getId(), null, job.getTargetType(), job.getTargetId(), status,
-        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82),
+        job.getId(), job.getTenantId().toString(), job.getTargetType(), job.getTargetId(), status,
+        Map.of("detected_intent", "RFQ", "document_type", "message", "overall_confidence", 0.82, "advisory_only", true),
         List.of(), List.of(), List.of(),
         Map.of("provider_name", "rule-based-understanding", "mode", "RULE_BASED"),
         "op-cap-07c.v1", BASE, BASE.plusMillis(10), 10L, safeReason);
