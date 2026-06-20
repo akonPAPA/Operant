@@ -257,6 +257,10 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
     assertThat(jobRepository.findByIdAndTenantId(job.getId(), TENANT_A).orElseThrow().getStatus())
         .isEqualTo("PROCESSING"); // owner's job untouched
     assertThat(runRepository.count()).isZero(); // no advisory run created for anyone
+    assertThat(resultRepository.count()).isZero(); // no advisory result created for anyone
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_succeeded")).isZero();
+    assertThat(countAudit(TENANT_A, "ai_processing_result.intake_duplicate")).isZero();
+    assertThat(countAudit(TENANT_B, "ai_processing_result.intake_rejected")).isEqualTo(DRAINERS);
   }
 
   // ----------------------------------------- helpers -----------------------------------------
