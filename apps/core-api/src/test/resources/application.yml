@@ -7,3 +7,4 @@ orderpilot:
   security:
     gateway-header-auth:
       enabled: true
+      signature-required: false

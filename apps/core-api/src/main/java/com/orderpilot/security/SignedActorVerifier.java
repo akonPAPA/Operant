@@ -68,9 +68,7 @@ public class SignedActorVerifier {
       throw new ActorVerificationException("Actor signature timestamp is outside the allowed window");
     }
     String canonical = tenantId + "\n" + actorId + "\n" + timestampEpoch;
-    byte[] expected = hmac(secret, canonical);
-    byte[] presented = decodeHexLenient(signatureHeader.trim());
-    if (presented == null || !MessageDigest.isEqual(expected, presented)) {
+    if (!matchesHmacHex(secret, canonical, signatureHeader)) {
       throw new ActorVerificationException("Actor signature is invalid");
     }
   }
@@ -78,6 +76,23 @@ public class SignedActorVerifier {
   /** Lowercase hex HMAC-SHA-256 of {@code message} under {@code secret} — exposed for callers/tests. */
   public static String hmacHex(String signingSecret, String message) {
     return toHex(hmac(signingSecret.getBytes(StandardCharsets.UTF_8), message));
+  }
+
+  /** Constant-time verification for callers that share the HMAC-SHA-256 gateway boundary. */
+  public static boolean matchesHmacHex(String signingSecret, String message, String signatureHeader) {
+    if (signingSecret == null || signingSecret.isBlank()) {
+      return false;
+    }
+    return matchesHmacHex(signingSecret.getBytes(StandardCharsets.UTF_8), message, signatureHeader);
+  }
+
+  private static boolean matchesHmacHex(byte[] secret, String message, String signatureHeader) {
+    if (signatureHeader == null || signatureHeader.isBlank()) {
+      return false;
+    }
+    byte[] expected = hmac(secret, message);
+    byte[] presented = decodeHexLenient(signatureHeader.trim());
+    return presented != null && MessageDigest.isEqual(expected, presented);
   }
 
   private static byte[] hmac(byte[] secret, String message) {

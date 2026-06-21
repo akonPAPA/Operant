@@ -37,6 +37,11 @@ orderpilot:
       # Disabled by default so client-supplied permission headers do not authenticate a public request.
       # Trusted gateway deployments may enable this only when the gateway strips inbound client copies.
       enabled: "${ORDERPILOT_GATEWAY_HEADER_AUTH_ENABLED:false}"
+      # Enabled gateway-header auth must fail closed unless a trusted gateway signs the authority
+      # headers with this shared secret. Tests/dev may explicitly set signature-required=false.
+      signature-required: "${ORDERPILOT_GATEWAY_HEADER_AUTH_SIGNATURE_REQUIRED:true}"
+      shared-secret: "${ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET:}"
+      clock-skew-seconds: "${ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS:300}"
     # OP-CAP-16K signed actor verification for runtime entitlement admin mutations. Empty = no
     # signing secret configured → local/dev trusted-header fallback (16J behavior). When set, admin
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).

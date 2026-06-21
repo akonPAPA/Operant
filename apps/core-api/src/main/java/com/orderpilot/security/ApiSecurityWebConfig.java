@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.time.Clock;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -72,25 +73,39 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
   private static final List<String> ALLOWED_HEADERS = List.of(
       "Content-Type",
       "Authorization",
-      "X-Tenant-Id",
+      GatewayHeaderSignatureVerifier.TENANT_HEADER,
       "X-Request-Id",
       "Idempotency-Key",
       ApiPermissionGuard.PERMISSIONS_HEADER,
       RequestActorResolver.ACTOR_HEADER,
       RequestActorResolver.SIGNATURE_HEADER,
-      RequestActorResolver.TIMESTAMP_HEADER);
+      RequestActorResolver.TIMESTAMP_HEADER,
+      GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER,
+      GatewayHeaderSignatureVerifier.SIGNATURE_HEADER);
 
   private final ObjectProvider<ApiPermissionInterceptor> interceptor;
   private final List<String> allowedOrigins;
   private final boolean gatewayHeaderAuthEnabled;
+  private final boolean gatewayHeaderSignatureRequired;
+  private final String gatewayHeaderSharedSecret;
+  private final long gatewayHeaderClockSkewSeconds;
+  private final Clock clock;
 
   public ApiSecurityWebConfig(
       ObjectProvider<ApiPermissionInterceptor> interceptor,
       @Value("${orderpilot.security.cors.allowed-origins:}") String allowedOrigins,
-      @Value("${orderpilot.security.gateway-header-auth.enabled:false}") boolean gatewayHeaderAuthEnabled) {
+      @Value("${orderpilot.security.gateway-header-auth.enabled:false}") boolean gatewayHeaderAuthEnabled,
+      @Value("${orderpilot.security.gateway-header-auth.signature-required:true}") boolean gatewayHeaderSignatureRequired,
+      @Value("${orderpilot.security.gateway-header-auth.shared-secret:}") String gatewayHeaderSharedSecret,
+      @Value("${orderpilot.security.gateway-header-auth.clock-skew-seconds:300}") long gatewayHeaderClockSkewSeconds,
+      Clock clock) {
     this.interceptor = interceptor;
     this.allowedOrigins = parseCsv(allowedOrigins);
     this.gatewayHeaderAuthEnabled = gatewayHeaderAuthEnabled;
+    this.gatewayHeaderSignatureRequired = gatewayHeaderSignatureRequired;
+    this.gatewayHeaderSharedSecret = gatewayHeaderSharedSecret;
+    this.gatewayHeaderClockSkewSeconds = gatewayHeaderClockSkewSeconds;
+    this.clock = clock;
   }
 
   @Bean
@@ -109,7 +124,12 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         .httpBasic(basic -> basic.disable())
         .formLogin(form -> form.disable())
         .logout(logout -> logout.disable())
-        .addFilterBefore(new ApiHeaderAuthenticationFilter(gatewayHeaderAuthEnabled), AnonymousAuthenticationFilter.class)
+        .addFilterBefore(
+            new ApiHeaderAuthenticationFilter(
+                gatewayHeaderAuthEnabled,
+                gatewayHeaderSignatureRequired,
+                new GatewayHeaderSignatureVerifier(gatewayHeaderSharedSecret, gatewayHeaderClockSkewSeconds, clock)),
+            AnonymousAuthenticationFilter.class)
         .exceptionHandling(exceptions -> exceptions
             .authenticationEntryPoint((request, response, ex) ->
                 writeSecurityError(objectMapper, request, response, HttpStatus.UNAUTHORIZED,
@@ -190,9 +210,16 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
 
   private static final class ApiHeaderAuthenticationFilter extends OncePerRequestFilter {
     private final boolean enabled;
+    private final boolean signatureRequired;
+    private final GatewayHeaderSignatureVerifier signatureVerifier;
 
-    private ApiHeaderAuthenticationFilter(boolean enabled) {
+    private ApiHeaderAuthenticationFilter(
+        boolean enabled,
+        boolean signatureRequired,
+        GatewayHeaderSignatureVerifier signatureVerifier) {
       this.enabled = enabled;
+      this.signatureRequired = signatureRequired;
+      this.signatureVerifier = signatureVerifier;
     }
 
     @Override
@@ -201,6 +228,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       String permissions = request.getHeader(ApiPermissionGuard.PERMISSIONS_HEADER);
       if (enabled
           && permissions != null && !permissions.isBlank()
+          && (!signatureRequired || signatureVerifier.verify(request))
           && SecurityContextHolder.getContext().getAuthentication() == null) {
         var authorities = Arrays.stream(permissions.split(","))
             .map(String::trim)
