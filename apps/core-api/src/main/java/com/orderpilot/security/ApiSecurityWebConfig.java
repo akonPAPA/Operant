@@ -39,14 +39,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Configuration
 @EnableWebSecurity
 public class ApiSecurityWebConfig implements WebMvcConfigurer {
-  private static final String[] PUBLIC_GET_ROUTES = {
+  static final String[] PERMISSION_INTERCEPTOR_PATHS = {
+      "/api/v1/**",
+      "/api/stage8/**",
+      "/api/stage9/**"
+  };
+  static final String[] PUBLIC_GET_ROUTES = {
       "/",
       "/favicon.ico",
       "/actuator/health",
       "/actuator/info",
       "/api/v1/health"
   };
-  private static final String[] PUBLIC_POST_WEBHOOK_ROUTES = {
+  static final String[] PUBLIC_POST_WEBHOOK_ROUTES = {
       "/api/v1/bot/telegram/webhook",
       "/api/v1/bot-runtime/telegram/webhook",
       "/api/v1/webhooks/email",
@@ -76,12 +81,15 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
 
   private final ObjectProvider<ApiPermissionInterceptor> interceptor;
   private final List<String> allowedOrigins;
+  private final boolean gatewayHeaderAuthEnabled;
 
   public ApiSecurityWebConfig(
       ObjectProvider<ApiPermissionInterceptor> interceptor,
-      @Value("${orderpilot.security.cors.allowed-origins:}") String allowedOrigins) {
+      @Value("${orderpilot.security.cors.allowed-origins:}") String allowedOrigins,
+      @Value("${orderpilot.security.gateway-header-auth.enabled:false}") boolean gatewayHeaderAuthEnabled) {
     this.interceptor = interceptor;
     this.allowedOrigins = parseCsv(allowedOrigins);
+    this.gatewayHeaderAuthEnabled = gatewayHeaderAuthEnabled;
   }
 
   @Bean
@@ -100,7 +108,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         .httpBasic(basic -> basic.disable())
         .formLogin(form -> form.disable())
         .logout(logout -> logout.disable())
-        .addFilterBefore(new ApiHeaderAuthenticationFilter(), AnonymousAuthenticationFilter.class)
+        .addFilterBefore(new ApiHeaderAuthenticationFilter(gatewayHeaderAuthEnabled), AnonymousAuthenticationFilter.class)
         .exceptionHandling(exceptions -> exceptions
             .authenticationEntryPoint((request, response, ex) ->
                 writeSecurityError(objectMapper, request, response, HttpStatus.UNAUTHORIZED,
@@ -136,15 +144,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
   public void addInterceptors(InterceptorRegistry registry) {
     ApiPermissionInterceptor resolved = interceptor.getIfAvailable();
     if (resolved != null) {
-      // ChangeRequest Stage9 authZ slice: the Stage9 connector ChangeRequest endpoints
-      // (/api/stage9/change-requests/**) mutate the same ChangeRequest aggregate as
-      // /api/v1/change-requests but live under the /api/stage9 prefix, which was previously NOT
-      // covered by the interceptor — leaving approve/reject/execute unguarded. We extend the
-      // registration narrowly to the change-requests subtree only (not all of /api/stage9/**) so
-      // unrelated Stage9 read endpoints (integrations, connectors, sync-runs, audit) are not
-      // affected. The per-action least-privilege mapping is in ApiPermissionInterceptor.
-      registry.addInterceptor(resolved)
-          .addPathPatterns("/api/v1/**", "/api/stage9/change-requests", "/api/stage9/change-requests/**");
+      registry.addInterceptor(resolved).addPathPatterns(PERMISSION_INTERCEPTOR_PATHS);
     }
   }
 
@@ -188,11 +188,18 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
   }
 
   private static final class ApiHeaderAuthenticationFilter extends OncePerRequestFilter {
+    private final boolean enabled;
+
+    private ApiHeaderAuthenticationFilter(boolean enabled) {
+      this.enabled = enabled;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
         throws ServletException, IOException {
       String permissions = request.getHeader(ApiPermissionGuard.PERMISSIONS_HEADER);
-      if (permissions != null && !permissions.isBlank()
+      if (enabled
+          && permissions != null && !permissions.isBlank()
           && SecurityContextHolder.getContext().getAuthentication() == null) {
         var authorities = Arrays.stream(permissions.split(","))
             .map(String::trim)

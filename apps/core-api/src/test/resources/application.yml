@@ -3,3 +3,7 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+orderpilot:
+  security:
+    gateway-header-auth:
+      enabled: true
