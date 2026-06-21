@@ -59,6 +59,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       "/api/v1/webhooks/telegram/*",
       "/api/v1/webhooks/whatsapp",
       "/api/v1/webhooks/whatsapp/*",
+      "/api/v1/webhooks/channels/bot/telegram/*",
       "/api/v1/webhooks/channels/telegram/*",
       "/api/v1/webhooks/channels/whatsapp/*",
       "/api/v1/webhooks/channels/meta-messenger/*",

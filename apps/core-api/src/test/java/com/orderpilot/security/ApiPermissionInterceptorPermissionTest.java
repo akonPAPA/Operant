@@ -14,7 +14,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
  */
 class ApiPermissionInterceptorPermissionTest {
   private final ApiPermissionGuard guard = new ApiPermissionGuard();
-  private final ApiPermissionInterceptor interceptor = new ApiPermissionInterceptor(guard);
+  private final ApiPermissionInterceptor interceptor = new ApiPermissionInterceptor(guard, new ApiRouteSecurityPolicy());
   private static final Object HANDLER = new Object();
 
   // --- /api/v1/channel-identities read ---

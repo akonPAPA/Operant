@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @WebMvcTest(controllers = ApiSecurityForgedHeaderTest.ForgedHeaderProbeController.class)
-@Import({CoreConfiguration.class, ApiSecurityWebConfig.class, ApiPermissionGuard.class})
+@Import({CoreConfiguration.class, ApiSecurityWebConfig.class, ApiRouteSecurityPolicy.class, ApiPermissionGuard.class})
 @TestPropertySource(properties = "orderpilot.security.gateway-header-auth.enabled=false")
 class ApiSecurityForgedHeaderTest {
   @Autowired private MockMvc mockMvc;

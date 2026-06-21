@@ -2,6 +2,7 @@ package com.orderpilot.api.rest;
 
 import com.orderpilot.security.ApiPermission;
 import com.orderpilot.security.ApiPermissionGuard;
+import com.orderpilot.security.ApiRouteSecurityPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -29,5 +30,10 @@ class NoopApiPermissionTestConfig {
         // MVC slice tests verify controller behavior; permission policy has dedicated coverage.
       }
     };
+  }
+
+  @Bean
+  ApiRouteSecurityPolicy apiRouteSecurityPolicy() {
+    return new ApiRouteSecurityPolicy();
   }
 }

@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Import({
     CoreConfiguration.class,
     ApiSecurityWebConfig.class,
+    ApiRouteSecurityPolicy.class,
     ApiPermissionGuard.class,
     ApiSecurityWebConfigTest.BusinessProbeController.class
 })
@@ -43,7 +44,7 @@ class ApiSecurityWebConfigTest {
 
   @Test
   void protectedBusinessRouteRejectsMissingAuthentication() throws Exception {
-    mockMvc.perform(get("/api/v1/security-baseline/business"))
+    mockMvc.perform(get("/api/v1/operator-review/security-baseline/business"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
         .andExpect(jsonPath("$.message").value("Authentication required"))
@@ -52,7 +53,7 @@ class ApiSecurityWebConfigTest {
 
   @Test
   void protectedBusinessRouteAllowsCurrentGatewayAuthenticatedRequest() throws Exception {
-    mockMvc.perform(get("/api/v1/security-baseline/business")
+    mockMvc.perform(get("/api/v1/operator-review/security-baseline/business")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("protected"));
@@ -67,12 +68,12 @@ class ApiSecurityWebConfigTest {
 
   @Test
   void csrfIsIgnoredOnlyAsStatelessApiPostureAndDoesNotPermitUnauthenticatedMutation() throws Exception {
-    mockMvc.perform(post("/api/v1/security-baseline/business")
+    mockMvc.perform(post("/api/v1/operator-review/security-baseline/business")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isUnauthorized());
 
-    mockMvc.perform(post("/api/v1/security-baseline/business")
+    mockMvc.perform(post("/api/v1/operator-review/security-baseline/business")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_ACTION")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
@@ -81,7 +82,7 @@ class ApiSecurityWebConfigTest {
   }
 
   @RestController
-  @RequestMapping("/api/v1/security-baseline/business")
+  @RequestMapping("/api/v1/operator-review/security-baseline/business")
   static class BusinessProbeController {
     @GetMapping
     java.util.Map<String, String> read() {

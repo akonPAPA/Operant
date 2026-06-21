@@ -38,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
     CoreConfiguration.class,
     GlobalExceptionHandler.class,
     ApiSecurityWebConfig.class,
+    ApiRouteSecurityPolicy.class,
     ApiPermissionInterceptor.class,
     ApiPermissionGuard.class,
     ApiPermissionRouteCoverageTest.RouteMatrixProbeController.class
@@ -144,6 +145,15 @@ class ApiPermissionRouteCoverageTest {
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
   }
 
+  @ParameterizedTest
+  @MethodSource("unclassifiedApiRoutes")
+  void unknownApiProbeRoutesDenyAuthenticatedRequests(RouteProbe route) throws Exception {
+    mockMvc.perform(get(route.path()).header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_READ.name()))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
+        .andExpect(jsonPath("$.message").value("Unclassified API route GET " + route.path()));
+  }
+
   @Test
   void interceptorRegistrationCoversAllRouteMatrixProtectedGroups() {
     assertThat(Arrays.asList(ApiSecurityWebConfig.PERMISSION_INTERCEPTOR_PATHS))
@@ -237,7 +247,14 @@ class ApiPermissionRouteCoverageTest {
             "/api/v1/runtime/stage40b-route-matrix",
             "RUNTIME_MANAGE",
             ApiPermission.RUNTIME_ENTITLEMENT_READ,
-            ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+        ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+  }
+
+  private static Stream<RouteProbe> unclassifiedApiRoutes() {
+    return Stream.of(
+        new RouteProbe("/api/v1/stage40d-unclassified-probe"),
+        new RouteProbe("/api/stage8/stage40d-unclassified-probe"),
+        new RouteProbe("/api/stage9/stage40d-unclassified-probe"));
   }
 
   private record RouteExpectation(
@@ -274,6 +291,8 @@ class ApiPermissionRouteCoverageTest {
       return requiredPermission.name();
     }
   }
+
+  private record RouteProbe(String path) {}
 
   private static MockHttpServletRequestBuilder requestBuilder(HttpMethod method, String path) {
     if (HttpMethod.POST.equals(method)) {
@@ -359,6 +378,21 @@ class ApiPermissionRouteCoverageTest {
     @PostMapping("/api/v1/bot-runtime/telegram/webhook")
     Map<String, String> publicBotRuntimeWebhook() {
       return Map.of("classification", "WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN");
+    }
+
+    @GetMapping("/api/v1/stage40d-unclassified-probe")
+    Map<String, String> unclassifiedApiV1() {
+      return Map.of("route", "unclassified-api-v1");
+    }
+
+    @GetMapping("/api/stage8/stage40d-unclassified-probe")
+    Map<String, String> unclassifiedStage8() {
+      return Map.of("route", "unclassified-stage8");
+    }
+
+    @GetMapping("/api/stage9/stage40d-unclassified-probe")
+    Map<String, String> unclassifiedStage9() {
+      return Map.of("route", "unclassified-stage9");
     }
   }
 }
