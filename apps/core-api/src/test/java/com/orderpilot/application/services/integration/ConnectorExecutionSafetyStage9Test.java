@@ -147,6 +147,41 @@ class ConnectorExecutionSafetyStage9Test {
     assertThatThrownBy(() -> changeRequestService.executeStage9DemoChangeRequest(cancelled.getId())).isInstanceOf(IllegalStateException.class);
   }
 
+  // OP-CAP-42A: approval-bypass negative proof. A freshly created (never-approved) ChangeRequest is
+  // PENDING_APPROVAL and must fail closed on execute — no connector command, no sync event, no
+  // external reference — and the block must be audited. Approval is the human gate before any
+  // external execution; skipping it would violate "Human approves if risky / external execution only
+  // after explicit gated approval".
+  @Test
+  void pendingApprovalChangeRequestCannotBeExecutedAndIsAudited() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    long commandsBefore = connectorCommands.count();
+    ChangeRequest pending =
+        changeRequestService.createStage9DemoChangeRequest(
+            "DRAFT_QUOTE",
+            approvedQuote(tenantId, validationBackedCase(tenantId).getId()).getId(),
+            "CREATE_DRAFT_QUOTE",
+            "{}",
+            null);
+    assertThat(pending.getApprovalStatus()).isEqualTo("PENDING_APPROVAL");
+
+    assertThatThrownBy(() -> changeRequestService.executeStage9DemoChangeRequest(pending.getId()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("APPROVED");
+
+    ChangeRequest reloaded = changeRequestService.getChangeRequest(pending.getId());
+    assertThat(reloaded.getExecutionStatus()).isNotEqualTo("EXECUTED");
+    assertThat(reloaded.getExternalReference()).isNull();
+    assertThat(connectorCommands.count()).isEqualTo(commandsBefore);
+    assertThat(syncEvents.findByTenantIdOrderByStartedAtDesc(tenantId)).isEmpty();
+    assertThat(auditEvents.findByTenantIdOrderByOccurredAtDesc(tenantId))
+        .filteredOn(event -> "CHANGE_REQUEST_EXECUTION_POLICY_BLOCKED".equals(event.getAction()))
+        .singleElement()
+        .satisfies(event -> assertThat(event.getMetadata())
+            .contains("\"reasonCode\":\"APPROVAL_REQUIRED\"", "\"networkCall\":false"));
+  }
+
   @Test
   void tenantCannotExecuteAnotherTenantChangeRequest() {
     UUID tenantA = UUID.randomUUID();
