@@ -5,10 +5,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 @Component
 public class ApiPermissionInterceptor implements HandlerInterceptor {
+  private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
   private final ApiPermissionGuard guard;
   private final Map<String, ApiPermission> readPrefixes = Map.ofEntries(
       Map.entry("/api/v1/analytics", ApiPermission.ANALYTICS_READ),
@@ -46,6 +49,7 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
       Map.entry("/api/v1/bot/runtime", ApiPermission.BOT_READ),
       Map.entry("/api/v1/audit", ApiPermission.AUDIT_READ),
       Map.entry("/api/v1/pilot", ApiPermission.ANALYTICS_READ),
+      Map.entry("/api/v1/integrations", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ),
       Map.entry("/api/v1/ai-work", ApiPermission.REVIEW_READ),
@@ -60,15 +64,18 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-    ApiPermission permission = permissionFor(request.getMethod(), request.getRequestURI());
+    ApiPermission permission = requiredPermissionFor(request.getMethod(), request.getRequestURI());
     if (permission != null) {
       guard.require(request, permission);
     }
     return true;
   }
 
-  private ApiPermission permissionFor(String method, String path) {
+  ApiPermission requiredPermissionFor(String method, String path) {
     if (HttpMethod.OPTIONS.matches(method)) {
+      return null;
+    }
+    if (isIntentionallyPublic(method, path)) {
       return null;
     }
     if ((path.startsWith("/api/v1/bot-runtime") || path.startsWith("/api/v1/bot/runtime")) && !HttpMethod.GET.matches(method)) {
@@ -277,5 +284,21 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
         .map(Map.Entry::getValue)
         .findFirst()
         .orElse(null);
+  }
+
+  private static boolean isIntentionallyPublic(String method, String path) {
+    if (HttpMethod.GET.matches(method) && matchesAny(path, ApiSecurityWebConfig.PUBLIC_GET_ROUTES)) {
+      return true;
+    }
+    return HttpMethod.POST.matches(method) && matchesAny(path, ApiSecurityWebConfig.PUBLIC_POST_WEBHOOK_ROUTES);
+  }
+
+  private static boolean matchesAny(String path, String[] patterns) {
+    for (String pattern : patterns) {
+      if (PATH_MATCHER.match(pattern, path)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
