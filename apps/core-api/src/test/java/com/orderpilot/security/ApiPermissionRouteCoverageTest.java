@@ -145,6 +145,24 @@ class ApiPermissionRouteCoverageTest {
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
   }
 
+  @Test
+  void stage8AndStage9RoutesAreProtectedByPermissionPolicy() throws Exception {
+    mockMvc.perform(get("/api/stage8/analytics/stage40b-route-matrix")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, AUTHENTICATED_PROBE))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission ANALYTICS_READ"));
+
+    mockMvc.perform(get("/api/stage9/integrations/stage40b-route-matrix")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, AUTHENTICATED_PROBE))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission ADMIN_SETTINGS_READ"));
+
+    assertThat(interceptor.requiredPermissionFor("GET", "/api/stage8/analytics/stage40b-route-matrix"))
+        .isEqualTo(ApiPermission.ANALYTICS_READ);
+    assertThat(interceptor.requiredPermissionFor("GET", "/api/stage9/integrations/stage40b-route-matrix"))
+        .isEqualTo(ApiPermission.ADMIN_SETTINGS_READ);
+  }
+
   @ParameterizedTest
   @MethodSource("unclassifiedApiRoutes")
   void unknownApiProbeRoutesDenyAuthenticatedRequests(RouteProbe route) throws Exception {
