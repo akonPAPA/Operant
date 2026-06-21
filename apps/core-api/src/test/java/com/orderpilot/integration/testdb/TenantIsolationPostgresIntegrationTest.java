@@ -17,11 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.orderpilot.domain.customer.CustomerAccountRepository;
 import com.orderpilot.domain.product.ProductRepository;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.jdbc.Sql;
 
 @Sql(scripts = {CLEAN, TENANTS, USERS_ROLES, CUSTOMERS, PRODUCTS, PRODUCT_ALIASES, INVENTORY, PRICING})
+@RequiresPostgresIntegration
 class TenantIsolationPostgresIntegrationTest extends DatabaseIntegrationTestBase {
   @Autowired private ProductRepository productRepository;
   @Autowired private CustomerAccountRepository customerAccountRepository;

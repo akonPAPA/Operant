@@ -14,6 +14,7 @@ import com.orderpilot.domain.extraction.ExtractionRunRepository;
 import com.orderpilot.domain.intake.ProcessingJob;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -59,6 +60,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * avoid pool starvation/deadlock under that pattern.
  */
 @Testcontainers
+@RequiresPostgresIntegration
 @EnabledIf("dockerAvailable")
 @Sql(scripts = {DatabaseIntegrationTestBase.CLEAN, DatabaseIntegrationTestBase.TENANTS})
 class WorkerClaimConcurrencyPostgresIntegrationTest extends DatabaseIntegrationTestBase {

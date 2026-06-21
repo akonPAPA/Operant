@@ -17,6 +17,7 @@ import com.orderpilot.domain.intake.ProcessingJob;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
 import com.orderpilot.domain.validation.AiValidationHandoffRepository;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +61,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * and is SKIPPED (not errored) when no Docker daemon is present so the default H2 suite stays green.1
  */
 @Testcontainers
+@RequiresPostgresIntegration
 @EnabledIf("dockerAvailable")
 @Sql(scripts = {DatabaseIntegrationTestBase.CLEAN, DatabaseIntegrationTestBase.TENANTS})
 class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegrationTestBase {
