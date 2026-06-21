@@ -275,7 +275,7 @@ class WorkerRuntimeLifecycleStage29Test {
     TenantContext.setTenantId(other);
     assertThatThrownBy(() -> intakeService.intake(result(job, "SUCCEEDED")))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("processing_job_not_found");
+        .hasMessageContaining("tenant_correlation_mismatch");
 
     assertThat(reload(job.getId(), owner).getStatus()).isEqualTo("PROCESSING"); // owner's job untouched
   }
