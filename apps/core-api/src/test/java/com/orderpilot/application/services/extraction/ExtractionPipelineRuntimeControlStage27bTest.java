@@ -194,7 +194,7 @@ class ExtractionPipelineRuntimeControlStage27bTest {
     TenantContext.setTenantId(tenantId);
     ChannelMessage message = newMessage(tenantId, "msg-review");
     when(runtimeControlService.enforce(any()))
-        .thenReturn(nonAllow(tenantId, RuntimeControlOutcome.NEEDS_REVIEW, "Workload routed to human review."));
+        .thenReturn(nonAllow(tenantId, RuntimeControlOutcome.REQUIRES_REVIEW, "Workload routed to human review."));
     long runsBefore = runRepository.count();
     long resultsBefore = resultRepository.count();
 

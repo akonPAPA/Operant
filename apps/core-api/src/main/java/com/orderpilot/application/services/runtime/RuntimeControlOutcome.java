@@ -22,6 +22,10 @@ package com.orderpilot.application.services.runtime;
 public enum RuntimeControlOutcome {
   ALLOW_SYNC,
   ALLOW_ASYNC,
+  RATE_LIMITED,
+  QUOTA_EXCEEDED,
+  DISABLED,
+  REQUIRES_REVIEW,
   DENY_ENTITLEMENT,
   DENY_QUOTA,
   DENY_RATE_LIMIT,

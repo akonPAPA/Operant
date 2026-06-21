@@ -8,6 +8,7 @@ import com.orderpilot.application.services.runtime.PermissiveRuntimeFeaturePolic
 import com.orderpilot.application.services.runtime.PersistentRuntimeFeaturePolicy;
 import com.orderpilot.application.services.runtime.RateLimitStore;
 import com.orderpilot.application.services.runtime.RuntimeFeaturePolicy;
+import com.orderpilot.application.services.runtime.RuntimeControlProperties;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
 import com.orderpilot.domain.usage.FeatureEntitlementRepository;
 import com.orderpilot.domain.usage.TenantRuntimePlanRepository;
@@ -15,6 +16,7 @@ import java.time.Clock;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,6 +25,12 @@ public class CoreConfiguration {
   @Bean
   Clock clock() {
     return Clock.systemUTC();
+  }
+
+  @Bean
+  @ConfigurationProperties(prefix = "orderpilot.runtime-control")
+  RuntimeControlProperties runtimeControlProperties() {
+    return new RuntimeControlProperties();
   }
 
   @Bean

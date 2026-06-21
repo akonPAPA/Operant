@@ -47,6 +47,13 @@ orderpilot:
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).
     actor-signing-secret: "${ORDERPILOT_ACTOR_SIGNING_SECRET:}"
     actor-signature-max-skew-seconds: 300
+  runtime-control:
+    enabled: "${ORDERPILOT_RUNTIME_CONTROL_ENABLED:true}"
+    default-ai-enabled: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_AI_ENABLED:true}"
+    default-max-cost-units-per-request: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_MAX_COST_UNITS_PER_REQUEST:10000}"
+    default-daily-cost-units-per-tenant: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_DAILY_COST_UNITS_PER_TENANT:100000}"
+    default-max-sync-cost-units: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_MAX_SYNC_COST_UNITS:100}"
+    default-backpressure-queue-depth: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_BACKPRESSURE_QUEUE_DEPTH:1000}"
   runtime:
     # OP-CAP-25: controlled Order Journey projection drain. Disabled by default — the runtime stays on
     # explicit/manual projection processing (OP-CAP-23) and the bounded current-tenant drain endpoint until

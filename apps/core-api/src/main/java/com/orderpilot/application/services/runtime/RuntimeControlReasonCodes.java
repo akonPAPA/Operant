@@ -10,4 +10,10 @@ public final class RuntimeControlReasonCodes {
 
   /** A duplicate idempotent request was detected before classification or guard evaluation. */
   public static final String DEDUP_IDEMPOTENT_HIT = "DEDUP_IDEMPOTENT_HIT";
+
+  public static final String RUNTIME_CONTROL_DISABLED = "RUNTIME_CONTROL_DISABLED";
+  public static final String AI_WORKLOAD_DISABLED = "AI_WORKLOAD_DISABLED";
+  public static final String REQUEST_COST_LIMIT_EXCEEDED = "REQUEST_COST_LIMIT_EXCEEDED";
+  public static final String BACKPRESSURE_QUEUE_DEPTH_EXCEEDED = "BACKPRESSURE_QUEUE_DEPTH_EXCEEDED";
+  public static final String SYNC_COST_PROMOTED_TO_ASYNC = "SYNC_COST_PROMOTED_TO_ASYNC";
 }

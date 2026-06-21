@@ -6,6 +6,8 @@ package com.orderpilot.application.services.runtime;
  * the window ends, clamped to at least 1 so a denied caller is always told to wait a positive amount.
  */
 public final class RetryAfterPolicy {
+  public static final long DEFAULT_RETRY_AFTER_SECONDS = 1L;
+
   private RetryAfterPolicy() {}
 
   /**
