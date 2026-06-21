@@ -1,6 +1,8 @@
 package com.orderpilot.api.rest;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -55,7 +57,7 @@ class Stage8ValueAnalyticsControllerTest {
         .andExpect(jsonPath("$.defaultCurrency").value("USD"))
         .andExpect(jsonPath("$.defaultAssumptions").value(true));
     mockMvc.perform(put("/api/stage8/value/roi-assumptions")
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ANALYTICS_READ")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ANALYTICS_MANAGE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"averageManualHandlingMinutesPerRequest\":20,\"averageFullyLoadedOperatorHourlyCost\":60,\"defaultCurrency\":\"EUR\",\"valueAttributionMode\":\"balanced\"}"))
         .andExpect(status().isOk())
@@ -71,5 +73,16 @@ class Stage8ValueAnalyticsControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.exportable").value(true))
         .andExpect(jsonPath("$.assumptions.defaultCurrency").value("USD"));
+  }
+
+  @Test
+  void roiAssumptionsUpdateRejectsReadOnlyPermissionBeforeServiceInvocation() throws Exception {
+    mockMvc.perform(put("/api/stage8/value/roi-assumptions")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ANALYTICS_READ")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"averageManualHandlingMinutesPerRequest\":20,\"averageFullyLoadedOperatorHourlyCost\":60,\"defaultCurrency\":\"EUR\",\"valueAttributionMode\":\"balanced\"}"))
+        .andExpect(status().isForbidden());
+
+    verify(assumptionsService, never()).update(any());
   }
 }

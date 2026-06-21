@@ -75,7 +75,7 @@ class Stage9IntegrationControllerTest {
         .andExpect(jsonPath("$.integrations[0].displayName").value("Demo ERP Adapter"))
         .andExpect(jsonPath("$.integrations[0].mode").value("READ_ONLY"))
         .andExpect(jsonPath("$.integrations[0].endpointRef").doesNotExist());
-    mockMvc.perform(post("/api/stage9/integrations/demo-erp").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ").contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc.perform(post("/api/stage9/integrations/demo-erp").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE").contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.connectionKind").value("DEMO_ERP_LOCAL"));
     mockMvc.perform(get("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_READ"))
@@ -100,6 +100,18 @@ class Stage9IntegrationControllerTest {
         .andExpect(jsonPath("$.syncRuns[0].direction").value("OUTBOUND_DEMO"))
         .andExpect(jsonPath("$.syncRuns[0].integrationConnectionId").doesNotExist())
         .andExpect(jsonPath("$.syncRuns[0].errorMessage").doesNotExist());
+  }
+
+  @Test
+  void demoErpIntegrationMutationRejectsReadOnlyPermissionBeforeServiceInvocation() throws Exception {
+    mockMvc.perform(post("/api/stage9/integrations/demo-erp")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden());
+
+    verify(integrationConnectionService, never()).createDraft(any(), anyString(), anyString(), any(), anyString());
+    verify(integrationConnectionService, never()).activate(any());
   }
 
   @Test

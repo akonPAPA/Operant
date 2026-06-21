@@ -2,6 +2,7 @@ package com.orderpilot.security;
 
 public enum ApiPermission {
   ANALYTICS_READ,
+  ANALYTICS_MANAGE,
   INTAKE_READ,
   INTAKE_WRITE,
   EXTRACTION_READ,
@@ -16,6 +17,7 @@ public enum ApiPermission {
   BOT_ACTION,
   AUDIT_READ,
   ADMIN_SETTINGS_READ,
+  ADMIN_SETTINGS_MANAGE,
   CHANNEL_IDENTITY_ACTION,
   AI_WORK_ACTION,
   // OP-CAP-07D: internal/service permission for the AI-worker result intake endpoint.

@@ -81,6 +81,15 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
     if ((path.startsWith("/api/v1/bot-runtime") || path.startsWith("/api/v1/bot/runtime")) && !HttpMethod.GET.matches(method)) {
       return ApiPermission.BOT_ACTION;
     }
+    if (path.startsWith("/api/stage8/reconciliation/refresh") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.ANALYTICS_MANAGE;
+    }
+    if (path.startsWith("/api/stage8/value/roi-assumptions") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.ANALYTICS_MANAGE;
+    }
+    if (path.startsWith("/api/stage9/integrations") && !HttpMethod.GET.matches(method)) {
+      return ApiPermission.ADMIN_SETTINGS_MANAGE;
+    }
     if (path.startsWith("/api/v1/channel-identities") && !HttpMethod.GET.matches(method)) {
       return ApiPermission.CHANNEL_IDENTITY_ACTION;
     }
