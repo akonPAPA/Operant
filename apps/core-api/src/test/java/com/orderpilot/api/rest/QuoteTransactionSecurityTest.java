@@ -56,7 +56,8 @@ class QuoteTransactionSecurityTest {
     UUID quoteId = UUID.randomUUID();
     when(approvalStateMachineService.getQuoteApprovalState(quoteId)).thenReturn(new QuoteApprovalStateResponse(quoteId, "DRAFT", false, List.of(), List.of(), List.of(), null, null, null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID()));
 
-    mockMvc.perform(get("/api/v1/quotes/" + quoteId + "/approval-state"))
+    mockMvc.perform(get("/api/v1/quotes/" + quoteId + "/approval-state")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.message").value("Missing required API permission QUOTE_READ"));
 
@@ -95,6 +96,7 @@ class QuoteTransactionSecurityTest {
     when(channelToQuoteWiringService.createFromChannelMessage(eq(messageId), any(), any(), any())).thenReturn(new ChannelToQuoteResponse("NEEDS_REVIEW", null, attemptId, "CHANNEL_MESSAGE", "UNRESOLVED", 0, 0, List.of(), true));
 
     mockMvc.perform(post("/api/v1/quote-transactions/from-channel-message/" + messageId)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isForbidden())

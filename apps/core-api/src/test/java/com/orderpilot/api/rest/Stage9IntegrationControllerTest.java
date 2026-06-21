@@ -228,7 +228,8 @@ class Stage9IntegrationControllerTest {
 
   @Test
   void changeRequestListWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
-    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests"))
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden())
         .andReturn();
 
@@ -240,7 +241,8 @@ class Stage9IntegrationControllerTest {
   void changeRequestDetailWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
     UUID requestId = UUID.randomUUID();
 
-    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId))
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden())
         .andReturn();
 
@@ -252,7 +254,8 @@ class Stage9IntegrationControllerTest {
   void executionSafetyWithoutPermissionIsForbiddenBeforeServiceInvocationAndDoesNotLeakPayloads() throws Exception {
     UUID requestId = UUID.randomUUID();
 
-    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety"))
+    MvcResult result = mockMvc.perform(get("/api/stage9/change-requests/" + requestId + "/execution-safety")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden())
         .andReturn();
 
@@ -278,6 +281,7 @@ class Stage9IntegrationControllerTest {
     UUID requestId = UUID.randomUUID();
 
     MvcResult result = mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/approve")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"actorId\":\"00000000-0000-0000-0000-000000000001\",\"requestPayloadJson\":\"SECRET-PAYLOAD\"}"))
         .andExpect(status().isForbidden())

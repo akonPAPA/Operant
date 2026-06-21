@@ -25,9 +25,11 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.TestPropertySource;
 
 @WebMvcTest(BotTelegramWebhookController.class)
 @Import({CoreConfiguration.class, GlobalExceptionHandler.class, ApiSecurityWebConfig.class, NoopApiPermissionTestConfig.class})
+@TestPropertySource(properties = "orderpilot.security.cors.allowed-origins=http://localhost:3000,http://127.0.0.1:3000")
 class BotTelegramWebhookControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;

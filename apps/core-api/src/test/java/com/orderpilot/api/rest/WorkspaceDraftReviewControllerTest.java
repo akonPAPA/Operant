@@ -76,7 +76,8 @@ class WorkspaceDraftReviewControllerTest {
     UUID draftId = UUID.randomUUID();
     when(draftReviewService.quoteDetail(draftId)).thenReturn(detail(draftId, "DRAFT"));
 
-    mockMvc.perform(get("/api/v1/workspace/draft-quotes/" + draftId + "/review"))
+    mockMvc.perform(get("/api/v1/workspace/draft-quotes/" + draftId + "/review")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden());
 
     mockMvc.perform(get("/api/v1/workspace/draft-quotes/" + draftId + "/review")

@@ -9,6 +9,7 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     url: "${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:${ORDERPILOT_DB_HOST_PORT:15432}/${ORDERPILOT_DB_NAME:orderpilot_local}}"
     username: "${SPRING_DATASOURCE_USERNAME:${ORDERPILOT_DB_USER:orderpilot_local_user}}"
@@ -30,6 +31,8 @@ orderpilot:
   tenant:
     header-name: X-Tenant-Id
   security:
+    cors:
+      allowed-origins: "${ORDERPILOT_CORS_ALLOWED_ORIGINS:}"
     # OP-CAP-16K signed actor verification for runtime entitlement admin mutations. Empty = no
     # signing secret configured → local/dev trusted-header fallback (16J behavior). When set, admin
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).
