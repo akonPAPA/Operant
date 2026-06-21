@@ -50,7 +50,7 @@ class ChannelRfqHandoffControllerAuthorityBoundaryTest {
     mockMvc.perform(post("/api/v1/channels/rfq-handoffs/{id}/start-review", handoffId)
             .header("X-Tenant-Id", tenant.toString())
             .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"reviewerUserId\":\"" + spoofActor + "\",\"status\":\"CONVERTED\"}"))
         .andExpect(status().isOk());
@@ -70,7 +70,7 @@ class ChannelRfqHandoffControllerAuthorityBoundaryTest {
     mockMvc.perform(post("/api/v1/channels/rfq-handoffs/{id}/dismiss", handoffId)
             .header("X-Tenant-Id", tenant.toString())
             .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"reason\":\"not an RFQ\",\"actorUserId\":\"" + spoofActor + "\",\"approvalStatus\":\"APPROVED\"}"))
         .andExpect(status().isOk());

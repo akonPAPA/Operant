@@ -12,6 +12,7 @@ import com.orderpilot.domain.usage.TenantRuntimePlanCode;
 import com.orderpilot.domain.usage.TenantRuntimePlanRepository;
 import com.orderpilot.domain.usage.TenantRuntimePlanStatus;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,7 @@ import org.springframework.test.context.jdbc.Sql;
  * integration database is available — it does not run under the normal H2 suite.)
  */
 @Sql(scripts = {CLEAN, TENANTS})
+@RequiresPostgresIntegration
 class RuntimePlanInvariantPostgresIntegrationTest extends DatabaseIntegrationTestBase {
   private static final Instant NOW = Instant.parse("2026-06-13T12:00:00Z");
   private static final Instant PAST = NOW.minusSeconds(7200);

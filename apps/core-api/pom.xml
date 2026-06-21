@@ -39,6 +39,10 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
     <!-- OP-CAP-16K: distributed runtime rate-limit counters only (Redis is NOT used for plans,
          entitlements, quota, audit, or business state). The Redis connection + store beans are gated
          behind orderpilot.runtime.rate.store=redis; RedisAutoConfiguration is excluded so no Redis

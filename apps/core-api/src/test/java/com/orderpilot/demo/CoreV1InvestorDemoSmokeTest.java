@@ -110,6 +110,7 @@ class CoreV1InvestorDemoSmokeTest {
 
     mockMvc.perform(post("/api/v1/reconciliation/inventory/run")
             .header("X-Tenant-Id", tenantId.toString())
+            .header("X-OrderPilot-Permissions", "ANALYTICS_MANAGE")
             .contentType("application/json")
             .content("{\"productId\":\"" + seed.primaryProductId() + "\",\"locationId\":\"" + seed.locationId() + "\"}"))
         .andExpect(status().isOk())

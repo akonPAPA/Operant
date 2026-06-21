@@ -60,7 +60,7 @@ class RuntimeEntitlementAdminControllerStage16ITest {
 
   @Test
   void getEntitlementsWithoutPermissionIsForbidden() throws Exception {
-    mockMvc.perform(get("/api/v1/runtime/entitlements"))
+    mockMvc.perform(get("/api/v1/runtime/entitlements").header(PERM_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden());
   }
 
@@ -110,7 +110,8 @@ class RuntimeEntitlementAdminControllerStage16ITest {
 
   @Test
   void disableFeatureWithoutPermissionIsForbidden() throws Exception {
-    mockMvc.perform(delete("/api/v1/runtime/plans/{planId}/features/{featureType}", UUID.randomUUID(), "REPORT_EXPORT"))
+    mockMvc.perform(delete("/api/v1/runtime/plans/{planId}/features/{featureType}", UUID.randomUUID(), "REPORT_EXPORT")
+            .header(PERM_HEADER, "AUTHENTICATED_PROBE"))
         .andExpect(status().isForbidden());
   }
 }

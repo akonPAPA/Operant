@@ -22,11 +22,13 @@ import com.orderpilot.application.services.workspace.QuoteConversionAttemptRevie
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.jdbc.Sql;
 
 @Sql(scripts = {CLEAN, TENANTS, USERS_ROLES, CUSTOMERS, PRODUCTS, PRODUCT_ALIASES, INVENTORY, PRICING, QUOTE_REVIEW_ATTEMPTS})
+@RequiresPostgresIntegration
 class QuoteReviewPostgresIntegrationTest extends DatabaseIntegrationTestBase {
   @Autowired private QuoteConversionAttemptReviewQueryService service;
 

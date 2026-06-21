@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -19,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.jdbc.Sql;
 
 @Sql(scripts = {CLEAN, TENANTS, USERS_ROLES})
+@RequiresPostgresIntegration
 class AuditIdempotencyPostgresIntegrationTest extends DatabaseIntegrationTestBase {
   @Autowired private AuditEventRepository auditEventRepository;
   @Autowired private JdbcTemplate jdbcTemplate;

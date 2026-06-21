@@ -1,0 +1,398 @@
+package com.orderpilot.security;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.orderpilot.api.rest.HealthController;
+import com.orderpilot.common.errors.GlobalExceptionHandler;
+import com.orderpilot.infrastructure.config.CoreConfiguration;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.util.AntPathMatcher;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@WebMvcTest(controllers = {
+    HealthController.class,
+    ApiPermissionRouteCoverageTest.RouteMatrixProbeController.class
+})
+@Import({
+    CoreConfiguration.class,
+    GlobalExceptionHandler.class,
+    ApiSecurityWebConfig.class,
+    ApiRouteSecurityPolicy.class,
+    ApiPermissionInterceptor.class,
+    ApiPermissionGuard.class,
+    ApiPermissionRouteCoverageTest.RouteMatrixProbeController.class
+})
+@TestPropertySource(properties = "orderpilot.security.gateway-header-auth.enabled=true")
+class ApiPermissionRouteCoverageTest {
+  private static final String AUTHENTICATED_PROBE = "AUTHENTICATED_PROBE";
+  private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
+  @Autowired private MockMvc mockMvc;
+  @Autowired private ApiPermissionInterceptor interceptor;
+
+  @ParameterizedTest
+  @MethodSource("protectedRoutes")
+  void protectedRouteGroupsRejectAuthenticatedRequestWithoutRequiredPermission(RouteExpectation route) throws Exception {
+    mockMvc.perform(route.request().header(ApiPermissionGuard.PERMISSIONS_HEADER, AUTHENTICATED_PROBE))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
+        .andExpect(jsonPath("$.message").value("Missing required API permission " + route.requiredPermissionName()));
+  }
+
+  @ParameterizedTest
+  @MethodSource("protectedRoutes")
+  void protectedRouteGroupsAllowAuthenticatedRequestWithRequiredPermission(RouteExpectation route) throws Exception {
+    mockMvc.perform(route.request().header(ApiPermissionGuard.PERMISSIONS_HEADER, route.requiredPermissionName()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.route").value(route.name()));
+  }
+
+  @ParameterizedTest
+  @MethodSource("protectedRoutes")
+  void routeMatrixProtectedRoutesHaveExplicitPermissionRules(RouteExpectation route) {
+    assertThat(interceptor.requiredPermissionFor(route.method().name(), route.path()))
+        .as("%s is %s and must resolve through the real permission mapper", route.name(), route.classification())
+        .isEqualTo(route.requiredPermission());
+  }
+
+  @ParameterizedTest
+  @MethodSource("methodSensitiveMutations")
+  void mutationRoutesRejectReadOnlyPermission(MethodSensitiveExpectation route) throws Exception {
+    mockMvc.perform(route.request().header(ApiPermissionGuard.PERMISSIONS_HEADER, route.readOnlyPermission().name()))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission " + route.requiredPermissionName()));
+  }
+
+  @ParameterizedTest
+  @MethodSource("methodSensitiveMutations")
+  void mutationRoutesAllowOnlyStrongerPermission(MethodSensitiveExpectation route) throws Exception {
+    mockMvc.perform(route.request().header(ApiPermissionGuard.PERMISSIONS_HEADER, route.requiredPermissionName()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.route").value(route.name()));
+  }
+
+  @ParameterizedTest
+  @MethodSource("methodSensitiveMutations")
+  void mutationRoutesHaveStrongerPermissionRules(MethodSensitiveExpectation route) {
+    assertThat(interceptor.requiredPermissionFor(route.method().name(), route.path()))
+        .as("%s must require stronger permission than %s", route.name(), route.readOnlyPermission())
+        .isEqualTo(route.requiredPermission());
+  }
+
+  @Test
+  void missingAuthenticationOnProtectedRouteReturns401() throws Exception {
+    mockMvc.perform(get("/api/v1/analytics/stage40b-route-matrix"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  void publicHealthRouteRemainsIntentionallyPublic() throws Exception {
+    mockMvc.perform(get("/api/v1/health"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("UP"));
+  }
+
+  @Test
+  void publicProviderWebhookRouteRemainsExplicitlyPublic() throws Exception {
+    mockMvc.perform(post("/api/v1/webhooks/telegram/stage40b")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.classification").value("WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN"));
+  }
+
+  @Test
+  void publicBotRuntimeWebhookRouteRemainsExplicitlyPublic() throws Exception {
+    mockMvc.perform(post("/api/v1/bot-runtime/telegram/webhook")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.classification").value("WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN"));
+  }
+
+  @Test
+  void publicWebhookRoutesHaveNoPermissionRuleBecauseTheyAreProviderFacing() {
+    assertThat(interceptor.requiredPermissionFor("POST", "/api/v1/webhooks/telegram/stage40b")).isNull();
+    assertThat(interceptor.requiredPermissionFor("POST", "/api/v1/bot-runtime/telegram/webhook")).isNull();
+  }
+
+  @Test
+  void unknownApiProbeRouteIsNotPublicWithoutAuthentication() throws Exception {
+    mockMvc.perform(get("/api/stage8/stage40b-unknown-probe"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("unclassifiedApiRoutes")
+  void unknownApiProbeRoutesDenyAuthenticatedRequests(RouteProbe route) throws Exception {
+    mockMvc.perform(get(route.path()).header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_READ.name()))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
+        .andExpect(jsonPath("$.message").value("Unclassified API route GET " + route.path()));
+  }
+
+  @Test
+  void interceptorRegistrationCoversAllRouteMatrixProtectedGroups() {
+    assertThat(Arrays.asList(ApiSecurityWebConfig.PERMISSION_INTERCEPTOR_PATHS))
+        .contains("/api/v1/**", "/api/stage8/**", "/api/stage9/**");
+    protectedRoutes().forEach(route ->
+        assertThat(matchesAny(route.path(), ApiSecurityWebConfig.PERMISSION_INTERCEPTOR_PATHS))
+            .as("%s must be under an ApiPermissionInterceptor path", route.name())
+            .isTrue());
+  }
+
+  private static Stream<RouteExpectation> protectedRoutes() {
+    return Stream.of(
+        new RouteExpectation(
+            "api-v1-business",
+            HttpMethod.GET,
+            "/api/v1/analytics/stage40b-route-matrix",
+            "PERMISSION_REQUIRED",
+            ApiPermission.ANALYTICS_READ),
+        new RouteExpectation(
+            "stage8-business",
+            HttpMethod.GET,
+            "/api/stage8/analytics/stage40b-route-matrix",
+            "PERMISSION_REQUIRED",
+            ApiPermission.ANALYTICS_READ),
+        new RouteExpectation(
+            "stage9-integration-admin",
+            HttpMethod.GET,
+            "/api/stage9/integrations/stage40b-route-matrix",
+            "PERMISSION_REQUIRED",
+            ApiPermission.ADMIN_SETTINGS_READ),
+        new RouteExpectation(
+            "api-v1-integration-admin",
+            HttpMethod.GET,
+            "/api/v1/integrations/stage40b-route-matrix",
+            "PERMISSION_REQUIRED",
+            ApiPermission.ADMIN_SETTINGS_READ),
+        new RouteExpectation(
+            "stage9-change-request",
+            HttpMethod.GET,
+            "/api/stage9/change-requests/stage40b-route-matrix",
+            "PERMISSION_REQUIRED",
+            ApiPermission.CHANGE_REQUEST_READ),
+        new RouteExpectation(
+            "runtime-admin-mutation",
+            HttpMethod.POST,
+            "/api/v1/runtime/stage40b-route-matrix",
+            "PERMISSION_REQUIRED",
+            ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+  }
+
+  private static Stream<MethodSensitiveExpectation> methodSensitiveMutations() {
+    return Stream.of(
+        new MethodSensitiveExpectation(
+            "stage8-reconciliation-refresh",
+            HttpMethod.POST,
+            "/api/stage8/reconciliation/refresh",
+            "REFRESH_RECOMPUTE",
+            ApiPermission.ANALYTICS_READ,
+            ApiPermission.ANALYTICS_MANAGE),
+        new MethodSensitiveExpectation(
+            "stage8-roi-assumptions-update",
+            HttpMethod.PUT,
+            "/api/stage8/value/roi-assumptions",
+            "ADMIN_CONFIG",
+            ApiPermission.ANALYTICS_READ,
+            ApiPermission.ANALYTICS_MANAGE),
+        new MethodSensitiveExpectation(
+            "stage9-demo-erp-integration-mutation",
+            HttpMethod.POST,
+            "/api/stage9/integrations/demo-erp",
+            "ADMIN_CONFIG",
+            ApiPermission.ADMIN_SETTINGS_READ,
+            ApiPermission.ADMIN_SETTINGS_MANAGE),
+        new MethodSensitiveExpectation(
+            "stage9-change-request-approve",
+            HttpMethod.POST,
+            "/api/stage9/change-requests/123e4567-e89b-12d3-a456-426614174000/approve",
+            "APPROVE",
+            ApiPermission.CHANGE_REQUEST_READ,
+            ApiPermission.CHANGE_REQUEST_APPROVE),
+        new MethodSensitiveExpectation(
+            "stage9-change-request-execute",
+            HttpMethod.POST,
+            "/api/stage9/change-requests/123e4567-e89b-12d3-a456-426614174000/execute",
+            "EXECUTE",
+            ApiPermission.CHANGE_REQUEST_READ,
+            ApiPermission.CHANGE_REQUEST_EXECUTE),
+        new MethodSensitiveExpectation(
+            "runtime-admin-mutation",
+            HttpMethod.POST,
+            "/api/v1/runtime/stage40b-route-matrix",
+            "RUNTIME_MANAGE",
+            ApiPermission.RUNTIME_ENTITLEMENT_READ,
+        ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+  }
+
+  private static Stream<RouteProbe> unclassifiedApiRoutes() {
+    return Stream.of(
+        new RouteProbe("/api/v1/stage40d-unclassified-probe"),
+        new RouteProbe("/api/stage8/stage40d-unclassified-probe"),
+        new RouteProbe("/api/stage9/stage40d-unclassified-probe"));
+  }
+
+  private record RouteExpectation(
+      String name,
+      HttpMethod method,
+      String path,
+      String classification,
+      ApiPermission requiredPermission) {
+    MockHttpServletRequestBuilder request() {
+      MockHttpServletRequestBuilder builder = requestBuilder(method, path);
+      if (!HttpMethod.GET.equals(method)) {
+        builder.contentType(MediaType.APPLICATION_JSON).content("{}");
+      }
+      return builder;
+    }
+
+    String requiredPermissionName() {
+      return requiredPermission.name();
+    }
+  }
+
+  private record MethodSensitiveExpectation(
+      String name,
+      HttpMethod method,
+      String path,
+      String actionType,
+      ApiPermission readOnlyPermission,
+      ApiPermission requiredPermission) {
+    MockHttpServletRequestBuilder request() {
+      return requestBuilder(method, path).contentType(MediaType.APPLICATION_JSON).content("{}");
+    }
+
+    String requiredPermissionName() {
+      return requiredPermission.name();
+    }
+  }
+
+  private record RouteProbe(String path) {}
+
+  private static MockHttpServletRequestBuilder requestBuilder(HttpMethod method, String path) {
+    if (HttpMethod.POST.equals(method)) {
+      return post(path);
+    }
+    if (HttpMethod.PUT.equals(method)) {
+      return put(path);
+    }
+    return get(path);
+  }
+
+  private static boolean matchesAny(String path, String[] patterns) {
+    for (String pattern : patterns) {
+      if (PATH_MATCHER.match(pattern, path)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @RestController
+  static class RouteMatrixProbeController {
+    @GetMapping("/api/v1/analytics/stage40b-route-matrix")
+    Map<String, String> apiV1Business() {
+      return Map.of("route", "api-v1-business");
+    }
+
+    @GetMapping("/api/stage8/analytics/stage40b-route-matrix")
+    Map<String, String> stage8Business() {
+      return Map.of("route", "stage8-business");
+    }
+
+    @GetMapping("/api/stage9/integrations/stage40b-route-matrix")
+    Map<String, String> stage9IntegrationAdmin() {
+      return Map.of("route", "stage9-integration-admin");
+    }
+
+    @GetMapping("/api/v1/integrations/stage40b-route-matrix")
+    Map<String, String> apiV1IntegrationAdmin() {
+      return Map.of("route", "api-v1-integration-admin");
+    }
+
+    @GetMapping("/api/stage9/change-requests/stage40b-route-matrix")
+    Map<String, String> stage9ChangeRequest() {
+      return Map.of("route", "stage9-change-request");
+    }
+
+    @PostMapping("/api/v1/runtime/stage40b-route-matrix")
+    Map<String, String> runtimeAdminMutation() {
+      return Map.of("route", "runtime-admin-mutation");
+    }
+
+    @PostMapping("/api/stage8/reconciliation/refresh")
+    Map<String, String> stage8ReconciliationRefresh() {
+      return Map.of("route", "stage8-reconciliation-refresh");
+    }
+
+    @PutMapping("/api/stage8/value/roi-assumptions")
+    Map<String, String> stage8RoiAssumptionsUpdate() {
+      return Map.of("route", "stage8-roi-assumptions-update");
+    }
+
+    @PostMapping("/api/stage9/integrations/demo-erp")
+    Map<String, String> stage9DemoErpIntegrationMutation() {
+      return Map.of("route", "stage9-demo-erp-integration-mutation");
+    }
+
+    @PostMapping("/api/stage9/change-requests/{id}/approve")
+    Map<String, String> stage9ChangeRequestApprove() {
+      return Map.of("route", "stage9-change-request-approve");
+    }
+
+    @PostMapping("/api/stage9/change-requests/{id}/execute")
+    Map<String, String> stage9ChangeRequestExecute() {
+      return Map.of("route", "stage9-change-request-execute");
+    }
+
+    @PostMapping("/api/v1/webhooks/telegram/stage40b")
+    Map<String, String> publicWebhook() {
+      return Map.of("classification", "WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN");
+    }
+
+    @PostMapping("/api/v1/bot-runtime/telegram/webhook")
+    Map<String, String> publicBotRuntimeWebhook() {
+      return Map.of("classification", "WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN");
+    }
+
+    @GetMapping("/api/v1/stage40d-unclassified-probe")
+    Map<String, String> unclassifiedApiV1() {
+      return Map.of("route", "unclassified-api-v1");
+    }
+
+    @GetMapping("/api/stage8/stage40d-unclassified-probe")
+    Map<String, String> unclassifiedStage8() {
+      return Map.of("route", "unclassified-stage8");
+    }
+
+    @GetMapping("/api/stage9/stage40d-unclassified-probe")
+    Map<String, String> unclassifiedStage9() {
+      return Map.of("route", "unclassified-stage9");
+    }
+  }
+}

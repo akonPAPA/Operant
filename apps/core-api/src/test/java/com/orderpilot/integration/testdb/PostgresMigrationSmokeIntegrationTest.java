@@ -3,12 +3,14 @@ package com.orderpilot.integration.testdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.RequiresPostgresIntegration;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+@RequiresPostgresIntegration
 class PostgresMigrationSmokeIntegrationTest extends DatabaseIntegrationTestBase {
   @Autowired private JdbcTemplate jdbcTemplate;
 
