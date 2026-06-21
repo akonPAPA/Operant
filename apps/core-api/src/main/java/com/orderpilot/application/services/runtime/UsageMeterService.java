@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -137,6 +138,40 @@ public class UsageMeterService {
   }
 
   /**
+   * Records safe runtime-control decision evidence. Allowed decisions contribute consumed units only
+   * after the caller confirms downstream work was accepted; denied/review/dedup decisions write a
+   * zero-unit evidence event with rejected units in metadata, so quota counters are not inflated.
+   */
+  @Transactional
+  public UsageRecordingResult recordRuntimeControlDecision(
+      RuntimeControlRequest request,
+      RuntimeControlDecision decision,
+      UsageSource source,
+      String sourceRef,
+      String idempotencyKey,
+      boolean downstreamInvoked) {
+    return recordRuntimeControlDecisionInternal(
+        request, decision, source, sourceRef, idempotencyKey, downstreamInvoked);
+  }
+
+  /**
+   * Same evidence recording, isolated from the caller transaction. Use this for fail-closed
+   * admission denials that immediately rethrow, otherwise the evidence row would roll back with the
+   * rejected business operation.
+   */
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public UsageRecordingResult recordRuntimeControlDecisionEvidence(
+      RuntimeControlRequest request,
+      RuntimeControlDecision decision,
+      UsageSource source,
+      String sourceRef,
+      String idempotencyKey,
+      boolean downstreamInvoked) {
+    return recordRuntimeControlDecisionInternal(
+        request, decision, source, sourceRef, idempotencyKey, downstreamInvoked);
+  }
+
+  /**
    * Advisory quota check for {@code metricType} given {@code additionalUnits}. Allows by default when
    * no policy exists. Never blocks a live request path in Stage 16B — callers receive a decision
    * object only.
@@ -193,6 +228,79 @@ public class UsageMeterService {
         .orElse(0L);
   }
 
+  private UsageRecordingResult recordRuntimeControlDecisionInternal(
+      RuntimeControlRequest request,
+      RuntimeControlDecision decision,
+      UsageSource source,
+      String sourceRef,
+      String idempotencyKey,
+      boolean downstreamInvoked) {
+    if (request == null) throw new IllegalArgumentException("runtime control request is required");
+    if (decision == null) throw new IllegalArgumentException("runtime control decision is required");
+    UUID tenantId = require(decision.tenantId(), "tenantId");
+    if (!tenantId.equals(request.tenantId())) {
+      throw new IllegalArgumentException("runtime decision tenant does not match request tenant");
+    }
+
+    UsageMetricType metricType = EndpointWeightPolicy.defaultMetricFor(request.operationType());
+    if (metricType == null) {
+      metricType = UsageMetricType.AI_ROUTING_DECISION;
+    }
+    UsageSource safeSource = source == null ? UsageSource.SYSTEM : source;
+    UsagePeriodType periodType = UsagePeriodType.MONTH;
+    Instant now = clock.instant();
+    String periodKey = periodType.periodKey(now);
+    String normalizedIdempotencyKey = normalize(idempotencyKey);
+
+    if (normalizedIdempotencyKey != null) {
+      var existing = usageEventRepository.findByTenantIdAndIdempotencyKey(tenantId, normalizedIdempotencyKey);
+      if (existing.isPresent()) {
+        UsageEvent prior = existing.get();
+        long counterUnits = currentCounterUnits(tenantId, prior.getMetricType(), periodKey);
+        return new UsageRecordingResult(
+            prior.getId(), prior.getMetricType(), 0L, periodKey, counterUnits, true);
+      }
+    }
+
+    long requestedUnits = effectiveRuntimeUnits(request, decision);
+    long consumedUnits = decision.allowed() && downstreamInvoked ? requestedUnits : 0L;
+    long rejectedUnits =
+        decision.allowed() || decision.outcome() == RuntimeControlOutcome.DEDUPED ? 0L : requestedUnits;
+    RuntimeExecutionMode resolvedMode =
+        decision.asyncRequired() ? RuntimeExecutionMode.ASYNC : RuntimeExecutionMode.SYNC;
+    UsageEvent event =
+        new UsageEvent(
+            tenantId,
+            UsageEventType.RUNTIME_CONTROL_DECISION,
+            metricType,
+            decision.runtimeWorkloadType().name(),
+            decision.modelTier() == null ? null : decision.modelTier().name(),
+            consumedUnits,
+            safeSource,
+            normalize(sourceRef),
+            normalizedIdempotencyKey,
+            buildRuntimeDecisionMetadataJson(
+                request, decision, requestedUnits, consumedUnits, rejectedUnits, resolvedMode,
+                downstreamInvoked),
+            now,
+            now);
+    UsageEvent saved = usageEventRepository.save(event);
+    long counterUnits =
+        consumedUnits > 0L
+            ? incrementCounter(tenantId, metricType, periodKey, consumedUnits, now)
+            : currentCounterUnits(tenantId, metricType, periodKey);
+    return new UsageRecordingResult(
+        saved.getId(), metricType, consumedUnits, periodKey, counterUnits, false);
+  }
+
+  private static long effectiveRuntimeUnits(
+      RuntimeControlRequest request, RuntimeControlDecision decision) {
+    if (request.requestedUnits() >= 0L) {
+      return UsageMath.clampNonNegative(request.requestedUnits());
+    }
+    return UsageMath.clampNonNegative(decision.estimatedInputUnits());
+  }
+
   private static <T> T require(T value, String field) {
     if (value == null) {
       throw new IllegalArgumentException(field + " is required");
@@ -217,6 +325,33 @@ public class UsageMeterService {
     appendOptional(sb, "modelTier", normalize(request.modelTier()));
     appendOptional(sb, "reasonCode", normalize(request.reasonCode()));
     appendOptional(sb, "sourceRef", normalize(request.sourceRef()));
+    return sb.append("}").toString();
+  }
+
+  private static String buildRuntimeDecisionMetadataJson(
+      RuntimeControlRequest request,
+      RuntimeControlDecision decision,
+      long requestedUnits,
+      long consumedUnits,
+      long rejectedUnits,
+      RuntimeExecutionMode resolvedMode,
+      boolean downstreamInvoked) {
+    StringBuilder sb = new StringBuilder("{");
+    sb.append("\"requestedCostUnits\":").append(requestedUnits);
+    sb.append(",\"consumedCostUnits\":").append(consumedUnits);
+    sb.append(",\"rejectedCostUnits\":").append(rejectedUnits);
+    sb.append(",\"downstreamInvoked\":").append(downstreamInvoked);
+    sb.append(",\"asyncRequired\":").append(decision.asyncRequired());
+    sb.append(",\"humanReviewRequired\":").append(decision.humanReviewRequired());
+    appendOptional(sb, "outcome", decision.outcome() == null ? null : decision.outcome().name());
+    appendOptional(sb, "reasonCode", normalize(decision.reasonCode()));
+    appendOptional(sb, "operationType", request.operationType() == null ? null : request.operationType().name());
+    appendOptional(sb, "workloadType", decision.runtimeWorkloadType().name());
+    appendOptional(sb, "aiWorkloadType", decision.workloadType() == null ? null : decision.workloadType().name());
+    appendOptional(sb, "modelTier", decision.modelTier() == null ? null : decision.modelTier().name());
+    appendOptional(sb, "requestedExecutionMode", request.effectiveRequestedExecutionMode().name());
+    appendOptional(sb, "resolvedExecutionMode", resolvedMode.name());
+    appendOptional(sb, "actorType", decision.systemActor() ? "SYSTEM" : "OPERATOR");
     return sb.append("}").toString();
   }
 

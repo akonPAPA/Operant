@@ -244,6 +244,24 @@ class RuntimeControlServiceTest {
   }
 
   @Test
+  void runtimeControlDisabledDeniesAllRuntimeWorkBeforeGuard() {
+    RuntimeControlProperties properties = new RuntimeControlProperties();
+    properties.setEnabled(false);
+    RuntimeControlService disabled = new RuntimeControlService(classifier, guard, properties);
+    RuntimeControlRequest request = new RuntimeControlRequest(TENANT, ACTOR,
+        RuntimeWorkloadType.AI_VALIDATION_ASSIST, RuntimeExecutionMode.SYNC,
+        RuntimeOperationType.AI_VALIDATION_EXPLANATION, RuntimeFeatureType.AI_VALIDATION_EXPLANATION,
+        smallKnown("ok"), 1L, null, false, 0);
+
+    RuntimeControlDecision decision = disabled.decide(request);
+
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.DISABLED);
+    assertThat(decision.reasonCode()).isEqualTo(RuntimeControlReasonCodes.RUNTIME_CONTROL_DISABLED);
+    assertThat(decision.allowed()).isFalse();
+    verifyNoInteractions(guard);
+  }
+
+  @Test
   void backpressureQueueDepthReturnsRateLimitedBeforeGuard() {
     RuntimeControlProperties properties = new RuntimeControlProperties();
     properties.setDefaultBackpressureQueueDepth(2);
