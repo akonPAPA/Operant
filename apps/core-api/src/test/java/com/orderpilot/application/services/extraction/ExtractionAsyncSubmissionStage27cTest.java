@@ -26,15 +26,20 @@ import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeQuotaExceededException;
 import com.orderpilot.application.services.runtime.RuntimeRateLimitedException;
 import com.orderpilot.application.services.runtime.RuntimeWorkloadType;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.extraction.ExtractionRunRepository;
 import com.orderpilot.domain.intake.ChannelMessage;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
+import com.orderpilot.domain.usage.UsageEvent;
+import com.orderpilot.domain.usage.UsageEventRepository;
+import com.orderpilot.domain.usage.UsageEventType;
 import com.orderpilot.domain.usage.UsageMetricType;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -75,6 +80,7 @@ import org.springframework.test.context.ActiveProfiles;
   MockDocumentTextExtractionProvider.class,
   PromptInjectionGuardService.class,
   AuditEventService.class,
+  UsageMeterService.class,
   JsonSupport.class,
   CoreConfiguration.class,
   ExtractionAsyncSubmissionStage27cTest.JacksonTestConfig.class
@@ -85,6 +91,7 @@ class ExtractionAsyncSubmissionStage27cTest {
   @Autowired private ProcessingJobRepository jobRepository;
   @Autowired private ExtractionRunRepository runRepository;
   @Autowired private ExtractionResultRepository resultRepository;
+  @Autowired private UsageEventRepository usageEventRepository;
   @MockBean private RuntimeControlService runtimeControlService;
 
   @TestConfiguration
@@ -155,6 +162,11 @@ class ExtractionAsyncSubmissionStage27cTest {
     assertThat(resultRepository.count()).isEqualTo(resultsBefore);
     // Safe acknowledgement only — no raw customer text leaks into the response.
     assertThat(response.message()).doesNotContain("Acme").doesNotContain("SKU-001");
+    UsageEvent evidence = onlyRuntimeEvidence(tenantId);
+    assertThat(evidence.getEventType()).isEqualTo(UsageEventType.RUNTIME_CONTROL_DECISION);
+    assertThat(evidence.getUnits()).isEqualTo(1L);
+    assertThat(evidence.getMetadataJson()).contains("\"outcome\":\"ALLOW_ASYNC\"");
+    assertThat(evidence.getMetadataJson()).contains("\"downstreamInvoked\":true");
   }
 
   // ----------------------------- B. internal/worker execution still produces the run -----------------------------
@@ -190,6 +202,26 @@ class ExtractionAsyncSubmissionStage27cTest {
     assertDenialEnqueuesNoJob("msg-quota",
         new RuntimeQuotaExceededException(deniedGuard(403, RuntimeGuardReasonCodes.QUOTA_LIMIT_EXCEEDED)),
         RuntimeQuotaExceededException.class);
+  }
+
+  @Test
+  void quotaDenialRecordsSafeEvidenceAndEnqueuesNoJob() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelMessage message = newMessage(tenantId, "msg-quota-evidence");
+    when(runtimeControlService.enforce(any()))
+        .thenThrow(new RuntimeQuotaExceededException(deniedGuard(403, RuntimeGuardReasonCodes.QUOTA_LIMIT_EXCEEDED)));
+    long jobsBefore = jobRepository.count();
+
+    assertThatThrownBy(() -> pipelineService.submitForExtraction(request(message)))
+        .isInstanceOf(RuntimeQuotaExceededException.class);
+
+    assertThat(jobRepository.count()).isEqualTo(jobsBefore);
+    UsageEvent evidence = onlyRuntimeEvidence(tenantId);
+    assertThat(evidence.getUnits()).isZero();
+    assertThat(evidence.getMetadataJson()).contains("\"outcome\":\"QUOTA_EXCEEDED\"");
+    assertThat(evidence.getMetadataJson()).contains("\"rejectedCostUnits\":1");
+    assertThat(evidence.getMetadataJson()).contains("\"downstreamInvoked\":false");
   }
 
   @Test
@@ -229,6 +261,7 @@ class ExtractionAsyncSubmissionStage27cTest {
     assertThat(jobRepository.count()).isEqualTo(jobsBefore + 1);
     assertThat(second.jobId()).isEqualTo(first.jobId());
     assertThat(runRepository.count()).isZero();
+    assertThat(runtimeEvidence(tenantId)).hasSize(1);
   }
 
   // ----------------------------- E. review/unsupported fail-close, no job -----------------------------
@@ -241,6 +274,25 @@ class ExtractionAsyncSubmissionStage27cTest {
   @Test
   void unsupportedDecisionFailClosesAndEnqueuesNoJob() {
     assertNonAllowEnqueuesNoJob("msg-unsupported", RuntimeControlOutcome.UNSUPPORTED, "Workload could not be classified.");
+  }
+
+  @Test
+  void aiDisabledDecisionRecordsSafeEvidenceAndEnqueuesNoJob() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelMessage msg = newMessage(tenantId, "msg-ai-disabled");
+    when(runtimeControlService.enforce(any()))
+        .thenReturn(nonAllow(tenantId, RuntimeControlOutcome.DISABLED, "Denied; AI runtime work is disabled."));
+    long jobsBefore = jobRepository.count();
+
+    assertThatThrownBy(() -> pipelineService.submitForExtraction(request(msg)))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThat(jobRepository.count()).isEqualTo(jobsBefore);
+    UsageEvent evidence = onlyRuntimeEvidence(tenantId);
+    assertThat(evidence.getUnits()).isZero();
+    assertThat(evidence.getMetadataJson()).contains("\"outcome\":\"DISABLED\"");
+    assertThat(evidence.getMetadataJson()).contains("\"downstreamInvoked\":false");
   }
 
   private void assertNonAllowEnqueuesNoJob(String ext, RuntimeControlOutcome outcome, String message) {
@@ -299,5 +351,18 @@ class ExtractionAsyncSubmissionStage27cTest {
     assertThat(sent.featureType()).isEqualTo(RuntimeFeatureType.AI_DOCUMENT_EXTRACTION);
     assertThat(sent.requestedUnits()).isGreaterThanOrEqualTo(0L);
     assertThat(response.message()).doesNotContain("client-selected-expensive-provider");
+  }
+
+  private UsageEvent onlyRuntimeEvidence(UUID tenantId) {
+    List<UsageEvent> evidence = runtimeEvidence(tenantId);
+    assertThat(evidence).hasSize(1);
+    return evidence.get(0);
+  }
+
+  private List<UsageEvent> runtimeEvidence(UUID tenantId) {
+    return usageEventRepository.findAll().stream()
+        .filter(e -> tenantId.equals(e.getTenantId()))
+        .filter(e -> e.getEventType() == UsageEventType.RUNTIME_CONTROL_DECISION)
+        .toList();
   }
 }

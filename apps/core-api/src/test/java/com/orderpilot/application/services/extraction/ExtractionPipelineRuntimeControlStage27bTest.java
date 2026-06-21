@@ -23,6 +23,7 @@ import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeGuardReasonCodes;
 import com.orderpilot.application.services.runtime.RuntimeQuotaExceededException;
 import com.orderpilot.application.services.runtime.RuntimeRateLimitedException;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.extraction.ExtractionRunRepository;
@@ -71,6 +72,7 @@ import org.springframework.test.context.ActiveProfiles;
   MockDocumentTextExtractionProvider.class,
   PromptInjectionGuardService.class,
   AuditEventService.class,
+  UsageMeterService.class,
   JsonSupport.class,
   CoreConfiguration.class,
   ExtractionPipelineRuntimeControlStage27bTest.JacksonTestConfig.class

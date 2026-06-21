@@ -10,13 +10,17 @@ import com.orderpilot.application.services.runtime.RuntimeControlDecision;
 import com.orderpilot.application.services.runtime.RuntimeControlRequest;
 import com.orderpilot.application.services.runtime.RuntimeControlService;
 import com.orderpilot.application.services.runtime.RuntimeFeatureType;
+import com.orderpilot.application.services.runtime.RuntimeGuardReasonCodes;
 import com.orderpilot.application.services.runtime.RuntimeOperationType;
+import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
+import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.*;
 import com.orderpilot.domain.intake.InboundDocumentRepository;
 import com.orderpilot.domain.intake.ProcessingJob;
+import com.orderpilot.domain.usage.UsageSource;
 import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -24,8 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExtractionPipelineService implements AiUnderstandingPipeline {
-  private final ExtractionRunService runService; private final TextExtractionService textService; private final SemanticExtractionService semanticService; private final AuditEventService auditEventService; private final SemanticExtractionProvider provider; private final RuntimeControlService runtimeControlService; private final ProcessingJobService processingJobService; private final RuntimeUnitEstimator runtimeUnitEstimator; private final InboundDocumentRepository inboundDocumentRepository; private final Clock clock;
-  public ExtractionPipelineService(ExtractionRunService runService, TextExtractionService textService, SemanticExtractionService semanticService, AuditEventService auditEventService, SemanticExtractionProvider provider, RuntimeControlService runtimeControlService, ProcessingJobService processingJobService, RuntimeUnitEstimator runtimeUnitEstimator, InboundDocumentRepository inboundDocumentRepository, Clock clock){this.runService=runService; this.textService=textService; this.semanticService=semanticService; this.auditEventService=auditEventService; this.provider=provider; this.runtimeControlService=runtimeControlService; this.processingJobService=processingJobService; this.runtimeUnitEstimator=runtimeUnitEstimator; this.inboundDocumentRepository=inboundDocumentRepository; this.clock=clock;}
+  private final ExtractionRunService runService; private final TextExtractionService textService; private final SemanticExtractionService semanticService; private final AuditEventService auditEventService; private final SemanticExtractionProvider provider; private final RuntimeControlService runtimeControlService; private final ProcessingJobService processingJobService; private final RuntimeUnitEstimator runtimeUnitEstimator; private final InboundDocumentRepository inboundDocumentRepository; private final UsageMeterService usageMeterService; private final Clock clock;
+  public ExtractionPipelineService(ExtractionRunService runService, TextExtractionService textService, SemanticExtractionService semanticService, AuditEventService auditEventService, SemanticExtractionProvider provider, RuntimeControlService runtimeControlService, ProcessingJobService processingJobService, RuntimeUnitEstimator runtimeUnitEstimator, InboundDocumentRepository inboundDocumentRepository, UsageMeterService usageMeterService, Clock clock){this.runService=runService; this.textService=textService; this.semanticService=semanticService; this.auditEventService=auditEventService; this.provider=provider; this.runtimeControlService=runtimeControlService; this.processingJobService=processingJobService; this.runtimeUnitEstimator=runtimeUnitEstimator; this.inboundDocumentRepository=inboundDocumentRepository; this.usageMeterService=usageMeterService; this.clock=clock;}
 
   /**
    * OP-CAP-27c — the async document-extraction submission boundary. Runs the OP-CAP-27 runtime-control
@@ -49,17 +53,16 @@ public class ExtractionPipelineService implements AiUnderstandingPipeline {
     int requestedUnits =
         runtimeUnitEstimator.estimate(
             RuntimeUnitEstimateRequest.forDocumentExtraction(tenantId, null, knownSizeBytes, null));
-    RuntimeControlDecision decision = runtimeControlService.enforce(
-        new RuntimeControlRequest(
-            tenantId, null, RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
-            RuntimeFeatureType.AI_DOCUMENT_EXTRACTION, documentExtractionWorkload(),
-            requestedUnits, null, false));
+    RuntimeControlRequest controlRequest = extractionControlRequest(tenantId, requestedUnits);
+    RuntimeControlDecision decision = enforceWithEvidence(controlRequest, request);
     if (!decision.allowed()) {
       // needs-review / unsupported / duplicate: enqueue nothing and do no work. Safe message only.
+      recordDecisionEvidence(controlRequest, request, decision, false);
       throw new IllegalArgumentException(decision.safeMessage());
     }
     ProcessingJob job = processingJobService.enqueue(
         tenantId, "DOCUMENT_EXTRACTION", request.sourceType(), request.sourceId());
+    recordAccepted(controlRequest, request, decision);
     auditEventService.record("extraction.submitted_async", "processing_job", job.getId().toString(), null,
         "{\"sourceType\":\"" + request.sourceType() + "\",\"async\":true,\"advisoryOnly\":true}");
     return new ExtractionSubmissionResponse(job.getId(), job.getJobType(), job.getTargetType(),
@@ -90,17 +93,16 @@ public class ExtractionPipelineService implements AiUnderstandingPipeline {
     // server-side; actorId is null here because this is a trusted internal/system pipeline call. The
     // estimator-derived requestedUnits are passed through so quota math is unchanged. No raw document
     // content is read for the decision.
-    RuntimeControlDecision decision = runtimeControlService.enforce(
-        new RuntimeControlRequest(
-            tenantId, null, RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
-            RuntimeFeatureType.AI_DOCUMENT_EXTRACTION, documentExtractionWorkload(),
-            requestedUnits, null, false));
+    RuntimeControlRequest controlRequest = extractionControlRequest(tenantId, requestedUnits);
+    RuntimeControlDecision decision = enforceWithEvidence(controlRequest, request);
     if (!decision.allowed()) {
       // Unsupported / needs-review / duplicate: do no work and create no run. Safe message only.
+      recordDecisionEvidence(controlRequest, request, decision, false);
       throw new IllegalArgumentException(decision.safeMessage());
     }
 
     ExtractionRun run = runService.create(request, provider.providerName(), provider.schemaVersion());
+    recordAccepted(controlRequest, request, decision);
     try {
       run.markRunning(clock.instant());
       ExtractedDocumentText text = textService.extractAndStore(run);
@@ -130,6 +132,70 @@ public class ExtractionPipelineService implements AiUnderstandingPipeline {
    */
   private static AiWorkloadClassificationRequest documentExtractionWorkload() {
     return new AiWorkloadClassificationRequest(AiWorkloadType.DOCUMENT_EXTRACTION, null, 0, 1, false, false);
+  }
+
+  private static RuntimeControlRequest extractionControlRequest(UUID tenantId, int requestedUnits) {
+    return new RuntimeControlRequest(
+        tenantId, null, RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
+        RuntimeFeatureType.AI_DOCUMENT_EXTRACTION, documentExtractionWorkload(),
+        requestedUnits, null, false);
+  }
+
+  private RuntimeControlDecision enforceWithEvidence(
+      RuntimeControlRequest controlRequest, ExtractionRunRequest request) {
+    try {
+      return runtimeControlService.enforce(controlRequest);
+    } catch (RuntimeLimitException ex) {
+      recordDecisionEvidence(controlRequest, request, fromLimitException(controlRequest, ex), false);
+      throw ex;
+    }
+  }
+
+  private void recordAccepted(
+      RuntimeControlRequest controlRequest, ExtractionRunRequest request, RuntimeControlDecision decision) {
+    usageMeterService.recordRuntimeControlDecision(
+        controlRequest, decision, UsageSource.EXTRACTION_PIPELINE, sourceRef(request),
+        acceptedMeteringKey(request), true);
+  }
+
+  private void recordDecisionEvidence(
+      RuntimeControlRequest controlRequest,
+      ExtractionRunRequest request,
+      RuntimeControlDecision decision,
+      boolean downstreamInvoked) {
+    usageMeterService.recordRuntimeControlDecisionEvidence(
+        controlRequest, decision, UsageSource.EXTRACTION_PIPELINE, sourceRef(request), null,
+        downstreamInvoked);
+  }
+
+  private static RuntimeControlDecision fromLimitException(
+      RuntimeControlRequest request, RuntimeLimitException ex) {
+    var guard = ex.getDecision();
+    String reason = guard == null ? "runtime_control_denied" : guard.reasonCode();
+    var outcome = com.orderpilot.application.services.runtime.RuntimeControlOutcome.QUOTA_EXCEEDED;
+    if (RuntimeGuardReasonCodes.RATE_LIMIT_EXCEEDED.equals(reason)) {
+      outcome = com.orderpilot.application.services.runtime.RuntimeControlOutcome.RATE_LIMITED;
+    } else if (RuntimeGuardReasonCodes.isFeatureDenial(reason)) {
+      outcome = com.orderpilot.application.services.runtime.RuntimeControlOutcome.DISABLED;
+    }
+    return new RuntimeControlDecision(
+        outcome, reason, AiWorkloadType.DOCUMENT_EXTRACTION,
+        com.orderpilot.application.services.runtime.ModelTier.NONE, request.tenantId(), request.actorId(),
+        request.actorId() == null, request.idempotencyKey(), false, false, false, false,
+        (int) Math.min(Integer.MAX_VALUE, Math.max(0L, request.requestedUnits())),
+        ex.getHttpStatus(), ex.getRetryAfterSeconds(), ex.getMessage());
+  }
+
+  private static String sourceRef(ExtractionRunRequest request) {
+    return request == null || request.sourceId() == null
+        ? "DOCUMENT_EXTRACTION"
+        : "DOCUMENT_EXTRACTION:" + request.sourceId();
+  }
+
+  private static String acceptedMeteringKey(ExtractionRunRequest request) {
+    return request == null || request.sourceId() == null
+        ? null
+        : "runtime-control:document-extraction:" + request.sourceId();
   }
 
   /**

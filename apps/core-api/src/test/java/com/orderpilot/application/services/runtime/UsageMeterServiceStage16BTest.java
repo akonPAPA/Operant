@@ -321,6 +321,166 @@ class UsageMeterServiceStage16BTest {
     assertThat(first.periodKey()).isNotBlank();
   }
 
+  @Test
+  void allowedRuntimeControlDecisionRecordsConsumedUsage() {
+    UUID tenantId = UUID.randomUUID();
+    RuntimeControlRequest request = runtimeRequest(tenantId, 7L);
+    RuntimeControlDecision decision =
+        runtimeDecision(tenantId, RuntimeControlOutcome.ALLOW_ASYNC, RuntimeGuardReasonCodes.ALLOWED, true, 7);
+
+    UsageRecordingResult result =
+        service.recordRuntimeControlDecision(
+            request, decision, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:source-1",
+            "runtime-accepted-1", true);
+
+    assertThat(result.unitsRecorded()).isEqualTo(7L);
+    UsageEvent event = usageEventRepository.findById(result.eventId()).orElseThrow();
+    assertThat(event.getEventType()).isEqualTo(UsageEventType.RUNTIME_CONTROL_DECISION);
+    assertThat(event.getUnits()).isEqualTo(7L);
+    assertThat(event.getMetadataJson()).contains("\"outcome\":\"ALLOW_ASYNC\"");
+    assertThat(event.getMetadataJson()).contains("\"consumedCostUnits\":7");
+    assertThat(event.getMetadataJson()).contains("\"downstreamInvoked\":true");
+  }
+
+  @Test
+  void quotaExceededRuntimeControlDecisionRecordsRejectedEvidenceWithoutCounterIncrement() {
+    UUID tenantId = UUID.randomUUID();
+    RuntimeControlRequest request = runtimeRequest(tenantId, 9L);
+    RuntimeControlDecision decision =
+        runtimeDecision(
+            tenantId, RuntimeControlOutcome.QUOTA_EXCEEDED,
+            RuntimeControlReasonCodes.REQUEST_COST_LIMIT_EXCEEDED, false, 9);
+
+    UsageRecordingResult result =
+        service.recordRuntimeControlDecisionEvidence(
+            request, decision, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:source-2",
+            null, false);
+
+    assertThat(result.unitsRecorded()).isZero();
+    assertThat(result.counterUnitsUsed()).isZero();
+    UsageEvent event = usageEventRepository.findById(result.eventId()).orElseThrow();
+    assertThat(event.getUnits()).isZero();
+    assertThat(event.getMetadataJson()).contains("\"outcome\":\"QUOTA_EXCEEDED\"");
+    assertThat(event.getMetadataJson()).contains("\"rejectedCostUnits\":9");
+    assertThat(event.getMetadataJson()).contains("\"downstreamInvoked\":false");
+  }
+
+  @Test
+  void rateLimitedRuntimeControlDecisionRecordsRejectedEvidence() {
+    UUID tenantId = UUID.randomUUID();
+    RuntimeControlRequest request = runtimeRequest(tenantId, 3L);
+    RuntimeControlDecision decision =
+        runtimeDecision(
+            tenantId, RuntimeControlOutcome.RATE_LIMITED,
+            RuntimeControlReasonCodes.BACKPRESSURE_QUEUE_DEPTH_EXCEEDED, false, 3);
+
+    UsageRecordingResult result =
+        service.recordRuntimeControlDecisionEvidence(
+            request, decision, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:source-3",
+            null, false);
+
+    UsageEvent event = usageEventRepository.findById(result.eventId()).orElseThrow();
+    assertThat(result.unitsRecorded()).isZero();
+    assertThat(event.getMetadataJson()).contains("\"outcome\":\"RATE_LIMITED\"");
+    assertThat(event.getMetadataJson()).contains("\"rejectedCostUnits\":3");
+  }
+
+  @Test
+  void asyncRoutedRuntimeControlDecisionIsConsumedNotDenied() {
+    UUID tenantId = UUID.randomUUID();
+    RuntimeControlRequest request = runtimeRequest(tenantId, 5L);
+    RuntimeControlDecision decision =
+        runtimeDecision(tenantId, RuntimeControlOutcome.ALLOW_ASYNC, RuntimeGuardReasonCodes.ALLOWED, true, 5);
+
+    UsageRecordingResult result =
+        service.recordRuntimeControlDecision(
+            request, decision, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:source-4",
+            "runtime-async-1", true);
+
+    UsageEvent event = usageEventRepository.findById(result.eventId()).orElseThrow();
+    assertThat(result.unitsRecorded()).isEqualTo(5L);
+    assertThat(event.getMetadataJson()).contains("\"resolvedExecutionMode\":\"ASYNC\"");
+    assertThat(event.getMetadataJson()).contains("\"rejectedCostUnits\":0");
+  }
+
+  @Test
+  void duplicateRuntimeControlMeteringKeyDoesNotDoubleCountConsumedCost() {
+    UUID tenantId = UUID.randomUUID();
+    RuntimeControlRequest request = runtimeRequest(tenantId, 11L);
+    RuntimeControlDecision allowed =
+        runtimeDecision(tenantId, RuntimeControlOutcome.ALLOW_ASYNC, RuntimeGuardReasonCodes.ALLOWED, true, 11);
+    RuntimeControlDecision deduped =
+        runtimeDecision(
+            tenantId, RuntimeControlOutcome.DEDUPED,
+            RuntimeControlReasonCodes.DEDUP_IDEMPOTENT_HIT, false, 11);
+
+    UsageRecordingResult first =
+        service.recordRuntimeControlDecision(
+            request, allowed, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:source-5",
+            "runtime-dedup-1", true);
+    UsageRecordingResult second =
+        service.recordRuntimeControlDecision(
+            request, deduped, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:source-5",
+            "runtime-dedup-1", false);
+
+    assertThat(first.unitsRecorded()).isEqualTo(11L);
+    assertThat(second.deduplicated()).isTrue();
+    assertThat(second.unitsRecorded()).isZero();
+    assertThat(second.counterUnitsUsed()).isEqualTo(11L);
+    assertThat(usageEventRepository.countByTenantIdAndMetricType(tenantId, UsageMetricType.AI_INPUT_UNITS))
+        .isEqualTo(1);
+  }
+
+  // OP-CAP-41C: a runtime-control decision whose tenant does not match the request tenant is
+  // rejected before any usage row or counter is written — runtime evidence cannot be metered against
+  // the wrong tenant (tenant-scope guard in recordRuntimeControlDecisionInternal).
+  @Test
+  void runtimeControlDecisionTenantMismatchIsRejectedAndRecordsNoUsage() {
+    UUID requestTenant = UUID.randomUUID();
+    UUID otherTenant = UUID.randomUUID();
+    RuntimeControlRequest request = runtimeRequest(requestTenant, 7L);
+    RuntimeControlDecision foreignDecision =
+        runtimeDecision(otherTenant, RuntimeControlOutcome.ALLOW_ASYNC, RuntimeGuardReasonCodes.ALLOWED, true, 7);
+
+    assertThatThrownBy(
+            () ->
+                service.recordRuntimeControlDecision(
+                    request, foreignDecision, UsageSource.EXTRACTION_PIPELINE,
+                    "DOCUMENT_EXTRACTION:cross-tenant", "runtime-cross-tenant-1", true))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("tenant");
+
+    // No evidence event nor counter is written for either tenant.
+    assertThat(usageEventRepository.countByTenantId(requestTenant)).isZero();
+    assertThat(usageEventRepository.countByTenantId(otherTenant)).isZero();
+    assertThat(service.checkQuota(requestTenant, UsageMetricType.AI_INPUT_UNITS, 0L).usedUnits())
+        .isZero();
+    assertThat(service.checkQuota(otherTenant, UsageMetricType.AI_INPUT_UNITS, 0L).usedUnits())
+        .isZero();
+  }
+
+  // OP-CAP-41C: consumed runtime-control usage for tenant A never lands on tenant B's counter, even
+  // for the RUNTIME_CONTROL_DECISION metric path (cross-tenant runtime evidence isolation).
+  @Test
+  void runtimeControlConsumedUsageIsTenantScoped() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    RuntimeControlRequest requestA = runtimeRequest(tenantA, 13L);
+    RuntimeControlDecision allowedA =
+        runtimeDecision(tenantA, RuntimeControlOutcome.ALLOW_ASYNC, RuntimeGuardReasonCodes.ALLOWED, true, 13);
+
+    UsageRecordingResult result =
+        service.recordRuntimeControlDecision(
+            requestA, allowedA, UsageSource.EXTRACTION_PIPELINE, "DOCUMENT_EXTRACTION:tenant-a",
+            "runtime-tenant-a-1", true);
+
+    assertThat(result.unitsRecorded()).isEqualTo(13L);
+    assertThat(usageEventRepository.countByTenantId(tenantA)).isEqualTo(1);
+    assertThat(usageEventRepository.countByTenantId(tenantB)).isZero();
+    assertThat(service.checkQuota(tenantB, result.metricType(), 0L).usedUnits()).isZero();
+    assertThat(service.checkQuota(tenantA, result.metricType(), 0L).usedUnits()).isEqualTo(13L);
+  }
+
   private void seedPolicy(UUID tenantId, long limit) {
     quotaPolicyRepository.save(
         new QuotaPolicy(
@@ -348,5 +508,45 @@ class UsageMeterServiceStage16BTest {
         null,
         idempotencyKey,
         UsagePeriodType.MONTH);
+  }
+
+  private RuntimeControlRequest runtimeRequest(UUID tenantId, long requestedUnits) {
+    return new RuntimeControlRequest(
+        tenantId,
+        null,
+        RuntimeWorkloadType.AI_EXTRACTION,
+        RuntimeExecutionMode.SYNC,
+        RuntimeOperationType.AI_DOCUMENT_EXTRACTION,
+        RuntimeFeatureType.AI_DOCUMENT_EXTRACTION,
+        new AiWorkloadClassificationRequest(AiWorkloadType.DOCUMENT_EXTRACTION, null, 0, 1, false, false),
+        requestedUnits,
+        null,
+        false,
+        0);
+  }
+
+  private RuntimeControlDecision runtimeDecision(
+      UUID tenantId,
+      RuntimeControlOutcome outcome,
+      String reasonCode,
+      boolean asyncRequired,
+      int estimatedUnits) {
+    return new RuntimeControlDecision(
+        outcome,
+        reasonCode,
+        AiWorkloadType.DOCUMENT_EXTRACTION,
+        asyncRequired ? ModelTier.MEDIUM : ModelTier.NONE,
+        tenantId,
+        null,
+        true,
+        null,
+        false,
+        false,
+        asyncRequired,
+        false,
+        estimatedUnits,
+        outcome.allowed() ? 200 : 403,
+        0L,
+        "safe runtime decision");
   }
 }

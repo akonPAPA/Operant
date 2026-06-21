@@ -8,6 +8,8 @@ package com.orderpilot.domain.usage;
 public enum UsageEventType {
   /** A deterministic AI routing decision was produced (see Stage 16A {@code AiRoutingDecision}). */
   AI_ROUTING_DECISION,
+  /** A runtime-control admission decision was recorded as safe evidence. */
+  RUNTIME_CONTROL_DECISION,
   /** AI/heavy-worker input units were consumed for a workload. */
   AI_INPUT_CONSUMED,
   /** An inbound document was accepted for processing. */
