@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orderpilot.api.rest.HealthController;
+import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 })
 @Import({
     CoreConfiguration.class,
+    GlobalExceptionHandler.class,
     ApiSecurityWebConfig.class,
     ApiRouteSecurityPolicy.class,
     ApiPermissionGuard.class,
@@ -52,15 +54,30 @@ class ApiSecurityWebConfigTest {
   }
 
   @Test
-  void protectedBusinessRouteAllowsCurrentGatewayAuthenticatedRequest() throws Exception {
+  void gatewayHeaderAuthAllowsRequiredPermissionOnlyInTrustedTestMode() throws Exception {
     mockMvc.perform(get("/api/v1/operator-review/security-baseline/business")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("protected"));
+
+    mockMvc.perform(get("/api/v1/operator-review/security-baseline/business")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ANALYTICS_READ"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
+        .andExpect(jsonPath("$.message").value("Missing required API permission REVIEW_READ"));
   }
 
   @Test
-  void unknownApiRouteIsNotPublic() throws Exception {
+  void protectedApiRouteWithoutPermissionReturnsForbidden() throws Exception {
+    mockMvc.perform(get("/api/v1/operator-review/security-baseline/business")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
+        .andExpect(jsonPath("$.message").value("Missing required API permission REVIEW_READ"));
+  }
+
+  @Test
+  void unknownApiRouteIsDeniedByDefault() throws Exception {
     mockMvc.perform(get("/api/v1/security-probe"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));

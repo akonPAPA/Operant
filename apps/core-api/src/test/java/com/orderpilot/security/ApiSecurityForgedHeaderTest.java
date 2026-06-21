@@ -22,10 +22,11 @@ class ApiSecurityForgedHeaderTest {
   @Autowired private MockMvc mockMvc;
 
   @Test
-  void forgedTenantAndActorHeadersDoNotAuthenticateBusinessApiRequest() throws Exception {
+  void forgedGatewayHeadersDoNotAuthenticateWhenGatewayHeaderAuthDisabled() throws Exception {
     mockMvc.perform(get("/api/v1/security-baseline/forged-headers")
             .header("X-Tenant-Id", UUID.randomUUID().toString())
             .header(RequestActorResolver.ACTOR_HEADER, UUID.randomUUID().toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_READ")
             .header(RequestActorResolver.SIGNATURE_HEADER, "forged")
             .header(RequestActorResolver.TIMESTAMP_HEADER, "2026-06-21T00:00:00Z"))
         .andExpect(status().isUnauthorized())
@@ -33,7 +34,7 @@ class ApiSecurityForgedHeaderTest {
   }
 
   @Test
-  void forgedPermissionHeaderDoesNotAuthenticateBusinessApiRequestWhenGatewayHeaderAuthIsDisabled() throws Exception {
+  void gatewayHeaderAuthRequiresExplicitOptIn() throws Exception {
     mockMvc.perform(get("/api/v1/security-baseline/forged-headers")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_READ"))
         .andExpect(status().isUnauthorized())
