@@ -25,6 +25,7 @@ import com.orderpilot.application.services.runtime.RuntimeGuardReasonCodes;
 import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeQuotaExceededException;
 import com.orderpilot.application.services.runtime.RuntimeRateLimitedException;
+import com.orderpilot.application.services.runtime.RuntimeWorkloadType;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.extraction.ExtractionRunRepository;
@@ -234,7 +235,7 @@ class ExtractionAsyncSubmissionStage27cTest {
 
   @Test
   void needsReviewDecisionFailClosesAndEnqueuesNoJob() {
-    assertNonAllowEnqueuesNoJob("msg-review", RuntimeControlOutcome.NEEDS_REVIEW, "Workload routed to human review.");
+    assertNonAllowEnqueuesNoJob("msg-review", RuntimeControlOutcome.REQUIRES_REVIEW, "Workload routed to human review.");
   }
 
   @Test
@@ -275,5 +276,28 @@ class ExtractionAsyncSubmissionStage27cTest {
     assertThat(sent.operationType()).isEqualTo(RuntimeOperationType.AI_DOCUMENT_EXTRACTION);
     assertThat(sent.featureType()).isEqualTo(RuntimeFeatureType.AI_DOCUMENT_EXTRACTION);
     assertThat(sent.classification().requestedType()).isEqualTo(AiWorkloadType.DOCUMENT_EXTRACTION);
+  }
+
+  @Test
+  void clientProviderRuntimeFieldsDoNotControlAdmissionDecision() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelMessage message = newMessage(tenantId, "msg-client-provider");
+    when(runtimeControlService.enforce(any())).thenReturn(allowAsync(tenantId));
+    ExtractionRunRequest spoofed = new ExtractionRunRequest(
+        "CHANNEL_MESSAGE", message.getId(), UUID.randomUUID(), "client-selected-expensive-provider");
+
+    ExtractionSubmissionResponse response = pipelineService.submitForExtraction(spoofed);
+
+    ArgumentCaptor<RuntimeControlRequest> captor = ArgumentCaptor.forClass(RuntimeControlRequest.class);
+    verify(runtimeControlService).enforce(captor.capture());
+    RuntimeControlRequest sent = captor.getValue();
+    assertThat(sent.tenantId()).isEqualTo(tenantId);
+    assertThat(sent.actorId()).isNull();
+    assertThat(sent.effectiveWorkloadType()).isEqualTo(RuntimeWorkloadType.AI_EXTRACTION);
+    assertThat(sent.operationType()).isEqualTo(RuntimeOperationType.AI_DOCUMENT_EXTRACTION);
+    assertThat(sent.featureType()).isEqualTo(RuntimeFeatureType.AI_DOCUMENT_EXTRACTION);
+    assertThat(sent.requestedUnits()).isGreaterThanOrEqualTo(0L);
+    assertThat(response.message()).doesNotContain("client-selected-expensive-provider");
   }
 }

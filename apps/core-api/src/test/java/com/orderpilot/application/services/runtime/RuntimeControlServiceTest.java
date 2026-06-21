@@ -110,7 +110,7 @@ class RuntimeControlServiceTest {
 
     RuntimeControlDecision decision = service.decide(controlOf(smallKnown("ok")));
 
-    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.DENY_QUOTA);
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.QUOTA_EXCEEDED);
     assertThat(decision.allowed()).isFalse();
     assertThat(decision.providerAllowed()).isFalse();
     assertThat(decision.httpStatusHint()).isEqualTo(403);
@@ -124,7 +124,7 @@ class RuntimeControlServiceTest {
 
     RuntimeControlDecision decision = service.decide(controlOf(smallKnown("ok")));
 
-    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.DENY_ENTITLEMENT);
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.DISABLED);
     assertThat(decision.httpStatusHint()).isEqualTo(403);
     assertThat(decision.providerAllowed()).isFalse();
   }
@@ -135,7 +135,7 @@ class RuntimeControlServiceTest {
 
     RuntimeControlDecision decision = service.decide(controlOf(smallKnown("ok")));
 
-    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.DENY_RATE_LIMIT);
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.RATE_LIMITED);
     assertThat(decision.httpStatusHint()).isEqualTo(429);
     assertThat(decision.retryAfterSeconds()).isEqualTo(30L);
   }
@@ -164,7 +164,7 @@ class RuntimeControlServiceTest {
 
     RuntimeControlDecision decision = service.decide(request);
 
-    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.NEEDS_REVIEW);
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.REQUIRES_REVIEW);
     assertThat(decision.humanReviewRequired()).isTrue();
     assertThat(decision.providerAllowed()).isFalse();
     verifyNoInteractions(guard);
@@ -185,6 +185,80 @@ class RuntimeControlServiceTest {
     assertThat(decision.providerAllowed()).isFalse();
     assertThat(decision.idempotencyKey()).isEqualTo("idem-1");
     verify(guard, never()).checkRuntimeGuard(any(), any());
+  }
+
+  // ----------------------------- OP-CAP-41: bounded config gates -----------------------------
+
+  @Test
+  void costAbovePerRequestMaxReturnsQuotaExceededBeforeGuard() {
+    RuntimeControlProperties properties = new RuntimeControlProperties();
+    properties.setDefaultMaxCostUnitsPerRequest(5L);
+    RuntimeControlService capped = new RuntimeControlService(classifier, guard, properties);
+    RuntimeControlRequest request = new RuntimeControlRequest(TENANT, ACTOR,
+        RuntimeWorkloadType.AI_VALIDATION_ASSIST, RuntimeExecutionMode.SYNC,
+        RuntimeOperationType.AI_VALIDATION_EXPLANATION, RuntimeFeatureType.AI_VALIDATION_EXPLANATION,
+        smallKnown("ok"), 6L, null, false, 0);
+
+    RuntimeControlDecision decision = capped.decide(request);
+
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.QUOTA_EXCEEDED);
+    assertThat(decision.reasonCode()).isEqualTo(RuntimeControlReasonCodes.REQUEST_COST_LIMIT_EXCEEDED);
+    assertThat(decision.allowed()).isFalse();
+    verifyNoInteractions(guard);
+  }
+
+  @Test
+  void syncRequestAboveSyncThresholdBecomesAllowAsync() {
+    RuntimeControlProperties properties = new RuntimeControlProperties();
+    properties.setDefaultMaxSyncCostUnits(1L);
+    RuntimeControlService capped = new RuntimeControlService(classifier, guard, properties);
+    guardAllows();
+    RuntimeControlRequest request = new RuntimeControlRequest(TENANT, ACTOR,
+        RuntimeWorkloadType.AI_VALIDATION_ASSIST, RuntimeExecutionMode.SYNC,
+        RuntimeOperationType.AI_VALIDATION_EXPLANATION, RuntimeFeatureType.AI_VALIDATION_EXPLANATION,
+        smallKnown("ok"), 2L, null, false, 0);
+
+    RuntimeControlDecision decision = capped.decide(request);
+
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.ALLOW_ASYNC);
+    assertThat(decision.asyncRequired()).isTrue();
+    assertThat(decision.providerAllowed()).isFalse();
+  }
+
+  @Test
+  void aiWorkloadDisabledReturnsDisabledBeforeGuard() {
+    RuntimeControlProperties properties = new RuntimeControlProperties();
+    properties.setDefaultAiEnabled(false);
+    RuntimeControlService disabled = new RuntimeControlService(classifier, guard, properties);
+    RuntimeControlRequest request = new RuntimeControlRequest(TENANT, ACTOR,
+        RuntimeWorkloadType.AI_VALIDATION_ASSIST, RuntimeExecutionMode.SYNC,
+        RuntimeOperationType.AI_VALIDATION_EXPLANATION, RuntimeFeatureType.AI_VALIDATION_EXPLANATION,
+        smallKnown("ok"), 1L, null, false, 0);
+
+    RuntimeControlDecision decision = disabled.decide(request);
+
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.DISABLED);
+    assertThat(decision.reasonCode()).isEqualTo(RuntimeControlReasonCodes.AI_WORKLOAD_DISABLED);
+    assertThat(decision.providerAllowed()).isFalse();
+    verifyNoInteractions(guard);
+  }
+
+  @Test
+  void backpressureQueueDepthReturnsRateLimitedBeforeGuard() {
+    RuntimeControlProperties properties = new RuntimeControlProperties();
+    properties.setDefaultBackpressureQueueDepth(2);
+    RuntimeControlService pressured = new RuntimeControlService(classifier, guard, properties);
+    RuntimeControlRequest request = new RuntimeControlRequest(TENANT, ACTOR,
+        RuntimeWorkloadType.AI_VALIDATION_ASSIST, RuntimeExecutionMode.ASYNC,
+        RuntimeOperationType.AI_VALIDATION_EXPLANATION, RuntimeFeatureType.AI_VALIDATION_EXPLANATION,
+        smallKnown("ok"), 1L, null, false, 2);
+
+    RuntimeControlDecision decision = pressured.decide(request);
+
+    assertThat(decision.outcome()).isEqualTo(RuntimeControlOutcome.RATE_LIMITED);
+    assertThat(decision.reasonCode()).isEqualTo(RuntimeControlReasonCodes.BACKPRESSURE_QUEUE_DEPTH_EXCEEDED);
+    assertThat(decision.retryAfterSeconds()).isEqualTo(RetryAfterPolicy.DEFAULT_RETRY_AFTER_SECONDS);
+    verifyNoInteractions(guard);
   }
 
   // ----------------------------- Gate 6/7: system actor marker + safe message -----------------------------

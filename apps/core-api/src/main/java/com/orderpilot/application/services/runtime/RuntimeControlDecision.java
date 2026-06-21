@@ -51,4 +51,8 @@ public record RuntimeControlDecision(
   public boolean allowed() {
     return outcome != null && outcome.allowed();
   }
+
+  public RuntimeWorkloadType runtimeWorkloadType() {
+    return RuntimeWorkloadType.from(null, workloadType);
+  }
 }

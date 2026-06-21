@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.runtime;
 
 import com.orderpilot.domain.usage.UsageMath;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -37,11 +38,21 @@ import org.springframework.stereotype.Service;
 public class RuntimeControlService {
   private final AiWorkloadClassifier classifier;
   private final RuntimeGuardService runtimeGuardService;
+  private final RuntimeControlProperties properties;
 
   public RuntimeControlService(
       AiWorkloadClassifier classifier, RuntimeGuardService runtimeGuardService) {
+    this(classifier, runtimeGuardService, new RuntimeControlProperties());
+  }
+
+  @Autowired
+  public RuntimeControlService(
+      AiWorkloadClassifier classifier,
+      RuntimeGuardService runtimeGuardService,
+      RuntimeControlProperties properties) {
     this.classifier = classifier;
     this.runtimeGuardService = runtimeGuardService;
+    this.properties = properties == null ? new RuntimeControlProperties() : properties;
   }
 
   /**
@@ -64,10 +75,16 @@ public class RuntimeControlService {
       return classificationGate;
     }
 
+    long units = effectiveUnits(request, routing);
+    RuntimeControlDecision configurationGate = configurationGate(request, routing, units, systemActor);
+    if (configurationGate != null) {
+      return configurationGate;
+    }
+
     // 3. Entitlement -> quota -> rate (read-only; consumes no usage here). Classification alone never
     //    grants authority: the guard still gates an otherwise-allowable small/deterministic workload.
     RuntimeGuardDecision guard = runtimeGuardService.checkRuntimeGuard(
-        guardRequest(request, effectiveUnits(request, routing), systemActor), request.featureType());
+        guardRequest(request, units, systemActor), request.featureType());
     if (!guard.allowed()) {
       RuntimeControlOutcome outcome = mapDenial(guard.reasonCode());
       return build(outcome, guard.reasonCode(), routing, request, systemActor, false,
@@ -75,7 +92,7 @@ public class RuntimeControlService {
     }
 
     // 4. Allowed — the deterministic classifier decides whether work runs sync or must go async.
-    return allowed(routing, guard.reasonCode(), request, systemActor);
+    return allowed(routing, guard.reasonCode(), request, systemActor, promoteToAsync(request, units));
   }
 
   /**
@@ -98,11 +115,17 @@ public class RuntimeControlService {
     if (classificationGate != null) {
       return classificationGate;
     }
+    long units = effectiveUnits(request, routing);
+    RuntimeControlDecision configurationGate = configurationGate(request, routing, units, systemActor);
+    if (configurationGate != null) {
+      return configurationGate;
+    }
     // Throws RuntimeFeatureNotAvailableException (403) / RuntimeQuotaExceededException (403) /
     // RuntimeRateLimitedException (429) on denial, before any work; returns on allow.
     runtimeGuardService.enforce(
-        guardRequest(request, effectiveUnits(request, routing), systemActor), request.featureType());
-    return allowed(routing, RuntimeGuardReasonCodes.ALLOWED, request, systemActor);
+        guardRequest(request, units, systemActor), request.featureType());
+    return allowed(
+        routing, RuntimeGuardReasonCodes.ALLOWED, request, systemActor, promoteToAsync(request, units));
   }
 
   // ----------------------------- shared pipeline helpers -----------------------------
@@ -149,15 +172,48 @@ public class RuntimeControlService {
           systemActor, false, 422, 0L, "Workload could not be classified; routed to manual handling.");
     }
     if (routing.humanReviewRequired()) {
-      return build(RuntimeControlOutcome.NEEDS_REVIEW, routing.reasonCode(), routing, request,
+      return build(RuntimeControlOutcome.REQUIRES_REVIEW, routing.reasonCode(), routing, request,
           systemActor, false, 200, 0L, "Workload routed to human review.");
     }
     return null;
   }
 
+  private RuntimeControlDecision configurationGate(
+      RuntimeControlRequest request, AiRoutingDecision routing, long units, boolean systemActor) {
+    RuntimeWorkloadType workloadType = request.effectiveWorkloadType();
+    if (!properties.isEnabled()) {
+      return build(RuntimeControlOutcome.DISABLED, RuntimeControlReasonCodes.RUNTIME_CONTROL_DISABLED,
+          routing, request, systemActor, false, 403, 0L,
+          "Denied; runtime control is disabled for this environment.");
+    }
+    if (workloadType.aiBacked() && !properties.isDefaultAiEnabled()) {
+      return build(RuntimeControlOutcome.DISABLED, RuntimeControlReasonCodes.AI_WORKLOAD_DISABLED,
+          routing, request, systemActor, false, 403, 0L,
+          "Denied; AI runtime work is disabled for the tenant.");
+    }
+    if (units > properties.getDefaultMaxCostUnitsPerRequest()) {
+      return build(RuntimeControlOutcome.QUOTA_EXCEEDED,
+          RuntimeControlReasonCodes.REQUEST_COST_LIMIT_EXCEEDED, routing, request, systemActor,
+          false, 403, 0L, "Denied; requested runtime cost exceeds the per-request limit.");
+    }
+    int maxDepth = properties.getDefaultBackpressureQueueDepth();
+    if (maxDepth > 0 && request.currentQueueDepth() >= maxDepth) {
+      return build(RuntimeControlOutcome.RATE_LIMITED,
+          RuntimeControlReasonCodes.BACKPRESSURE_QUEUE_DEPTH_EXCEEDED, routing, request,
+          systemActor, false, 429, RetryAfterPolicy.DEFAULT_RETRY_AFTER_SECONDS,
+          "Denied; runtime queue backpressure is active.");
+    }
+    return null;
+  }
+
   private static RuntimeControlDecision allowed(
-      AiRoutingDecision routing, String reasonCode, RuntimeControlRequest request, boolean systemActor) {
-    boolean async = routing.asyncRequired();
+      AiRoutingDecision routing,
+      String reasonCode,
+      RuntimeControlRequest request,
+      boolean systemActor,
+      boolean forceAsync) {
+    boolean async = forceAsync || routing.asyncRequired()
+        || request.effectiveRequestedExecutionMode() == RuntimeExecutionMode.ASYNC;
     boolean providerAllowed = !async && usesModel(routing.selectedTier());
     RuntimeControlOutcome outcome =
         async ? RuntimeControlOutcome.ALLOW_ASYNC : RuntimeControlOutcome.ALLOW_SYNC;
@@ -166,7 +222,15 @@ public class RuntimeControlService {
         : providerAllowed
             ? "Allowed for synchronous processing."
             : "Allowed on the deterministic synchronous path.";
-    return build(outcome, reasonCode, routing, request, systemActor, providerAllowed, 200, 0L, message);
+    return new RuntimeControlDecision(
+        outcome, reasonCode, routing.workloadType(), routing.selectedTier(), request.tenantId(),
+        request.actorId(), systemActor, request.idempotencyKey(), false, providerAllowed,
+        async, routing.humanReviewRequired(), routing.estimatedInputUnits(), 200, 0L, message);
+  }
+
+  private boolean promoteToAsync(RuntimeControlRequest request, long units) {
+    return request.effectiveRequestedExecutionMode() == RuntimeExecutionMode.SYNC
+        && units > properties.getDefaultMaxSyncCostUnits();
   }
 
   private static long effectiveUnits(RuntimeControlRequest request, AiRoutingDecision routing) {
@@ -183,18 +247,18 @@ public class RuntimeControlService {
 
   private static RuntimeControlOutcome mapDenial(String guardReasonCode) {
     if (RuntimeGuardReasonCodes.isFeatureDenial(guardReasonCode)) {
-      return RuntimeControlOutcome.DENY_ENTITLEMENT;
+      return RuntimeControlOutcome.DISABLED;
     }
     if (RuntimeGuardReasonCodes.RATE_LIMIT_EXCEEDED.equals(guardReasonCode)) {
-      return RuntimeControlOutcome.DENY_RATE_LIMIT;
+      return RuntimeControlOutcome.RATE_LIMITED;
     }
-    return RuntimeControlOutcome.DENY_QUOTA;
+    return RuntimeControlOutcome.QUOTA_EXCEEDED;
   }
 
   private static String denialMessage(RuntimeControlOutcome outcome) {
     return switch (outcome) {
-      case DENY_ENTITLEMENT -> "Denied; this feature is not available for the tenant.";
-      case DENY_RATE_LIMIT -> "Denied; too many requests, please retry later.";
+      case DISABLED, DENY_ENTITLEMENT -> "Denied; this feature is not available for the tenant.";
+      case RATE_LIMITED, DENY_RATE_LIMIT -> "Denied; too many requests, please retry later.";
       default -> "Denied; the tenant usage quota has been reached.";
     };
   }

@@ -21,12 +21,39 @@ import java.util.UUID;
 public record RuntimeControlRequest(
     UUID tenantId,
     UUID actorId,
+    RuntimeWorkloadType workloadType,
+    RuntimeExecutionMode requestedExecutionMode,
     RuntimeOperationType operationType,
     RuntimeFeatureType featureType,
     AiWorkloadClassificationRequest classification,
     long requestedUnits,
     String idempotencyKey,
-    boolean duplicateDetected) {
+    boolean duplicateDetected,
+    int currentQueueDepth) {
+
+  public RuntimeControlRequest(
+      UUID tenantId,
+      UUID actorId,
+      RuntimeOperationType operationType,
+      RuntimeFeatureType featureType,
+      AiWorkloadClassificationRequest classification,
+      long requestedUnits,
+      String idempotencyKey,
+      boolean duplicateDetected) {
+    this(
+        tenantId,
+        actorId,
+        RuntimeWorkloadType.from(
+            operationType, classification == null ? null : classification.requestedType()),
+        RuntimeExecutionMode.SYNC,
+        operationType,
+        featureType,
+        classification,
+        requestedUnits,
+        idempotencyKey,
+        duplicateDetected,
+        0);
+  }
 
   /** Convenience: tenant + actor + operation + feature + classification, units derived from the classifier. */
   public static RuntimeControlRequest of(
@@ -37,5 +64,15 @@ public record RuntimeControlRequest(
       AiWorkloadClassificationRequest classification) {
     return new RuntimeControlRequest(
         tenantId, actorId, operationType, featureType, classification, -1L, null, false);
+  }
+
+  public RuntimeWorkloadType effectiveWorkloadType() {
+    return workloadType == null
+        ? RuntimeWorkloadType.from(operationType, classification == null ? null : classification.requestedType())
+        : workloadType;
+  }
+
+  public RuntimeExecutionMode effectiveRequestedExecutionMode() {
+    return requestedExecutionMode == null ? RuntimeExecutionMode.SYNC : requestedExecutionMode;
   }
 }
