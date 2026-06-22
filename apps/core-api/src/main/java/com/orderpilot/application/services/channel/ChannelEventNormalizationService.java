@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
@@ -46,21 +47,48 @@ public class ChannelEventNormalizationService {
 
   @Transactional
   public InboundChannelEvent normalize(UUID connectionId, ChannelProviderType providerType, Object payload, Map<String, String> headers) {
+    // Existing (Path-2 non-raw) entry for fail-closed / local-dev providers. Verification authority here is
+    // the CANONICAL re-serialized JSON derived from the already-parsed payload.
+    //
+    // OP-CAP-42J / OP-CAP-42K contract (see ChannelWebhookVerifier): this canonical form must NEVER be the
+    // signed input for a REAL cryptographic provider — canonicalization changes the wire bytes and would
+    // recreate the 42J byte-exact-signature bug. Real cryptographic providers (Meta-Messenger today) MUST
+    // arrive through the raw-body normalize(String, ...) overload below so the signature is checked against
+    // the byte-exact wire body; canonical JSON is used only for post-verification normalization/persistence.
+    String canonicalJson = toJson(payload);
+    return verifyThenPersist(connectionId, providerType, headers, canonicalJson, () -> payload);
+  }
+
+  /**
+   * OP-CAP-42J — byte-exact raw-body Path-2 entry. Real Meta {@code X-Hub-Signature-256} signatures are
+   * computed over the exact wire request body, not a canonical re-serialization of it. The controller
+   * therefore hands this method the untouched raw JSON body so the verifier checks the signature against
+   * those exact bytes; the JSON is parsed into the normalized payload structure <b>only after</b>
+   * verification succeeds (see {@link #verifyThenPersist}). No raw body is logged or echoed.
+   */
+  @Transactional
+  public InboundChannelEvent normalize(UUID connectionId, ChannelProviderType providerType, String rawBody, Map<String, String> headers) {
+    String exactBody = rawBody == null ? "" : rawBody;
+    return verifyThenPersist(connectionId, providerType, headers, exactBody, () -> parseAfterVerification(exactBody));
+  }
+
+  private InboundChannelEvent verifyThenPersist(UUID connectionId, ChannelProviderType providerType, Map<String, String> headers, String verificationBody, Supplier<Object> verifiedPayloadSupplier) {
     UUID tenantId = TenantContext.requireTenantId();
     ChannelConnection connection = connectionRepository.findByIdAndTenantId(connectionId, tenantId).orElseThrow(() -> new IllegalArgumentException("Channel connection not found"));
     if (!connection.getProviderType().equals(providerType)) throw new IllegalArgumentException("Webhook provider does not match channel connection");
     if (!"ACTIVE".equals(connection.getStatus())) throw new IllegalArgumentException("Channel connection must be ACTIVE to receive webhooks");
-    String rawJson = toJson(payload);
     ChannelWebhookVerifier verifier = verifiers.get(providerType);
-    VerificationResult verification = verifier == null ? VerificationResult.skippedLocalDev("No provider verifier registered; local adapter-ready mode only") : verifier.verify(connection, headers, rawJson);
+    VerificationResult verification = verifier == null ? VerificationResult.skippedLocalDev("No provider verifier registered; local adapter-ready mode only") : verifier.verify(connection, headers, verificationBody);
     if (!verification.accepted()) {
       auditEventService.record("CHANNEL_WEBHOOK_VERIFICATION_FAILED", "CHANNEL_CONNECTION", connection.getId().toString(), null, "{\"providerType\":\"" + providerType + "\",\"reason\":\"" + sanitize(verification.reason()) + "\"}");
       throw new IllegalArgumentException("Webhook verification failed");
     }
+    // Only past this point is the (now trusted) body parsed and an event prepared/persisted.
+    Object payload = verifiedPayloadSupplier.get();
     ChannelAdapter<?> adapter = adapters.get(providerType);
     if (adapter == null) throw new IllegalArgumentException("No channel adapter registered for " + providerType);
     NormalizedChannelEvent normalized = adapter.normalizeInbound(payload, connection);
-    rawJson = normalized.rawPayloadJson() == null ? rawJson : normalized.rawPayloadJson();
+    String rawJson = normalized.rawPayloadJson() == null ? verificationBody : normalized.rawPayloadJson();
     String hash = sha256(rawJson);
     if (normalized.externalEventId() != null && !normalized.externalEventId().isBlank()) {
       Optional<InboundChannelEvent> duplicate = eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(tenantId, providerType, normalized.externalEventId());
@@ -71,6 +99,18 @@ public class ChannelEventNormalizationService {
     InboundChannelEvent saved = eventRepository.save(new InboundChannelEvent(tenantId, connectionId, providerType, normalized.externalEventId(), normalized.sourceActorType(), normalized.sourceActorExternalId(), normalized.normalizedText(), hash, rawJson, verification.status(), verification.reason(), clock.instant()));
     auditEventService.record("CHANNEL_WEBHOOK_ACCEPTED", "INBOUND_CHANNEL_EVENT", saved.getId().toString(), null, "{\"providerType\":\"" + providerType + "\",\"businessAction\":\"NONE\"}");
     return saved;
+  }
+
+  /** Parse the raw body into the normalized payload structure — invoked only after verification succeeds. */
+  private Object parseAfterVerification(String rawBody) {
+    if (rawBody == null || rawBody.isBlank()) return Map.of();
+    try {
+      return objectMapper.readTree(rawBody);
+    } catch (Exception ex) {
+      // Body is trusted (signature verified) but not valid JSON. Fail closed with a redacted message;
+      // never echo the raw body.
+      throw new IllegalArgumentException("Webhook payload is not valid JSON");
+    }
   }
 
   @Transactional(readOnly = true)

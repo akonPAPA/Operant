@@ -16,15 +16,24 @@ abstract class AbstractProviderWebhookVerifier implements ChannelWebhookVerifier
         return VerificationResult.rejected("Missing shared secret header");
       }
       String configuredReference = connection.getSecretReferenceId() == null ? connection.getSecretRef() : connection.getSecretReferenceId();
-      return configuredReference == null || configuredReference.isBlank()
-          ? VerificationResult.rejected("No secret configured")
-          : VerificationResult.accepted("Shared secret header present; raw secret is not exposed");
+      if (configuredReference == null || configuredReference.isBlank()) {
+        return VerificationResult.rejected("No secret configured");
+      }
+      // OP-CAP-42G fail-closed: the raw shared secret is intentionally not exposed in this connection-based
+      // path, so the presented header value cannot be compared. A present-but-unverified secret header must
+      // therefore NOT be accepted — accepting it would be a silent fail-open. Reject until real
+      // provider-specific shared-secret verification is implemented.
+      return VerificationResult.rejected("Shared-secret webhook verification is not implemented for this provider; failing closed");
     }
     if ("SIGNATURE_HEADER".equals(mode) || "PROVIDER_SPECIFIC".equals(mode)) {
       String signature = firstHeader(headers, "x-hub-signature-256", "x-telegram-bot-api-secret-token", "x-viber-content-signature", "x-wechat-signature");
-      return signature == null || signature.isBlank()
-          ? VerificationResult.rejected("Missing provider signature header")
-          : VerificationResult.accepted("Provider signature header present; provider adapter-ready verification stub");
+      if (signature == null || signature.isBlank()) {
+        return VerificationResult.rejected("Missing provider signature header");
+      }
+      // OP-CAP-42G fail-closed: provider signature verification is not implemented in this connection-based
+      // path, so a present-but-unverified signature header must NOT be accepted (silent fail-open). The
+      // server-owned WhatsApp HMAC path (WhatsAppSignatureVerifier) is the real verified ingress.
+      return VerificationResult.rejected("Provider signature webhook verification is not implemented for this provider; failing closed");
     }
     return VerificationResult.rejected("Unsupported webhook verification mode");
   }
