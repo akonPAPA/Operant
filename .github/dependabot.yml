@@ -2,16 +2,16 @@
 version: 2
 updates:
   - package-ecosystem: "maven"
-    directory: "/"
+    directory: "/apps/core-api/"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/apps/web-dashboard/"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/apps/ai-worker/"
     schedule:
       interval: "weekly"
