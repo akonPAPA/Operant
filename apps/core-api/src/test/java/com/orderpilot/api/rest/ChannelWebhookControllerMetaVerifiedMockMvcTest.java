@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.channel.ChannelEventNormalizationService;
 import com.orderpilot.application.services.channel.MetaMessengerChannelAdapter;
@@ -108,7 +107,6 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   };
 
   @Autowired private MockMvc mockMvc;
-  @Autowired private ObjectMapper objectMapper;
   @MockBean private ChannelConnectionRepository connectionRepository;
   @MockBean private InboundChannelEventRepository eventRepository;
   @MockBean private AuditEventService auditEventService;

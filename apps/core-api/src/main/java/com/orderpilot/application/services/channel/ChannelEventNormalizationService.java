@@ -47,9 +47,14 @@ public class ChannelEventNormalizationService {
 
   @Transactional
   public InboundChannelEvent normalize(UUID connectionId, ChannelProviderType providerType, Object payload, Map<String, String> headers) {
-    // Existing (Path-2 non-raw) entry: verification authority is the canonical re-serialized JSON the
-    // normalization layer derives from the already-parsed payload. The payload is already in hand, so it
-    // is supplied directly to the post-verification step.
+    // Existing (Path-2 non-raw) entry for fail-closed / local-dev providers. Verification authority here is
+    // the CANONICAL re-serialized JSON derived from the already-parsed payload.
+    //
+    // OP-CAP-42J / OP-CAP-42K contract (see ChannelWebhookVerifier): this canonical form must NEVER be the
+    // signed input for a REAL cryptographic provider — canonicalization changes the wire bytes and would
+    // recreate the 42J byte-exact-signature bug. Real cryptographic providers (Meta-Messenger today) MUST
+    // arrive through the raw-body normalize(String, ...) overload below so the signature is checked against
+    // the byte-exact wire body; canonical JSON is used only for post-verification normalization/persistence.
     String canonicalJson = toJson(payload);
     return verifyThenPersist(connectionId, providerType, headers, canonicalJson, () -> payload);
   }
