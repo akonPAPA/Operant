@@ -102,6 +102,52 @@ class ApiRouteSecurityClassificationTest {
     assertThat(decision.requiredPermission()).isEqualTo(route.permission());
   }
 
+  // OP-CAP-42B: the v1 change-request controller exposes the real external-write-adjacent lifecycle
+  // verbs (approve / approve-internal / reject / cancel / execution-disabled) plus bare create. Each
+  // must classify to its specific permission, distinct from the others. A regression that collapses
+  // any of these onto a weaker permission would let a less-privileged client reach approval or
+  // external-write-adjacent actions.
+  @ParameterizedTest
+  @MethodSource("changeRequestLifecycleRoutes")
+  void v1ChangeRequestLifecycleVerbsMapToDistinctPermissions(RouteExpectation route) {
+    RouteDecision decision = policy.classify(route.method(), route.path()).orElseThrow();
+
+    assertThat(decision.classification()).isEqualTo(route.classification());
+    assertThat(decision.requiredPermission()).isEqualTo(route.permission());
+  }
+
+  // OP-CAP-42B: privilege separation. CHANGE_REQUEST_CREATE is the weakest permission in the family
+  // and must NOT satisfy approve / approve-internal / reject / cancel / execute / retry /
+  // execution-disabled. This proves a create-only client cannot reach approval or external-write
+  // execution by reusing its create grant (no approval/external-write bypass via weaker permission).
+  @Test
+  void changeRequestCreatePermissionDoesNotSatisfyApprovalOrExecuteAdjacentVerbs() {
+    String base = "/api/v1/change-requests/123e4567-e89b-12d3-a456-426614174000";
+    List<String> elevatedVerbs = List.of(
+        base + "/approve",
+        base + "/approve-internal",
+        base + "/reject",
+        base + "/cancel",
+        base + "/execution-disabled");
+
+    for (String path : elevatedVerbs) {
+      ApiPermission required = policy.classify("POST", path).orElseThrow().requiredPermission();
+      assertThat(required)
+          .as("POST %s must require a permission stronger than CHANGE_REQUEST_CREATE", path)
+          .isNotEqualTo(ApiPermission.CHANGE_REQUEST_CREATE);
+      assertThat(required)
+          .as("POST %s must be approve/reject/execute gated", path)
+          .isIn(
+              ApiPermission.CHANGE_REQUEST_APPROVE,
+              ApiPermission.CHANGE_REQUEST_REJECT,
+              ApiPermission.CHANGE_REQUEST_EXECUTE);
+    }
+
+    // The bare create route remains create-gated (control: not over-escalated either).
+    assertThat(policy.classify("POST", "/api/v1/change-requests").orElseThrow().requiredPermission())
+        .isEqualTo(ApiPermission.CHANGE_REQUEST_CREATE);
+  }
+
   private List<RouteMapping> apiRoutes() {
     return handlerMapping.getHandlerMethods().entrySet().stream()
         .flatMap(entry -> routeMappings(entry.getKey(), entry.getValue().toString()))
@@ -193,6 +239,41 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/runtime/plans",
             SecurityClassification.PROTECTED_RUNTIME_MANAGE,
             ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+  }
+
+  private static Stream<RouteExpectation> changeRequestLifecycleRoutes() {
+    String base = "/api/v1/change-requests/123e4567-e89b-12d3-a456-426614174000";
+    return Stream.of(
+        new RouteExpectation(
+            "POST",
+            "/api/v1/change-requests",
+            SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.CHANGE_REQUEST_CREATE),
+        new RouteExpectation(
+            "POST",
+            base + "/approve",
+            SecurityClassification.PROTECTED_APPROVE,
+            ApiPermission.CHANGE_REQUEST_APPROVE),
+        new RouteExpectation(
+            "POST",
+            base + "/approve-internal",
+            SecurityClassification.PROTECTED_APPROVE,
+            ApiPermission.CHANGE_REQUEST_APPROVE),
+        new RouteExpectation(
+            "POST",
+            base + "/reject",
+            SecurityClassification.PROTECTED_REJECT,
+            ApiPermission.CHANGE_REQUEST_REJECT),
+        new RouteExpectation(
+            "POST",
+            base + "/cancel",
+            SecurityClassification.PROTECTED_REJECT,
+            ApiPermission.CHANGE_REQUEST_REJECT),
+        new RouteExpectation(
+            "POST",
+            base + "/execution-disabled",
+            SecurityClassification.PROTECTED_EXECUTE,
+            ApiPermission.CHANGE_REQUEST_EXECUTE));
   }
 
   private record RouteMapping(String method, String path, String handler) {
