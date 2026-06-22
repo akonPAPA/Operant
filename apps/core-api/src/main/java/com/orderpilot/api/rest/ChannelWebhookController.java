@@ -16,7 +16,10 @@ public class ChannelWebhookController {
 
   @PostMapping("/telegram/{connectionId}") public InboundChannelEventResponse telegram(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody JsonNode payload) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.TELEGRAM, payload, headers)); }
   @PostMapping("/whatsapp/{connectionId}") public InboundChannelEventResponse whatsapp(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody JsonNode payload) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.WHATSAPP, payload, headers)); }
-  @PostMapping("/meta-messenger/{connectionId}") public InboundChannelEventResponse metaMessenger(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody JsonNode payload) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.META_MESSENGER, payload, headers)); }
+  // OP-CAP-42J: Meta Path-2 must verify X-Hub-Signature-256 against the byte-exact wire body, so the
+  // raw JSON body is received as a String (not a re-serialized JsonNode) and parsed only after the
+  // verifier accepts it. The raw body is passed straight to the service and is never logged.
+  @PostMapping("/meta-messenger/{connectionId}") public InboundChannelEventResponse metaMessenger(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody String rawBody) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.META_MESSENGER, rawBody, headers)); }
   @PostMapping("/viber/{connectionId}") public InboundChannelEventResponse viber(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody JsonNode payload) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.VIBER, payload, headers)); }
   @PostMapping("/wechat/{connectionId}") public InboundChannelEventResponse wechat(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody JsonNode payload) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.WECHAT, payload, headers)); }
 

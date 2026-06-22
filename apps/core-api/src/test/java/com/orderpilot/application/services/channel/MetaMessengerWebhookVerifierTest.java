@@ -115,6 +115,61 @@ class MetaMessengerWebhookVerifierTest {
   }
 
   // ============================================================================================
+  // A2 (OP-CAP-42J) — byte-exact raw body: a signature for one byte sequence does not verify another
+  //                    semantically-equivalent-but-byte-different body (whitespace / key order).
+  // ============================================================================================
+
+  @Test
+  void signatureOverCanonicalBodyDoesNotVerifyAByteDifferentRawBody() {
+    MetaMessengerWebhookVerifier verifier = new MetaMessengerWebhookVerifier(SECRET);
+    // Signature was computed over the compact/canonical body, but the raw body that actually arrived on
+    // the wire has added whitespace (byte-different, semantically identical). It must fail closed.
+    String signatureOverCanonical = signatureHeader(SECRET, CANONICAL_PAYLOAD);
+    String whitespacedRawBody =
+        "{ \"object\": \"page\", \"entry\": [ { \"id\": \"PAGE_ID\", \"messaging\": [ { \"message\": { \"mid\": \"m_evt-42i\", \"text\": \"Need brake pads\" } } ] } ] }";
+
+    VerificationResult result = verifier.verify(
+        metaConnection("SIGNATURE_HEADER"), Map.of("x-hub-signature-256", signatureOverCanonical), whitespacedRawBody);
+
+    assertThat(result.accepted()).isFalse();
+    assertThat(result.status()).isEqualTo("REJECTED");
+    assertNoSensitiveLeak(result.reason());
+  }
+
+  @Test
+  void keyOrderChangeWithOldSignatureFailsClosed() {
+    MetaMessengerWebhookVerifier verifier = new MetaMessengerWebhookVerifier(SECRET);
+    // Same semantic content, different key order → different bytes → old signature must not verify.
+    String reorderedRawBody =
+        "{\"entry\":[{\"messaging\":[{\"message\":{\"text\":\"Need brake pads\",\"mid\":\"m_evt-42i\"}}],\"id\":\"PAGE_ID\"}],\"object\":\"page\"}";
+    String signatureOverOriginal = signatureHeader(SECRET, CANONICAL_PAYLOAD);
+
+    VerificationResult result = verifier.verify(
+        metaConnection("SIGNATURE_HEADER"), Map.of("x-hub-signature-256", signatureOverOriginal), reorderedRawBody);
+
+    assertThat(result.accepted()).isFalse();
+    assertThat(result.status()).isEqualTo("REJECTED");
+    assertNoSensitiveLeak(result.reason());
+  }
+
+  @Test
+  void signatureOverExactWhitespacedRawBodyIsAccepted() {
+    MetaMessengerWebhookVerifier verifier = new MetaMessengerWebhookVerifier(SECRET);
+    // When the signature is computed over the exact raw bytes that arrive (including whitespace), it
+    // verifies — proving verification is byte-faithful, not canonicalized.
+    String whitespacedRawBody =
+        "{ \"object\": \"page\", \"entry\": [ { \"id\": \"PAGE_ID\" } ] }";
+
+    VerificationResult result = verifier.verify(
+        metaConnection("SIGNATURE_HEADER"),
+        Map.of("x-hub-signature-256", signatureHeader(SECRET, whitespacedRawBody)),
+        whitespacedRawBody);
+
+    assertThat(result.accepted()).isTrue();
+    assertThat(result.status()).isEqualTo("CONFIGURED_VERIFY_ONLY");
+  }
+
+  // ============================================================================================
   // B — negative: missing / bad / tampered-body / wrong-secret all fail closed; no echo; no leak.
   // ============================================================================================
 

@@ -39,9 +39,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>Meta's {@code X-Hub-Signature-256} carries no timestamp or nonce, so there is no signature-layer
  * freshness/replay window to enforce here (not faked — see OP-CAP-42I docs); replay continuity is the
- * existing service-level dedup in {@link ChannelEventNormalizationService}. The signed input is the
- * canonical JSON the normalization layer provides ({@code rawPayload}); Path 2 does not expose the
- * byte-exact wire body (a Path-1-style raw-body capture would be a separate, larger change).
+ * existing service-level dedup in {@link ChannelEventNormalizationService}. As of OP-CAP-42J the signed
+ * input is the <b>byte-exact</b> raw request body: the controller receives the Meta webhook body as a raw
+ * String and {@link ChannelEventNormalizationService} verifies this {@code rawPayload} against the
+ * presented signature before parsing/normalizing the JSON. This matches real Meta production behaviour —
+ * a semantically equivalent but byte-different body (whitespace/key-order) carrying a signature for the
+ * original bytes fails closed. This verifier is byte-faithful: it HMACs the literal {@code rawPayload}
+ * string it is given and performs a constant-time compare, never echoing the signature, secret, or body.
  */
 @Component
 public class MetaMessengerWebhookVerifier extends AbstractProviderWebhookVerifier {

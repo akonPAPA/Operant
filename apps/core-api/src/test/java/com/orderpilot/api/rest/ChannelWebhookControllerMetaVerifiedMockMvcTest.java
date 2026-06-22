@@ -57,8 +57,11 @@ import org.springframework.test.web.servlet.MockMvc;
  * mocked so the MVC→service→verifier→persist boundary is exercised without a DB.
  *
  * <ul>
- *   <li>Valid Meta {@code X-Hub-Signature-256} over the canonical body → {@code 200}, persisted event
+ *   <li>Valid Meta {@code X-Hub-Signature-256} over the byte-exact raw body → {@code 200}, persisted event
  *       carries {@code verificationStatus=CONFIGURED_VERIFY_ONLY}, audited {@code CHANNEL_WEBHOOK_ACCEPTED}.</li>
+ *   <li>(OP-CAP-42J) Same semantic JSON but byte-different (whitespace/key-order) carrying the old
+ *       signature → fails closed before persistence; a whitespace body signed over its exact bytes is
+ *       accepted.</li>
  *   <li>Missing / bad signature → fails closed (redacted {@code 400}), no event persisted, audited
  *       {@code CHANNEL_WEBHOOK_VERIFICATION_FAILED}, attacker signature not echoed, no leak.</li>
  *   <li>Replay: a valid-signed delivery whose {@code externalEventId} already exists is deduped by the
@@ -134,10 +137,13 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
     return connection;
   }
 
-  /** Signature over the canonical JSON the normalization layer feeds the verifier ({@code toJson(payload)}). */
+  /**
+   * OP-CAP-42J — signature over the <b>byte-exact</b> request body the controller will receive. Real Meta
+   * {@code X-Hub-Signature-256} is computed over the raw wire bytes, and the controller now verifies
+   * against those exact bytes (not a canonical re-serialization).
+   */
   private String metaSignatureFor(String requestBody) throws Exception {
-    String canonical = objectMapper.writeValueAsString(objectMapper.readTree(requestBody));
-    return "sha256=" + hmacSha256Hex(META_SECRET, canonical);
+    return "sha256=" + hmacSha256Hex(META_SECRET, requestBody);
   }
 
   private static String hmacSha256Hex(String secret, String body) throws Exception {
@@ -182,6 +188,75 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
 
     verify(eventRepository).save(any(InboundChannelEvent.class));
     verify(auditEventService).record(eq("CHANNEL_WEBHOOK_ACCEPTED"), any(), any(), any(), any());
+    assertNoSensitiveLeak(body);
+  }
+
+  @Test
+  void whitespaceFormattedBodySignedOverItsExactBytesIsAcceptedAndPersisted() throws Exception {
+    // A body with embedded whitespace (byte-different from the compact form) is signed over its exact
+    // bytes. Byte-exact verification accepts it — proving the controller verifies the raw wire body.
+    UUID connectionId = UUID.randomUUID();
+    ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
+    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+        .thenReturn(Optional.of(connection));
+    Mockito.when(eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(any(), any(), any()))
+        .thenReturn(Optional.empty());
+    Mockito.when(eventRepository.findFirstByTenantIdAndChannelConnectionIdAndPayloadHash(any(), any(), any()))
+        .thenReturn(Optional.empty());
+    InboundChannelEvent persisted = Mockito.mock(InboundChannelEvent.class);
+    Mockito.when(persisted.getId()).thenReturn(UUID.randomUUID());
+    Mockito.when(persisted.getProviderType()).thenReturn(ChannelProviderType.META_MESSENGER);
+    Mockito.when(persisted.getVerificationStatus()).thenReturn("CONFIGURED_VERIFY_ONLY");
+    Mockito.when(eventRepository.save(any(InboundChannelEvent.class))).thenReturn(persisted);
+
+    String whitespacedBody =
+        "{ \"object\": \"page\", \"entry\": [ { \"id\": \"PAGE_ID\", \"messaging\": [ { \"message\": { \"mid\": \"m_evt-42j\", \"text\": \"Need brake pads\" } } ] } ] }";
+
+    String body = mockMvc.perform(post(route("meta-messenger", connectionId))
+            .header("X-Tenant-Id", TENANT_ID)
+            .header("X-Hub-Signature-256", metaSignatureFor(whitespacedBody))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(whitespacedBody))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.verificationStatus").value("CONFIGURED_VERIFY_ONLY"))
+        .andReturn().getResponse().getContentAsString();
+
+    verify(eventRepository).save(any(InboundChannelEvent.class));
+    verify(auditEventService).record(eq("CHANNEL_WEBHOOK_ACCEPTED"), any(), any(), any(), any());
+    assertNoSensitiveLeak(body);
+  }
+
+  // ============================================================================================
+  // Canonical-JSON bypass regression — same semantic JSON, byte-different (whitespace/key-order),
+  // carrying a signature for the original compact bytes → rejected before any persistence.
+  // ============================================================================================
+
+  @Test
+  void semanticallyEqualButByteDifferentBodyWithOldSignatureIsRejectedBeforePersistence() throws Exception {
+    UUID connectionId = UUID.randomUUID();
+    ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
+    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+        .thenReturn(Optional.of(connection));
+
+    // Signature is valid for the compact META_BODY bytes, but the body actually sent has whitespace and a
+    // changed key order. Under byte-exact verification this old signature must fail closed.
+    String oldSignatureForCompactBody = metaSignatureFor(META_BODY);
+    String byteDifferentBody =
+        "{ \"entry\": [ { \"messaging\": [ { \"message\": { \"text\": \"Need brake pads\", \"mid\": \"m_evt-42i\" } } ], \"id\": \"PAGE_ID\" } ], \"object\": \"page\" }";
+
+    String body = mockMvc.perform(post(route("meta-messenger", connectionId))
+            .header("X-Tenant-Id", TENANT_ID)
+            .header("X-Hub-Signature-256", oldSignatureForCompactBody)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(byteDifferentBody))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+        .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+        .andReturn().getResponse().getContentAsString();
+
+    verify(eventRepository, never()).save(any());
+    verify(auditEventService).record(eq("CHANNEL_WEBHOOK_VERIFICATION_FAILED"), any(), any(), any(), any());
+    assertThat(body).doesNotContain(oldSignatureForCompactBody);
     assertNoSensitiveLeak(body);
   }
 
