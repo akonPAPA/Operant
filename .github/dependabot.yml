@@ -2,16 +2,16 @@
 version: 2
 updates:
   - package-ecosystem: "maven"
-    directory: "/apps/core-api/"
+    directory: "/apps/core-api/pom.xml"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "npm"
-    directory: "/apps/web-dashboard/"
+    directory: "/apps/web-dashboard/package-lock.json"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "pip"
-    directory: "/apps/ai-worker/"
+    directory: "/apps/ai-worker/pyproject.toml"
     schedule:
       interval: "weekly"
