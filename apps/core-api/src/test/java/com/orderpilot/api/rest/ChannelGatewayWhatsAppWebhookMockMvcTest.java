@@ -195,11 +195,15 @@ class ChannelGatewayWhatsAppWebhookMockMvcTest {
 
   @Test
   void malformedJsonBodyReturnsStableRedactedErrorWithoutInternals() throws Exception {
+    // OP-CAP-42H: sign the malformed body's EXACT raw bytes so it passes signature verification and the
+    // parse failure is what produces the error — proving a validly-signed-but-malformed payload still
+    // fails closed at the JSON-parse boundary (no trusted mutation) with the stable redacted contract.
+    String malformed = "{ this-is-not-valid-json :: <<>>";
     String body = mockMvc.perform(post(WEBHOOK_PATH)
             .header("X-Tenant-Id", TENANT_ID)
-            .header("X-Hub-Signature-256", "sha256=irrelevant")
+            .header("X-Hub-Signature-256", signatureFor(malformed))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{ this-is-not-valid-json :: <<>>"))
+            .content(malformed))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
         .andExpect(jsonPath("$.message").value("Request body is not valid JSON"))
@@ -236,10 +240,12 @@ class ChannelGatewayWhatsAppWebhookMockMvcTest {
     assertNoSensitiveLeak(responseBody);
   }
 
-  /** HMAC-SHA256 over the exact JSON body the controller forwards to the verifier ({@code JsonNode.toString()}). */
-  private String signatureFor(String body) throws Exception {
-    String canonical = objectMapper.readTree(body).toString();
-    return "sha256=" + hmacSha256Hex(canonical);
+  /**
+   * OP-CAP-42H: HMAC-SHA256 over the EXACT raw request body bytes (no reserialization). The controller now
+   * verifies against the raw body, mirroring how Meta signs the original request bytes.
+   */
+  private String signatureFor(String body) {
+    return "sha256=" + hmacSha256Hex(body);
   }
 
   private static String hmacSha256Hex(String body) {
