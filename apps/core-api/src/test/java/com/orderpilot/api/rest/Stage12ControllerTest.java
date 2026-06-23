@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.orderpilot.application.services.channel.*;
 import com.orderpilot.application.services.integration.*;
 import com.orderpilot.domain.channel.*;
@@ -40,7 +41,12 @@ class Stage12ControllerTest {
 
   @Test void webhookEndpointStoresInboundEventResponse() throws Exception {
     UUID connectionId = UUID.randomUUID();
-    when(channelEventNormalizationService.normalize(eq(connectionId), eq(ChannelProviderType.TELEGRAM), any(), anyMap()))
+    // The Telegram webhook passes the parsed @RequestBody JsonNode to the (Object, Map) overload of
+    // normalize(...). An untyped any() would let Java overload resolution bind this stub to the more
+    // specific raw-body (String, Map) overload introduced in OP-CAP-42J, leaving the actual JsonNode
+    // call unstubbed (null -> NPE -> 500). Pin the matcher to JsonNode so the stub targets the exact
+    // parsed-payload overload the controller invokes.
+    when(channelEventNormalizationService.normalize(eq(connectionId), eq(ChannelProviderType.TELEGRAM), any(JsonNode.class), anyMap()))
         .thenReturn(new InboundChannelEvent(UUID.randomUUID(), connectionId, ChannelProviderType.TELEGRAM, "tg-1", "CUSTOMER", "chat-1", "Need quote", "hash", "{}", Instant.now()));
     mockMvc.perform(post("/api/v1/webhooks/channels/telegram/" + connectionId).contentType("application/json").content("{\"message_id\":\"tg-1\",\"text\":\"Need quote\"}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.normalizedText").value("Need quote"));
