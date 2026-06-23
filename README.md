@@ -7,7 +7,7 @@ The developers contributors: akonPAPA, Ayan2k6, almuhxmed,jobegamests-code
 
 Operant is proprietary and confidential software.
 
-Copyright (c) 2026 OrderPilot / Akan Mukhametgali. All rights reserved.
+Copyright (c) 2026 Operant / Akan Mukhametgali. All rights reserved.
 
 No public open-source license is granted for this repository unless a specific file,
 package, or directory explicitly states otherwise. See LICENSE, NOTICE,
