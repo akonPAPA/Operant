@@ -42,6 +42,15 @@ orderpilot:
       signature-required: "${ORDERPILOT_GATEWAY_HEADER_AUTH_SIGNATURE_REQUIRED:true}"
       shared-secret: "${ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET:}"
       clock-skew-seconds: "${ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS:300}"
+      # memory (default, single-node/dev/test) | redis (distributed nonce admission across instances).
+      replay-store: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REPLAY_STORE:memory}"
+      # Production-like signed gateway-header auth fails startup on memory replay admission unless this
+      # is deliberately enabled for a documented single-instance deployment.
+      allow-single-instance-replay-store-in-production: "${ORDERPILOT_GATEWAY_HEADER_AUTH_ALLOW_SINGLE_INSTANCE_REPLAY_STORE_IN_PRODUCTION:false}"
+      redis:
+        host: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_HOST:localhost}"
+        port: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PORT:6379}"
+        key-prefix: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_KEY_PREFIX:op:gw-replay}"
     # OP-CAP-16K signed actor verification for runtime entitlement admin mutations. Empty = no
     # signing secret configured → local/dev trusted-header fallback (16J behavior). When set, admin
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).

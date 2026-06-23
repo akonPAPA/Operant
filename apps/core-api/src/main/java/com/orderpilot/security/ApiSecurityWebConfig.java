@@ -6,14 +6,15 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Clock;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.time.Clock;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration
 @EnableWebSecurity
+@Import(GatewayHeaderReplayStoreConfiguration.class)
 public class ApiSecurityWebConfig implements WebMvcConfigurer {
   static final String[] PERMISSION_INTERCEPTOR_PATHS = {
       "/api/v1/**",
@@ -81,7 +83,8 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       RequestActorResolver.SIGNATURE_HEADER,
       RequestActorResolver.TIMESTAMP_HEADER,
       GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER,
-      GatewayHeaderSignatureVerifier.SIGNATURE_HEADER);
+      GatewayHeaderSignatureVerifier.SIGNATURE_HEADER,
+      GatewayHeaderSignatureVerifier.NONCE_HEADER);
 
   private final ObjectProvider<ApiPermissionInterceptor> interceptor;
   private final List<String> allowedOrigins;
@@ -109,7 +112,10 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
   }
 
   @Bean
-  SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
+  SecurityFilterChain apiSecurityFilterChain(
+      HttpSecurity http,
+      ObjectMapper objectMapper,
+      GatewayHeaderReplayAdmissionStore replayAdmissionStore) throws Exception {
     http
         .securityMatcher(new OrRequestMatcher(
             new AntPathRequestMatcher("/api/**"),
@@ -128,7 +134,11 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
             new ApiHeaderAuthenticationFilter(
                 gatewayHeaderAuthEnabled,
                 gatewayHeaderSignatureRequired,
-                new GatewayHeaderSignatureVerifier(gatewayHeaderSharedSecret, gatewayHeaderClockSkewSeconds, clock)),
+                new GatewayHeaderSignatureVerifier(
+                    gatewayHeaderSharedSecret,
+                    gatewayHeaderClockSkewSeconds,
+                    clock,
+                    replayAdmissionStore)),
             AnonymousAuthenticationFilter.class)
         .exceptionHandling(exceptions -> exceptions
             .authenticationEntryPoint((request, response, ex) ->

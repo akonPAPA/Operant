@@ -152,11 +152,12 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
   @Test
   void clientCannotEscalatePermissionsByTamperingSignedHeader() throws Exception {
     long now = nowEpoch();
+    String nonce = freshNonce();
     // Signature computed over the low permission the gateway actually granted.
     String signatureOverLowGrant = SignedActorVerifier.hmacHex(SECRET,
         GatewayHeaderSignatureVerifier.canonical(
             new org.springframework.mock.web.MockHttpServletRequest(HttpMethod.POST.name(), MANAGE_ROUTE),
-            TENANT, ACTOR, ApiPermission.ANALYTICS_READ.name(), now));
+            TENANT, ACTOR, ApiPermission.ANALYTICS_READ.name(), now, nonce));
 
     MvcResult result = mockMvc.perform(post(MANAGE_ROUTE)
             .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
@@ -164,6 +165,7 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
             // Tampered up to the manage permission the route requires...
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_MANAGE.name())
             .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(now))
+            .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
             // ...but the signature only covers the low grant, so verification fails closed.
             .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signatureOverLowGrant)
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
@@ -178,9 +180,10 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
 
   private MockHttpServletRequestBuilder signed(
       HttpMethod method, String path, String tenant, String actor, String permissions, long timestampEpoch) {
+    String nonce = freshNonce();
     String canonical = GatewayHeaderSignatureVerifier.canonical(
         new org.springframework.mock.web.MockHttpServletRequest(method.name(), path),
-        tenant, actor, permissions, timestampEpoch);
+        tenant, actor, permissions, timestampEpoch, nonce);
     String signature = SignedActorVerifier.hmacHex(SECRET, canonical);
     MockHttpServletRequestBuilder builder = HttpMethod.POST.equals(method) ? post(path) : get(path);
     return builder
@@ -188,7 +191,12 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
         .header(RequestActorResolver.ACTOR_HEADER, actor)
         .header(ApiPermissionGuard.PERMISSIONS_HEADER, permissions)
         .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestampEpoch))
+        .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
         .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature);
+  }
+
+  private static String freshNonce() {
+    return java.util.UUID.randomUUID().toString();
   }
 
   private static long nowEpoch() {
