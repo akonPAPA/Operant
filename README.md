@@ -46,4 +46,4 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\dev\check-local.ps1"
 
 ## Stage status
 
-Current backend milestone: Stage 11E prepares approved internal quotes for controlled external-write handoff readiness without executing connector commands or ERP/1C/accounting/warehouse writes. See `docs/product/QUOTE_HANDOFF_STAGE_11E.md` and `docs/runbooks/LOCAL_DEMO_VERIFICATION_REPORT_STAGE_11E.md`.
+Current backend stage:OP-CAP-42-BUGHUNTING-PENTESTING-LAYER
