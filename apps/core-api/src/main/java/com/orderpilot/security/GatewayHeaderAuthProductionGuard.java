@@ -47,16 +47,23 @@ public class GatewayHeaderAuthProductionGuard implements InitializingBean {
   private final boolean enabled;
   private final boolean signatureRequired;
   private final String sharedSecret;
+  private final String replayStore;
+  private final boolean singleInstanceReplayStoreAllowedInProduction;
 
   GatewayHeaderAuthProductionGuard(
       Environment environment,
       @Value("${orderpilot.security.gateway-header-auth.enabled:false}") boolean enabled,
       @Value("${orderpilot.security.gateway-header-auth.signature-required:true}") boolean signatureRequired,
-      @Value("${orderpilot.security.gateway-header-auth.shared-secret:}") String sharedSecret) {
+      @Value("${orderpilot.security.gateway-header-auth.shared-secret:}") String sharedSecret,
+      @Value("${orderpilot.security.gateway-header-auth.replay-store:memory}") String replayStore,
+      @Value("${orderpilot.security.gateway-header-auth.allow-single-instance-replay-store-in-production:false}")
+          boolean singleInstanceReplayStoreAllowedInProduction) {
     this.environment = environment;
     this.enabled = enabled;
     this.signatureRequired = signatureRequired;
     this.sharedSecret = sharedSecret == null ? "" : sharedSecret;
+    this.replayStore = replayStore == null ? "" : replayStore.trim().toLowerCase(Locale.ROOT);
+    this.singleInstanceReplayStoreAllowedInProduction = singleInstanceReplayStoreAllowedInProduction;
   }
 
   @Override
@@ -76,6 +83,13 @@ public class GatewayHeaderAuthProductionGuard implements InitializingBean {
       throw new IllegalStateException(
           "gateway-header-auth shared-secret must be configured in production "
               + "(orderpilot.security.gateway-header-auth.shared-secret is blank/missing)");
+    }
+    if (!"redis".equals(replayStore) && !singleInstanceReplayStoreAllowedInProduction) {
+      throw new IllegalStateException(
+          "gateway-header-auth replay-store must be redis in production signed mode "
+              + "(memory replay admission is single-instance only; set "
+              + "orderpilot.security.gateway-header-auth.replay-store=redis or explicitly allow "
+              + "single-instance production replay-store mode)");
     }
   }
 

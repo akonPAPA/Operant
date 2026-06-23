@@ -104,8 +104,12 @@ class ApiGatewayHeaderSignatureSecurityTest {
   }
 
   private static MockHttpServletRequestBuilder signedGet(String path, String permissions, long timestampEpoch) {
-    String canonical = "GET\n" + path + "\n" + TENANT + "\n" + ACTOR + "\n" + permissions + "\n" + timestampEpoch;
-    return unsignedGetWithSignature(path, permissions, timestampEpoch, SignedActorVerifier.hmacHex(SECRET, canonical));
+    // OP-CAP-43E: a unique nonce per signed request, bound into the canonical string.
+    String nonce = UUID.randomUUID().toString();
+    String canonical = "GET\n" + path + "\n" + TENANT + "\n" + ACTOR + "\n" + permissions + "\n"
+        + timestampEpoch + "\n" + nonce;
+    return unsignedGetWithSignature(path, permissions, timestampEpoch, nonce,
+        SignedActorVerifier.hmacHex(SECRET, canonical));
   }
 
   private static MockHttpServletRequestBuilder unsignedGetWithSignature(
@@ -113,11 +117,21 @@ class ApiGatewayHeaderSignatureSecurityTest {
       String permissions,
       long timestampEpoch,
       String signature) {
+    return unsignedGetWithSignature(path, permissions, timestampEpoch, UUID.randomUUID().toString(), signature);
+  }
+
+  private static MockHttpServletRequestBuilder unsignedGetWithSignature(
+      String path,
+      String permissions,
+      long timestampEpoch,
+      String nonce,
+      String signature) {
     return get(path)
         .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
         .header(RequestActorResolver.ACTOR_HEADER, ACTOR)
         .header(ApiPermissionGuard.PERMISSIONS_HEADER, permissions)
         .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestampEpoch))
+        .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
         .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature);
   }
 
