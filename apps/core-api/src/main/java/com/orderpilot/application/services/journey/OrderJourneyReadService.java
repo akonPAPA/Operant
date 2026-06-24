@@ -131,8 +131,11 @@ public class OrderJourneyReadService {
         .toList();
     boolean fulfillmentConnected = milestones.stream()
         .anyMatch(m -> !"UNKNOWN".equals(m.evidenceLevel()) && !"NOT_STARTED".equals(m.milestoneState()));
+    // Internal, permission-protected (ANALYTICS_READ) tenant-scoped API path — NOT a public secure
+    // tracking link. A public, signed/expiring buyer tracking gateway is deferred to OP-CAP-46C.
+    String customerSafeApiPath = "/api/v1/order-journeys/" + id + "/customer-safe";
     return new CustomerSafeJourneyDto(journey.getId(), journey.getCustomerVisibleStatus(), milestones, events,
-        fulfillmentConnected, false, clock.instant());
+        fulfillmentConnected, false, customerSafeApiPath, clock.instant());
   }
 
   private OrderJourneyDetailDto toDetail(UUID tenantId, OrderJourney journey, String projectionSource) {

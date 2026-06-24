@@ -238,7 +238,22 @@ class ApiRouteSecurityClassificationTest {
             "POST",
             "/api/v1/runtime/plans",
             SecurityClassification.PROTECTED_RUNTIME_MANAGE,
-            ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+            ApiPermission.RUNTIME_ENTITLEMENT_MANAGE),
+        // OP-CAP-46B: the customer-safe read is a protected operator read (ANALYTICS_READ), NOT a
+        // public route — there is no public buyer tracking gateway in this slice.
+        new RouteExpectation(
+            "GET",
+            "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/customer-safe",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.ANALYTICS_READ),
+        // OP-CAP-46B: the manual milestone mutation is an audited operator action. It maps to the
+        // documented order-journey mutation permission (REVIEW_ACTION) — the same gate as the sibling
+        // POST /{id}/signals path, which can likewise confirm a MANUAL DELIVERED milestone.
+        new RouteExpectation(
+            "POST",
+            "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/manual-milestones",
+            SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.REVIEW_ACTION));
   }
 
   private static Stream<RouteExpectation> changeRequestLifecycleRoutes() {

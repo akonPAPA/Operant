@@ -7,6 +7,7 @@ import com.orderpilot.api.dto.OrderJourneyDtos.CustomerSafeJourneyDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyMilestoneDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
+import com.orderpilot.api.dto.OrderJourneyDtos.RecordManualMilestoneRequest;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -230,6 +231,205 @@ class OrderJourneyServiceTest {
     // request an oversized limit; service clamps to its max (50)
     assertThat(readService.list(9999).previewLimit()).isEqualTo(50);
     assertThat(readService.list(0).total()).isEqualTo(3);
+  }
+
+  // --- OP-CAP-46B manual milestone tests -------------------------------------------------------
+
+  @Test
+  void manualMilestoneAdvancesFulfillmentMilestoneAndIsAudited() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-M1", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    RecordManualMilestoneRequest req =
+        new RecordManualMilestoneRequest("PACKED", "Warehouse double-checked SKUs", "Your order is packed", true);
+    service.recordManualMilestone(journey.getId(), req, UUID.randomUUID());
+
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    assertThat(milestone(detail, "PACKED").milestoneState()).isEqualTo("COMPLETED");
+    assertThat(milestone(detail, "PACKED").evidenceLevel()).isEqualTo("MANUAL");
+    assertThat(detail.fulfillmentTrackingConnected()).isTrue();
+
+    long audited = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId).stream()
+        .filter(e -> "ORDER_JOURNEY_MANUAL_MILESTONE".equals(e.getAction())).count();
+    assertThat(audited).isEqualTo(1);
+  }
+
+  @Test
+  void manualDeliveredMilestoneConfirmsDeliveryThroughTrustedManualEvidence() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MD", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("DELIVERED", "Customer signed on doorstep", null, true), UUID.randomUUID());
+
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    // DELIVERED is high-stakes: only VERIFIED or operator-attested MANUAL evidence may complete it.
+    assertThat(milestone(detail, "DELIVERED").milestoneState()).isEqualTo("COMPLETED");
+    assertThat(milestone(detail, "DELIVERED").evidenceLevel()).isEqualTo("MANUAL");
+    assertThat(detail.currentStage()).isEqualTo("DELIVERED");
+  }
+
+  @Test
+  void manualMilestoneRejectsUnsupportedCode() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MX", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    // A non-fulfillment milestone code maps to no signal type and is rejected (400 via GlobalExceptionHandler).
+    assertThatThrownBy(() -> service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("QUOTE_APPROVED", "Not a fulfillment milestone", null, true),
+        UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Manual milestone not supported");
+  }
+
+  @Test
+  void manualMilestoneRejectsUnknownCode() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MU", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    assertThatThrownBy(() -> service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("NOT_A_REAL_CODE", null, null, true), UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Unsupported milestone code");
+  }
+
+  @Test
+  void manualMilestoneIsTenantIsolated() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantA, "Q-MT", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journeyA = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    // Tenant B cannot set a manual milestone on Tenant A's journey
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(() -> service.recordManualMilestone(journeyA.getId(),
+        new RecordManualMilestoneRequest("PACKED", "Cross-tenant attempt", "leak", true),
+        UUID.randomUUID()))
+        .isInstanceOf(NotFoundException.class);
+  }
+
+  @Test
+  void manualMilestoneCustomerVisibleFalseHidesEventButStillDerivesMilestone() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MN", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    // Operator sets milestone with customerVisible=false. The milestone itself uses
+    // MilestoneCode.customerVisibleDefault() (PACKED=true), so the milestone IS visible in the
+    // customer-safe view, but the operator's manual events are filtered out.
+    service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("PACKED", "Internal packing note", "ignored when not visible", false),
+        UUID.randomUUID());
+
+    CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
+    assertThat(safe.milestones()).anyMatch(m -> m.milestoneCode().equals("PACKED")
+        && "COMPLETED".equals(m.milestoneState()));
+    assertThat(safe.events()).noneMatch(e -> "MANUAL_MILESTONE".equals(e.eventType()));
+
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    assertThat(milestone(detail, "PACKED").milestoneState()).isEqualTo("COMPLETED");
+    assertThat(milestone(detail, "PACKED").evidenceLevel()).isEqualTo("MANUAL");
+  }
+
+  @Test
+  void manualMilestoneInternalNoteNeverLeaksIntoCustomerSafeViewEvenWhenCustomerVisible() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-ML", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    String internalSecret = "INTERNAL-margin-23pct-supplier-Acme-do-not-share";
+    String customerText = "Your order has been packed";
+    service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("PACKED", internalSecret, customerText, true), UUID.randomUUID());
+
+    // Customer-safe view: the internal note must NOT appear in any event/milestone field; the
+    // customer-safe note MAY appear in the customer-visible milestone event.
+    CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
+    assertThat(safe.events()).noneMatch(e -> e.message() != null && e.message().contains(internalSecret));
+    assertThat(safe.milestones()).noneMatch(m -> m.sourceRef() != null && m.sourceRef().contains(internalSecret));
+    assertThat(safe.events()).anyMatch(e -> e.message() != null && e.message().contains(customerText));
+
+    // Operator detail view DOES retain the internal note (in a strictly internal-only event), so the
+    // operator does not lose the information — it is just never customer-visible.
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    assertThat(detail.recentEvents()).anyMatch(e -> e.message() != null && e.message().contains(internalSecret));
+    assertThat(detail.recentEvents())
+        .filteredOn(e -> e.message() != null && e.message().contains(internalSecret))
+        .allMatch(e -> !e.customerVisible());
+  }
+
+  @Test
+  void manualMilestoneSanitizesControlCharactersFromCustomerNote() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MS", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("PACKED", null, "line1\r\nline2\tinjected", true), UUID.randomUUID());
+
+    CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
+    assertThat(safe.events())
+        .filteredOn(e -> "MANUAL_MILESTONE".equals(e.eventType()))
+        .allSatisfy(e -> {
+          assertThat(e.message()).doesNotContain("\r").doesNotContain("\n").doesNotContain("\t");
+          assertThat(e.message()).contains("line1").contains("line2");
+        });
+  }
+
+  @Test
+  void duplicateManualMilestoneDoesNotDuplicateBusinessEffect() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MR", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    // Two manual PACKED actions. Each is a real, audited operator action, but the derived business
+    // effect (the milestone projection) is recomputed idempotently — exactly one PACKED milestone row
+    // in state COMPLETED, never duplicated.
+    service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("PACKED", null, null, true), UUID.randomUUID());
+    service.recordManualMilestone(journey.getId(),
+        new RecordManualMilestoneRequest("PACKED", null, null, true), UUID.randomUUID());
+
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    assertThat(detail.milestones()).filteredOn(m -> "PACKED".equals(m.milestoneCode())).hasSize(1);
+    assertThat(milestone(detail, "PACKED").milestoneState()).isEqualTo("COMPLETED");
+  }
+
+  @Test
+  void customerSafeApiPathIsInternalProtectedPathNotPublicToken() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-MP", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
+    // Honest contract: the path is the internal protected API route for this journey id — not a
+    // signed/opaque public secure link. It deliberately contains the journey id and no token.
+    assertThat(safe.customerSafeApiPath())
+        .isEqualTo("/api/v1/order-journeys/" + journey.getId() + "/customer-safe");
   }
 
   private OrderJourneyMilestoneDto milestone(OrderJourneyDetailDto detail, String code) {

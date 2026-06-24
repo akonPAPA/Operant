@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.journey;
 
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
+import com.orderpilot.api.dto.OrderJourneyDtos.RecordManualMilestoneRequest;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -201,6 +202,60 @@ public class OrderJourneyService {
     return refreshFromSource(journey.getSourceType(), journey.getSourceId());
   }
 
+  /**
+   * OP-CAP-46B — operator manual milestone. Creates a MANUAL fulfillment signal for the requested
+   * milestone, audited, tenant-scoped. Only fulfillment milestones with a corresponding signal type
+   * are supported (FULFILLMENT_PREPARING / PACKED / READY_TO_SHIP / SHIPPED / DELIVERED / CANCELLED /
+   * BLOCKED_EXCEPTION). A MANUAL DELIVERED signal confirms delivery via the existing trusted-evidence
+   * path. No external write.
+   */
+  @Transactional
+  public OrderJourney recordManualMilestone(UUID journeyId, RecordManualMilestoneRequest request, UUID actorId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    Instant now = clock.instant();
+    OrderJourney journey = journeyRepository.findByIdAndTenantId(journeyId, tenantId)
+        .orElseThrow(() -> new NotFoundException("Order journey not found"));
+
+    MilestoneCode code = parseMilestoneCode(request.milestoneCode());
+    FulfillmentSignalType signalType = signalTypeForMilestone(code);
+    boolean customerVisible = Boolean.TRUE.equals(request.customerVisible());
+    String internalNote = sanitizeNote(request.internalNote(), 240);
+    String customerSafeNote = sanitizeNote(request.customerSafeNote(), 200);
+
+    FulfillmentSignal savedSignal = signalRepository.save(new FulfillmentSignal(tenantId, journeyId,
+        FulfillmentSignalSource.MANUAL, signalType, code.label(), null, null, null,
+        customerVisible, now, now));
+
+    // Milestone-advancing event. Its customer-visibility mirrors the operator's choice. The message
+    // NEVER contains the internal note; only a sanitized customer-safe note is appended, and only when
+    // the event is actually customer-visible.
+    String milestoneMessage = "Operator set milestone: " + code.label()
+        + (customerVisible && customerSafeNote != null ? " — " + customerSafeNote : "");
+    eventRepository.save(new OrderJourneyEvent(tenantId, journeyId, "MANUAL_MILESTONE", code.name(),
+        EvidenceLevel.MANUAL, milestoneMessage, FulfillmentSignalSource.MANUAL.name(), null,
+        JourneyActorType.OPERATOR, actorId, customerVisible, now, now));
+
+    // The operator's internal note is recorded as a strictly internal-only event (customerVisible =
+    // false), so it is visible in the operator detail view but can never leak into the customer-safe
+    // view. It is never embedded in the milestone-advancing message above.
+    if (internalNote != null) {
+      eventRepository.save(new OrderJourneyEvent(tenantId, journeyId, "MANUAL_MILESTONE_NOTE", code.name(),
+          EvidenceLevel.MANUAL, "Operator internal note: " + internalNote,
+          FulfillmentSignalSource.MANUAL.name(), null,
+          JourneyActorType.OPERATOR, actorId, false, now, now));
+    }
+
+    // Audit metadata carries ids + the milestone code + the visibility flag only — never note text.
+    auditEventService.record("ORDER_JOURNEY_MANUAL_MILESTONE", "ORDER_JOURNEY", journeyId.toString(), actorId,
+        "{\"milestoneCode\":\"" + code.name() + "\",\"customerVisible\":" + customerVisible + "}");
+
+    journeyProjectionPublisher.publishSourceEvent(tenantId,
+        JourneyProjectionEventType.FULFILLMENT_SIGNAL_RECORDED,
+        journey.getSourceType(), journey.getSourceId(), savedSignal.getId().toString());
+
+    return refreshFromSource(journey.getSourceType(), journey.getSourceId());
+  }
+
   // --- derivation ---------------------------------------------------------------------------------
 
   private record SourceFacts(Instant createdAt, String status, boolean hasValidationRun, boolean hasExceptionCase,
@@ -373,6 +428,45 @@ public class OrderJourneyService {
       case CONNECTOR_MIRROR -> JourneyActorType.CONNECTOR;
       case IMPORT -> JourneyActorType.IMPORT;
       case SYSTEM_DERIVED -> JourneyActorType.SYSTEM;
+    };
+  }
+
+  /**
+   * OP-CAP-46B — bounds an operator-supplied free-text note: trims, strips control characters
+   * (incl. CR/LF, so a note cannot inject extra lines or break the bounded message column) and
+   * truncates to {@code maxLength}. Returns {@code null} when the note is absent or blank.
+   */
+  private static String sanitizeNote(String raw, int maxLength) {
+    if (raw == null) {
+      return null;
+    }
+    String cleaned = raw.replaceAll("\\p{Cntrl}", " ").trim();
+    if (cleaned.isEmpty()) {
+      return null;
+    }
+    return cleaned.length() > maxLength ? cleaned.substring(0, maxLength) : cleaned;
+  }
+
+  private MilestoneCode parseMilestoneCode(String raw) {
+    try {
+      return MilestoneCode.valueOf(raw == null ? "" : raw.trim().toUpperCase());
+    } catch (IllegalArgumentException e) {
+      throw new IllegalArgumentException("Unsupported milestone code: " + raw);
+    }
+  }
+
+  /** OP-CAP-46B — maps a fulfillment milestone to its canonical signal type. */
+  private FulfillmentSignalType signalTypeForMilestone(MilestoneCode code) {
+    return switch (code) {
+      case FULFILLMENT_PREPARING -> FulfillmentSignalType.RESERVED;
+      case PACKED -> FulfillmentSignalType.PACKED;
+      case READY_TO_SHIP -> FulfillmentSignalType.READY_TO_SHIP;
+      case SHIPPED -> FulfillmentSignalType.SHIPPED;
+      case DELIVERED -> FulfillmentSignalType.DELIVERED;
+      case CANCELLED -> FulfillmentSignalType.CANCELLED;
+      case BLOCKED_EXCEPTION -> FulfillmentSignalType.BLOCKED;
+      default -> throw new IllegalArgumentException(
+          "Manual milestone not supported for: " + code.name());
     };
   }
 }

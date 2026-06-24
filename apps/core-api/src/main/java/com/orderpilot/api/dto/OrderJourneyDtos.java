@@ -110,6 +110,12 @@ public final class OrderJourneyDtos {
    * Customer-safe view. Exposes only the customer-visible status, customer-visible milestones, and
    * customer-visible events. Internal status, internal-only milestones/events, risk level, and
    * fulfillment signal internals are intentionally excluded.
+   *
+   * <p>{@code customerSafeApiPath} is the internal, tenant-scoped, permission-protected API path that
+   * serves this customer-safe projection (it still requires ANALYTICS_READ via the route policy and
+   * carries the journey id). It is NOT a public, signed, expiring, or non-enumerable secure tracking
+   * link — a public buyer tracking gateway is deferred to OP-CAP-46C. Frontends must not present this
+   * path to end customers as a shareable public link.
    */
   public record CustomerSafeJourneyDto(
       UUID id,
@@ -118,6 +124,7 @@ public final class OrderJourneyDtos {
       List<OrderJourneyEventDto> events,
       boolean fulfillmentTrackingConnected,
       boolean paymentStatusAvailable,
+      String customerSafeApiPath,
       Instant generatedAt) {}
 
   /** Signal-ingest request for the audited operator-only POST. */
@@ -128,5 +135,21 @@ public final class OrderJourneyDtos {
       BigDecimal confidence,
       String sourceRef,
       String rawPayloadRef,
+      Boolean customerVisible) {}
+
+  /**
+   * OP-CAP-46B — operator manual milestone request. Accepts only the business intent: the milestone
+   * code, an operator-only {@code internalNote}, an optional {@code customerSafeNote}, and the
+   * {@code customerVisible} flag.
+   *
+   * <p>Data boundary: {@code internalNote} is operator-only and can never reach the customer-safe
+   * view. {@code customerSafeNote} is surfaced to customers only when {@code customerVisible} is true,
+   * and only after sanitization/length-limiting. Backend-owned authority fields (tenant, actor,
+   * source, status, risk, approval, audit metadata) are NOT accepted.
+   */
+  public record RecordManualMilestoneRequest(
+      String milestoneCode,
+      String internalNote,
+      String customerSafeNote,
       Boolean customerVisible) {}
 }
