@@ -1,9 +1,11 @@
 package com.orderpilot.api.rest;
 
+import com.orderpilot.api.dto.OrderJourneyDtos.CustomerSafeJourneyDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyAttentionSummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneySummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
+import com.orderpilot.api.dto.OrderJourneyDtos.RecordManualMilestoneRequest;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionHealthDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequest;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequestResponse;
@@ -82,6 +84,12 @@ public class OrderJourneyController {
     return readService.detail(id);
   }
 
+  /** OP-CAP-46B — customer-safe tracking view. Excludes internal-only milestones, events, risk, and status. */
+  @GetMapping("/{id}/customer-safe")
+  public CustomerSafeJourneyDto getCustomerSafe(@PathVariable UUID id) {
+    return readService.customerSafe(id);
+  }
+
   /**
    * OP-CAP-23 — prefers an already-projected journey. When none exists yet, it requests a durable projection
    * (so the projector takes ownership) AND returns a read-materialized projection as the documented temporary
@@ -102,6 +110,15 @@ public class OrderJourneyController {
       @RequestBody RecordFulfillmentSignalRequest request, HttpServletRequest http) {
     UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
     OrderJourney journey = journeyService.recordSignal(id, request, actorId);
+    return readService.detailByEntity(journey);
+  }
+
+  /** OP-CAP-46B — operator manually sets a fulfillment milestone. Audited, tenant-scoped, no external write. */
+  @PostMapping("/{id}/manual-milestones")
+  public OrderJourneyDetailDto recordManualMilestone(@PathVariable UUID id,
+      @RequestBody RecordManualMilestoneRequest request, HttpServletRequest http) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    OrderJourney journey = journeyService.recordManualMilestone(id, request, actorId);
     return readService.detailByEntity(journey);
   }
 

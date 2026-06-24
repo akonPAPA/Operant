@@ -1527,6 +1527,61 @@ class ApiPermissionInterceptorPermissionTest {
         .hasMessageContaining("AI_RESULT_INTAKE");
   }
 
+  // --- OP-CAP-46B order-journey customer-safe read + manual milestone mutation ---
+
+  private static final String MANUAL_MILESTONE_PATH =
+      "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/manual-milestones";
+  private static final String CUSTOMER_SAFE_PATH =
+      "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/customer-safe";
+
+  @Test
+  void orderJourneyCustomerSafeReadWithAnalyticsReadSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", CUSTOMER_SAFE_PATH);
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void orderJourneyCustomerSafeReadWithoutPermissionIsRejected() throws Exception {
+    // Not a public route — there is no public buyer tracking gateway in this slice.
+    MockHttpServletRequest req = new MockHttpServletRequest("GET", CUSTOMER_SAFE_PATH);
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("ANALYTICS_READ");
+  }
+
+  @Test
+  void manualMilestoneWithReviewActionSucceeds() throws Exception {
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", MANUAL_MILESTONE_PATH);
+    req.addHeader("X-OrderPilot-Permissions", "REVIEW_ACTION");
+
+    assertThatNoException().isThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER));
+  }
+
+  @Test
+  void manualMilestoneWithoutPermissionIsRejectedBeforeReachingService() throws Exception {
+    // Denial happens in preHandle (the interceptor runs before the controller), so a denied manual
+    // milestone request never reaches OrderJourneyService.recordManualMilestone — no mutation occurs.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", MANUAL_MILESTONE_PATH);
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
+  @Test
+  void manualMilestoneWithReadOnlyPermissionIsRejected() throws Exception {
+    // The read permission (ANALYTICS_READ) must NOT satisfy the audited mutation.
+    MockHttpServletRequest req = new MockHttpServletRequest("POST", MANUAL_MILESTONE_PATH);
+    req.addHeader("X-OrderPilot-Permissions", "ANALYTICS_READ");
+
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("REVIEW_ACTION");
+  }
+
   // --- unrelated paths are not affected ---
 
   @Test
