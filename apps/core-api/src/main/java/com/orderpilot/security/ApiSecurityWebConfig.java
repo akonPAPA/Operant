@@ -42,7 +42,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @EnableWebSecurity
 @Import(GatewayHeaderReplayStoreConfiguration.class)
 public class ApiSecurityWebConfig implements WebMvcConfigurer {
+  // OP-CAP-44E: the permission interceptor is registered on the ENTIRE /api/** surface, not just the
+  // currently-shipped /api/v1, /api/stage8, /api/stage9 prefixes. Registering only the known prefixes
+  // left a fail-open class: any future /api/<other> route (e.g. a new /api/v2 or /api/internal group)
+  // would be authenticated by Spring Security but never reach an authorization check. With /api/** the
+  // interceptor runs on every API route and ApiRouteSecurityPolicy fails closed (TenantPolicyException)
+  // on any path it does not explicitly classify as public or protected. Known-public routes (health,
+  // provider webhooks) are still classified public by the policy and pass through.
   static final String[] PERMISSION_INTERCEPTOR_PATHS = {
+      "/api/**"
+  };
+  // Documents the protected API route groups currently shipped. /api/** above covers these plus any
+  // future group; this list keeps the coverage test explicit about the known groups it must protect.
+  static final String[] KNOWN_PROTECTED_ROUTE_GROUPS = {
       "/api/v1/**",
       "/api/stage8/**",
       "/api/stage9/**"

@@ -174,8 +174,16 @@ class ApiPermissionRouteCoverageTest {
 
   @Test
   void interceptorRegistrationCoversAllRouteMatrixProtectedGroups() {
+    // OP-CAP-44E: the interceptor is now registered on the whole /api/** surface (default-deny), and
+    // the known shipped protected groups remain explicitly documented and covered by that pattern.
     assertThat(Arrays.asList(ApiSecurityWebConfig.PERMISSION_INTERCEPTOR_PATHS))
-        .contains("/api/v1/**", "/api/stage8/**", "/api/stage9/**");
+        .containsExactly("/api/**");
+    for (String group : ApiSecurityWebConfig.KNOWN_PROTECTED_ROUTE_GROUPS) {
+      assertThat(group).startsWith("/api/");
+      assertThat(matchesAny(group.replace("**", "probe"), ApiSecurityWebConfig.PERMISSION_INTERCEPTOR_PATHS))
+          .as("known protected group %s must be under an ApiPermissionInterceptor path", group)
+          .isTrue();
+    }
     protectedRoutes().forEach(route ->
         assertThat(matchesAny(route.path(), ApiSecurityWebConfig.PERMISSION_INTERCEPTOR_PATHS))
             .as("%s must be under an ApiPermissionInterceptor path", route.name())
