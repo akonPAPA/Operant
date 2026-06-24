@@ -66,6 +66,15 @@ public class ApiRouteSecurityPolicy {
     if (HttpMethod.GET.matches(method) && matchesAny(path, ApiSecurityWebConfig.PUBLIC_GET_ROUTES)) {
       return Optional.of(RouteDecision.publicRoute(SecurityClassification.PUBLIC_INTENTIONAL, "health endpoint"));
     }
+    // OP-CAP-46C: the secure order-journey tracking link is public-with-token. There is no tenant/actor
+    // header and no permission grant; the opaque, expiring token in the path is the sole credential and
+    // the backend derives the tenant/journey scope from it. Read-only — never an external write.
+    if (HttpMethod.GET.matches(method)
+        && matchesAny(path, ApiSecurityWebConfig.PUBLIC_GET_SECURE_LINK_ROUTES)) {
+      return Optional.of(RouteDecision.publicRoute(
+          SecurityClassification.SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN,
+          "secure tracking link resolved by opaque expiring token; tenant/journey scope derived from the token, never the request"));
+    }
     if (HttpMethod.POST.matches(method) && matchesAny(path, ApiSecurityWebConfig.PUBLIC_POST_WEBHOOK_ROUTES)) {
       return Optional.of(RouteDecision.publicRoute(
           SecurityClassification.WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN,
@@ -236,6 +245,7 @@ public class ApiRouteSecurityPolicy {
   public enum SecurityClassification {
     PUBLIC_INTENTIONAL,
     WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN,
+    SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN,
     PROTECTED_READ,
     PROTECTED_CREATE,
     PROTECTED_UPDATE,

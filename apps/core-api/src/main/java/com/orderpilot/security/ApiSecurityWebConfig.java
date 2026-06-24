@@ -66,6 +66,14 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       "/actuator/info",
       "/api/v1/health"
   };
+  // OP-CAP-46C: public-with-token secure tracking link(s). Distinct from PUBLIC_GET_ROUTES (which is
+  // strictly health/intentional) because these are business reads gated by an opaque, expiring,
+  // tenant/journey-scoped token in the path (the sole credential) rather than a permission grant. The
+  // route policy classifies them SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN; the service resolves all scope
+  // from the token. Read-only — no external write, no order/ETA/milestone mutation.
+  static final String[] PUBLIC_GET_SECURE_LINK_ROUTES = {
+      "/api/v1/public/order-tracking/*"
+  };
   static final String[] PUBLIC_POST_WEBHOOK_ROUTES = {
       "/api/v1/bot/telegram/webhook",
       "/api/v1/bot-runtime/telegram/webhook",
@@ -161,6 +169,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
                     "ACCESS_DENIED", "Access denied")))
         .authorizeHttpRequests(auth -> auth
             .requestMatchers(HttpMethod.GET, PUBLIC_GET_ROUTES).permitAll()
+            .requestMatchers(HttpMethod.GET, PUBLIC_GET_SECURE_LINK_ROUTES).permitAll()
             .requestMatchers(HttpMethod.POST, PUBLIC_POST_WEBHOOK_ROUTES).permitAll()
             .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
             .requestMatchers("/api/**").authenticated()

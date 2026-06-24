@@ -30,6 +30,9 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class ApiRouteSecurityClassificationTest {
   private static final Set<String> EXPECTED_PUBLIC_ROUTES = Set.of(
       "GET /api/v1/health",
+      // OP-CAP-46C: public-with-token secure order-journey tracking link (opaque expiring token is the
+      // sole credential; tenant/journey scope is derived from the token, never from the request).
+      "GET /api/v1/public/order-tracking/{token}",
       "POST /api/v1/bot/telegram/webhook",
       "POST /api/v1/bot-runtime/telegram/webhook",
       "POST /api/v1/channel-gateway/whatsapp/webhook",
@@ -253,7 +256,28 @@ class ApiRouteSecurityClassificationTest {
             "POST",
             "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/manual-milestones",
             SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.REVIEW_ACTION),
+        // OP-CAP-46C: minting a secure tracking link is an audited operator action under the
+        // order-journey prefix — REVIEW_ACTION, the same gate as the sibling signal/milestone writes.
+        new RouteExpectation(
+            "POST",
+            "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/tracking-links",
+            SecurityClassification.PROTECTED_CREATE,
             ApiPermission.REVIEW_ACTION));
+  }
+
+  // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
+  // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the
+  // opaque expiring token, not by any request authority field.
+  @Test
+  void secureTrackingLinkResolveRouteIsPublicWithToken() {
+    RouteDecision decision = policy.classify(
+        "GET", "/api/v1/public/order-tracking/some-opaque-token").orElseThrow();
+
+    assertThat(decision.isPublic()).isTrue();
+    assertThat(decision.requiredPermission()).isNull();
+    assertThat(decision.classification())
+        .isEqualTo(SecurityClassification.SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN);
   }
 
   private static Stream<RouteExpectation> changeRequestLifecycleRoutes() {

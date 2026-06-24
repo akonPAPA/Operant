@@ -4,8 +4,10 @@ import com.orderpilot.api.dto.OrderJourneyDtos.CustomerSafeJourneyDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyAttentionSummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneySummaryDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.CreateTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordManualMilestoneRequest;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionHealthDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequest;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequestResponse;
@@ -16,6 +18,7 @@ import com.orderpilot.application.services.journey.OrderJourneyProjectionPublish
 import com.orderpilot.application.services.journey.OrderJourneyProjectorRunner;
 import com.orderpilot.application.services.journey.OrderJourneyReadService;
 import com.orderpilot.application.services.journey.OrderJourneyService;
+import com.orderpilot.application.services.journey.OrderJourneyTrackingLinkService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.journey.JourneySourceType;
 import com.orderpilot.domain.journey.OrderJourney;
@@ -50,16 +53,19 @@ public class OrderJourneyController {
   private final OrderJourneyProjectorRunner projectorRunner;
   private final OrderJourneyProjectionPublisher projectionPublisher;
   private final OrderJourneyProjectionDrainService drainService;
+  private final OrderJourneyTrackingLinkService trackingLinkService;
   private final RequestActorResolver actorResolver;
 
   public OrderJourneyController(OrderJourneyReadService readService, OrderJourneyService journeyService,
       OrderJourneyProjectorRunner projectorRunner, OrderJourneyProjectionPublisher projectionPublisher,
-      OrderJourneyProjectionDrainService drainService, RequestActorResolver actorResolver) {
+      OrderJourneyProjectionDrainService drainService, OrderJourneyTrackingLinkService trackingLinkService,
+      RequestActorResolver actorResolver) {
     this.readService = readService;
     this.journeyService = journeyService;
     this.projectorRunner = projectorRunner;
     this.projectionPublisher = projectionPublisher;
     this.drainService = drainService;
+    this.trackingLinkService = trackingLinkService;
     this.actorResolver = actorResolver;
   }
 
@@ -120,6 +126,19 @@ public class OrderJourneyController {
     UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
     OrderJourney journey = journeyService.recordManualMilestone(id, request, actorId);
     return readService.detailByEntity(journey);
+  }
+
+  /**
+   * OP-CAP-46C — operator mints a secure tracking link for this journey. Audited operator action
+   * (REVIEW_ACTION via the order-journey prefix rule). Tenant from {@code X-Tenant-Id}, actor from the
+   * trusted resolver, journey from the path; request body carries only an optional TTL. The raw token
+   * is returned exactly once embedded in the path and is never stored or logged. No external write.
+   */
+  @PostMapping("/{id}/tracking-links")
+  public TrackingLinkCreatedDto createTrackingLink(@PathVariable UUID id,
+      @RequestBody(required = false) CreateTrackingLinkRequest request, HttpServletRequest http) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return trackingLinkService.create(id, request, actorId);
   }
 
   /** OP-CAP-23 — explicit, tenant-scoped projector batch run (no background daemon). */
