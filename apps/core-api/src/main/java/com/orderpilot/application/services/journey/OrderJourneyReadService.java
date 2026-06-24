@@ -1,6 +1,8 @@
 package com.orderpilot.application.services.journey;
 
 import com.orderpilot.api.dto.OrderJourneyDtos.CustomerSafeJourneyDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.CustomerTrackingEventDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.CustomerTrackingMilestoneDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.FulfillmentSignalDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyAttentionSummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
@@ -119,15 +121,15 @@ public class OrderJourneyReadService {
     UUID tenantId = TenantContext.requireTenantId();
     OrderJourney journey = journeyRepository.findByIdAndTenantId(id, tenantId)
         .orElseThrow(() -> new NotFoundException("Order journey not found"));
-    List<OrderJourneyMilestoneDto> milestones = milestoneRepository
+    List<CustomerTrackingMilestoneDto> milestones = milestoneRepository
         .findByTenantIdAndJourneyIdOrderBySortOrderAsc(tenantId, id).stream()
         .filter(OrderJourneyMilestone::isCustomerVisible)
-        .map(this::toMilestone)
+        .map(this::toCustomerMilestone)
         .toList();
-    List<OrderJourneyEventDto> events = eventRepository
+    List<CustomerTrackingEventDto> events = eventRepository
         .findByTenantIdAndJourneyIdOrderByOccurredAtDesc(tenantId, id, PageRequest.of(0, EVENT_LIMIT)).stream()
         .filter(OrderJourneyEvent::isCustomerVisible)
-        .map(this::toEvent)
+        .map(this::toCustomerEvent)
         .toList();
     boolean fulfillmentConnected = milestones.stream()
         .anyMatch(m -> !"UNKNOWN".equals(m.evidenceLevel()) && !"NOT_STARTED".equals(m.milestoneState()));
@@ -174,10 +176,20 @@ public class OrderJourneyReadService {
         m.getSourceType(), m.getSourceRef(), m.isCustomerVisible(), m.getSortOrder());
   }
 
+  private CustomerTrackingMilestoneDto toCustomerMilestone(OrderJourneyMilestone m) {
+    return new CustomerTrackingMilestoneDto(m.getMilestoneCode().name(), m.getMilestoneLabel(),
+        m.getMilestoneState().name(), m.getEvidenceLevel().name(), m.getOccurredAt(), m.getEstimatedAt());
+  }
+
   private OrderJourneyEventDto toEvent(OrderJourneyEvent e) {
     return new OrderJourneyEventDto(e.getEventType(), e.getEventStatus(), e.getEvidenceLevel().name(),
         e.getMessage(), e.getSourceType(), e.getSourceRef(), e.getActorType().name(), e.isCustomerVisible(),
         e.getOccurredAt());
+  }
+
+  private CustomerTrackingEventDto toCustomerEvent(OrderJourneyEvent e) {
+    return new CustomerTrackingEventDto(e.getEventType(), e.getEventStatus(), e.getEvidenceLevel().name(),
+        e.getMessage(), e.getOccurredAt());
   }
 
   private FulfillmentSignalDto toSignal(FulfillmentSignal s) {

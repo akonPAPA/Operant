@@ -3,6 +3,7 @@ package com.orderpilot.application.services.journey;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.OrderJourneyDtos.CustomerSafeJourneyDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyMilestoneDto;
@@ -45,6 +46,7 @@ class OrderJourneyServiceTest {
   @Autowired private AuditEventRepository auditEventRepository;
 
   private static final Instant NOW = Instant.parse("2026-06-14T00:00:00Z");
+  private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
 
   @AfterEach
   void clearTenant() {
@@ -135,6 +137,11 @@ class OrderJourneyServiceTest {
     // customer-safe surface must not claim delivered on the strength of an unverified mirror
     CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
     assertThat(safe.customerVisibleStatus()).isNotEqualTo("Delivered");
+    assertThat(toJson(safe))
+        .doesNotContain("carrier-1")
+        .doesNotContain("\"sourceRef\"")
+        .doesNotContain("\"sourceType\"")
+        .doesNotContain("\"actorType\"");
   }
 
   @Test
@@ -213,7 +220,6 @@ class OrderJourneyServiceTest {
 
     assertThat(safe.customerVisibleStatus()).isNotBlank();
     // internal-only milestones must not leak into the customer-safe view
-    assertThat(safe.milestones()).allMatch(OrderJourneyMilestoneDto::customerVisible);
     assertThat(safe.milestones()).noneMatch(m -> m.milestoneCode().equals("VALIDATION_STARTED"));
     assertThat(safe.milestones()).noneMatch(m -> m.milestoneCode().equals("QUOTE_DRAFTED"));
     assertThat(safe.paymentStatusAvailable()).isFalse();
@@ -364,8 +370,17 @@ class OrderJourneyServiceTest {
     // customer-safe note MAY appear in the customer-visible milestone event.
     CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
     assertThat(safe.events()).noneMatch(e -> e.message() != null && e.message().contains(internalSecret));
-    assertThat(safe.milestones()).noneMatch(m -> m.sourceRef() != null && m.sourceRef().contains(internalSecret));
     assertThat(safe.events()).anyMatch(e -> e.message() != null && e.message().contains(customerText));
+    assertThat(toJson(safe))
+        .doesNotContain(internalSecret)
+        .doesNotContain("\"sourceRef\"")
+        .doesNotContain("\"sourceType\"")
+        .doesNotContain("\"actorType\"")
+        .doesNotContain("\"sortOrder\"")
+        .doesNotContain("\"customerVisible\"")
+        .doesNotContain("\"fulfillmentSignals\"")
+        .doesNotContain("\"riskLevel\"")
+        .doesNotContain("\"internalStatus\"");
 
     // Operator detail view DOES retain the internal note (in a strictly internal-only event), so the
     // operator does not lose the information — it is just never customer-visible.
@@ -434,5 +449,13 @@ class OrderJourneyServiceTest {
 
   private OrderJourneyMilestoneDto milestone(OrderJourneyDetailDto detail, String code) {
     return detail.milestones().stream().filter(m -> m.milestoneCode().equals(code)).findFirst().orElseThrow();
+  }
+
+  private static String toJson(Object value) {
+    try {
+      return JSON.writeValueAsString(value);
+    } catch (Exception ex) {
+      throw new AssertionError("Failed to serialize test DTO", ex);
+    }
   }
 }
