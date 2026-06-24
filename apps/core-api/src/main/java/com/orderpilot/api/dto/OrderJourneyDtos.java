@@ -107,6 +107,29 @@ public final class OrderJourneyDtos {
       Instant generatedAt) {}
 
   /**
+   * Customer-safe milestone shape. It intentionally omits operator/internal projection fields such as
+   * source type/ref, actor data, sort order, raw payload pointers, audit ids, and implementation flags.
+   */
+  public record CustomerTrackingMilestoneDto(
+      String milestoneCode,
+      String milestoneLabel,
+      String milestoneState,
+      String evidenceLevel,
+      Instant occurredAt,
+      Instant estimatedAt) {}
+
+  /**
+   * Customer-safe event shape. It intentionally omits actor, source/ref, audit, connector, and raw
+   * payload details while preserving the safe status message and evidence classification.
+   */
+  public record CustomerTrackingEventDto(
+      String eventType,
+      String eventStatus,
+      String evidenceLevel,
+      String message,
+      Instant occurredAt) {}
+
+  /**
    * Customer-safe view. Exposes only the customer-visible status, customer-visible milestones, and
    * customer-visible events. Internal status, internal-only milestones/events, risk level, and
    * fulfillment signal internals are intentionally excluded.
@@ -122,8 +145,8 @@ public final class OrderJourneyDtos {
   public record CustomerSafeJourneyDto(
       UUID id,
       String customerVisibleStatus,
-      List<OrderJourneyMilestoneDto> milestones,
-      List<OrderJourneyEventDto> events,
+      List<CustomerTrackingMilestoneDto> milestones,
+      List<CustomerTrackingEventDto> events,
       boolean fulfillmentTrackingConnected,
       boolean paymentStatusAvailable,
       String customerSafeApiPath,
