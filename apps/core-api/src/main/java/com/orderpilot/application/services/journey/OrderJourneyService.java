@@ -171,6 +171,16 @@ public class OrderJourneyService {
     FulfillmentSignalType type = parseType(request.signalType());
     boolean customerVisible = Boolean.TRUE.equals(request.customerVisible());
 
+    // OP-CAP-46A idempotency: a replayed signal (same tenant + journey + source + type + stable
+    // sourceRef) must not create a duplicate signal/event/audit or duplicate milestone effect. Keyed on
+    // sourceRef when the caller supplies the stable reference for that physical fulfillment event.
+    String sourceRef = request.sourceRef();
+    if (sourceRef != null && !sourceRef.isBlank()
+        && signalRepository.findFirstByTenantIdAndJourneyIdAndSourceTypeAndSignalTypeAndSourceRef(
+            tenantId, journeyId, source, type, sourceRef).isPresent()) {
+      return journey;
+    }
+
     FulfillmentSignal savedSignal = signalRepository.save(new FulfillmentSignal(tenantId, journeyId, source, type,
         request.signalStatus(), request.confidence(), request.sourceRef(), request.rawPayloadRef(),
         customerVisible, now, now));
@@ -271,15 +281,38 @@ public class OrderJourneyService {
 
     // Fulfillment signals (chronological) advance their mapped milestone with the signal's evidence.
     for (FulfillmentSignal signal : signals) {
-      signal.getSignalType().milestoneCode().ifPresent(code -> map.put(code,
-          new Computed(MilestoneState.COMPLETED, signal.getSourceType().evidenceLevel(), signal.effectiveAt(),
-              signal.getSourceRef())));
+      EvidenceLevel evidence = signal.getSourceType().evidenceLevel();
+      signal.getSignalType().milestoneCode().ifPresent(code -> {
+        if (code == MilestoneCode.DELIVERED && !isTrustedDeliveryEvidence(evidence)) {
+          // OP-CAP-46A forbidden path: a carrier/WMS-mirrored (or otherwise unverified) "delivered"
+          // signal must NOT directly complete DELIVERED. It is surfaced as reported-but-unconfirmed
+          // (ACTIVE / ESTIMATED) — only a VERIFIED internal event or an operator-attested MANUAL
+          // signal may confirm delivery. A prior trusted confirmation is never downgraded.
+          Computed existing = map.get(code);
+          if (existing == null || existing.state() != MilestoneState.COMPLETED) {
+            map.put(code, new Computed(MilestoneState.ACTIVE, EvidenceLevel.ESTIMATED, signal.effectiveAt(),
+                signal.getSourceRef()));
+          }
+        } else {
+          map.put(code, new Computed(MilestoneState.COMPLETED, evidence, signal.effectiveAt(),
+              signal.getSourceRef()));
+        }
+      });
       if (signal.getSignalType().isBlocking()) {
         map.put(MilestoneCode.BLOCKED_EXCEPTION, new Computed(MilestoneState.ACTIVE,
-            signal.getSourceType().evidenceLevel(), signal.effectiveAt(), signal.getSourceRef()));
+            evidence, signal.effectiveAt(), signal.getSourceRef()));
       }
     }
     return map;
+  }
+
+  /**
+   * OP-CAP-46A — DELIVERED is a high-stakes, near-terminal milestone. Only a VERIFIED internal event or
+   * an operator-attested MANUAL signal may confirm it; MIRRORED/IMPORT/SYSTEM_DERIVED/ESTIMATED evidence
+   * (e.g. an unverified carrier/WMS mirror) cannot directly mark an order delivered.
+   */
+  private static boolean isTrustedDeliveryEvidence(EvidenceLevel evidence) {
+    return evidence == EvidenceLevel.VERIFIED || evidence == EvidenceLevel.MANUAL;
   }
 
   private void persistMilestones(UUID tenantId, UUID journeyId, Map<MilestoneCode, Computed> computed, Instant now) {

@@ -115,6 +115,75 @@ class OrderJourneyServiceTest {
   }
 
   @Test
+  void unverifiedCarrierDeliveredSignalDoesNotMarkDelivered() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-D1", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    // A carrier/WMS mirror is MIRRORED (unverified). It must NOT directly complete DELIVERED.
+    RecordFulfillmentSignalRequest carrier = new RecordFulfillmentSignalRequest(
+        "CONNECTOR_MIRROR", "DELIVERED", "DELIVERED", null, "carrier-1", null, true);
+    service.recordSignal(journey.getId(), carrier, UUID.randomUUID());
+
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    assertThat(milestone(detail, "DELIVERED").milestoneState()).isEqualTo("ACTIVE");
+    assertThat(milestone(detail, "DELIVERED").evidenceLevel()).isEqualTo("ESTIMATED");
+    assertThat(detail.currentStage()).isNotEqualTo("DELIVERED");
+    // customer-safe surface must not claim delivered on the strength of an unverified mirror
+    CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
+    assertThat(safe.customerVisibleStatus()).isNotEqualTo("Delivered");
+  }
+
+  @Test
+  void verifiedOrManualDeliveredSignalConfirmsDelivery() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    // Trusted internal verified delivery confirms DELIVERED.
+    UUID internalQuote = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-D2", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney internalJourney = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, internalQuote);
+    service.recordSignal(internalJourney.getId(), new RecordFulfillmentSignalRequest(
+        "INTERNAL", "DELIVERED", "DELIVERED", null, "wh-deliver-1", null, true), UUID.randomUUID());
+    OrderJourneyDetailDto internalDetail = readService.detail(internalJourney.getId());
+    assertThat(milestone(internalDetail, "DELIVERED").milestoneState()).isEqualTo("COMPLETED");
+    assertThat(milestone(internalDetail, "DELIVERED").evidenceLevel()).isEqualTo("VERIFIED");
+
+    // Operator-attested MANUAL delivery also confirms DELIVERED.
+    UUID manualQuote = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-D3", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney manualJourney = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, manualQuote);
+    service.recordSignal(manualJourney.getId(), new RecordFulfillmentSignalRequest(
+        "MANUAL", "DELIVERED", "DELIVERED", null, "op-confirm-1", null, true), UUID.randomUUID());
+    OrderJourneyDetailDto manualDetail = readService.detail(manualJourney.getId());
+    assertThat(milestone(manualDetail, "DELIVERED").milestoneState()).isEqualTo("COMPLETED");
+    assertThat(milestone(manualDetail, "DELIVERED").evidenceLevel()).isEqualTo("MANUAL");
+  }
+
+  @Test
+  void duplicateFulfillmentSignalIsIdempotent() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    UUID quoteId = draftQuoteRepository.save(new DraftQuote(tenantId, "Q-DUP", UUID.randomUUID(), UUID.randomUUID(),
+        UUID.randomUUID(), UUID.randomUUID(), "APPROVED", "USD", null, NOW)).getId();
+    OrderJourney journey = service.refreshFromSource(JourneySourceType.DRAFT_QUOTE, quoteId);
+
+    RecordFulfillmentSignalRequest req = new RecordFulfillmentSignalRequest(
+        "INTERNAL", "PACKED", "OK", new BigDecimal("0.990"), "wh-ref-dup", null, true);
+    service.recordSignal(journey.getId(), req, UUID.randomUUID());
+    // Replay the same physical signal (same source + type + sourceRef) — must be a no-op.
+    service.recordSignal(journey.getId(), req, UUID.randomUUID());
+
+    OrderJourneyDetailDto detail = readService.detail(journey.getId());
+    assertThat(detail.fulfillmentSignals()).hasSize(1);
+    assertThat(milestone(detail, "PACKED").milestoneState()).isEqualTo("COMPLETED");
+    long signalAudits = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId).stream()
+        .filter(e -> "ORDER_JOURNEY_SIGNAL_RECORDED".equals(e.getAction())).count();
+    assertThat(signalAudits).isEqualTo(1);
+  }
+
+  @Test
   void reconciliationCaseJourneyIsBlockedAndShowsInAttention() {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
