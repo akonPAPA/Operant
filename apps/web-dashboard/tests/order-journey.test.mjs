@@ -23,13 +23,20 @@ const badge = readFileSync(badgePath, "utf8");
 const signal = readFileSync(signalPath, "utf8");
 const nav = readFileSync(navPath, "utf8");
 
-test("order journey API client is read-only, tenant + permission scoped", () => {
+test("order journey API client is tenant + permission scoped; reads stay GET-only", () => {
   assert.equal(existsSync(apiClientPath), true);
   assert.match(apiClient, /\/api\/v1\/order-journeys/);
   assert.match(apiClient, /X-Tenant-Id/);
   assert.match(apiClient, /X-OrderPilot-Permissions/);
   assert.match(apiClient, /ANALYTICS_READ/);
-  assert.doesNotMatch(apiClient, /method:\s*"(POST|PUT|PATCH|DELETE)"/);
+  // The shared read helper uses GET and ANALYTICS_READ. OP-CAP-46D added a single,
+  // explicitly REVIEW_ACTION-guarded mutation (createOrderJourneyTrackingLink); no
+  // other writes are allowed in this client.
+  const readBlock = apiClient.slice(0, apiClient.indexOf("createOrderJourneyTrackingLink"));
+  assert.doesNotMatch(readBlock, /method:\s*"(POST|PUT|PATCH|DELETE)"/);
+  const postCount = (apiClient.match(/method:\s*"POST"/g) ?? []).length;
+  assert.equal(postCount, 1, "exactly one POST mutation is allowed (tracking link)");
+  assert.doesNotMatch(apiClient, /method:\s*"(PUT|PATCH|DELETE)"/);
 });
 
 test("navigation includes Order Journey under the Transactions group", () => {
@@ -87,8 +94,10 @@ test("OP-CAP-23: api client exposes read-only projector health and projection so
   assert.match(apiClient, /\/api\/v1\/order-journeys\/projection-health/);
   assert.match(apiClient, /getJourneyProjectionHealth/);
   assert.match(apiClient, /projectionSource\?/);
-  // health read stays a GET (no projector mutation control wired into the read client)
-  assert.doesNotMatch(apiClient, /method:\s*"(POST|PUT|PATCH|DELETE)"/);
+  // The health read stays a GET (no projector mutation control wired into the read client).
+  // OP-CAP-46D added one POST for tracking-link minting; assert the projector-health helper
+  // stays a GET regardless.
+  assert.match(apiClient, /read<JourneyProjectionHealth>\("\/api\/v1\/order-journeys\/projection-health"\)/);
 });
 
 test("OP-CAP-23: detail honestly reports projection source without inventing status", () => {

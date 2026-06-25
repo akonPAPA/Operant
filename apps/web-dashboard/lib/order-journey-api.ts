@@ -107,8 +107,17 @@ export type OrderJourneyListResult = { data: OrderJourneySummary | null; error?:
 export type OrderJourneyDetailResult = { data: OrderJourneyDetail | null; error?: string };
 export type JourneyProjectionHealthResult = { data: JourneyProjectionHealth | null; error?: string };
 
+// OP-CAP-46D — operator-minted secure tracking link result. Mirrors the safe backend DTO:
+// the raw token is embedded once in `trackingPath` for one-shot sharing, and `expiresAt` is
+// the ISO-8601 expiry. No tenantId, journeyId, token hash, or internal link id is carried.
+export type TrackingLinkCreated = {
+  trackingPath: string;
+  expiresAt: string;
+};
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 const ANALYTICS_READ = "ANALYTICS_READ";
+const REVIEW_ACTION = "REVIEW_ACTION";
 
 export const orderJourneyClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
@@ -169,4 +178,61 @@ export async function getOrderJourney(id: string): Promise<OrderJourneyDetailRes
 // OP-CAP-23: bounded, read-only projector health (pending/failed/dead-lettered counts + last processed).
 export async function getJourneyProjectionHealth(): Promise<JourneyProjectionHealthResult> {
   return read<JourneyProjectionHealth>("/api/v1/order-journeys/projection-health");
+}
+
+// OP-CAP-46D — operator mints a one-time secure customer tracking link. The request body
+// carries business intent only (optional TTL); tenant comes from `X-Tenant-Id` and the actor
+// is server-resolved from the trusted header. The journey id is in the path.
+//
+// Non-2xx responses are turned into thrown errors with the HTTP `status` attached so the caller
+// can map them to operator-safe messages through `mapOperatorActionError` — the raw backend
+// body is intentionally drained and never surfaced (it may carry internal ids/metadata).
+//
+// The raw token is embedded in `trackingPath` exactly once and is NEVER persisted client-side
+// (no localStorage / sessionStorage), NEVER logged, and NEVER sent to analytics.
+export async function createOrderJourneyTrackingLink(
+  journeyId: string,
+  expiresInHours?: number
+): Promise<TrackingLinkCreated> {
+  if (!orderJourneyClient.tenantId) {
+    throw Object.assign(new Error("Tenant scope is not configured."), { status: 0 });
+  }
+  const body: Record<string, number> = {};
+  if (typeof expiresInHours === "number" && Number.isFinite(expiresInHours)) {
+    body.expiresInHours = expiresInHours;
+  }
+  let response: Response;
+  try {
+    response = await fetch(
+      `${orderJourneyClient.baseUrl}/api/v1/order-journeys/${encodeURIComponent(journeyId)}/tracking-links`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "X-OrderPilot-Permissions": REVIEW_ACTION,
+          "X-Tenant-Id": orderJourneyClient.tenantId
+        },
+        body: JSON.stringify(body)
+      }
+    );
+  } catch {
+    throw Object.assign(new Error("Core API is not reachable."), { status: 0 });
+  }
+  if (!response.ok) {
+    // Drain the body so the socket can be reused; never surface it — backend error bodies may
+    // reference internal ids / tenant scoping that must not reach the operator UI.
+    try {
+      await response.text();
+    } catch {
+      // ignore
+    }
+    throw Object.assign(new Error(`Core API returned ${response.status}.`), { status: response.status });
+  }
+  const text = await response.text();
+  const parsed = text ? (JSON.parse(text) as Partial<TrackingLinkCreated>) : null;
+  if (!parsed || typeof parsed.trackingPath !== "string" || typeof parsed.expiresAt !== "string") {
+    throw Object.assign(new Error("Tracking link response was malformed."), { status: 500 });
+  }
+  return { trackingPath: parsed.trackingPath, expiresAt: parsed.expiresAt };
 }
