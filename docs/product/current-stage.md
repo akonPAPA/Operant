@@ -178,7 +178,7 @@ Date: 2026-06-25
 Date: 2026-06-25
 
 - Stage: OP-CAP-46J — Fulfillment Signal Idempotency + PostgreSQL Query Proof
-- Branch and short HEAD: `OP-CAP-46J-fulfillment-signal-idempotency-postgres-proof` / `20eb548`
+- Branch and short HEAD: `OP-CAP-46J-fulfillment-signal-idempotency-postgres-proof` / `684ca56`
 - Why this stage exists: secure tracking links are proven; the next backend foundation is trustworthy fulfillment signal ingestion with idempotency and tenant-scoped query behavior.
 - Почему это не UI: это не frontend, не buyer portal и не carrier integration; это proof idempotency/tenant boundary для будущего tracking/fulfillment visibility.
 - Docker/Testcontainers status: Docker reachable; real PostgreSQL integration profile proven locally. Initial per-class Testcontainers container detection skipped on Windows pipe configuration, so the final proof follows the repo's existing `DatabaseIntegrationTestBase` PostgreSQL pattern.
@@ -201,3 +201,22 @@ Date: 2026-06-25
   - real carrier integration
   - customer-facing UI
 - Next action: next bounded slice can build operator/customer visibility on top of this idempotent fulfillment-signal foundation; do not start UI/carrier work without a separate gate.
+
+## OP-CAP-46K / 46L Post-Merge Proof Status
+
+Date: 2026-06-25
+
+- Stage: OP-CAP-46J fulfillment signal idempotency PostgreSQL proof is merged through PR #180 into `main`.
+- Proof commit: `684ca56` (`test: prove fulfillment signal idempotency on postgres`).
+- GitHub Actions / PR checks: green for PR #180; Backend, CI, Frontend, AI Worker, Combined Verification, Semgrep, Codacy, and CodeQL completed successfully.
+- Local OP-CAP-46K docs commit `cbadfd3` recorded useful status, but it was not remote-visible and did not have its own CI proof. Этот статус сохранён через backup branch and this reconciled docs slice, not by pretending `cbadfd3` was proven remotely.
+- Scope boundary: docs/status reconciliation only; no production code, tests, migrations, frontend, worker, carrier, ETA, or customer-facing behavior changes.
+- Testcontainers caveat: do not claim a separate per-class Testcontainers harness proof; the proven PostgreSQL path used the repo-approved `DatabaseIntegrationTestBase` integration profile.
+- Не доказано / not proven:
+  - full backend suite beyond the PR/backend checks and targeted proof already recorded
+  - production readiness
+  - real carrier integration
+  - customer-facing UI/runtime behavior
+  - separate per-class Testcontainers harness
+  - CI for this new docs-only reconciliation commit unless a fresh CI run completes
+- Next action: OP-CAP-47A may start only as a new branch from updated `main`; do not depend on the old OP-CAP-46J branch.
