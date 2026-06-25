@@ -2,7 +2,9 @@ package com.orderpilot.application.services.journey;
 
 import com.orderpilot.api.dto.OrderJourneyDtos.CreateTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
+import com.orderpilot.api.dto.OrderJourneyDtos.RevokeTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkRevokedDto;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -97,6 +99,38 @@ public class OrderJourneyTrackingLinkService {
   }
 
   /**
+   * OP-CAP-46G — operator action: revoke a tracking link before its natural expiry. The link is
+   * identified by its internal id within the operator's tenant AND the path journey — never by the raw
+   * token (which the operator does not hold and must never need). Tenant comes from {@link
+   * TenantContext} (header), journey from the path id, actor from the trusted resolver.
+   *
+   * <p>Scope isolation: a cross-tenant or cross-journey link id resolves to nothing and is denied with
+   * a generic not-found. An already-revoked link is a stable idempotent no-op (first-write-wins on
+   * actor/time/reason, no duplicate audit event). An expired link may still be revoked by id; either
+   * way public access stays denied. Revocation mutates only this link row — never the journey,
+   * milestones, signals, or ETA — and is audited with ids + revoked time only (no token, no hash).
+   */
+  @Transactional
+  public TrackingLinkRevokedDto revoke(UUID journeyId, UUID linkId, RevokeTrackingLinkRequest request,
+      UUID actorId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    Instant now = clock.instant();
+    OrderJourneyTrackingLink link = trackingLinkRepository
+        .findByIdAndTenantIdAndJourneyId(linkId, tenantId, journeyId)
+        .orElseThrow(() -> new NotFoundException("Tracking link not found"));
+
+    if (!link.isRevoked()) {
+      link.revoke(actorId, sanitizeReason(request == null ? null : request.reason()), now);
+      trackingLinkRepository.save(link);
+      // Audit carries ids + revoked time only — never the raw token, its hash, or the reason text.
+      auditEventService.record("ORDER_JOURNEY_TRACKING_LINK_REVOKED", "ORDER_JOURNEY",
+          journeyId.toString(), actorId,
+          "{\"linkId\":\"" + link.getId() + "\",\"revokedAt\":\"" + link.getRevokedAt() + "\"}");
+    }
+    return new TrackingLinkRevokedDto("REVOKED", link.getRevokedAt());
+  }
+
+  /**
    * Public resolution: verify the token, derive the (tenant, journey) scope from the stored row, and
    * return the redacted customer-safe tracking view. Read-only — no journey/milestone/signal/ETA
    * mutation. An invalid or expired token is denied identically (generic not-found). The successful
@@ -108,8 +142,9 @@ public class OrderJourneyTrackingLinkService {
       throw new NotFoundException("Tracking link not found or no longer available");
     }
     Instant now = clock.instant();
+    // A revoked link (OP-CAP-46G) is denied identically to an expired/unknown one — no validity oracle.
     OrderJourneyTrackingLink link = trackingLinkRepository.findByTokenHash(sha256(rawToken))
-        .filter(candidate -> !candidate.isExpired(now))
+        .filter(candidate -> !candidate.isExpired(now) && !candidate.isRevoked())
         .orElseThrow(() -> new NotFoundException("Tracking link not found or no longer available"));
 
     // Trust boundary: scope comes from the verified token row. Set the resolved tenant so the
@@ -120,6 +155,24 @@ public class OrderJourneyTrackingLinkService {
     auditEventService.record("ORDER_JOURNEY_TRACKING_LINK_ACCESSED", "ORDER_JOURNEY",
         link.getJourneyId().toString(), null, "{}");
     return view;
+  }
+
+  /**
+   * OP-CAP-46G — bound and clean the optional operator-only revocation reason: trim, collapse control
+   * characters (defence against log/storage injection), clamp to the column width, and treat blank as
+   * absent (null). Operator-only — it is never returned to the customer or echoed in the response.
+   */
+  private static String sanitizeReason(String reason) {
+    if (reason == null) {
+      return null;
+    }
+    String cleaned = reason.replaceAll("[\\p{Cntrl}]", " ").trim();
+    if (cleaned.isEmpty()) {
+      return null;
+    }
+    return cleaned.length() > OrderJourneyTrackingLink.MAX_REVOCATION_REASON_LENGTH
+        ? cleaned.substring(0, OrderJourneyTrackingLink.MAX_REVOCATION_REASON_LENGTH)
+        : cleaned;
   }
 
   private static int clampTtl(Integer requestedHours) {

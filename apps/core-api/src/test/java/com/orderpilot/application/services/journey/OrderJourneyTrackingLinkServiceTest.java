@@ -7,7 +7,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.OrderJourneyDtos.CreateTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
+import com.orderpilot.api.dto.OrderJourneyDtos.RevokeTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkRevokedDto;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -258,5 +260,198 @@ class OrderJourneyTrackingLinkServiceTest {
         && actorId.equals(e.getActorId()));
     assertThat(audits).anyMatch(e -> "ORDER_JOURNEY_TRACKING_LINK_ACCESSED".equals(e.getAction())
         && e.getActorId() == null);
+  }
+
+  // ---- OP-CAP-46G — tracking link revocation foundation -------------------------------------------
+
+  /** The single tracking link's internal id (revocation is keyed on it, never on the raw token). */
+  private UUID onlyLinkId() {
+    return trackingLinkRepository.findAll().get(0).getId();
+  }
+
+  @Test
+  void validTokenResolvesThenRevokedTokenIsDeniedWithSameGenericNotFound() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-REV1");
+    TrackingLinkCreatedDto created = trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID linkId = onlyLinkId();
+
+    // Valid before revocation.
+    PublicOrderTrackingView before = trackingLinkService.resolvePublicTracking(token(created));
+    assertThat(before.statusLabel()).isNotBlank();
+
+    TenantContext.setTenantId(tenantId);
+    TrackingLinkRevokedDto revoked = trackingLinkService.revoke(journey.getId(), linkId,
+        new RevokeTrackingLinkRequest("customer asked to stop sharing"), UUID.randomUUID());
+    assertThat(revoked.status()).isEqualTo("REVOKED");
+    assertThat(revoked.revokedAt()).isNotNull();
+
+    // Denied after revocation — identical generic message to the invalid/expired path (no oracle).
+    TenantContext.clear();
+    assertThatThrownBy(() -> trackingLinkService.resolvePublicTracking(token(created)))
+        .isInstanceOf(NotFoundException.class)
+        .hasMessage("Tracking link not found or no longer available");
+  }
+
+  @Test
+  void crossTenantRevokeIsDeniedAndLeavesLinkActive() {
+    UUID tenantA = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    OrderJourney journeyA = newApprovedQuoteJourney(tenantA, "Q-XT");
+    trackingLinkService.create(journeyA.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID linkId = onlyLinkId();
+
+    UUID tenantB = UUID.randomUUID();
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(() -> trackingLinkService.revoke(journeyA.getId(), linkId, null, UUID.randomUUID()))
+        .isInstanceOf(NotFoundException.class);
+
+    assertThat(trackingLinkRepository.findById(linkId).orElseThrow().isRevoked()).isFalse();
+  }
+
+  @Test
+  void crossJourneyRevokeIsDeniedAndLeavesLinkActive() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journeyA = newApprovedQuoteJourney(tenantId, "Q-CJ-A");
+    OrderJourney journeyB = newApprovedQuoteJourney(tenantId, "Q-CJ-B");
+    trackingLinkService.create(journeyA.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID linkId = onlyLinkId();
+
+    // Right tenant, wrong journey — the journey-scoped lookup still denies it.
+    assertThatThrownBy(() -> trackingLinkService.revoke(journeyB.getId(), linkId, null, UUID.randomUUID()))
+        .isInstanceOf(NotFoundException.class);
+
+    assertThat(trackingLinkRepository.findById(linkId).orElseThrow().isRevoked()).isFalse();
+  }
+
+  @Test
+  void revocationDoesNotMutateJourneyMilestoneOrSignal() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-REVMUT");
+    journeyService.recordSignal(journey.getId(), new RecordFulfillmentSignalRequest(
+        "INTERNAL", "PACKED", "OK", null, "wh-revmut-1", null, true), UUID.randomUUID());
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID linkId = onlyLinkId();
+
+    long journeysBefore = journeyRepository.count();
+    long milestonesBefore = milestoneRepository.count();
+    long signalsBefore = signalRepository.count();
+    Instant updatedAtBefore = journeyRepository.findByIdAndTenantId(journey.getId(), tenantId).orElseThrow().getUpdatedAt();
+
+    trackingLinkService.revoke(journey.getId(), linkId, new RevokeTrackingLinkRequest("stop"), UUID.randomUUID());
+
+    assertThat(journeyRepository.count()).isEqualTo(journeysBefore);
+    assertThat(milestoneRepository.count()).isEqualTo(milestonesBefore);
+    assertThat(signalRepository.count()).isEqualTo(signalsBefore);
+    assertThat(journeyRepository.findByIdAndTenantId(journey.getId(), tenantId).orElseThrow().getUpdatedAt())
+        .isEqualTo(updatedAtBefore);
+  }
+
+  @Test
+  void revocationIsAuditedWithIdsButNeverTokenOrHashOrReasonText() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-REVAUD");
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+    OrderJourneyTrackingLink link = trackingLinkRepository.findAll().get(0);
+    UUID linkId = link.getId();
+    String tokenHash = link.getTokenHash();
+    UUID actorId = UUID.randomUUID();
+
+    trackingLinkService.revoke(journey.getId(), linkId, new RevokeTrackingLinkRequest("duplicate link sent"), actorId);
+
+    var audits = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId);
+    var revoke = audits.stream()
+        .filter(e -> "ORDER_JOURNEY_TRACKING_LINK_REVOKED".equals(e.getAction()))
+        .findFirst().orElseThrow();
+    assertThat(revoke.getActorId()).isEqualTo(actorId);
+    assertThat(revoke.getEntityType()).isEqualTo("ORDER_JOURNEY");
+    assertThat(revoke.getEntityId()).isEqualTo(journey.getId().toString());
+    // Safe internal id present; raw token/hash and the operator-only reason text are NOT.
+    assertThat(revoke.getMetadata())
+        .contains(linkId.toString())
+        .doesNotContain(tokenHash)
+        .doesNotContain("tokenHash")
+        .doesNotContain("duplicate link sent");
+  }
+
+  @Test
+  void revocationReasonIsBoundedAndSanitizedAndBlankBecomesNull() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-REVRSN");
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID linkId = onlyLinkId();
+
+    String raw = "line-one\nline-two\t" + "x".repeat(400);
+    trackingLinkService.revoke(journey.getId(), linkId, new RevokeTrackingLinkRequest(raw), UUID.randomUUID());
+
+    OrderJourneyTrackingLink revoked = trackingLinkRepository.findById(linkId).orElseThrow();
+    assertThat(revoked.getRevocationReason())
+        .hasSizeLessThanOrEqualTo(OrderJourneyTrackingLink.MAX_REVOCATION_REASON_LENGTH)
+        .doesNotContain("\n")
+        .doesNotContain("\t");
+
+    // A blank/whitespace-only reason is stored as null (first-write only applies once, so use a fresh link).
+    OrderJourney journey2 = newApprovedQuoteJourney(tenantId, "Q-REVRSN2");
+    trackingLinkService.create(journey2.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID link2 = trackingLinkRepository.findAll().stream()
+        .filter(l -> l.getJourneyId().equals(journey2.getId())).findFirst().orElseThrow().getId();
+    trackingLinkService.revoke(journey2.getId(), link2, new RevokeTrackingLinkRequest("   "), UUID.randomUUID());
+    assertThat(trackingLinkRepository.findById(link2).orElseThrow().getRevocationReason()).isNull();
+  }
+
+  @Test
+  void doubleRevokeIsIdempotentNoOpWithFirstWriteWins() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-REVIDEM");
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+    UUID linkId = onlyLinkId();
+    UUID firstActor = UUID.randomUUID();
+
+    TrackingLinkRevokedDto first = trackingLinkService.revoke(journey.getId(), linkId,
+        new RevokeTrackingLinkRequest("first"), firstActor);
+    TrackingLinkRevokedDto second = trackingLinkService.revoke(journey.getId(), linkId,
+        new RevokeTrackingLinkRequest("second"), UUID.randomUUID());
+
+    assertThat(second.status()).isEqualTo("REVOKED");
+    assertThat(second.revokedAt()).isEqualTo(first.revokedAt());
+
+    OrderJourneyTrackingLink link = trackingLinkRepository.findById(linkId).orElseThrow();
+    assertThat(link.getRevokedBy()).isEqualTo(firstActor);
+    assertThat(link.getRevocationReason()).isEqualTo("first");
+
+    // Idempotent: exactly one revoke audit event, never a duplicate.
+    var audits = auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId);
+    assertThat(audits.stream().filter(e -> "ORDER_JOURNEY_TRACKING_LINK_REVOKED".equals(e.getAction())).count())
+        .isEqualTo(1);
+  }
+
+  @Test
+  void expiredLinkCanStillBeRevokedByIdAndRemainsDenied() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-REVEXP");
+    String rawToken = "expired-revocable-token";
+    OrderJourneyTrackingLink saved = trackingLinkRepository.save(new OrderJourneyTrackingLink(
+        tenantId, journey.getId(), sha256(rawToken), NOW.minusSeconds(60), null, NOW.minusSeconds(3600)));
+
+    // Expired → already denied publicly.
+    TenantContext.clear();
+    assertThatThrownBy(() -> trackingLinkService.resolvePublicTracking(rawToken)).isInstanceOf(NotFoundException.class);
+
+    // Operator can still revoke it by id.
+    TenantContext.setTenantId(tenantId);
+    TrackingLinkRevokedDto revoked = trackingLinkService.revoke(journey.getId(), saved.getId(), null, UUID.randomUUID());
+    assertThat(revoked.status()).isEqualTo("REVOKED");
+    assertThat(trackingLinkRepository.findById(saved.getId()).orElseThrow().isRevoked()).isTrue();
+
+    // Still denied after revocation either way.
+    TenantContext.clear();
+    assertThatThrownBy(() -> trackingLinkService.resolvePublicTracking(rawToken)).isInstanceOf(NotFoundException.class);
   }
 }
