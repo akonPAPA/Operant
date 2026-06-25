@@ -10,6 +10,8 @@ import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyEventDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyListItemDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyMilestoneDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneySummaryDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
+import com.orderpilot.api.dto.OrderJourneyDtos.PublicTrackingMilestoneDto;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.journey.EvidenceLevel;
@@ -134,10 +136,39 @@ public class OrderJourneyReadService {
     boolean fulfillmentConnected = milestones.stream()
         .anyMatch(m -> !"UNKNOWN".equals(m.evidenceLevel()) && !"NOT_STARTED".equals(m.milestoneState()));
     // Internal, permission-protected (ANALYTICS_READ) tenant-scoped API path — NOT a public secure
-    // tracking link. A public, signed/expiring buyer tracking gateway is deferred to OP-CAP-46C.
+    // tracking link. The shareable public buyer link is the OP-CAP-46C secure tracking link
+    // (GET /api/v1/public/order-tracking/{token}); this path stays internal/operator-facing.
     String customerSafeApiPath = "/api/v1/order-journeys/" + id + "/customer-safe";
     return new CustomerSafeJourneyDto(journey.getId(), journey.getCustomerVisibleStatus(), milestones, events,
         fulfillmentConnected, false, customerSafeApiPath, clock.instant());
+  }
+
+  /**
+   * OP-CAP-46C — customer-safe tracking view for the PUBLIC secure-link path. The {@code tenantId} and
+   * {@code journeyId} are resolved from the verified token by the caller; this method re-asserts the
+   * scope with a tenant-scoped fetch (so a token can never reach another tenant's or journey's data)
+   * and returns the redacted {@link PublicOrderTrackingView}. It exposes only customer-visible
+   * milestones and the customer-visible status — no internal milestone/source/signal fields, no risk
+   * level, no internal status, and no identifiers. Strictly read-only.
+   */
+  @Transactional(readOnly = true)
+  public PublicOrderTrackingView publicTracking(UUID tenantId, UUID journeyId) {
+    OrderJourney journey = journeyRepository.findByIdAndTenantId(journeyId, tenantId)
+        .orElseThrow(() -> new NotFoundException("Order journey not found"));
+    List<PublicTrackingMilestoneDto> milestones = milestoneRepository
+        .findByTenantIdAndJourneyIdOrderBySortOrderAsc(tenantId, journeyId).stream()
+        .filter(OrderJourneyMilestone::isCustomerVisible)
+        .map(this::toPublicMilestone)
+        .toList();
+    boolean fulfillmentConnected = milestones.stream()
+        .anyMatch(m -> !"UNKNOWN".equals(m.evidenceLevel()) && !"NOT_STARTED".equals(m.milestoneState()));
+    return new PublicOrderTrackingView(journey.getCustomerVisibleStatus(), milestones, fulfillmentConnected,
+        clock.instant());
+  }
+
+  private PublicTrackingMilestoneDto toPublicMilestone(OrderJourneyMilestone m) {
+    return new PublicTrackingMilestoneDto(m.getMilestoneLabel(), m.getMilestoneState().name(),
+        m.getEvidenceLevel().name(), m.getOccurredAt(), m.getEstimatedAt());
   }
 
   private OrderJourneyDetailDto toDetail(UUID tenantId, OrderJourney journey, String projectionSource) {

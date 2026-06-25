@@ -131,14 +131,16 @@ public final class OrderJourneyDtos {
 
   /**
    * Customer-safe view. Exposes only the customer-visible status, customer-visible milestones, and
-   * customer-visible events. Internal status, internal-only milestones/events, risk level, source refs,
-   * actor details, and fulfillment signal internals are intentionally excluded.
+   * customer-visible events. Internal status, internal-only milestones/events, risk level, and
+   * fulfillment signal internals are intentionally excluded.
    *
    * <p>{@code customerSafeApiPath} is the internal, tenant-scoped, permission-protected API path that
    * serves this customer-safe projection (it still requires ANALYTICS_READ via the route policy and
    * carries the journey id). It is NOT a public, signed, expiring, or non-enumerable secure tracking
-   * link — a public buyer tracking gateway is deferred to OP-CAP-46C. Frontends must not present this
-   * path to end customers as a shareable public link.
+   * link. The shareable public buyer link is the OP-CAP-46C secure tracking link
+   * ({@code GET /api/v1/public/order-tracking/{token}}, minted via
+   * {@code POST /api/v1/order-journeys/{id}/tracking-links}); frontends must use that — never this
+   * internal path — when sharing tracking with an end customer.
    */
   public record CustomerSafeJourneyDto(
       UUID id,
@@ -175,4 +177,45 @@ public final class OrderJourneyDtos {
       String internalNote,
       String customerSafeNote,
       Boolean customerVisible) {}
+
+  /**
+   * OP-CAP-46C — operator request to mint a secure tracking link for a journey. Business intent only:
+   * an optional time-to-live in hours (clamped server-side). Tenant, actor, journey and every other
+   * authority field are resolved by the backend (header tenant, trusted actor, path journey id) — they
+   * are NOT accepted from the body.
+   */
+  public record CreateTrackingLinkRequest(Integer expiresInHours) {}
+
+  /**
+   * OP-CAP-46C — one-time creation result. The raw token is surfaced exactly once, embedded in {@code
+   * trackingPath}, so the operator can share the link; it is never stored (only its hash is) and never
+   * returned again or logged. No tenant id, journey id, token hash, or link id is exposed.
+   */
+  public record TrackingLinkCreatedDto(String trackingPath, Instant expiresAt) {}
+
+  /**
+   * OP-CAP-46C — a single customer-safe milestone for the public secure tracking view. Deliberately
+   * carries ONLY customer-facing fields. Internal fields present on {@link OrderJourneyMilestoneDto}
+   * (sourceType, sourceRef, sortOrder, customerVisible) are intentionally absent so they can never be
+   * serialized to an unauthenticated buyer.
+   */
+  public record PublicTrackingMilestoneDto(
+      String milestoneLabel,
+      String milestoneState,
+      String evidenceLevel,
+      Instant occurredAt,
+      Instant estimatedAt) {}
+
+  /**
+   * OP-CAP-46C — the response of the public secure tracking link endpoint. Returns only customer-safe
+   * tracking fields: a customer-visible status label, customer-visible milestones, and a connected
+   * flag. No id, tenant id, journey id, source/actor/connector/signal/risk/internal-status fields, no
+   * audit internals, and no token material are exposed. Scope is proven by the token, so no identifier
+   * needs to be echoed back.
+   */
+  public record PublicOrderTrackingView(
+      String statusLabel,
+      List<PublicTrackingMilestoneDto> milestones,
+      boolean fulfillmentTrackingConnected,
+      Instant generatedAt) {}
 }

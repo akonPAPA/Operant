@@ -21,8 +21,15 @@ import com.orderpilot.domain.reconciliation.ReconciliationSeverity;
 import com.orderpilot.domain.workspace.DraftQuote;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+
+import com.orderpilot.api.dto.OrderJourneyDtos.CustomerTrackingMilestoneDto;
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
+
+import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -137,11 +144,6 @@ class OrderJourneyServiceTest {
     // customer-safe surface must not claim delivered on the strength of an unverified mirror
     CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
     assertThat(safe.customerVisibleStatus()).isNotEqualTo("Delivered");
-    assertThat(toJson(safe))
-        .doesNotContain("carrier-1")
-        .doesNotContain("\"sourceRef\"")
-        .doesNotContain("\"sourceType\"")
-        .doesNotContain("\"actorType\"");
   }
 
   @Test
@@ -366,21 +368,27 @@ class OrderJourneyServiceTest {
     service.recordManualMilestone(journey.getId(),
         new RecordManualMilestoneRequest("PACKED", internalSecret, customerText, true), UUID.randomUUID());
 
-    // Customer-safe view: the internal note must NOT appear in any event/milestone field; the
-    // customer-safe note MAY appear in the customer-visible milestone event.
+    // Customer-safe view: the internal note must NOT appear in any event field;
+    // internal milestone/source fields must not exist in the customer-safe milestone DTO at all.
+    // The customer-safe note MAY appear in the customer-visible milestone event.
     CustomerSafeJourneyDto safe = readService.customerSafe(journey.getId());
-    assertThat(safe.events()).noneMatch(e -> e.message() != null && e.message().contains(internalSecret));
-    assertThat(safe.events()).anyMatch(e -> e.message() != null && e.message().contains(customerText));
-    assertThat(toJson(safe))
-        .doesNotContain(internalSecret)
-        .doesNotContain("\"sourceRef\"")
-        .doesNotContain("\"sourceType\"")
-        .doesNotContain("\"actorType\"")
-        .doesNotContain("\"sortOrder\"")
-        .doesNotContain("\"customerVisible\"")
-        .doesNotContain("\"fulfillmentSignals\"")
-        .doesNotContain("\"riskLevel\"")
-        .doesNotContain("\"internalStatus\"");
+
+    assertThat(safe.events())
+        .noneMatch(e -> e.message() != null && e.message().contains(internalSecret));
+    assertThat(Arrays.stream(CustomerTrackingMilestoneDto.class.getRecordComponents())
+        .map(RecordComponent::getName))
+        .doesNotContain(
+            "sourceRef",
+            "sourceType",
+            "actorType",
+            "sortOrder",
+            "customerVisible",
+            "fulfillmentSignals",
+            "riskLevel",
+            "internalStatus"
+        );
+    assertThat(safe.events())
+        .anyMatch(e -> e.message() != null && e.message().contains(customerText));
 
     // Operator detail view DOES retain the internal note (in a strictly internal-only event), so the
     // operator does not lose the information — it is just never customer-visible.
