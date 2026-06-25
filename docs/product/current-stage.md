@@ -148,3 +148,23 @@ Summary:
 - Allowed: wire verified per-connection messenger webhooks into the controlled bot flows; link `InboundChannelEvent` to bot conversations; reuse existing channel/bot services; add tenant-isolation, duplicate-replay, no-secret, and external-execution-disabled tests; surface channel status and conversation timeline in the dashboard; minimal non-destructive migration only if genuinely required.
 - Forbidden: parallel architecture/models; bot approval of quotes/orders/discounts; master-data mutation from bot/frontend/AI worker; real outbound messenger sends; ERP/1C/connector writes; no-code bot builder; raw token exposure; stage renaming; destructive migrations.
 - `externalExecution=DISABLED` remains enforced. The "AI suggests, rules validate, human approves, backend writes, audit records" safety model is preserved.
+
+## OP-CAP-46I Local Proof Status
+
+Date: 2026-06-25
+
+- Stage: OP-CAP-46I — PostgreSQL Tracking Link Migration + Query Proof
+- Branch and short HEAD: `OP-CAP-46I-postgres-tracking-link-migration-query-proof` / `aa48a2f`
+- Previous blocker: duplicate `secureTrackingLinkResolveRouteIsPublicWithToken()` existed on remote `c84d72a` and caused CI `testCompile` failure.
+- Precondition status: duplicate-method blocker is clean; targeted security tests passed.
+- Current blocker: Docker daemon unavailable locally.
+- PostgreSQL proof status: NOT PROVEN
+- Flyway V61 PostgreSQL proof: NOT RUN
+- Tracking-link lifecycle PostgreSQL proof: NOT RUN
+- Token/hash DTO exposure PostgreSQL proof: NOT RUN
+- Audit leakage PostgreSQL proof: NOT RUN
+- Commands already run:
+  - `mvn "-Dtest=ApiRouteSecurityClassificationTest" test`
+  - `mvn "-Dtest=ApiRouteSecurityClassificationTest,ApiPermissionRouteCoverageTest,ApiPermissionInterceptorPermissionTest,ApiSecurityWebConfigPermissionCoverageTest,ApiRouteSecurityPolicyDefaultDenyTest,ApiSecurityWebConfigTest" test`
+  - `docker info`
+- Exact unblock requirement: Start Docker Desktop / make Docker daemon reachable, then rerun `docker info` and PostgreSQL/Testcontainers commands.
