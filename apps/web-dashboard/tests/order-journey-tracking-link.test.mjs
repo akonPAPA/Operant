@@ -110,7 +110,9 @@ test("button renders the returned link and expiry, with a clear customer-safe wa
 
 test("copy action guards navigator.clipboard and never leaks the link elsewhere", () => {
   assert.match(button, /navigator\.clipboard/);
-  assert.match(button, /writeText\(link\.trackingPath\)/);
+  // OP-CAP-46F: the copied value is the customer-facing href, never the raw backend API path.
+  assert.match(button, /writeText\(shareValue\)/);
+  assert.doesNotMatch(button, /writeText\(link\.trackingPath\)/);
   // Must not write the link to any storage or analytics surface.
   assert.doesNotMatch(button, /\blocalStorage\s*\.setItem/);
   assert.doesNotMatch(button, /\bsessionStorage\s*\.setItem/);
