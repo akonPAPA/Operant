@@ -13,6 +13,7 @@ import {
   OperatorActionResult,
   useOperatorAction
 } from "@/lib/operator-action-runtime";
+import { TRACKING_LINK_CREATED_EVENT } from "@/lib/order-journey-tracking-link-registry";
 
 // OP-CAP-46D — small operator-facing affordance to mint and copy a one-time customer
 // tracking link for an order journey. The button posts to the existing OP-CAP-46C
@@ -37,6 +38,11 @@ export function OrderJourneyTrackingLinkButton({ journeyId }: Props) {
       setLink(data);
       setMessageKind("done");
       setMessage("Tracking link created. Share it with the customer — it is valid only once and only until the expiry shown below.");
+      // Notify the sibling registry to refresh. The event carries ONLY the journeyId — never the
+      // token, path, or any link metadata (those stay in this panel's one-time view above).
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(TRACKING_LINK_CREATED_EVENT, { detail: { journeyId } }));
+      }
     },
     onError: (_code, safeMessage) => {
       setLink(null);

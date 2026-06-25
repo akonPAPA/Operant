@@ -210,6 +210,32 @@ public final class OrderJourneyDtos {
   public record TrackingLinkRevokedDto(String status, Instant revokedAt) {}
 
   /**
+   * OP-CAP-46H — one safe operator-only summary row of a journey's secure tracking link, for the
+   * operator registry/list view that backs the revoke control. Carries ONLY non-sensitive lifecycle
+   * metadata: the internal {@code linkId} (the handle the operator uses to revoke — never the raw
+   * token or its hash), the creation/expiry/revocation timestamps, and a backend-derived
+   * {@code status} (ACTIVE | EXPIRED | REVOKED).
+   *
+   * <p>Deliberately absent: the raw token, the token hash, the public {@code trackingPath} / customer
+   * URL, the tenant id, the revocation reason (operator-only, never echoed), and any actor id — the
+   * established secure-contract convention does not surface {@code createdBy}/{@code revokedBy} actor
+   * ids on response DTOs, so they are omitted here too.
+   */
+  public record TrackingLinkSummaryDto(
+      UUID linkId,
+      Instant createdAt,
+      Instant expiresAt,
+      Instant revokedAt,
+      String status) {}
+
+  /**
+   * OP-CAP-46H — the tenant- and journey-scoped operator list of secure tracking link summaries,
+   * newest first. No raw token, token hash, tracking path, customer URL, or tenant id is exposed on
+   * any element.
+   */
+  public record TrackingLinkListDto(List<TrackingLinkSummaryDto> links) {}
+
+  /**
    * OP-CAP-46C — a single customer-safe milestone for the public secure tracking view. Deliberately
    * carries ONLY customer-facing fields. Internal fields present on {@link OrderJourneyMilestoneDto}
    * (sourceType, sourceRef, sortOrder, customerVisible) are intentionally absent so they can never be

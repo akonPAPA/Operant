@@ -4,7 +4,9 @@ import com.orderpilot.api.dto.OrderJourneyDtos.CreateTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
 import com.orderpilot.api.dto.OrderJourneyDtos.RevokeTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkListDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkRevokedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkSummaryDto;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -21,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,6 +99,46 @@ public class OrderJourneyTrackingLinkService {
         actorId, "{\"expiresAt\":\"" + expiresAt + "\"}");
 
     return new TrackingLinkCreatedDto(PUBLIC_PATH_PREFIX + rawToken, expiresAt);
+  }
+
+  /**
+   * OP-CAP-46H — operator registry read: list this journey's secure tracking links (newest first)
+   * for the operator's tenant. Tenant comes from {@link TenantContext} (header), the journey from the
+   * path id; the journey is re-validated within the tenant first (a cross-tenant/unknown journey is a
+   * generic not-found, never an enumeration oracle). Each row carries ONLY safe lifecycle metadata —
+   * the internal link id, timestamps, and a derived status — and NEVER the raw token, its hash, the
+   * public tracking path, the customer URL, the tenant id, the revocation reason, or any actor id.
+   * Read-only: no journey/milestone/signal/ETA mutation, no external write.
+   */
+  @Transactional(readOnly = true)
+  public TrackingLinkListDto list(UUID journeyId) {
+    UUID tenantId = TenantContext.requireTenantId();
+    journeyRepository.findByIdAndTenantId(journeyId, tenantId)
+        .orElseThrow(() -> new NotFoundException("Order journey not found"));
+    Instant now = clock.instant();
+    List<TrackingLinkSummaryDto> links = trackingLinkRepository
+        .findByTenantIdAndJourneyIdOrderByCreatedAtDesc(tenantId, journeyId).stream()
+        .map(link -> new TrackingLinkSummaryDto(
+            link.getId(), link.getCreatedAt(), link.getExpiresAt(), link.getRevokedAt(),
+            statusOf(link, now)))
+        .toList();
+    return new TrackingLinkListDto(links);
+  }
+
+  /**
+   * OP-CAP-46H — derive the operator-facing lifecycle status. Revocation is an explicit operator
+   * decision, so it takes precedence over a natural expiry (a link that was revoked and has since also
+   * passed its expiry still reads REVOKED). Otherwise a link past {@code expiresAt} is EXPIRED, and a
+   * live, unrevoked link is ACTIVE.
+   */
+  private static String statusOf(OrderJourneyTrackingLink link, Instant now) {
+    if (link.isRevoked()) {
+      return "REVOKED";
+    }
+    if (link.isExpired(now)) {
+      return "EXPIRED";
+    }
+    return "ACTIVE";
   }
 
   /**

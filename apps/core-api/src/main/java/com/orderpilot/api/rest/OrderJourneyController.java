@@ -9,6 +9,7 @@ import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordManualMilestoneRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RevokeTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkListDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkRevokedDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionHealthDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequest;
@@ -141,6 +142,18 @@ public class OrderJourneyController {
       @RequestBody(required = false) CreateTrackingLinkRequest request, HttpServletRequest http) {
     UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
     return trackingLinkService.create(id, request, actorId);
+  }
+
+  /**
+   * OP-CAP-46H — operator registry: list this journey's secure tracking links (newest first).
+   * Protected operator read (ANALYTICS_READ via the GET order-journey prefix rule); tenant from
+   * {@code X-Tenant-Id}, journey from the path. Each row carries only safe lifecycle metadata
+   * (internal link id + timestamps + derived status) and never the raw token, its hash, the public
+   * tracking path, the customer URL, the tenant id, or any actor id. Read-only; no external write.
+   */
+  @GetMapping("/{id}/tracking-links")
+  public TrackingLinkListDto listTrackingLinks(@PathVariable UUID id) {
+    return trackingLinkService.list(id);
   }
 
   /**
