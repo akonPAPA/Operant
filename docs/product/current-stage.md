@@ -148,3 +148,27 @@ Summary:
 - Allowed: wire verified per-connection messenger webhooks into the controlled bot flows; link `InboundChannelEvent` to bot conversations; reuse existing channel/bot services; add tenant-isolation, duplicate-replay, no-secret, and external-execution-disabled tests; surface channel status and conversation timeline in the dashboard; minimal non-destructive migration only if genuinely required.
 - Forbidden: parallel architecture/models; bot approval of quotes/orders/discounts; master-data mutation from bot/frontend/AI worker; real outbound messenger sends; ERP/1C/connector writes; no-code bot builder; raw token exposure; stage renaming; destructive migrations.
 - `externalExecution=DISABLED` remains enforced. The "AI suggests, rules validate, human approves, backend writes, audit records" safety model is preserved.
+
+## OP-CAP-46I Local Proof Status
+
+Date: 2026-06-25
+
+- Stage: OP-CAP-46I — PostgreSQL Tracking Link Migration + Query Proof
+- Branch and short HEAD: `OP-CAP-46I-postgres-tracking-link-migration-query-proof` / `c043fff`
+- Previous blocker: Docker daemon was unavailable during Docker Desktop update/startup.
+- Current blocker: none for local PostgreSQL/Testcontainers proof; Docker/Testcontainers became available.
+- Duplicate-method CI blocker status: resolved / precondition clean.
+- PostgreSQL proof status: PROVEN locally on real PostgreSQL/Testcontainers.
+- PostgresMigrationSmokeIntegrationTest result: green.
+- OrderJourneyTrackingLinkPostgresIntegrationTest result: green; 5 tests, 0 failures, 0 errors, 0 skipped.
+- Targeted non-Postgres regression result: green.
+- PostgreSQL/Testcontainers proof commands:
+  - `mvn "-Dtest=PostgresMigrationSmokeIntegrationTest" "-Dorderpilot.postgres.integration.enabled=true" test`
+  - `mvn "-Dtest=OrderJourneyTrackingLinkPostgresIntegrationTest" "-Dorderpilot.postgres.integration.enabled=true" test`
+- Targeted non-Postgres regression command:
+  - `mvn "-Dtest=OrderJourneyTrackingLinkServiceTest,OrderJourneyTrackingLinkRevokeControllerTest,OrderJourneyPublicTrackingControllerTest,ApiRouteSecurityClassificationTest,ApiPermissionRouteCoverageTest,ApiPermissionInterceptorPermissionTest,ApiSecurityWebConfigPermissionCoverageTest,ApiRouteSecurityPolicyDefaultDenyTest,ApiSecurityWebConfigTest" test`
+- Not proven:
+  - full backend suite unless separately run
+  - full CI unless GitHub rerun passes
+  - frontend
+  - worker/runtime
