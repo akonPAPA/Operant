@@ -236,3 +236,66 @@ export async function createOrderJourneyTrackingLink(
   }
   return { trackingPath: parsed.trackingPath, expiresAt: parsed.expiresAt };
 }
+
+// OP-CAP-46F — Customer-Facing Tracking URL Mapping.
+//
+// The backend mint response (`TrackingLinkCreated.trackingPath`) carries the BACKEND public API
+// path `/api/v1/public/order-tracking/{token}`. Operators must share the CUSTOMER-FACING frontend
+// page `/public/order-tracking/{token}` instead — the API endpoint is not a human-facing page.
+//
+// These helpers are pure (no `window`, no storage, no logging). They preserve the opaque token
+// exactly as a single path segment via strict prefix matching — never a fragile string replace
+// that could rewrite an unrelated path. A path that does not match the expected backend (or the
+// already-frontend) prefix, or that has an empty/multi-segment token, returns `null` so the UI can
+// fall back to a safe error instead of ever displaying the backend API path as a share link.
+const BACKEND_TRACKING_PREFIX = "/api/v1/public/order-tracking/";
+const CUSTOMER_TRACKING_PREFIX = "/public/order-tracking/";
+
+// Extract the single opaque token segment from `path` given `prefix`, or `null` if the remainder
+// is empty or contains a `/` (the token must be exactly one path segment — no traversal, no extra
+// path). The token is returned verbatim; it is NOT re-encoded (it is already a URL path segment).
+function trackingTokenSegment(path: string, prefix: string): string | null {
+  if (!path.startsWith(prefix)) {
+    return null;
+  }
+  const token = path.slice(prefix.length);
+  if (!token || token.includes("/")) {
+    return null;
+  }
+  return token;
+}
+
+// Map a backend `trackingPath` to the customer-facing frontend tracking path
+// `/public/order-tracking/{token}`. Accepts an already-frontend path unchanged. Returns `null`
+// for any malformed/unexpected shape so the caller can show a safe error.
+export function toCustomerTrackingPath(trackingPath: string): string | null {
+  if (typeof trackingPath !== "string") {
+    return null;
+  }
+  const trimmed = trackingPath.trim();
+  // Already a customer-facing path — normalize (validate the token segment) and return it.
+  const frontendToken = trackingTokenSegment(trimmed, CUSTOMER_TRACKING_PREFIX);
+  if (frontendToken) {
+    return `${CUSTOMER_TRACKING_PREFIX}${frontendToken}`;
+  }
+  const backendToken = trackingTokenSegment(trimmed, BACKEND_TRACKING_PREFIX);
+  if (backendToken) {
+    return `${CUSTOMER_TRACKING_PREFIX}${backendToken}`;
+  }
+  return null;
+}
+
+// Build a shareable customer-facing href. When a browser `origin` is supplied (client-only code),
+// the result is absolute (`https://host/public/order-tracking/{token}`); otherwise it is the
+// relative path. Returns `null` for a malformed `trackingPath`. Pure — the caller is responsible
+// for safely reading `window.location.origin` only in client code.
+export function toCustomerTrackingHref(trackingPath: string, origin?: string): string | null {
+  const path = toCustomerTrackingPath(trackingPath);
+  if (!path) {
+    return null;
+  }
+  if (origin) {
+    return `${origin.replace(/\/+$/, "")}${path}`;
+  }
+  return path;
+}

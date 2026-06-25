@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import {
   createOrderJourneyTrackingLink,
+  toCustomerTrackingHref,
+  toCustomerTrackingPath,
   TrackingLinkCreated
 } from "@/lib/order-journey-api";
 import {
@@ -18,6 +20,12 @@ import {
 // expiry. The raw token is shown once in this panel and is NEVER persisted (no
 // localStorage / sessionStorage), NEVER logged, and NEVER sent to analytics.
 type Props = Readonly<{ journeyId: string }>;
+
+// OP-CAP-46F — shown if the backend trackingPath cannot be mapped to a customer page URL. It
+// never echoes the raw backend body/path/token; the link itself was minted, so the operator can
+// simply retry.
+const MALFORMED_LINK_MESSAGE =
+  "Tracking link was created, but the customer page URL could not be prepared. Please retry.";
 
 export function OrderJourneyTrackingLinkButton({ journeyId }: Props) {
   const [link, setLink] = useState<TrackingLinkCreated | null>(null);
@@ -57,6 +65,17 @@ export function OrderJourneyTrackingLinkButton({ journeyId }: Props) {
 
   async function copyLink() {
     if (!link) return;
+    // OP-CAP-46F — copy the CUSTOMER-FACING frontend page URL, never the backend API path.
+    // `window` is read only here (a client-only event handler); when an origin is available the
+    // copied value is absolute, otherwise it falls back to the relative customer path. A malformed
+    // backend trackingPath yields null — show a safe error rather than copying the API endpoint.
+    const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const shareValue = toCustomerTrackingHref(link.trackingPath, origin);
+    if (!shareValue) {
+      setMessageKind("error");
+      setMessage(MALFORMED_LINK_MESSAGE);
+      return;
+    }
     // Clipboard API is browser-only and may be blocked (insecure context, permission
     // denied) — guard and surface a safe operator message without leaking the link
     // anywhere else (no localStorage, no console).
@@ -66,7 +85,7 @@ export function OrderJourneyTrackingLinkButton({ journeyId }: Props) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(link.trackingPath);
+      await navigator.clipboard.writeText(shareValue);
       setMessageKind("copied");
       setMessage("Link copied to clipboard.");
     } catch {
@@ -74,6 +93,10 @@ export function OrderJourneyTrackingLinkButton({ journeyId }: Props) {
       setMessage("Could not copy automatically. Select the link text to copy it manually.");
     }
   }
+
+  // OP-CAP-46F — display the customer-facing frontend page path, never the backend API endpoint.
+  // Relative (origin-free) so it is hydration-stable; the absolute href is built at copy time.
+  const customerTrackingPath = link ? toCustomerTrackingPath(link.trackingPath) : null;
 
   return (
     <section className="panel">
@@ -95,26 +118,32 @@ export function OrderJourneyTrackingLinkButton({ journeyId }: Props) {
       ) : null}
       {link ? (
         <div className="result-panel">
-          <dl className="detail-list">
-            <div>
-              <dt>Tracking path</dt>
-              <dd>
-                <code data-testid="tracking-link-path">{link.trackingPath}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Expires at</dt>
-              <dd>{formatExpiry(link.expiresAt)}</dd>
-            </div>
-          </dl>
-          <div className="upload-form">
-            <button className="button" type="button" onClick={copyLink}>Copy link</button>
-          </div>
-          <p className="risk-note">
-            Read-only and customer-safe. Do not paste internal-only notes or status into the
-            shared message. The token is shown once; close this panel and a new link must be
-            minted.
-          </p>
+          {customerTrackingPath ? (
+            <>
+              <dl className="detail-list">
+                <div>
+                  <dt>Customer tracking page</dt>
+                  <dd>
+                    <code data-testid="customer-tracking-path">{customerTrackingPath}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Expires at</dt>
+                  <dd>{formatExpiry(link.expiresAt)}</dd>
+                </div>
+              </dl>
+              <div className="upload-form">
+                <button className="button" type="button" onClick={copyLink}>Copy link</button>
+              </div>
+              <p className="risk-note">
+                Read-only and customer-safe. Do not paste internal-only notes or status into the
+                shared message. The token is shown once; close this panel and a new link must be
+                minted.
+              </p>
+            </>
+          ) : (
+            <p className="form-message error">{MALFORMED_LINK_MESSAGE}</p>
+          )}
         </div>
       ) : null}
     </section>
