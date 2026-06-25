@@ -272,8 +272,21 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/tracking-links/"
                 + "223e4567-e89b-12d3-a456-426614174000/revoke",
             SecurityClassification.PROTECTED_CREATE,
-            ApiPermission.REVIEW_ACTION));
+            ApiPermission.REVIEW_ACTION),
+        // OP-CAP-46H: the operator tracking-link registry list is a protected operator read under the
+        // order-journey prefix — PROTECTED_READ / ANALYTICS_READ, the same gate as the sibling
+        // customer-safe read. It is never public (only the GET /api/v1/public/order-tracking/{token}
+        // resolve route is public-with-token).
+        new RouteExpectation(
+            "GET",
+            "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/tracking-links",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.ANALYTICS_READ));
   }
+
+  // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
+  // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the
+  // opaque expiring token, not by any request authority field.
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
   // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the

@@ -3,6 +3,7 @@ import { OrderJourneyTimeline } from "./order-journey-timeline";
 import { FulfillmentSignalPanel } from "./fulfillment-signal-panel";
 import { BlockedBadge } from "./order-journey-status-badge";
 import { OrderJourneyTrackingLinkButton } from "./order-journey-tracking-link-button";
+import { OrderJourneyTrackingLinkRegistry } from "./order-journey-tracking-link-registry";
 
 // OP-CAP-22 — Order Journey detail. Separates internal status from customer-visible status, shows
 // the milestone timeline, recent events, fulfillment signals, blocks, and an honest payment state.
@@ -80,6 +81,8 @@ export async function OrderJourneyDetail({ id }: Readonly<{ id: string }>) {
       </section>
 
       <OrderJourneyTrackingLinkButton journeyId={data.id} />
+
+      <OrderJourneyTrackingLinkRegistry journeyId={data.id} />
     </>
   );
 }

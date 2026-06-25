@@ -9,7 +9,9 @@ import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RevokeTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkListDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkRevokedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkSummaryDto;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
@@ -453,5 +455,145 @@ class OrderJourneyTrackingLinkServiceTest {
     // Still denied after revocation either way.
     TenantContext.clear();
     assertThatThrownBy(() -> trackingLinkService.resolvePublicTracking(rawToken)).isInstanceOf(NotFoundException.class);
+  }
+
+  // ---- OP-CAP-46H — operator tracking link registry (list) ----------------------------------------
+
+  @Test
+  void listReturnsActiveExpiredAndRevokedStatusesNewestFirst() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-LIST");
+
+    // Oldest: an already-expired link saved directly (far-past expiry, oldest createdAt).
+    OrderJourneyTrackingLink expired = trackingLinkRepository.save(new OrderJourneyTrackingLink(
+        tenantId, journey.getId(), sha256("list-expired"), NOW.minusSeconds(60), null, NOW.minusSeconds(7200)));
+    // Middle: a link we then revoke.
+    OrderJourneyTrackingLink toRevoke = trackingLinkRepository.save(new OrderJourneyTrackingLink(
+        tenantId, journey.getId(), sha256("list-revoked"), Instant.parse("2030-01-01T00:00:00Z"), null,
+        NOW.minusSeconds(3600)));
+    // Newest: an active link.
+    OrderJourneyTrackingLink active = trackingLinkRepository.save(new OrderJourneyTrackingLink(
+        tenantId, journey.getId(), sha256("list-active"), Instant.parse("2030-01-01T00:00:00Z"), null,
+        NOW.minusSeconds(1)));
+    trackingLinkService.revoke(journey.getId(), toRevoke.getId(), new RevokeTrackingLinkRequest("dup"), UUID.randomUUID());
+
+    TrackingLinkListDto list = trackingLinkService.list(journey.getId());
+
+    // Newest-first ordering: active, revoked, expired.
+    assertThat(list.links()).extracting(TrackingLinkSummaryDto::linkId)
+        .containsExactly(active.getId(), toRevoke.getId(), expired.getId());
+    assertThat(list.links()).extracting(TrackingLinkSummaryDto::status)
+        .containsExactly("ACTIVE", "REVOKED", "EXPIRED");
+    // Revoked row carries revokedAt; active/expired do not.
+    assertThat(list.links().get(0).revokedAt()).isNull();
+    assertThat(list.links().get(1).revokedAt()).isNotNull();
+    assertThat(list.links().get(2).revokedAt()).isNull();
+    // Every row carries the safe lifecycle metadata.
+    assertThat(list.links()).allSatisfy(row -> {
+      assertThat(row.linkId()).isNotNull();
+      assertThat(row.createdAt()).isNotNull();
+      assertThat(row.expiresAt()).isNotNull();
+    });
+  }
+
+  @Test
+  void listIsTenantScoped() {
+    UUID tenantA = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    OrderJourney journeyA = newApprovedQuoteJourney(tenantA, "Q-LT-A");
+    trackingLinkService.create(journeyA.getId(), new CreateTrackingLinkRequest(48), null);
+
+    // Tenant B cannot list tenant A's journey at all — generic not-found, no enumeration oracle.
+    UUID tenantB = UUID.randomUUID();
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(() -> trackingLinkService.list(journeyA.getId()))
+        .isInstanceOf(NotFoundException.class);
+  }
+
+  @Test
+  void listIsJourneyScoped() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journeyA = newApprovedQuoteJourney(tenantId, "Q-LJ-A");
+    OrderJourney journeyB = newApprovedQuoteJourney(tenantId, "Q-LJ-B");
+    trackingLinkService.create(journeyA.getId(), new CreateTrackingLinkRequest(48), null);
+
+    // Journey B (same tenant) has its own — empty — list; it never sees journey A's link.
+    TrackingLinkListDto listB = trackingLinkService.list(journeyB.getId());
+    assertThat(listB.links()).isEmpty();
+
+    TrackingLinkListDto listA = trackingLinkService.list(journeyA.getId());
+    assertThat(listA.links()).singleElement()
+        .satisfies(row -> assertThat(row.status()).isEqualTo("ACTIVE"));
+  }
+
+  @Test
+  void listSummaryDoesNotExposeTokenHashTrackingPathOrTenantId() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-LRED");
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+    String storedHash = trackingLinkRepository.findAll().get(0).getTokenHash();
+
+    TrackingLinkListDto list = trackingLinkService.list(journey.getId());
+    String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(list);
+
+    assertThat(json)
+        .doesNotContain(storedHash)
+        .doesNotContain("tokenHash")
+        .doesNotContain("token")
+        .doesNotContain("trackingPath")
+        .doesNotContain(OrderJourneyTrackingLinkService.PUBLIC_PATH_PREFIX)
+        .doesNotContain("/public/order-tracking/")
+        .doesNotContain("tenantId")
+        .doesNotContain("revocationReason")
+        .doesNotContain("createdBy")
+        .doesNotContain("revokedBy");
+    // It DOES carry the safe operator surface.
+    assertThat(json).contains("linkId").contains("createdAt").contains("expiresAt").contains("status");
+  }
+
+  @Test
+  void revokeUsingListedLinkIdSucceedsAndIsReflectedOnRelist() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-LREV");
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+
+    // The operator only ever holds the listed linkId — never the raw token.
+    UUID listedLinkId = trackingLinkService.list(journey.getId()).links().get(0).linkId();
+    assertThat(trackingLinkService.list(journey.getId()).links().get(0).status()).isEqualTo("ACTIVE");
+
+    TrackingLinkRevokedDto revoked = trackingLinkService.revoke(journey.getId(), listedLinkId, null, UUID.randomUUID());
+    assertThat(revoked.status()).isEqualTo("REVOKED");
+
+    assertThat(trackingLinkService.list(journey.getId()).links().get(0).status()).isEqualTo("REVOKED");
+  }
+
+  @Test
+  void listDoesNotMutateJourneyMilestoneOrSignal() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    OrderJourney journey = newApprovedQuoteJourney(tenantId, "Q-LMUT");
+    journeyService.recordSignal(journey.getId(), new RecordFulfillmentSignalRequest(
+        "INTERNAL", "PACKED", "OK", null, "wh-lmut-1", null, true), UUID.randomUUID());
+    trackingLinkService.create(journey.getId(), new CreateTrackingLinkRequest(48), null);
+
+    long journeysBefore = journeyRepository.count();
+    long milestonesBefore = milestoneRepository.count();
+    long signalsBefore = signalRepository.count();
+    long linksBefore = trackingLinkRepository.count();
+    Instant updatedAtBefore = journeyRepository.findByIdAndTenantId(journey.getId(), tenantId).orElseThrow().getUpdatedAt();
+
+    trackingLinkService.list(journey.getId());
+    trackingLinkService.list(journey.getId());
+
+    assertThat(journeyRepository.count()).isEqualTo(journeysBefore);
+    assertThat(milestoneRepository.count()).isEqualTo(milestonesBefore);
+    assertThat(signalRepository.count()).isEqualTo(signalsBefore);
+    assertThat(trackingLinkRepository.count()).isEqualTo(linksBefore);
+    assertThat(journeyRepository.findByIdAndTenantId(journey.getId(), tenantId).orElseThrow().getUpdatedAt())
+        .isEqualTo(updatedAtBefore);
   }
 }
