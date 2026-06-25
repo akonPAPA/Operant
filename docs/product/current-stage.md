@@ -172,3 +172,32 @@ Date: 2026-06-25
   - full CI unless GitHub rerun passes
   - frontend
   - worker/runtime
+
+## OP-CAP-46J Local Proof Status
+
+Date: 2026-06-25
+
+- Stage: OP-CAP-46J — Fulfillment Signal Idempotency + PostgreSQL Query Proof
+- Branch and short HEAD: `OP-CAP-46J-fulfillment-signal-idempotency-postgres-proof` / `20eb548`
+- Why this stage exists: secure tracking links are proven; the next backend foundation is trustworthy fulfillment signal ingestion with idempotency and tenant-scoped query behavior.
+- Почему это не UI: это не frontend, не buyer portal и не carrier integration; это proof idempotency/tenant boundary для будущего tracking/fulfillment visibility.
+- Docker/Testcontainers status: Docker reachable; real PostgreSQL integration profile proven locally. Initial per-class Testcontainers container detection skipped on Windows pipe configuration, so the final proof follows the repo's existing `DatabaseIntegrationTestBase` PostgreSQL pattern.
+- PostgreSQL proof status: PROVEN locally on real PostgreSQL (`jdbc:postgresql://localhost:15432/orderpilot_test`), not H2.
+- Commands and results:
+  - `docker info` — green; Docker daemon reachable.
+  - `mvn "-Dtest=PostgresMigrationSmokeIntegrationTest" "-Dorderpilot.postgres.integration.enabled=true" test` — green; 1 test, 0 failures, 0 errors, 0 skipped.
+  - `mvn "-Dtest=FulfillmentSignalIdempotencyPostgresIntegrationTest" "-Dorderpilot.postgres.integration.enabled=true" test` — green; 8 tests, 0 failures, 0 errors, 0 skipped.
+  - `mvn "-Dtest=FulfillmentSignalIdempotencyPostgresIntegrationTest,OrderJourneyTrackingLinkPostgresIntegrationTest,OrderJourneyTrackingLinkServiceTest,OrderJourneyTrackingLinkRevokeControllerTest,OrderJourneyPublicTrackingControllerTest,ApiRouteSecurityClassificationTest,ApiPermissionRouteCoverageTest,ApiPermissionInterceptorPermissionTest,ApiSecurityWebConfigPermissionCoverageTest,ApiRouteSecurityPolicyDefaultDenyTest,ApiSecurityWebConfigTest" "-Dorderpilot.postgres.integration.enabled=true" test` — green; 300 tests, 0 failures, 0 errors, 0 skipped.
+- Security/data-boundary result:
+  - tenant scoped: proven for fulfillment signal persistence and lookup by journey
+  - no cross-tenant signal collision: proven with same external signal key in TENANT_A and TENANT_B
+  - no raw external payload/secrets leaked: proven for customer-safe/public tracking DTO JSON
+  - no order-state/ETA/milestone mutation beyond existing contract: proven for RETURN_REQUESTED idempotent signal path; no ETA engine or order-state mutation added
+- Not proven:
+  - full backend suite unless separately run
+  - full CI unless GitHub rerun passes
+  - frontend
+  - worker/runtime
+  - real carrier integration
+  - customer-facing UI
+- Next action: next bounded slice can build operator/customer visibility on top of this idempotent fulfillment-signal foundation; do not start UI/carrier work without a separate gate.
