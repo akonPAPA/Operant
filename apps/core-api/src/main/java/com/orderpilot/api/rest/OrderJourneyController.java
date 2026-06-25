@@ -7,7 +7,9 @@ import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneySummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.CreateTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordFulfillmentSignalRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.RecordManualMilestoneRequest;
+import com.orderpilot.api.dto.OrderJourneyDtos.RevokeTrackingLinkRequest;
 import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkCreatedDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.TrackingLinkRevokedDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionHealthDto;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequest;
 import com.orderpilot.api.dto.OrderJourneyProjectionDtos.JourneyProjectionRequestResponse;
@@ -139,6 +141,21 @@ public class OrderJourneyController {
       @RequestBody(required = false) CreateTrackingLinkRequest request, HttpServletRequest http) {
     UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
     return trackingLinkService.create(id, request, actorId);
+  }
+
+  /**
+   * OP-CAP-46G — operator revokes a tracking link before its natural expiry. Audited operator action
+   * (REVIEW_ACTION via the order-journey prefix rule). Tenant from {@code X-Tenant-Id}, actor from the
+   * trusted resolver, journey + internal link id from the path; the request body carries only an
+   * optional bounded reason and NEVER the raw token or any authority/state field. After revocation,
+   * public resolution of the link's token is denied with the same generic not-found as an expired or
+   * unknown link. No external write, no order-state/ETA/milestone mutation.
+   */
+  @PostMapping("/{id}/tracking-links/{linkId}/revoke")
+  public TrackingLinkRevokedDto revokeTrackingLink(@PathVariable UUID id, @PathVariable UUID linkId,
+      @RequestBody(required = false) RevokeTrackingLinkRequest request, HttpServletRequest http) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return trackingLinkService.revoke(id, linkId, request, actorId);
   }
 
   /** OP-CAP-23 — explicit, tenant-scoped projector batch run (no background daemon). */

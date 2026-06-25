@@ -194,6 +194,22 @@ public final class OrderJourneyDtos {
   public record TrackingLinkCreatedDto(String trackingPath, Instant expiresAt) {}
 
   /**
+   * OP-CAP-46G — operator request to revoke a tracking link. Business intent only: an optional,
+   * bounded, operator-only {@code reason} (sanitized and length-clamped server-side). The link is
+   * identified by the path (journey id + internal link id); the raw token is NEVER accepted. Tenant,
+   * actor, and every other authority/state field are resolved by the backend (header tenant, trusted
+   * actor) — they are NOT accepted from the body and a body that carries them is ignored.
+   */
+  public record RevokeTrackingLinkRequest(String reason) {}
+
+  /**
+   * OP-CAP-46G — operator-only revocation result. Carries only the resulting {@code status}
+   * ("REVOKED") and the {@code revokedAt} timestamp. No tenant id, journey id, link id, token, or
+   * token hash is exposed.
+   */
+  public record TrackingLinkRevokedDto(String status, Instant revokedAt) {}
+
+  /**
    * OP-CAP-46C — a single customer-safe milestone for the public secure tracking view. Deliberately
    * carries ONLY customer-facing fields. Internal fields present on {@link OrderJourneyMilestoneDto}
    * (sourceType, sourceRef, sortOrder, customerVisible) are intentionally absent so they can never be

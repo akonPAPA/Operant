@@ -263,6 +263,15 @@ class ApiRouteSecurityClassificationTest {
             "POST",
             "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/tracking-links",
             SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.REVIEW_ACTION),
+        // OP-CAP-46G: revoking a secure tracking link is likewise an audited operator action under the
+        // order-journey prefix — protected REVIEW_ACTION, never public. The public-with-token GET
+        // resolve route is unaffected (proven by secureTrackingLinkResolveRouteIsPublicWithToken).
+        new RouteExpectation(
+            "POST",
+            "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/tracking-links/"
+                + "223e4567-e89b-12d3-a456-426614174000/revoke",
+            SecurityClassification.PROTECTED_CREATE,
             ApiPermission.REVIEW_ACTION));
   }
 
