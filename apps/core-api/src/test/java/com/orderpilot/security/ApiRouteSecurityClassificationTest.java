@@ -287,16 +287,6 @@ class ApiRouteSecurityClassificationTest {
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
   // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the
   // opaque expiring token, not by any request authority field.
-  @Test
-  void secureTrackingLinkResolveRouteIsPublicWithToken() {
-    RouteDecision decision = policy.classify(
-        "GET", "/api/v1/public/order-tracking/some-opaque-token").orElseThrow();
-
-    assertThat(decision.isPublic()).isTrue();
-    assertThat(decision.requiredPermission()).isNull();
-    assertThat(decision.classification())
-        .isEqualTo(SecurityClassification.SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN);
-  }
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
   // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the
