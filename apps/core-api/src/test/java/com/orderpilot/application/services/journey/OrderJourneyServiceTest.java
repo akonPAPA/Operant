@@ -22,6 +22,10 @@ import com.orderpilot.domain.workspace.DraftQuote;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 
+import com.orderpilot.api.dto.OrderJourneyDtos.CustomerTrackingMilestoneDto;
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
+
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -372,7 +376,7 @@ class OrderJourneyServiceTest {
     assertThat(safe.events())
         .noneMatch(e -> e.message() != null && e.message().contains(internalSecret));
     assertThat(Arrays.stream(CustomerTrackingMilestoneDto.class.getRecordComponents())
-            .map(RecordComponent::getName))
+        .map(RecordComponent::getName))
         .doesNotContain(
             "sourceRef",
             "sourceType",

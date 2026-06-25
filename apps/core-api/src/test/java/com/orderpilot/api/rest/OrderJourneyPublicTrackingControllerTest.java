@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -11,35 +12,54 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicTrackingMilestoneDto;
 import com.orderpilot.application.services.journey.OrderJourneyTrackingLinkService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.common.errors.NotFoundException;
-import com.orderpilot.common.tenant.TenantContextFilter;
-import com.orderpilot.infrastructure.config.CoreConfiguration;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
  * OP-CAP-46C — the public secure tracking link endpoint contract: scope is derived ONLY from the
  * opaque token in the path (no tenant header / query authority is honoured), and the response carries
  * only customer-safe fields with no internal/source/signal/identifier leakage.
+ *
+ * <p>This is a narrow standalone controller contract test. It wires the controller directly with a
+ * mocked {@link OrderJourneyTrackingLinkService} and the real {@link GlobalExceptionHandler} via
+ * {@code MockMvcBuilders.standaloneSetup}, so it does not bootstrap the Spring MVC slice, security
+ * autoconfig, or filter chain. Route classification and permission behaviour remain owned by the
+ * dedicated security/route tests.
  */
-@WebMvcTest(OrderJourneyPublicTrackingController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class,
-    TenantContextFilter.class})
 class OrderJourneyPublicTrackingControllerTest {
-  @Autowired private MockMvc mockMvc;
-  @MockBean private OrderJourneyTrackingLinkService trackingLinkService;
+  private MockMvc mockMvc;
+  private OrderJourneyTrackingLinkService trackingLinkService;
+
+  @BeforeEach
+  void setUp() {
+    trackingLinkService = mock(OrderJourneyTrackingLinkService.class);
+
+    ObjectMapper objectMapper = new ObjectMapper()
+        .registerModule(new JavaTimeModule())
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    mockMvc = MockMvcBuilders
+        .standaloneSetup(new OrderJourneyPublicTrackingController(trackingLinkService))
+        .setControllerAdvice(new GlobalExceptionHandler(Clock.systemUTC()))
+        .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+        .build();
+  }
 
   @Test
   void resolvesScopeFromTokenOnlyAndIgnoresClientAuthorityHeadersAndParams() throws Exception {
