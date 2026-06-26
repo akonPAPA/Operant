@@ -4,19 +4,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsSummaryResponse;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
 import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
+import com.orderpilot.application.services.support.SupportOperationsService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.security.ApiPermissionGuard;
 import com.orderpilot.security.ApiPermissionInterceptor;
 import com.orderpilot.security.ApiRouteSecurityPolicy;
 import com.orderpilot.security.ApiSecurityWebConfig;
 import com.orderpilot.security.RequestActorResolver;
+import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -45,6 +52,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class InternalSupportControllerSecurityTest {
   private static final String DIAGNOSTICS =
       "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/diagnostics";
+  private static final UUID TENANT_ID = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+  private static final UUID ACTOR_ID = UUID.fromString("123e4567-e89b-12d3-a456-426614174999");
   private static final String DATA_REPAIR =
       "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/dry-run";
   private static final String GRANTS = "/api/v1/internal/support/access-grants";
@@ -56,6 +65,13 @@ class InternalSupportControllerSecurityTest {
   private static final String PROCESSING_JOB_REPAIR_EXECUTE =
       "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
           + "123e4567-e89b-12d3-a456-426614174222/execute-processing-job-repair";
+  private static final String OPERATIONS_SUMMARY =
+      "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/operations/summary";
+  private static final String OPERATIONS_TIMELINE =
+      "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/operations/timeline";
+  private static final String DATA_REPAIR_OPERATIONS_VIEW =
+      "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
+          + "123e4567-e89b-12d3-a456-426614174222/operations-view";
 
   @Autowired private MockMvc mockMvc;
 
@@ -64,6 +80,7 @@ class InternalSupportControllerSecurityTest {
   @MockBean private MaintenanceActionService maintenanceActionService;
   @MockBean private DataRepairService dataRepairService;
   @MockBean private ProcessingJobRepairExecutor processingJobRepairExecutor;
+  @MockBean private SupportOperationsService supportOperationsService;
   @MockBean private RequestActorResolver requestActorResolver;
 
   @Test
@@ -186,5 +203,83 @@ class InternalSupportControllerSecurityTest {
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.message")
             .value("Missing required API permission STAFF_PROCESSING_JOB_REPAIR_EXECUTE"));
+  }
+
+  // --- OP-CAP-55: read-only operations visibility is internal support read, never tenant-visible ---
+
+  @Test
+  void operationsSummaryRouteIsNotPublic_unauthenticatedReturns401() throws Exception {
+    mockMvc.perform(get(OPERATIONS_SUMMARY))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  void operationsSummaryRejectsTenantAdminPermissionWith403() throws Exception {
+    mockMvc.perform(get(OPERATIONS_SUMMARY).header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_SUPPORT_READ"));
+  }
+
+  @Test
+  void operationsTimelineRejectsStaffWithoutReadPermissionWith403() throws Exception {
+    mockMvc.perform(get(OPERATIONS_TIMELINE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_DATA_REPAIR_DRYRUN"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_SUPPORT_READ"));
+  }
+
+  @Test
+  void dataRepairOperationsViewRejectsTenantOperatorPermissionWith403() throws Exception {
+    mockMvc.perform(get(DATA_REPAIR_OPERATIONS_VIEW)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_READ"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_SUPPORT_READ"));
+  }
+
+  @Test
+  void operationsSummaryWithStaffReadAndDiagnosticsGrantReturnsSafeSummary() throws Exception {
+    when(requestActorResolver.resolveVerifiedActor(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(TENANT_ID)))
+        .thenReturn(ACTOR_ID);
+    when(supportOperationsService.summary(TENANT_ID, ACTOR_ID))
+        .thenReturn(new SupportOperationsSummaryResponse(
+            TENANT_ID,
+            2,
+            1,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            Instant.parse("2026-06-26T12:00:00Z"),
+            Instant.parse("2026-06-26T12:00:01Z"),
+            "DISABLED"));
+
+    mockMvc.perform(get(OPERATIONS_SUMMARY)
+            .header("X-Tenant-Id", TENANT_ID.toString())
+            .header(RequestActorResolver.ACTOR_HEADER, ACTOR_ID.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_SUPPORT_READ"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.openIncidents").value(2))
+        .andExpect(jsonPath("$.criticalOpenIncidents").value(1))
+        .andExpect(jsonPath("$.externalExecution").value("DISABLED"))
+        .andExpect(jsonPath("$.payload").doesNotExist())
+        .andExpect(jsonPath("$.secret").doesNotExist())
+        .andExpect(jsonPath("$.actorId").doesNotExist());
+
+    verify(supportAccessService).authorize(ACTOR_ID, TENANT_ID, StaffSupportScope.DIAGNOSTICS);
+    verify(supportOperationsService).summary(TENANT_ID, ACTOR_ID);
+  }
+
+  @Test
+  void operationsSummaryWithWrongTenantHeaderIsDeniedBeforeServiceRead() throws Exception {
+    mockMvc.perform(get(OPERATIONS_SUMMARY)
+            .header("X-Tenant-Id", UUID.randomUUID().toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_SUPPORT_READ"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("SUPPORT_ACCESS_DENIED"));
   }
 }

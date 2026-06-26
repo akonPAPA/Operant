@@ -252,7 +252,20 @@ public class ApiRouteSecurityPolicy {
           ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_MAINTENANCE_RECORD)
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
+    // OP-CAP-55: read-only internal support operations visibility. GET is the only implemented verb and
+    // requires STAFF_SUPPORT_READ; any accidental write-shaped operations route still fails closed onto the
+    // strongest support-management staff permission rather than a tenant permission or data-repair tier.
+    if (path.contains("/operations/")) {
+      return write
+          ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    }
     if (path.contains("/data-repair-requests")) {
+      if (path.endsWith("/operations-view")) {
+        return write
+            ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
+            : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+      }
       // OP-CAP-54: the ONE bounded real-execution verb. Matched BEFORE the generic /execute stub so the
       // processing-job status-repair executor (the only path that can mutate a processing_job row) requires
       // its own dedicated, stronger STAFF_PROCESSING_JOB_REPAIR_EXECUTE permission. Every other data-repair

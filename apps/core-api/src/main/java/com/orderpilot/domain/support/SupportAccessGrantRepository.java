@@ -1,8 +1,11 @@
 package com.orderpilot.domain.support;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -24,4 +27,19 @@ public interface SupportAccessGrantRepository extends JpaRepository<SupportAcces
 
   /** Tenant-scoped registry listing, newest first. Never returns another tenant's grants. */
   List<SupportAccessGrant> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+
+  // OP-CAP-55 — read-only operations visibility (bounded, tenant-scoped via idx_support_access_grant_tenant).
+  long countByTenantIdAndStatus(UUID tenantId, SupportAccessGrant.Status status);
+
+  long countByTenantIdAndStatusAndApprovalStatusInAndExpiresAtAfter(
+      UUID tenantId,
+      SupportAccessGrant.Status status,
+      Collection<SupportAccessGrant.ApprovalStatus> approvalStatuses,
+      Instant now);
+
+  long countByTenantIdAndApprovalStatus(UUID tenantId, SupportAccessGrant.ApprovalStatus approvalStatus);
+
+  Optional<SupportAccessGrant> findFirstByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+
+  List<SupportAccessGrant> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable pageable);
 }
