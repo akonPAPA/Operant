@@ -332,7 +332,16 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
                 + "123e4567-e89b-12d3-a456-426614174222/execute",
             SecurityClassification.PROTECTED_EXECUTE,
-            ApiPermission.STAFF_DATA_REPAIR_EXECUTION_ATTEMPT));
+            ApiPermission.STAFF_DATA_REPAIR_EXECUTION_ATTEMPT),
+        // OP-CAP-54: the ONE bounded real-execution verb requires its own dedicated, stronger permission,
+        // distinct from the generic execute stub above. It is the only data-repair route that may mutate a
+        // processing_job row, and only for the PROCESSING_JOB_STATUS_REPAIR target.
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
+                + "123e4567-e89b-12d3-a456-426614174222/execute-processing-job-repair",
+            SecurityClassification.PROTECTED_EXECUTE,
+            ApiPermission.STAFF_PROCESSING_JOB_REPAIR_EXECUTE));
   }
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while

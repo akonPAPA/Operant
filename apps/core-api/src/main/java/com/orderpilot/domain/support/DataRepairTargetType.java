@@ -10,5 +10,11 @@ public enum DataRepairTargetType {
   QUOTE,
   DRAFT,
   PROCESSING_JOB,
+  // OP-CAP-54 — the FIRST and ONLY bounded target for which real, approval-gated execution exists. It
+  // repairs operational processing-job status only (a wedged PENDING/PROCESSING job → terminal FAILED so
+  // the normal control-plane retry path can requeue it). It is NOT a generic table/row/SQL/script target:
+  // there is no free-form target name, no arbitrary field patch, and no business order/quote/inventory/
+  // customer/price mutation. Every other target remains dry-run / execution-disabled.
+  PROCESSING_JOB_STATUS_REPAIR,
   OTHER
 }

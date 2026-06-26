@@ -114,5 +114,13 @@ public enum ApiPermission {
   // requester can never self-approve from the request permission.
   STAFF_BREAK_GLASS_APPROVE,
   // Revoke a break-glass grant — a dedicated emergency-containment authority.
-  STAFF_BREAK_GLASS_REVOKE
+  STAFF_BREAK_GLASS_REVOKE,
+  // OP-CAP-54: execute the FIRST real, bounded data-repair — an approved, deterministically-validated
+  // processing-job status repair. It is DISTINCT from and STRONGER than STAFF_DATA_REPAIR_EXECUTION_ATTEMPT
+  // (which only ever reaches the disabled generic stub): this permission gates the one endpoint that can
+  // actually mutate a processing_job row, and only for the bounded PROCESSING_JOB_STATUS_REPAIR target.
+  // Like the rest of the STAFF_* family it is never held by any tenant role (ApiRolePermissionMatrix
+  // excludes the whole STAFF_* prefix), and it can never reach a business order/quote/inventory/customer/
+  // price table or any connector/ERP write.
+  STAFF_PROCESSING_JOB_REPAIR_EXECUTE
 }

@@ -8,11 +8,14 @@ import com.orderpilot.api.dto.SupportInternalDtos.DataRepairDryRunResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.DataRepairRequestResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.MaintenanceActionRecordRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.MaintenanceActionRecordResponse;
+import com.orderpilot.api.dto.SupportInternalDtos.ProcessingJobRepairExecuteRequest;
+import com.orderpilot.api.dto.SupportInternalDtos.ProcessingJobRepairResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportAccessGrantResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportGrantApprovalDecisionRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportTenantDiagnosticsResponse;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
+import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
 import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
@@ -50,6 +53,7 @@ public class InternalSupportController {
   private final SupportDiagnosticsService diagnosticsService;
   private final MaintenanceActionService maintenanceActionService;
   private final DataRepairService dataRepairService;
+  private final ProcessingJobRepairExecutor processingJobRepairExecutor;
   private final RequestActorResolver actorResolver;
 
   public InternalSupportController(
@@ -57,11 +61,13 @@ public class InternalSupportController {
       SupportDiagnosticsService diagnosticsService,
       MaintenanceActionService maintenanceActionService,
       DataRepairService dataRepairService,
+      ProcessingJobRepairExecutor processingJobRepairExecutor,
       RequestActorResolver actorResolver) {
     this.supportAccessService = supportAccessService;
     this.diagnosticsService = diagnosticsService;
     this.maintenanceActionService = maintenanceActionService;
     this.dataRepairService = dataRepairService;
+    this.processingJobRepairExecutor = processingJobRepairExecutor;
     this.actorResolver = actorResolver;
   }
 
@@ -203,6 +209,31 @@ public class InternalSupportController {
     UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     dataRepairService.attemptExecution(contextTenant, actor, requestId);
+  }
+
+  // OP-CAP-54: the ONE bounded real-execution endpoint. It executes an approved, deterministically-validated
+  // processing-job status repair (PROCESSING_JOB_STATUS_REPAIR) — the only data-repair target that may
+  // actually mutate a row in this stage, and only this job's own status. It requires the dedicated
+  // STAFF_PROCESSING_JOB_REPAIR_EXECUTE permission (route-edge) PLUS a DATA_REPAIR support grant (service
+  // layer). The request body is business intent only; the tenant/actor/approval are backend-owned. Every
+  // other target keeps using the disabled /execute stub above.
+  @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/execute-processing-job-repair")
+  public ProcessingJobRepairResponse executeProcessingJobRepair(
+      @PathVariable UUID tenantId,
+      @PathVariable UUID requestId,
+      @RequestBody ProcessingJobRepairExecuteRequest request,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
+    return processingJobRepairExecutor.execute(
+        contextTenant,
+        actor,
+        requestId,
+        request.processingJobId(),
+        request.expectedCurrentStatus(),
+        request.desiredStatus(),
+        request.reason());
   }
 
   private static String note(SupportGrantApprovalDecisionRequest request) {

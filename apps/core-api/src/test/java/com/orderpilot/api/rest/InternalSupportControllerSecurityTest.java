@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
+import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -52,6 +53,9 @@ class InternalSupportControllerSecurityTest {
   private static final String DATA_REPAIR_EXECUTE =
       "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
           + "123e4567-e89b-12d3-a456-426614174222/execute";
+  private static final String PROCESSING_JOB_REPAIR_EXECUTE =
+      "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
+          + "123e4567-e89b-12d3-a456-426614174222/execute-processing-job-repair";
 
   @Autowired private MockMvc mockMvc;
 
@@ -59,6 +63,7 @@ class InternalSupportControllerSecurityTest {
   @MockBean private SupportDiagnosticsService supportDiagnosticsService;
   @MockBean private MaintenanceActionService maintenanceActionService;
   @MockBean private DataRepairService dataRepairService;
+  @MockBean private ProcessingJobRepairExecutor processingJobRepairExecutor;
   @MockBean private RequestActorResolver requestActorResolver;
 
   @Test
@@ -149,5 +154,37 @@ class InternalSupportControllerSecurityTest {
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.message")
             .value("Missing required API permission STAFF_DATA_REPAIR_EXECUTION_ATTEMPT"));
+  }
+
+  // --- OP-CAP-54: the bounded processing-job repair endpoint is not public and needs its own permission ---
+
+  @Test
+  void processingJobRepairExecuteRouteIsNotPublic_unauthenticatedReturns401() throws Exception {
+    mockMvc.perform(post(PROCESSING_JOB_REPAIR_EXECUTE).contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  void processingJobRepairExecuteRejectsGenericExecuteStubPermissionWith403() throws Exception {
+    // The OP-CAP-52 generic execute-stub permission cannot reach the real bounded executor.
+    mockMvc.perform(post(PROCESSING_JOB_REPAIR_EXECUTE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_DATA_REPAIR_EXECUTION_ATTEMPT")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message")
+            .value("Missing required API permission STAFF_PROCESSING_JOB_REPAIR_EXECUTE"));
+  }
+
+  @Test
+  void processingJobRepairExecuteRejectsTenantOperatorPermissionWith403() throws Exception {
+    mockMvc.perform(post(PROCESSING_JOB_REPAIR_EXECUTE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_ACTION")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message")
+            .value("Missing required API permission STAFF_PROCESSING_JOB_REPAIR_EXECUTE"));
   }
 }

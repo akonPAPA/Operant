@@ -308,6 +308,43 @@ Update at the start of a task only when needed:
   support/coverage 262/262. `PostgresMigrationSmokeIntegrationTest` not run here (no local Postgres) —
   H2 proved entity↔schema mapping.
 
+### OP-CAP-54 Controlled Approved Operational Repair Executor (One Safe Target) — implemented and test-proven
+
+- Builds on OP-CAP-51/52/53 (do not redo). Introduces the FIRST real, approval-gated data-repair executor,
+  bounded to ONE operational target: `PROCESSING_JOB_STATUS_REPAIR`. Proves Operant can safely repair
+  production control-plane state (a wedged processing-job status) under approval + deterministic validation
+  + audit + idempotency + a hard mutation boundary. NO arbitrary SQL/script, NO table/field patch, NO
+  business order/quote/inventory/customer/price mutation, NO connector/ERP/1C write, NO AI-driven execution,
+  NO break-glass execution path (execution requires an APPROVED `DataRepairRequest` only).
+- Bounded target: new `DataRepairTargetType.PROCESSING_JOB_STATUS_REPAIR` (the only executable target; every
+  other target stays dry-run / disabled-stub). `DataRepairRequest.ExecutionStatus` gains `EXECUTED`; new
+  backend-owned execution-result fields (`target_processing_job_id`, `previous_status`, `new_status`,
+  `executed_at`, `executed_by`) make a re-execute an idempotent replay. New `ProcessingJob.applyOperational
+  StatusRepair(...)` mutates only the job's own status/lastError/finishedAt (target FAILED only).
+- Deterministic `ProcessingJobStatusRepairValidator` — narrow allowlist using only existing
+  `ProcessingJobStatus` names: stale `PROCESSING`→`FAILED`, stale no-worker `PENDING`→`FAILED` (15-min
+  staleness threshold). Refuses (with bounded reason codes, no mutation) on expected-status mismatch,
+  terminal-success, non-allowlisted transition, non-stale, or non-FAILED desired status.
+- `ProcessingJobRepairExecutor` (narrow service, separate from the OP-CAP-52 stub): requires the request be
+  APPROVED + unexpired + target `PROCESSING_JOB_STATUS_REPAIR`; loads the job tenant-scoped under a row lock;
+  validates; mutates exactly one `processing_job` row + the request execution metadata; idempotent replay
+  when already EXECUTED. Audits PROCESSING_JOB_REPAIR_EXECUTION_DENIED / _VALIDATION_FAILED / _STARTED /
+  _EXECUTED, DATA_REPAIR_EXECUTION_COMPLETED / _REPLAYED (ids + prev/new status + actor + reason; no secrets).
+- Endpoint `POST /api/v1/internal/support/tenants/{tid}/data-repair-requests/{rid}/execute-processing-job-
+  repair`; request body is business intent only (`processingJobId`/`expectedCurrentStatus`/`desiredStatus`/
+  `reason`); response is operator-safe (`ProcessingJobRepairResponse`, no actor/secret/payload). New
+  route-edge permission `STAFF_PROCESSING_JOB_REPAIR_EXECUTE` (distinct from and stronger than the OP-CAP-52
+  execute-stub permission; STAFF_* family excluded from every tenant role). Generic `/execute` stub unchanged.
+- Migration `V65__processing_job_status_repair_execution.sql` — additive/non-destructive: ADDs the 5 nullable
+  execution-result columns to `data_repair_request`. Touches no other table.
+- Tests added: `ProcessingJobStatusRepairValidatorTest` (9), `ProcessingJobRepairExecutorTest` (11, H2 DB),
+  `ProcessingJobRepairRoutePermissionTest` (5), `ProcessingJobRepairContractTest` (3), plus extended
+  `InternalSupportControllerSecurityTest` (+3 → 13) and `ApiRouteSecurityClassificationTest` (+1 expectation).
+  Targeted sweeps green: support/repair 80/80; controller+classification 97/97 (route inventory total=505
+  public=16 unchanged, unclassified=0); incident+security regression 271/271.
+  `PostgresMigrationSmokeIntegrationTest` NOT run (no local Postgres at localhost:15432) — H2 proved the V65
+  entity↔schema mapping via real insert/select of all new columns.
+
 ### Previous slice: TBD
 
 - Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making
