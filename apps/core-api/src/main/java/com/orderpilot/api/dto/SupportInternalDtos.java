@@ -121,4 +121,40 @@ public final class SupportInternalDtos {
       Instant approvalExpiresAt,
       String message,
       Instant createdAt) {}
+
+  // --- OP-CAP-54: bounded processing-job status-repair execution ---
+
+  /**
+   * OP-CAP-54 — the execute command for the one bounded repair target {@code PROCESSING_JOB_STATUS_REPAIR}.
+   * It carries BUSINESS/SAFE INTENT ONLY: which processing job, the operator's expected current status, the
+   * desired bounded status, and an audit reason. {@code expectedCurrentStatus}/{@code desiredStatus} are
+   * operational intent (matched against the existing {@code ProcessingJobStatus} allowlist by the backend
+   * validator) — NOT authority over the request's lifecycle.
+   *
+   * <p>It deliberately carries NO request-lifecycle authority and NO executable payload: no tenant id, no
+   * actor/approver id, no approvalStatus/executionStatus, no raw SQL/script, no tableName/fieldName, no
+   * arbitrary JSON patch, no connector credential/secret. The tenant is the trusted {@code X-Tenant-Id}
+   * context, the actor is the trusted actor header, and approval lives on the backend-owned
+   * {@code DataRepairRequest}.
+   */
+  public record ProcessingJobRepairExecuteRequest(
+      UUID processingJobId,
+      String expectedCurrentStatus,
+      String desiredStatus,
+      String reason) {}
+
+  /**
+   * OP-CAP-54 — operator-safe result of a processing-job status repair (or its idempotent replay). Exposes
+   * only backend-owned safe operational fields: no actor/approver id, no secret, no raw payload, no
+   * internal stack trace, no cross-tenant data.
+   */
+  public record ProcessingJobRepairResponse(
+      UUID requestId,
+      String targetType,
+      UUID targetId,
+      String executionStatus,
+      String previousStatus,
+      String newStatus,
+      Instant executedAt,
+      String message) {}
 }

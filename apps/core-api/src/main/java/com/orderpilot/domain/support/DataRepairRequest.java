@@ -44,13 +44,26 @@ public class DataRepairRequest {
   }
 
   public enum ExecutionStatus {
-    /** Real execution is not implemented in this stage and may never be reached here. */
-    EXECUTION_DISABLED
+    /**
+     * Default for every request. Real execution is not implemented for this target — the execute path is a
+     * stub that always fails closed. Every target EXCEPT the OP-CAP-54 bounded
+     * {@link DataRepairTargetType#PROCESSING_JOB_STATUS_REPAIR} stays permanently here.
+     */
+    EXECUTION_DISABLED,
+    /**
+     * OP-CAP-54 — terminal success state set ONLY by the backend-owned processing-job status-repair
+     * executor after an approved, deterministically-validated repair has mutated exactly one
+     * {@code processing_job} row. The execution-result columns ({@code target_processing_job_id},
+     * {@code previous_status}, {@code new_status}, {@code executed_at}, {@code executed_by}) are stamped
+     * alongside it, and they make a repeated execute an idempotent replay (no second mutation).
+     */
+    EXECUTED
   }
 
   public static final int MAX_REASON_LENGTH = 500;
   public static final int MAX_TARGET_SUMMARY_LENGTH = 500;
   public static final int MAX_DECISION_NOTE_LENGTH = 500;
+  public static final int MAX_STATUS_LENGTH = 40;
 
   @Id @GeneratedValue private UUID id;
   @Column(name = "tenant_id", nullable = false) private UUID tenantId;
@@ -71,6 +84,15 @@ public class DataRepairRequest {
   @Column(name = "approval_requested_at") private Instant approvalRequestedAt;
   @Column(name = "approval_expires_at") private Instant approvalExpiresAt;
   @Column(name = "approval_decided_at") private Instant approvalDecidedAt;
+  // OP-CAP-54 — execution-result columns, stamped only by the processing-job status-repair executor on a
+  // successful, approval-gated, deterministically-validated repair. They are the idempotency record: once
+  // present (executionStatus == EXECUTED) a repeated execute is a replay that returns these values and
+  // mutates nothing. No secret / raw payload / SQL is ever stored here — only safe operational metadata.
+  @Column(name = "target_processing_job_id") private UUID targetProcessingJobId;
+  @Column(name = "previous_status", length = MAX_STATUS_LENGTH) private String previousStatus;
+  @Column(name = "new_status", length = MAX_STATUS_LENGTH) private String newStatus;
+  @Column(name = "executed_at") private Instant executedAt;
+  @Column(name = "executed_by") private UUID executedBy;
   @Column(name = "created_at", nullable = false) private Instant createdAt;
 
   protected DataRepairRequest() {}
@@ -126,6 +148,30 @@ public class DataRepairRequest {
     this.approvalDecidedAt = now;
   }
 
+  /**
+   * OP-CAP-54 — stamp the result of a successful processing-job status repair. Backend-owned: the executor
+   * calls this only after the approval gate and the deterministic validator have passed and exactly one
+   * {@code processing_job} row was mutated. It is idempotent at the entity level — a request that is already
+   * {@link ExecutionStatus#EXECUTED} can never be re-executed (the executor replays the stored result
+   * instead), so this guards against a double mutation.
+   */
+  public void recordProcessingJobRepairExecution(
+      UUID processingJobId, String previousStatus, String newStatus, UUID executedBy, Instant now) {
+    if (executionStatus == ExecutionStatus.EXECUTED) {
+      throw new IllegalStateException("Data-repair request has already been executed");
+    }
+    this.executionStatus = ExecutionStatus.EXECUTED;
+    this.targetProcessingJobId = processingJobId;
+    this.previousStatus = previousStatus;
+    this.newStatus = newStatus;
+    this.executedBy = executedBy;
+    this.executedAt = now;
+  }
+
+  public boolean isExecuted() {
+    return executionStatus == ExecutionStatus.EXECUTED;
+  }
+
   public boolean isApproved() {
     return approvalStatus == ApprovalStatus.APPROVED;
   }
@@ -157,5 +203,10 @@ public class DataRepairRequest {
   public Instant getApprovalRequestedAt() { return approvalRequestedAt; }
   public Instant getApprovalExpiresAt() { return approvalExpiresAt; }
   public Instant getApprovalDecidedAt() { return approvalDecidedAt; }
+  public UUID getTargetProcessingJobId() { return targetProcessingJobId; }
+  public String getPreviousStatus() { return previousStatus; }
+  public String getNewStatus() { return newStatus; }
+  public Instant getExecutedAt() { return executedAt; }
+  public UUID getExecutedBy() { return executedBy; }
   public Instant getCreatedAt() { return createdAt; }
 }

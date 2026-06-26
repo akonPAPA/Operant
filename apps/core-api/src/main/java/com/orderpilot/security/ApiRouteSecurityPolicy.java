@@ -253,6 +253,13 @@ public class ApiRouteSecurityPolicy {
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
     if (path.contains("/data-repair-requests")) {
+      // OP-CAP-54: the ONE bounded real-execution verb. Matched BEFORE the generic /execute stub so the
+      // processing-job status-repair executor (the only path that can mutate a processing_job row) requires
+      // its own dedicated, stronger STAFF_PROCESSING_JOB_REPAIR_EXECUTE permission. Every other data-repair
+      // verb is unaffected.
+      if (write && path.endsWith("/execute-processing-job-repair")) {
+        return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.STAFF_PROCESSING_JOB_REPAIR_EXECUTE);
+      }
       // OP-CAP-52: distinct data-repair verbs map to distinct permissions. The execution attempt is the
       // strongest (and only reaches a disabled stub); approve/reject is the approver tier; everything else
       // (dry-run, request-approval) stays at the requester tier STAFF_DATA_REPAIR_DRYRUN.

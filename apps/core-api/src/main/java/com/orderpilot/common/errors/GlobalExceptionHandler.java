@@ -10,6 +10,7 @@ import com.orderpilot.common.idempotency.IdempotencyInProgressException;
 import com.orderpilot.application.services.journey.PublicTrackingRateLimitedException;
 import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.support.DataRepairExecutionException;
+import com.orderpilot.application.services.support.ProcessingJobRepairException;
 import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
@@ -151,6 +152,15 @@ public class GlobalExceptionHandler {
     // (409 DATA_REPAIR_EXECUTION_DENIED) or the request was approved but execution is disabled in this
     // stage (501 DATA_REPAIR_EXECUTION_DISABLED). No business row is ever read or mutated; the message is
     // safe and reveals no internal/business detail.
+    return build(HttpStatus.valueOf(ex.getHttpStatus()), ex.getCode(), ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(ProcessingJobRepairException.class)
+  ResponseEntity<ApiErrorResponse> handleProcessingJobRepair(ProcessingJobRepairException ex, HttpServletRequest request) {
+    // OP-CAP-54: the bounded processing-job status-repair executor failed closed BEFORE any mutation —
+    // either the approval/target gate was not satisfied (PROCESSING_JOB_REPAIR_DENIED) or the deterministic
+    // validator refused the repair (PROCESSING_JOB_REPAIR_VALIDATION_FAILED). No business row is mutated;
+    // the message is safe and reveals no internal/business detail.
     return build(HttpStatus.valueOf(ex.getHttpStatus()), ex.getCode(), ex.getMessage(), request, List.of());
   }
 

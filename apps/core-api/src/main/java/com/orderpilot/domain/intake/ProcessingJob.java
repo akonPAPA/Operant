@@ -29,6 +29,17 @@ public class ProcessingJob {
   public void markNeedsReview(Instant now){this.status=ProcessingJobStatus.NEEDS_REVIEW.name(); this.lastError=null; this.finishedAt=now; this.updatedAt=now;}
   public void markFailed(String safeReason, Instant now){this.status=ProcessingJobStatus.FAILED.name(); this.lastError=boundedReason(safeReason); this.finishedAt=now; this.updatedAt=now;}
   public void markRejected(String safeReason, Instant now){this.status=ProcessingJobStatus.REJECTED.name(); this.lastError=boundedReason(safeReason); this.finishedAt=now; this.updatedAt=now;}
+  // OP-CAP-54: a controlled, approval-gated operational status repair. The deterministic
+  // ProcessingJobStatusRepairValidator is the ONLY driver, and the only allowlisted repair target is
+  // FAILED — unsticking a wedged PENDING/PROCESSING job to a terminal FAILED state from which the existing
+  // control-plane retry path (isRetryable) can requeue it. It mutates only THIS job's own status/lastError/
+  // finishedAt; it touches no business entity, runs no SQL/script, and triggers no external side effect.
+  public void applyOperationalStatusRepair(ProcessingJobStatus target, String safeReason, Instant now){
+    if (target != ProcessingJobStatus.FAILED) {
+      throw new IllegalArgumentException("Unsupported operational repair target status");
+    }
+    this.status=target.name(); this.lastError=boundedReason(safeReason); this.finishedAt=now; this.updatedAt=now;
+  }
   private static String boundedReason(String reason){ if (reason == null) return null; return reason.length() > 500 ? reason.substring(0, 500) : reason; }
   public UUID getId(){return id;} public UUID getTenantId(){return tenantId;} public String getJobType(){return jobType;} public String getTargetType(){return targetType;} public UUID getTargetId(){return targetId;} public String getStatus(){return status;} public Instant getQueuedAt(){return queuedAt;}
   // OP-CAP-28: bounded, non-sensitive operational fields for the safe status contract. lastError is
