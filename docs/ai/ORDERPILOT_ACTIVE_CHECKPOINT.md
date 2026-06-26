@@ -273,6 +273,41 @@ Update at the start of a task only when needed:
 - Next action: commit OP-CAP-47A/B/C frontend slice together (only when explicitly asked), or run
   one-off live-backend smoke of `/order-journey/[id]` with a seeded journey.
 
+### OP-CAP-53 Break-Glass & Incident Response Foundation — implemented and test-proven
+
+- Builds on the OP-CAP-51/52 owner-company support foundation (do not redo). Adds a backend-only,
+  controlled emergency incident-response layer. NO real data-repair execution, NO arbitrary SQL/script,
+  NO direct DB mutation, NO connector/ERP write, NO real notification delivery.
+- New domain pkg `com.orderpilot.domain.incident`: `IncidentRecord` (OPEN→CLOSED; CRITICAL cannot be
+  silently closed without a closure reason), `BreakGlassAccessRequest` (REQUESTED→APPROVED|REJECTED|
+  REVOKED|EXPIRED; scoped + reasoned + bounded-TTL + always-expiring; usable only while APPROVED and
+  unexpired), `IncidentAlertRecord` (record-only, `PENDING_DISPATCH`, no external delivery), enums
+  (`IncidentSeverity/Status/Type`, `BreakGlassScope/Status`, `AlertType/Status`) + 3 repositories.
+- New service `IncidentResponseService`: createIncident/closeIncident/requestBreakGlass/approveBreakGlass/
+  rejectBreakGlass/revokeBreakGlass/authorize. Self-approval denied (separation of duties); closed
+  incident cannot receive a new approved grant; authorize fails closed on unknown/wrong-tenant/wrong-
+  scope/wrong-actor/not-approved/expired/incident-not-open and emits safe denial audit; an observed
+  expired grant transitions to EXPIRED + records a BREAK_GLASS_EXPIRED alert. Break-glass scopes are
+  POLICY LABELS only — a valid grant mutates no business row. Every transition audited.
+- New controller `InternalIncidentController` under `/api/v1/internal/support/**`: `POST /incidents`,
+  `POST /incidents/{id}/close`, `GET /incidents/{id}`, `POST /tenants/{tid}/incidents/{iid}/break-glass-
+  requests`, `POST /tenants/{tid}/break-glass-requests/{rid}/{approve|reject|revoke}`. Tenant from
+  `X-Tenant-Id`, actor from `RequestActorResolver`; path tenant must equal context tenant (fail-closed).
+- New permissions (route-edge, STAFF_* family, excluded from every tenant role by `ApiRolePermissionMatrix`):
+  `STAFF_INCIDENT_CREATE/READ/CLOSE`, `STAFF_BREAK_GLASS_REQUEST/APPROVE/REVOKE`. `ApiRouteSecurityPolicy.
+  supportDecision` extended (break-glass matched before incident since the create path is nested under an
+  incident); unknown internal-support sub-routes still fail closed onto STAFF_*.
+- Migration `V64__incident_break_glass_foundation.sql` — additive/non-destructive: CREATEs the 3 tables +
+  indexes (tenant+status, incident_id, expires_at, requested_by). Touches no existing table.
+- Request DTOs (`IncidentInternalDtos`) carry business intent only (no tenant/actor/status/approval/expiry/
+  SQL/script/connector/secret); response DTOs expose no secret/actor field — proven by contract test.
+- Tests added: `IncidentResponseServiceTest` (20 — incident + break-glass lifecycle, audit, no business
+  mutation), `IncidentBreakGlassRoutePermissionTest` (12), `IncidentBreakGlassContractTest` (6),
+  `InternalIncidentControllerSecurityTest` (8). Targeted security/regression sweep green: route inventory
+  total=504 public=16 (unchanged) unclassified=0; combined incident+security 131/131 and broader
+  support/coverage 262/262. `PostgresMigrationSmokeIntegrationTest` not run here (no local Postgres) —
+  H2 proved entity↔schema mapping.
+
 ### Previous slice: TBD
 
 - Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making

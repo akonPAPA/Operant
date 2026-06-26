@@ -211,6 +211,32 @@ public class ApiRouteSecurityPolicy {
   // (never public, never a weaker tenant permission).
   private Optional<RouteDecision> supportDecision(String method, String path) {
     boolean write = !HttpMethod.GET.matches(method);
+    // OP-CAP-53: break-glass must be matched BEFORE the incident branch — a break-glass create path is
+    // nested under an incident (.../incidents/{id}/break-glass-requests) and so contains both substrings.
+    if (path.contains("/break-glass-requests")) {
+      if (write && path.endsWith("/approve")) {
+        return protectedRoute(SecurityClassification.PROTECTED_APPROVE, ApiPermission.STAFF_BREAK_GLASS_APPROVE);
+      }
+      if (write && path.endsWith("/reject")) {
+        return protectedRoute(SecurityClassification.PROTECTED_REJECT, ApiPermission.STAFF_BREAK_GLASS_APPROVE);
+      }
+      if (write && path.endsWith("/revoke")) {
+        return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.STAFF_BREAK_GLASS_REVOKE);
+      }
+      return write
+          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_BREAK_GLASS_REQUEST)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_INCIDENT_READ);
+    }
+    // OP-CAP-53: incident records. Distinct verbs map to distinct STAFF_INCIDENT_* permissions; closing is
+    // separated from creating so an incident-creator cannot silently close incidents from the create grant.
+    if (path.contains("/incidents")) {
+      if (write && path.endsWith("/close")) {
+        return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.STAFF_INCIDENT_CLOSE);
+      }
+      return write
+          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_INCIDENT_CREATE)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_INCIDENT_READ);
+    }
     if (path.contains("/access-grants")) {
       // OP-CAP-52: approving/rejecting a grant is a separate, stronger authority than creating/revoking it,
       // so a STAFF_SUPPORT_GRANT_MANAGE actor that minted a grant request cannot also approve it.
