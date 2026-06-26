@@ -25,6 +25,12 @@ class SupportAccessRoutePermissionTest {
   private static final String MAINTENANCE = "/api/v1/internal/support/tenants/" + TENANT + "/maintenance-records";
   private static final String DATA_REPAIR =
       "/api/v1/internal/support/tenants/" + TENANT + "/data-repair-requests/dry-run";
+  private static final String OPERATIONS_SUMMARY =
+      "/api/v1/internal/support/tenants/" + TENANT + "/operations/summary";
+  private static final String OPERATIONS_TIMELINE =
+      "/api/v1/internal/support/tenants/" + TENANT + "/operations/timeline";
+  private static final String OPERATIONS_DETAIL =
+      "/api/v1/internal/support/tenants/" + TENANT + "/data-repair-requests/" + TENANT + "/operations-view";
 
   private void allow(String method, String path, String permission) {
     MockHttpServletRequest req = new MockHttpServletRequest(method, path);
@@ -60,6 +66,24 @@ class SupportAccessRoutePermissionTest {
     deny("GET", DIAGNOSTICS, "REVIEW_READ", "STAFF_SUPPORT_READ");
     deny("GET", DIAGNOSTICS, "ADMIN_SETTINGS_READ", "STAFF_SUPPORT_READ");
     deny("GET", DIAGNOSTICS, "ANALYTICS_READ", "STAFF_SUPPORT_READ");
+  }
+
+  // --- OP-CAP-55: read-only operations visibility requires STAFF_SUPPORT_READ ---
+
+  @Test
+  void operationsVisibilityGetRequiresStaffSupportRead() {
+    allow("GET", OPERATIONS_SUMMARY, "STAFF_SUPPORT_READ");
+    allow("GET", OPERATIONS_TIMELINE, "STAFF_SUPPORT_READ");
+    allow("GET", OPERATIONS_DETAIL, "STAFF_SUPPORT_READ");
+    deny("GET", OPERATIONS_SUMMARY, "ADMIN_SETTINGS_READ", "STAFF_SUPPORT_READ");
+    deny("GET", OPERATIONS_TIMELINE, "STAFF_DATA_REPAIR_DRYRUN", "STAFF_SUPPORT_READ");
+    deny("GET", OPERATIONS_DETAIL, "REVIEW_READ", "STAFF_SUPPORT_READ");
+  }
+
+  @Test
+  void operationsVisibilityWriteShapedRoutesFailClosedToSupportManagementPermission() {
+    deny("POST", OPERATIONS_SUMMARY, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
+    deny("POST", OPERATIONS_DETAIL, "STAFF_DATA_REPAIR_DRYRUN", "STAFF_SUPPORT_GRANT_MANAGE");
   }
 
   // --- access grant management requires STAFF_SUPPORT_GRANT_MANAGE (read can't manage) ---

@@ -3,6 +3,8 @@ package com.orderpilot.domain.incident;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -15,4 +17,13 @@ public interface BreakGlassAccessRequestRepository extends JpaRepository<BreakGl
   List<BreakGlassAccessRequest> findByTenantIdOrderByRequestedAtDesc(UUID tenantId);
 
   List<BreakGlassAccessRequest> findByIncidentIdOrderByRequestedAtDesc(UUID incidentId);
+
+  // OP-CAP-55 — read-only operations visibility (bounded queries, indexed by idx_break_glass_tenant_status).
+  long countByTenantIdAndStatus(UUID tenantId, BreakGlassStatus status);
+
+  long countByTenantIdAndStatusAndExpiresAtAfter(UUID tenantId, BreakGlassStatus status, Instant now);
+
+  Optional<BreakGlassAccessRequest> findFirstByTenantIdOrderByRequestedAtDesc(UUID tenantId);
+
+  List<BreakGlassAccessRequest> findByTenantIdOrderByRequestedAtDesc(UUID tenantId, Pageable pageable);
 }

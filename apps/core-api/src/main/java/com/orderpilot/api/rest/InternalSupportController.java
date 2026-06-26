@@ -13,12 +13,16 @@ import com.orderpilot.api.dto.SupportInternalDtos.ProcessingJobRepairResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportAccessGrantResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportGrantApprovalDecisionRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportTenantDiagnosticsResponse;
+import com.orderpilot.api.dto.SupportOperationsDtos.DataRepairOperationsViewResponse;
+import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsSummaryResponse;
+import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsTimelineResponse;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
 import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
 import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
+import com.orderpilot.application.services.support.SupportOperationsService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.domain.support.SupportAccessGrant;
@@ -30,6 +34,7 @@ import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -54,6 +59,7 @@ public class InternalSupportController {
   private final MaintenanceActionService maintenanceActionService;
   private final DataRepairService dataRepairService;
   private final ProcessingJobRepairExecutor processingJobRepairExecutor;
+  private final SupportOperationsService supportOperationsService;
   private final RequestActorResolver actorResolver;
 
   public InternalSupportController(
@@ -62,12 +68,14 @@ public class InternalSupportController {
       MaintenanceActionService maintenanceActionService,
       DataRepairService dataRepairService,
       ProcessingJobRepairExecutor processingJobRepairExecutor,
+      SupportOperationsService supportOperationsService,
       RequestActorResolver actorResolver) {
     this.supportAccessService = supportAccessService;
     this.diagnosticsService = diagnosticsService;
     this.maintenanceActionService = maintenanceActionService;
     this.dataRepairService = dataRepairService;
     this.processingJobRepairExecutor = processingJobRepairExecutor;
+    this.supportOperationsService = supportOperationsService;
     this.actorResolver = actorResolver;
   }
 
@@ -131,6 +139,39 @@ public class InternalSupportController {
     UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return diagnosticsService.diagnose(contextTenant);
+  }
+
+  // --- read-only support operations visibility (STAFF_SUPPORT_READ + DIAGNOSTICS grant) ---
+
+  @GetMapping(BASE + "/tenants/{tenantId}/operations/summary")
+  public SupportOperationsSummaryResponse operationsSummary(@PathVariable UUID tenantId, HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
+    return supportOperationsService.summary(contextTenant, actor);
+  }
+
+  @GetMapping(BASE + "/tenants/{tenantId}/operations/timeline")
+  public SupportOperationsTimelineResponse operationsTimeline(
+      @PathVariable UUID tenantId,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
+    return supportOperationsService.timeline(contextTenant, actor, page, size);
+  }
+
+  @GetMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/operations-view")
+  public DataRepairOperationsViewResponse dataRepairOperationsView(
+      @PathVariable UUID tenantId,
+      @PathVariable UUID requestId,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
+    return supportOperationsService.dataRepairOperationsView(contextTenant, actor, requestId);
   }
 
   // --- maintenance/update audit record (STAFF_MAINTENANCE_RECORD + MAINTENANCE grant) ---
