@@ -281,6 +281,15 @@ class ApiRouteSecurityClassificationTest {
             "GET",
             "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/tracking-links",
             SecurityClassification.PROTECTED_READ,
+            ApiPermission.ANALYTICS_READ),
+        // OP-CAP-47A: the operator fulfillment visibility timeline is a protected operator read under
+        // the order-journey prefix — PROTECTED_READ / ANALYTICS_READ, the same gate as the sibling
+        // detail/customer-safe reads. It is never public (only the GET /api/v1/public/order-tracking/
+        // {token} resolve route is public-with-token).
+        new RouteExpectation(
+            "GET",
+            "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/operator-timeline",
+            SecurityClassification.PROTECTED_READ,
             ApiPermission.ANALYTICS_READ));
   }
 

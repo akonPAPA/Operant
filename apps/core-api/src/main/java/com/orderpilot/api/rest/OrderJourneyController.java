@@ -1,6 +1,7 @@
 package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.OrderJourneyDtos.CustomerSafeJourneyDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.OperatorFulfillmentTimelineResponse;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyAttentionSummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneySummaryDto;
@@ -97,6 +98,19 @@ public class OrderJourneyController {
   @GetMapping("/{id}/customer-safe")
   public CustomerSafeJourneyDto getCustomerSafe(@PathVariable UUID id) {
     return readService.customerSafe(id);
+  }
+
+  /**
+   * OP-CAP-47A — operator fulfillment visibility timeline. Protected operator read (ANALYTICS_READ via
+   * the GET order-journey prefix rule); tenant from {@code X-Tenant-Id}, journey from the path. Returns
+   * a safe, tenant-scoped journey summary plus its ingested fulfillment signals as a deterministically
+   * ordered timeline. Read-only — no milestone/signal/order-state mutation and no external write. The
+   * response never carries raw payload refs, external/idempotency keys, signal entity ids, audit
+   * internals, or any cross-tenant data.
+   */
+  @GetMapping("/{id}/operator-timeline")
+  public OperatorFulfillmentTimelineResponse getOperatorTimeline(@PathVariable UUID id) {
+    return readService.operatorTimeline(id);
   }
 
   /**

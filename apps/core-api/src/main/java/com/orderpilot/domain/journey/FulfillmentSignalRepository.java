@@ -12,6 +12,12 @@ public interface FulfillmentSignalRepository extends JpaRepository<FulfillmentSi
   List<FulfillmentSignal> findByTenantIdAndJourneyIdOrderByReceivedAtAsc(UUID tenantId, UUID journeyId);
 
   /**
+   * OP-CAP-47A — bounded ascending fetch for the operator fulfillment timeline. Tenant-scoped and
+   * receivedAt-ascending; the read service applies a stable secondary tiebreaker for full determinism.
+   */
+  List<FulfillmentSignal> findByTenantIdAndJourneyIdOrderByReceivedAtAsc(UUID tenantId, UUID journeyId, Pageable pageable);
+
+  /**
    * OP-CAP-46A — idempotency lookup for signal ingest: a replayed signal sharing the same tenant,
    * journey, source, type and stable source reference must not create a duplicate.
    */
