@@ -9,6 +9,8 @@ import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyDetailDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyEventDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyListItemDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneyMilestoneDto;
+import com.orderpilot.api.dto.OrderJourneyDtos.OperatorFulfillmentTimelineResponse;
+import com.orderpilot.api.dto.OrderJourneyDtos.OperatorTimelineEntry;
 import com.orderpilot.api.dto.OrderJourneyDtos.OrderJourneySummaryDto;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicOrderTrackingView;
 import com.orderpilot.api.dto.OrderJourneyDtos.PublicTrackingMilestoneDto;
@@ -17,6 +19,7 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.journey.EvidenceLevel;
 import com.orderpilot.domain.journey.FulfillmentSignal;
 import com.orderpilot.domain.journey.FulfillmentSignalRepository;
+import com.orderpilot.domain.journey.FulfillmentSignalType;
 import com.orderpilot.domain.journey.MilestoneState;
 import com.orderpilot.domain.journey.OrderJourney;
 import com.orderpilot.domain.journey.OrderJourneyEvent;
@@ -25,6 +28,8 @@ import com.orderpilot.domain.journey.OrderJourneyMilestone;
 import com.orderpilot.domain.journey.OrderJourneyMilestoneRepository;
 import com.orderpilot.domain.journey.OrderJourneyRepository;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
@@ -42,6 +47,13 @@ public class OrderJourneyReadService {
   private static final int ATTENTION_LIMIT = 50;
   private static final int EVENT_LIMIT = 20;
   private static final int SIGNAL_LIMIT = 20;
+  private static final int TIMELINE_SIGNAL_LIMIT = 100;
+  // Deterministic timeline ordering: receivedAt ascending, then stable tiebreakers (signal type name,
+  // then the signal id) so two signals sharing a receivedAt always render in the same order.
+  private static final Comparator<FulfillmentSignal> TIMELINE_ORDER = Comparator
+      .comparing(FulfillmentSignal::getReceivedAt)
+      .thenComparing(s -> s.getSignalType().name())
+      .thenComparing(FulfillmentSignal::getId);
   private static final List<String> ATTENTION_RISK_LEVELS = List.of("HIGH");
 
   private final OrderJourneyRepository journeyRepository;
@@ -169,6 +181,72 @@ public class OrderJourneyReadService {
   private PublicTrackingMilestoneDto toPublicMilestone(OrderJourneyMilestone m) {
     return new PublicTrackingMilestoneDto(m.getMilestoneLabel(), m.getMilestoneState().name(),
         m.getEvidenceLevel().name(), m.getOccurredAt(), m.getEstimatedAt());
+  }
+
+  /**
+   * OP-CAP-47A — operator fulfillment visibility timeline. Composes the existing tenant-scoped
+   * OrderJourney projection summary with its ingested fulfillment signals as a deterministically
+   * ordered, operator-safe timeline. Strictly read-only: no milestone/signal/order state is mutated
+   * and no external write happens here.
+   *
+   * <p>Tenant isolation is enforced by the tenant-scoped journey fetch (a cross-tenant journey id is a
+   * {@code NotFoundException}, matching the established convention) and by the tenant-scoped signal
+   * query. Duplicate fulfillment signals are already collapsed at ingest (one row per tenant + journey
+   * + source + type + sourceRef), so a replayed signal yields exactly one timeline entry. The response
+   * never carries the signal's internal id, raw payload ref, external source/idempotency ref,
+   * confidence, tenant id, or any audit/storage internals.
+   */
+  @Transactional(readOnly = true)
+  public OperatorFulfillmentTimelineResponse operatorTimeline(UUID id) {
+    UUID tenantId = TenantContext.requireTenantId();
+    OrderJourney journey = journeyRepository.findByIdAndTenantId(id, tenantId)
+        .orElseThrow(() -> new NotFoundException("Order journey not found"));
+
+    List<FulfillmentSignal> signals = signalRepository
+        .findByTenantIdAndJourneyIdOrderByReceivedAtAsc(tenantId, id, PageRequest.of(0, TIMELINE_SIGNAL_LIMIT))
+        .stream()
+        .sorted(TIMELINE_ORDER)
+        .toList();
+
+    List<OperatorTimelineEntry> timeline = new java.util.ArrayList<>(signals.size());
+    int sequence = 1;
+    Instant latestReceivedAt = null;
+    boolean returnRequested = false;
+    for (FulfillmentSignal s : signals) {
+      timeline.add(toTimelineEntry(s, sequence++));
+      if (latestReceivedAt == null || s.getReceivedAt().isAfter(latestReceivedAt)) {
+        latestReceivedAt = s.getReceivedAt();
+      }
+      if (s.getSignalType() == FulfillmentSignalType.RETURN_REQUESTED) {
+        returnRequested = true;
+      }
+    }
+
+    return new OperatorFulfillmentTimelineResponse(
+        journey.getId(), journey.getSourceType().name(), journey.getCurrentStage().name(),
+        journey.getCurrentStatus(), journey.getRiskLevel(), journey.isBlocked(),
+        signals.size(), latestReceivedAt, returnRequested, List.copyOf(timeline),
+        journey.getCreatedAt(), journey.getUpdatedAt(), clock.instant());
+  }
+
+  private OperatorTimelineEntry toTimelineEntry(FulfillmentSignal s, int sequence) {
+    String label = s.getSignalType().milestoneCode()
+        .map(com.orderpilot.domain.journey.MilestoneCode::label)
+        .orElseGet(() -> humanizeSignalType(s.getSignalType()));
+    return new OperatorTimelineEntry(
+        sequence, s.getSignalType().name(), label, s.getSignalStatus(),
+        s.getSourceType().name(), s.getSourceType().evidenceLevel().name(),
+        s.isCustomerVisible(), s.getReceivedAt(), s.getProcessedAt());
+  }
+
+  /**
+   * Safe sentence-case fallback label for a signal type that advances no canonical milestone (e.g.
+   * RETURN_REQUESTED → "Return requested"). Matches the milestone label style ("Ready to ship").
+   */
+  private static String humanizeSignalType(FulfillmentSignalType type) {
+    String lower = type.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+    if (lower.isEmpty()) return lower;
+    return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
   }
 
   private OrderJourneyDetailDto toDetail(UUID tenantId, OrderJourney journey, String projectionSource) {

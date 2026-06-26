@@ -236,6 +236,71 @@ public final class OrderJourneyDtos {
   public record TrackingLinkListDto(List<TrackingLinkSummaryDto> links) {}
 
   /**
+   * OP-CAP-47A — one safe operator-facing entry on a journey's fulfillment timeline, derived from a
+   * single ingested {@link com.orderpilot.domain.journey.FulfillmentSignal}. It carries ONLY
+   * operator-safe, signal-derived classification:
+   *
+   * <ul>
+   *   <li>{@code sequence} — 1-based deterministic ordering position (receivedAt ascending, then a
+   *       stable tiebreaker), so an operator UI can render the timeline without re-sorting.</li>
+   *   <li>{@code type} — the bounded signal type (e.g. PACKED, SHIPPED, RETURN_REQUESTED).</li>
+   *   <li>{@code label} — the human milestone label this signal advances, or a safe fallback label
+   *       for non-milestone signals (e.g. RETURN_REQUESTED → "Return requested").</li>
+   *   <li>{@code status} — the operator-visible signal status string.</li>
+   *   <li>{@code sourceType} — where the signal came from (INTERNAL / CONNECTOR_MIRROR / IMPORT /
+   *       MANUAL / SYSTEM_DERIVED) as a safe enum name.</li>
+   *   <li>{@code evidenceLevel} — how trustworthy that source is (VERIFIED / MIRRORED / …), so the UI
+   *       can honestly distinguish a verified internal scan from an unverified carrier mirror.</li>
+   *   <li>{@code customerVisible} — whether this signal is safe to surface to a buyer.</li>
+   *   <li>{@code receivedAt} / {@code processedAt} — safe timestamps.</li>
+   * </ul>
+   *
+   * <p>Deliberately absent: the signal's internal entity id, the raw payload reference, the stable
+   * external source/idempotency reference, the confidence score, the tenant id, and any audit/storage
+   * internals — none of those may reach an operator timeline response.
+   */
+  public record OperatorTimelineEntry(
+      int sequence,
+      String type,
+      String label,
+      String status,
+      String sourceType,
+      String evidenceLevel,
+      boolean customerVisible,
+      Instant receivedAt,
+      Instant processedAt) {}
+
+  /**
+   * OP-CAP-47A — the operator fulfillment visibility timeline for a single journey. A safe,
+   * tenant-scoped composition of the existing OrderJourney projection summary plus its ingested
+   * fulfillment signals as a deterministically ordered timeline.
+   *
+   * <p>It echoes only the journey resource id (the same identifier already in the request path and in
+   * {@link OrderJourneyDetailDto}); it deliberately omits the source object id, the customer account
+   * id, and every other internal entity id. Summary fields ({@code currentStage}, {@code
+   * currentStatus}, {@code riskLevel}, {@code blocked}) reuse the established operator-safe projection
+   * fields. {@code signalCount} / {@code latestSignalReceivedAt} summarize the signals; {@code
+   * returnRequested} is a safe derived warning flag (a RETURN_REQUESTED signal exists). The timeline
+   * never duplicates collapsed signals — duplicates are idempotently collapsed at ingest, so a replayed
+   * signal yields exactly one entry. Strictly read-only: composing this view mutates no milestone,
+   * signal, or order state and performs no external write.
+   */
+  public record OperatorFulfillmentTimelineResponse(
+      UUID journeyId,
+      String sourceType,
+      String currentStage,
+      String currentStatus,
+      String riskLevel,
+      boolean blocked,
+      int signalCount,
+      Instant latestSignalReceivedAt,
+      boolean returnRequested,
+      List<OperatorTimelineEntry> timeline,
+      Instant createdAt,
+      Instant updatedAt,
+      Instant generatedAt) {}
+
+  /**
    * OP-CAP-46C — a single customer-safe milestone for the public secure tracking view. Deliberately
    * carries ONLY customer-facing fields. Internal fields present on {@link OrderJourneyMilestoneDto}
    * (sourceType, sourceRef, sortOrder, customerVisible) are intentionally absent so they can never be
