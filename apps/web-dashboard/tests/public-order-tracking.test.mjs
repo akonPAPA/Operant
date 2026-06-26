@@ -146,3 +146,27 @@ test("token is never logged through console.*", () => {
     assert.doesNotMatch(src, /console\.(log|info|debug|warn|error)/);
   }
 });
+
+// OP-CAP-48 — the public buyer page must never reference operator-only fulfillment-timeline fields
+// (the operator surface is OperatorFulfillmentTimelineResponse / OperatorTimelineEntry). These are a
+// distinct backend contract from PublicOrderTrackingView; none of their operator-only labels may
+// appear on the customer page or its API client.
+const OPERATOR_ONLY_FIELDS = [
+  "signalCount",
+  "returnRequested",
+  "latestSignalReceivedAt",
+  "sequence",
+  "currentStage",
+  "currentStatus",
+  "riskLevel",
+  "blocked",
+  "operatorTimeline"
+];
+
+test("public page references no operator-only fulfillment-timeline fields", () => {
+  for (const field of OPERATOR_ONLY_FIELDS) {
+    const pattern = new RegExp(`\\b${field}\\b`);
+    assert.doesNotMatch(viewCode, pattern, `public page must not reference operator field ${field}`);
+    assert.doesNotMatch(apiClientCode, pattern, `public API client must not reference operator field ${field}`);
+  }
+});
