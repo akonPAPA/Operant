@@ -98,5 +98,21 @@ public enum ApiPermission {
   // OP-CAP-52: attempt to execute an approved data-repair request. This permission only gates the
   // execution STUB — real execution is disabled in this stage and the endpoint always fails closed
   // (denied without an approval, execution-disabled even with one). It can never write a business row.
-  STAFF_DATA_REPAIR_EXECUTION_ATTEMPT
+  STAFF_DATA_REPAIR_EXECUTION_ATTEMPT,
+  // OP-CAP-53: internal owner-company incident-response / break-glass staff permissions. Like the
+  // OP-CAP-51/52 STAFF_SUPPORT_* family, these gate the /api/v1/internal/support surface and are SEPARATE
+  // from every tenant customer/operator business permission — no tenant role profile holds them (proven by
+  // ApiRolePermissionMatrix, which excludes the whole STAFF_* family). Each break-glass verb maps to a
+  // distinct permission so a requester cannot self-approve and an approver cannot mint a request.
+  // Create/read/close an incident record.
+  STAFF_INCIDENT_CREATE,
+  STAFF_INCIDENT_READ,
+  STAFF_INCIDENT_CLOSE,
+  // Request emergency break-glass access against an incident (the weakest break-glass tier).
+  STAFF_BREAK_GLASS_REQUEST,
+  // Approve/reject a break-glass request — a separate, stronger authority than requesting it, so the
+  // requester can never self-approve from the request permission.
+  STAFF_BREAK_GLASS_APPROVE,
+  // Revoke a break-glass grant — a dedicated emergency-containment authority.
+  STAFF_BREAK_GLASS_REVOKE
 }
