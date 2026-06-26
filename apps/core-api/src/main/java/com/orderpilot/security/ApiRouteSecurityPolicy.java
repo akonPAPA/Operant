@@ -212,6 +212,11 @@ public class ApiRouteSecurityPolicy {
   private Optional<RouteDecision> supportDecision(String method, String path) {
     boolean write = !HttpMethod.GET.matches(method);
     if (path.contains("/access-grants")) {
+      // OP-CAP-52: approving/rejecting a grant is a separate, stronger authority than creating/revoking it,
+      // so a STAFF_SUPPORT_GRANT_MANAGE actor that minted a grant request cannot also approve it.
+      if (write && (path.endsWith("/approve") || path.endsWith("/reject"))) {
+        return protectedRoute(approveOrReject(path), ApiPermission.STAFF_SUPPORT_GRANT_APPROVE);
+      }
       return write
           ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
@@ -222,6 +227,15 @@ public class ApiRouteSecurityPolicy {
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
     if (path.contains("/data-repair-requests")) {
+      // OP-CAP-52: distinct data-repair verbs map to distinct permissions. The execution attempt is the
+      // strongest (and only reaches a disabled stub); approve/reject is the approver tier; everything else
+      // (dry-run, request-approval) stays at the requester tier STAFF_DATA_REPAIR_DRYRUN.
+      if (write && path.endsWith("/execute")) {
+        return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.STAFF_DATA_REPAIR_EXECUTION_ATTEMPT);
+      }
+      if (write && (path.endsWith("/approve") || path.endsWith("/reject"))) {
+        return protectedRoute(approveOrReject(path), ApiPermission.STAFF_DATA_REPAIR_APPROVE);
+      }
       return write
           ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_DATA_REPAIR_DRYRUN)
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
@@ -253,6 +267,10 @@ public class ApiRouteSecurityPolicy {
       SecurityClassification classification,
       ApiPermission permission) {
     return Optional.of(new RouteDecision(classification, permission, null));
+  }
+
+  private static SecurityClassification approveOrReject(String path) {
+    return path.endsWith("/reject") ? SecurityClassification.PROTECTED_REJECT : SecurityClassification.PROTECTED_APPROVE;
   }
 
   private static SecurityClassification classificationForMethod(String method) {

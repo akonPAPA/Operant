@@ -35,9 +35,17 @@ public final class SupportInternalDtos {
       UUID tenantId,
       String scope,
       String status,
+      String approvalStatus,
       String supportCaseRef,
       Instant expiresAt,
       Instant createdAt) {}
+
+  /**
+   * OP-CAP-52 — an approver's grant approval/rejection decision. Business intent only: an optional decision
+   * note. The acting approver, the decision status, and the approval timestamps are all backend-owned — the
+   * body can never carry approvedBy/rejectedBy/approvalStatus.
+   */
+  public record SupportGrantApprovalDecisionRequest(String decisionNote) {}
 
   // --- tenant diagnostics (read-only, redacted) ---
 
@@ -80,5 +88,37 @@ public final class SupportInternalDtos {
       String status,
       String executionStatus,
       String summary,
+      Instant createdAt) {}
+
+  // --- data-repair approval workflow (OP-CAP-52) ---
+
+  /**
+   * OP-CAP-52 — request execution approval for an existing data-repair request. Business intent only: an
+   * operator-safe affected-target summary, an optional note, and an optional support/incident reference.
+   * It never carries SQL/script/table/connector/secret/authority — the affected-target summary is free text
+   * describing intent, not an executable target. The requester actor and tenant are backend-resolved.
+   */
+  public record DataRepairApprovalRequest(
+      String affectedTargetSummary,
+      String note,
+      String supportCaseRef) {}
+
+  /** OP-CAP-52 — an approver's data-repair approval/rejection decision. Optional decision note only. */
+  public record DataRepairApprovalDecisionRequest(String decisionNote) {}
+
+  /**
+   * OP-CAP-52 — operator-safe view of a data-repair request through its approval lifecycle. Exposes only
+   * backend-owned safe fields: no requester/approver id, no audit/internal ids, no raw target, no SQL.
+   */
+  public record DataRepairRequestResponse(
+      UUID requestId,
+      UUID tenantId,
+      String targetType,
+      String status,
+      String approvalStatus,
+      String executionStatus,
+      String affectedTargetSummary,
+      Instant approvalExpiresAt,
+      String message,
       Instant createdAt) {}
 }

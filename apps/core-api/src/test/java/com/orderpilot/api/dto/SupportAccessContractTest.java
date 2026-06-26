@@ -3,8 +3,11 @@ package com.orderpilot.api.dto;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.orderpilot.api.dto.SupportInternalDtos.CreateSupportAccessGrantRequest;
+import com.orderpilot.api.dto.SupportInternalDtos.DataRepairApprovalDecisionRequest;
+import com.orderpilot.api.dto.SupportInternalDtos.DataRepairApprovalRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.DataRepairDryRunRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.MaintenanceActionRecordRequest;
+import com.orderpilot.api.dto.SupportInternalDtos.SupportGrantApprovalDecisionRequest;
 import java.lang.reflect.RecordComponent;
 import java.util.Locale;
 import org.junit.jupiter.api.Test;
@@ -18,8 +21,9 @@ import org.junit.jupiter.api.Test;
  */
 class SupportAccessContractTest {
   private static final String[] FORBIDDEN_AUTHORITY_FIELDS = {
-      "tenantid", "actorid", "staffactor", "createdby", "requestedby", "status", "expiresat",
-      "executionstatus", "approval", "grantid", "auditmetadata", "permission", "role"};
+      "tenantid", "actorid", "staffactor", "createdby", "requestedby", "approvedby", "rejectedby",
+      "status", "expiresat", "executionstatus", "approval", "grantid", "auditmetadata", "permission",
+      "role", "sql", "script", "tablename", "connector", "secret", "credential"};
 
   @Test
   void createGrantRequestCarriesNoAuthorityField() {
@@ -34,6 +38,23 @@ class SupportAccessContractTest {
   @Test
   void dataRepairRequestCarriesNoAuthorityField() {
     assertNoAuthorityFields(DataRepairDryRunRequest.class);
+  }
+
+  // --- OP-CAP-52 approval request DTOs carry business intent only (no forged authority/decision state) ---
+
+  @Test
+  void supportGrantApprovalDecisionRequestCarriesNoAuthorityField() {
+    assertNoAuthorityFields(SupportGrantApprovalDecisionRequest.class);
+  }
+
+  @Test
+  void dataRepairApprovalRequestCarriesNoAuthorityOrRawTargetField() {
+    assertNoAuthorityFields(DataRepairApprovalRequest.class);
+  }
+
+  @Test
+  void dataRepairApprovalDecisionRequestCarriesNoAuthorityField() {
+    assertNoAuthorityFields(DataRepairApprovalDecisionRequest.class);
   }
 
   private static void assertNoAuthorityFields(Class<?> recordType) {

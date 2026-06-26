@@ -2,6 +2,7 @@ package com.orderpilot.application.services.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.common.errors.ConflictException;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.domain.support.StaffUser;
@@ -134,9 +135,79 @@ public class SupportAccessService {
       map.put("granteeStaffUserId", granteeStaffUserId.toString());
       map.put("scope", scope.name());
       map.put("tenantId", tenantId.toString());
+      map.put("approvalStatus", grant.getApprovalStatus().name());
       map.put("expiresAt", grant.getExpiresAt().toString());
     }));
+    // OP-CAP-52: a sensitive scope is born PENDING_APPROVAL — record that an approval request now exists so
+    // the gate is auditable even before any approver acts. A low-risk grant is auto-approved (no request).
+    if (grant.isPendingApproval()) {
+      audit("SUPPORT_GRANT_APPROVAL_REQUESTED", ENTITY_GRANT, grant.getId().toString(), createdBy, metadata(map -> {
+        map.put("granteeStaffUserId", granteeStaffUserId.toString());
+        map.put("scope", scope.name());
+        map.put("tenantId", tenantId.toString());
+      }));
+    }
     return grant;
+  }
+
+  /**
+   * OP-CAP-52 — approve a pending sensitive grant. The approver is backend-resolved (never from the body),
+   * the grant is found only within its own tenant, and an approver may not approve their own grant request
+   * (separation of duties). Approving a non-pending grant is a conflict. Emits an approval audit.
+   */
+  @Transactional
+  public SupportAccessGrant approveGrant(UUID grantId, UUID tenantId, UUID approverId, String note) {
+    return decideGrant(grantId, tenantId, approverId, note, true);
+  }
+
+  /** OP-CAP-52 — reject a pending sensitive grant; a rejected grant can never authorize access. */
+  @Transactional
+  public SupportAccessGrant rejectGrant(UUID grantId, UUID tenantId, UUID approverId, String note) {
+    return decideGrant(grantId, tenantId, approverId, note, false);
+  }
+
+  private SupportAccessGrant decideGrant(
+      UUID grantId, UUID tenantId, UUID approverId, String noteRaw, boolean approve) {
+    SupportAccessGrant grant = grantRepository.findByIdAndTenantId(grantId, tenantId)
+        .orElseThrow(() -> new NotFoundException("Support access grant not found"));
+    if (!grant.isPendingApproval()) {
+      throw new ConflictException("Support access grant is not pending approval");
+    }
+    // Separation of duties: the actor who created the grant request cannot also approve/reject it.
+    if (approverId != null && approverId.equals(grant.getCreatedBy())) {
+      audit("SUPPORT_GRANT_APPROVAL_DENIED", ENTITY_GRANT, grant.getId().toString(), approverId, metadata(map -> {
+        map.put("decision", "DENIED");
+        map.put("reasonCode", "SELF_APPROVAL_FORBIDDEN");
+        map.put("tenantId", tenantId.toString());
+      }));
+      throw new SupportAccessDeniedException("Support access denied");
+    }
+    String note = normalizeNote(noteRaw);
+    Instant now = clock.instant();
+    if (approve) {
+      grant.approve(approverId, note, now);
+    } else {
+      grant.reject(approverId, note, now);
+    }
+    grantRepository.save(grant);
+    audit(approve ? "SUPPORT_GRANT_APPROVED" : "SUPPORT_GRANT_REJECTED",
+        ENTITY_GRANT, grant.getId().toString(), approverId, metadata(map -> {
+          map.put("decision", approve ? "APPROVED" : "REJECTED");
+          map.put("scope", grant.getScope().name());
+          map.put("tenantId", tenantId.toString());
+        }));
+    return grant;
+  }
+
+  private static String normalizeNote(String raw) {
+    String note = raw == null ? null : raw.trim();
+    if (note == null || note.isEmpty()) {
+      return null;
+    }
+    if (note.length() > SupportAccessGrant.MAX_DECISION_NOTE_LENGTH) {
+      throw new IllegalArgumentException("decisionNote exceeds maximum length");
+    }
+    return note;
   }
 
   /** Revoke a tenant-scoped grant. Idempotent; never found across tenants. */

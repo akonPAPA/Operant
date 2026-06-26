@@ -15,5 +15,15 @@ public enum StaffSupportScope {
   /** Record a maintenance/update action (audit/record only — never triggers execution). */
   MAINTENANCE,
   /** Prepare a data-repair request as a dry-run only. Execution remains disabled in this stage. */
-  DATA_REPAIR
+  DATA_REPAIR;
+
+  /**
+   * OP-CAP-52 — whether this scope is low-risk enough to activate a grant immediately without an explicit
+   * human approval step. Only read-only {@link #DIAGNOSTICS} qualifies; every scope that can record or
+   * change-adjacent (maintenance, data repair) is sensitive and a grant for it stays non-usable until an
+   * approver with {@code STAFF_SUPPORT_GRANT_APPROVE} approves it.
+   */
+  public boolean isLowRiskAutoApprovable() {
+    return this == DIAGNOSTICS;
+  }
 }

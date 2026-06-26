@@ -312,7 +312,27 @@ class ApiRouteSecurityClassificationTest {
             "POST",
             "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/dry-run",
             SecurityClassification.PROTECTED_CREATE,
-            ApiPermission.STAFF_DATA_REPAIR_DRYRUN));
+            ApiPermission.STAFF_DATA_REPAIR_DRYRUN),
+        // OP-CAP-52: the approval/execution verbs map to dedicated, stronger STAFF_* permissions so a
+        // grant-creator / dry-run requester cannot reach approval, and only the execution-attempt
+        // permission reaches the (disabled) execute stub.
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/access-grants/123e4567-e89b-12d3-a456-426614174111/approve",
+            SecurityClassification.PROTECTED_APPROVE,
+            ApiPermission.STAFF_SUPPORT_GRANT_APPROVE),
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
+                + "123e4567-e89b-12d3-a456-426614174222/approve",
+            SecurityClassification.PROTECTED_APPROVE,
+            ApiPermission.STAFF_DATA_REPAIR_APPROVE),
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
+                + "123e4567-e89b-12d3-a456-426614174222/execute",
+            SecurityClassification.PROTECTED_EXECUTE,
+            ApiPermission.STAFF_DATA_REPAIR_EXECUTION_ATTEMPT));
   }
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
