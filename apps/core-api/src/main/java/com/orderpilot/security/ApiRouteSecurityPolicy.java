@@ -112,6 +112,9 @@ public class ApiRouteSecurityPolicy {
     if (path.startsWith("/api/v1/internal/processing-jobs") && !HttpMethod.GET.matches(method)) {
       return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.AI_RESULT_INTAKE);
     }
+    if (path.startsWith("/api/v1/internal/support")) {
+      return supportDecision(method, path);
+    }
     if (path.startsWith("/api/v1/runtime") && !HttpMethod.GET.matches(method)) {
       return protectedRoute(SecurityClassification.PROTECTED_RUNTIME_MANAGE, ApiPermission.RUNTIME_ENTITLEMENT_MANAGE);
     }
@@ -198,6 +201,39 @@ public class ApiRouteSecurityPolicy {
         .filter(rule -> path.startsWith(rule.prefix()))
         .findFirst()
         .map(rule -> rule.decision(method));
+  }
+
+  // OP-CAP-51: the internal owner-company support/maintenance surface. Every route is protected by a
+  // dedicated STAFF_SUPPORT_* permission — none of these is a tenant business permission, so a tenant
+  // operator/demo permission header can never satisfy them. Distinct verbs map to distinct permissions so
+  // a read grant can never reach grant-management, maintenance recording, or a data-repair dry-run. Any
+  // support sub-path that is not explicitly matched still fails closed onto a STAFF_SUPPORT_* requirement
+  // (never public, never a weaker tenant permission).
+  private Optional<RouteDecision> supportDecision(String method, String path) {
+    boolean write = !HttpMethod.GET.matches(method);
+    if (path.contains("/access-grants")) {
+      return write
+          ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    }
+    if (path.contains("/maintenance-records")) {
+      return write
+          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_MAINTENANCE_RECORD)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    }
+    if (path.contains("/data-repair-requests")) {
+      return write
+          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_DATA_REPAIR_DRYRUN)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    }
+    if (path.contains("/diagnostics")) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    }
+    // Fail closed: any other support read is STAFF_SUPPORT_READ; any other support write needs the
+    // strongest support-management grant rather than silently falling through to a tenant rule.
+    return write
+        ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
+        : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
   }
 
   private Optional<RouteDecision> changeRequestDecision(String path, boolean stage9) {

@@ -32,14 +32,31 @@ class ApiPermissionRoleMatrixTest {
   // --- structural matrix invariants ---
 
   @Test
-  void ownerAdminHoldsEveryPermissionAndIsSupersetOfEveryRole() {
+  void ownerAdminHoldsEveryTenantPermissionAndIsSupersetOfEveryRole() {
+    // OP-CAP-51: OWNER_ADMIN holds every TENANT permission, but NOT the internal staff/support family —
+    // a tenant owner is not Operant-owner-company support staff.
+    EnumSet<ApiPermission> everyTenantPermission = EnumSet.allOf(ApiPermission.class);
+    everyTenantPermission.removeAll(ApiRolePermissionMatrix.STAFF_SUPPORT_PERMISSIONS);
     assertThat(ApiRolePermissionMatrix.permissionsFor(RoleProfile.OWNER_ADMIN))
-        .containsExactlyInAnyOrderElementsOf(EnumSet.allOf(ApiPermission.class));
+        .containsExactlyInAnyOrderElementsOf(everyTenantPermission);
 
     for (RoleProfile role : RoleProfile.values()) {
       assertThat(ApiRolePermissionMatrix.permissionsFor(RoleProfile.OWNER_ADMIN))
           .as("OWNER_ADMIN must be a superset of %s", role)
           .containsAll(ApiRolePermissionMatrix.permissionsFor(role));
+    }
+  }
+
+  @Test
+  void noTenantRoleHoldsAnyStaffSupportPermission() {
+    // OP-CAP-51: the STAFF_* family is reserved for Operant-owner-company staff and must never leak into a
+    // tenant role profile (not even OWNER_ADMIN or AUDITOR). This proves support access cannot be reached
+    // via any tenant permission grant.
+    assertThat(ApiRolePermissionMatrix.STAFF_SUPPORT_PERMISSIONS).isNotEmpty();
+    for (RoleProfile role : RoleProfile.values()) {
+      assertThat(ApiRolePermissionMatrix.permissionsFor(role))
+          .as("%s must hold no STAFF_* support permission", role)
+          .doesNotContainAnyElementsOf(ApiRolePermissionMatrix.STAFF_SUPPORT_PERMISSIONS);
     }
   }
 

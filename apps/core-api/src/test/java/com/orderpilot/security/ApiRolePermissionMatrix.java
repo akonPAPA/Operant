@@ -46,6 +46,17 @@ final class ApiRolePermissionMatrix {
           .collect(Collectors.toSet()));
 
   /**
+   * OP-CAP-51 — the internal owner-company staff/support permission family ({@code STAFF_*}). These are NOT
+   * tenant permissions: no tenant role profile (including OWNER_ADMIN, the tenant super-admin, and AUDITOR)
+   * ever holds them. They are granted only to Operant-owner-company staff principals through the separate
+   * support access model.
+   */
+  static final Set<ApiPermission> STAFF_SUPPORT_PERMISSIONS = EnumSet.copyOf(
+      EnumSet.allOf(ApiPermission.class).stream()
+          .filter(p -> p.name().startsWith("STAFF_"))
+          .collect(Collectors.toSet()));
+
+  /**
    * External-write-adjacent grant. Reaching connector execution must be limited to the roles that are
    * explicitly trusted to push an approved change to an external system.
    */
@@ -67,7 +78,11 @@ final class ApiRolePermissionMatrix {
   private static Map<RoleProfile, Set<ApiPermission>> buildMatrix() {
     Map<RoleProfile, Set<ApiPermission>> matrix = new EnumMap<>(RoleProfile.class);
 
-    matrix.put(RoleProfile.OWNER_ADMIN, EnumSet.allOf(ApiPermission.class));
+    // OWNER_ADMIN is the tenant super-admin: every TENANT permission, but NOT the internal staff/support
+    // family — a tenant owner is not Operant-owner-company support staff.
+    EnumSet<ApiPermission> ownerAdmin = EnumSet.allOf(ApiPermission.class);
+    ownerAdmin.removeAll(STAFF_SUPPORT_PERMISSIONS);
+    matrix.put(RoleProfile.OWNER_ADMIN, ownerAdmin);
 
     matrix.put(RoleProfile.SALES_MANAGER, EnumSet.of(
         ApiPermission.QUOTE_READ,
@@ -110,8 +125,11 @@ final class ApiRolePermissionMatrix {
         ApiPermission.AUDIT_READ,
         ApiPermission.ANALYTICS_READ));
 
-    // Auditor sees everything readable and may mutate nothing.
-    matrix.put(RoleProfile.AUDITOR, EnumSet.copyOf(READ_ONLY_PERMISSIONS));
+    // Auditor sees everything readable and may mutate nothing — but staff/support reads are not tenant
+    // permissions, so they are excluded.
+    EnumSet<ApiPermission> auditor = EnumSet.copyOf(READ_ONLY_PERMISSIONS);
+    auditor.removeAll(STAFF_SUPPORT_PERMISSIONS);
+    matrix.put(RoleProfile.AUDITOR, auditor);
 
     matrix.put(RoleProfile.ANALYTICS_VIEWER, EnumSet.of(
         ApiPermission.ANALYTICS_READ,
