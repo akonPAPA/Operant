@@ -46,4 +46,4 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\dev\check-local.ps1"
 
 ## Stage status
 
-Current backend stage:OP-CAP-42-BUGHUNTING-PENTESTING-LAYER
+Current stage:OP-CAP-47 Operator fulfillment and visibility timeline api
