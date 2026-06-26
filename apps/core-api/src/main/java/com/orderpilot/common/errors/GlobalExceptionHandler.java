@@ -9,6 +9,7 @@ import com.orderpilot.common.idempotency.IdempotencyConflictException;
 import com.orderpilot.common.idempotency.IdempotencyInProgressException;
 import com.orderpilot.application.services.journey.PublicTrackingRateLimitedException;
 import com.orderpilot.application.services.runtime.RuntimeLimitException;
+import com.orderpilot.application.services.support.DataRepairExecutionException;
 import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
@@ -142,6 +143,15 @@ public class GlobalExceptionHandler {
     // OP-CAP-51: a support access decision failed closed (no grant / expired / wrong tenant / wrong scope /
     // unknown staff principal). Stable, generic 403 — the message never reveals which condition failed.
     return build(HttpStatus.FORBIDDEN, "SUPPORT_ACCESS_DENIED", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(DataRepairExecutionException.class)
+  ResponseEntity<ApiErrorResponse> handleDataRepairExecution(DataRepairExecutionException ex, HttpServletRequest request) {
+    // OP-CAP-52: the data-repair execution stub failed closed. Either the approval gate was not satisfied
+    // (409 DATA_REPAIR_EXECUTION_DENIED) or the request was approved but execution is disabled in this
+    // stage (501 DATA_REPAIR_EXECUTION_DISABLED). No business row is ever read or mutated; the message is
+    // safe and reveals no internal/business detail.
+    return build(HttpStatus.valueOf(ex.getHttpStatus()), ex.getCode(), ex.getMessage(), request, List.of());
   }
 
   @ExceptionHandler(ActorVerificationException.class)

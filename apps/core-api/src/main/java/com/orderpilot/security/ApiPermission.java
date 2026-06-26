@@ -86,5 +86,17 @@ public enum ApiPermission {
   // Record a maintenance/update action (audit/record only — never triggers execution).
   STAFF_MAINTENANCE_RECORD,
   // Request a controlled data-repair dry-run (execution remains disabled in this stage).
-  STAFF_DATA_REPAIR_DRYRUN
+  STAFF_DATA_REPAIR_DRYRUN,
+  // OP-CAP-52: approve/reject a sensitive support access grant. Separate from STAFF_SUPPORT_GRANT_MANAGE
+  // (which creates/revokes) so the actor who mints a grant request cannot also approve it from the same
+  // grant — a sensitive grant stays non-usable until an approver with THIS permission approves it.
+  STAFF_SUPPORT_GRANT_APPROVE,
+  // OP-CAP-52: approve/reject a data-repair request for execution. Separate from STAFF_DATA_REPAIR_DRYRUN
+  // (the requester tier) so a data-repair requester cannot self-approve their own request from the dry-run
+  // grant alone.
+  STAFF_DATA_REPAIR_APPROVE,
+  // OP-CAP-52: attempt to execute an approved data-repair request. This permission only gates the
+  // execution STUB — real execution is disabled in this stage and the endpoint always fails closed
+  // (denied without an approval, execution-disabled even with one). It can never write a business row.
+  STAFF_DATA_REPAIR_EXECUTION_ATTEMPT
 }

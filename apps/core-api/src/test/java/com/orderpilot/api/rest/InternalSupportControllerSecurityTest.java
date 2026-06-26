@@ -47,6 +47,11 @@ class InternalSupportControllerSecurityTest {
   private static final String DATA_REPAIR =
       "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/dry-run";
   private static final String GRANTS = "/api/v1/internal/support/access-grants";
+  private static final String GRANT_APPROVE =
+      GRANTS + "/123e4567-e89b-12d3-a456-426614174111/approve";
+  private static final String DATA_REPAIR_EXECUTE =
+      "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
+          + "123e4567-e89b-12d3-a456-426614174222/execute";
 
   @Autowired private MockMvc mockMvc;
 
@@ -96,5 +101,53 @@ class InternalSupportControllerSecurityTest {
     mockMvc.perform(post(DATA_REPAIR).contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  // --- OP-CAP-52 approval/execution endpoints are not public and require the dedicated STAFF_* permission ---
+
+  @Test
+  void grantApproveRouteIsNotPublic_unauthenticatedReturns401() throws Exception {
+    mockMvc.perform(post(GRANT_APPROVE).contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  void grantApproveRejectsGrantManageAloneWith403() throws Exception {
+    // The actor who can create grants cannot approve one without the dedicated approve permission.
+    mockMvc.perform(post(GRANT_APPROVE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_SUPPORT_GRANT_MANAGE")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_SUPPORT_GRANT_APPROVE"));
+  }
+
+  @Test
+  void grantApproveRejectsTenantOperatorPermissionWith403() throws Exception {
+    mockMvc.perform(post(GRANT_APPROVE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_ACTION")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_SUPPORT_GRANT_APPROVE"));
+  }
+
+  @Test
+  void dataRepairExecuteRouteIsNotPublic_unauthenticatedReturns401() throws Exception {
+    mockMvc.perform(post(DATA_REPAIR_EXECUTE).contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  void dataRepairExecuteRejectsWeakerSupportPermissionsWith403() throws Exception {
+    mockMvc.perform(post(DATA_REPAIR_EXECUTE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_DATA_REPAIR_APPROVE")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message")
+            .value("Missing required API permission STAFF_DATA_REPAIR_EXECUTION_ATTEMPT"));
   }
 }

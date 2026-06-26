@@ -1,6 +1,7 @@
 package com.orderpilot.domain.support;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -9,4 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
  */
 public interface DataRepairRequestRepository extends JpaRepository<DataRepairRequest, UUID> {
   List<DataRepairRequest> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+
+  /** OP-CAP-52 — tenant-scoped lookup: a request can only be found (and acted on) within its own tenant. */
+  Optional<DataRepairRequest> findByIdAndTenantId(UUID id, UUID tenantId);
 }

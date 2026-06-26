@@ -1,11 +1,15 @@
 package com.orderpilot.api.rest;
 
 import com.orderpilot.api.dto.SupportInternalDtos.CreateSupportAccessGrantRequest;
+import com.orderpilot.api.dto.SupportInternalDtos.DataRepairApprovalDecisionRequest;
+import com.orderpilot.api.dto.SupportInternalDtos.DataRepairApprovalRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.DataRepairDryRunRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.DataRepairDryRunResponse;
+import com.orderpilot.api.dto.SupportInternalDtos.DataRepairRequestResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.MaintenanceActionRecordRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.MaintenanceActionRecordResponse;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportAccessGrantResponse;
+import com.orderpilot.api.dto.SupportInternalDtos.SupportGrantApprovalDecisionRequest;
 import com.orderpilot.api.dto.SupportInternalDtos.SupportTenantDiagnosticsResponse;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
@@ -85,6 +89,28 @@ public class InternalSupportController {
     return toGrantResponse(supportAccessService.revokeGrant(grantId, tenantId, actor));
   }
 
+  // --- support grant approval workflow (STAFF_SUPPORT_GRANT_APPROVE) ---
+
+  @PostMapping(BASE + "/access-grants/{grantId}/approve")
+  public SupportAccessGrantResponse approveGrant(
+      @PathVariable UUID grantId,
+      @RequestBody(required = false) SupportGrantApprovalDecisionRequest request,
+      HttpServletRequest http) {
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID actor = actorResolver.resolveVerifiedActor(http, tenantId);
+    return toGrantResponse(supportAccessService.approveGrant(grantId, tenantId, actor, note(request)));
+  }
+
+  @PostMapping(BASE + "/access-grants/{grantId}/reject")
+  public SupportAccessGrantResponse rejectGrant(
+      @PathVariable UUID grantId,
+      @RequestBody(required = false) SupportGrantApprovalDecisionRequest request,
+      HttpServletRequest http) {
+    UUID tenantId = TenantContext.requireTenantId();
+    UUID actor = actorResolver.resolveVerifiedActor(http, tenantId);
+    return toGrantResponse(supportAccessService.rejectGrant(grantId, tenantId, actor, note(request)));
+  }
+
   @GetMapping(BASE + "/tenants/{tenantId}/access-grants")
   public List<SupportAccessGrantResponse> listGrants(@PathVariable UUID tenantId) {
     UUID contextTenant = requireMatchingTenant(tenantId);
@@ -128,6 +154,65 @@ public class InternalSupportController {
     return dataRepairService.requestDryRun(contextTenant, actor, request.targetType(), request.reason());
   }
 
+  // --- data-repair execution approval workflow (OP-CAP-52) ---
+
+  @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/request-approval")
+  public DataRepairRequestResponse requestDataRepairApproval(
+      @PathVariable UUID tenantId,
+      @PathVariable UUID requestId,
+      @RequestBody DataRepairApprovalRequest request,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
+    return dataRepairService.requestApproval(contextTenant, actor, requestId, request.affectedTargetSummary());
+  }
+
+  @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/approve")
+  public DataRepairRequestResponse approveDataRepair(
+      @PathVariable UUID tenantId,
+      @PathVariable UUID requestId,
+      @RequestBody(required = false) DataRepairApprovalDecisionRequest request,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
+    return dataRepairService.approve(contextTenant, actor, requestId, decisionNote(request));
+  }
+
+  @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/reject")
+  public DataRepairRequestResponse rejectDataRepair(
+      @PathVariable UUID tenantId,
+      @PathVariable UUID requestId,
+      @RequestBody(required = false) DataRepairApprovalDecisionRequest request,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
+    return dataRepairService.reject(contextTenant, actor, requestId, decisionNote(request));
+  }
+
+  // OP-CAP-52: the execution STUB. It always fails closed — denied without a valid approval, and
+  // execution-disabled even with one — and never mutates a business row or runs SQL/script/connector.
+  @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/execute")
+  public void executeDataRepair(
+      @PathVariable UUID tenantId,
+      @PathVariable UUID requestId,
+      HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
+    dataRepairService.attemptExecution(contextTenant, actor, requestId);
+  }
+
+  private static String note(SupportGrantApprovalDecisionRequest request) {
+    return request == null ? null : request.decisionNote();
+  }
+
+  private static String decisionNote(DataRepairApprovalDecisionRequest request) {
+    return request == null ? null : request.decisionNote();
+  }
+
   private UUID requireMatchingTenant(UUID pathTenantId) {
     UUID contextTenant = TenantContext.requireTenantId();
     if (pathTenantId == null || !pathTenantId.equals(contextTenant)) {
@@ -161,6 +246,7 @@ public class InternalSupportController {
         grant.getTenantId(),
         grant.getScope().name(),
         grant.getStatus().name(),
+        grant.getApprovalStatus().name(),
         grant.getSupportCaseRef(),
         grant.getExpiresAt(),
         grant.getCreatedAt());

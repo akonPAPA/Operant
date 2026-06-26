@@ -119,4 +119,77 @@ class SupportAccessRoutePermissionTest {
   void dataRepairDryRunWithTenantOperatorPermissionIsRejected() {
     deny("POST", DATA_REPAIR, "REVIEW_ACTION", "STAFF_DATA_REPAIR_DRYRUN");
   }
+
+  // --- OP-CAP-52: grant approval/rejection requires STAFF_SUPPORT_GRANT_APPROVE (distinct from MANAGE) ---
+
+  private static final String GRANT_APPROVE = GRANTS + "/" + TENANT + "/approve";
+  private static final String GRANT_REJECT = GRANTS + "/" + TENANT + "/reject";
+
+  @Test
+  void grantApproveRequiresGrantApprovePermission() {
+    allow("POST", GRANT_APPROVE, "STAFF_SUPPORT_GRANT_APPROVE");
+    allow("POST", GRANT_REJECT, "STAFF_SUPPORT_GRANT_APPROVE");
+  }
+
+  @Test
+  void grantApproveWithGrantManageAloneIsRejected() {
+    // The actor who mints a grant (STAFF_SUPPORT_GRANT_MANAGE) cannot also approve it from that permission.
+    deny("POST", GRANT_APPROVE, "STAFF_SUPPORT_GRANT_MANAGE", "STAFF_SUPPORT_GRANT_APPROVE");
+    deny("POST", GRANT_REJECT, "STAFF_SUPPORT_GRANT_MANAGE", "STAFF_SUPPORT_GRANT_APPROVE");
+  }
+
+  @Test
+  void grantApproveWithTenantOperatorPermissionIsRejected() {
+    deny("POST", GRANT_APPROVE, "REVIEW_ACTION", "STAFF_SUPPORT_GRANT_APPROVE");
+  }
+
+  // --- OP-CAP-52: data-repair approval/rejection requires STAFF_DATA_REPAIR_APPROVE ---
+
+  private static final String REQUEST_BASE =
+      "/api/v1/internal/support/tenants/" + TENANT + "/data-repair-requests/" + TENANT;
+
+  @Test
+  void dataRepairApproveRequiresDataRepairApprovePermission() {
+    allow("POST", REQUEST_BASE + "/approve", "STAFF_DATA_REPAIR_APPROVE");
+    allow("POST", REQUEST_BASE + "/reject", "STAFF_DATA_REPAIR_APPROVE");
+  }
+
+  @Test
+  void dataRepairApproveWithDryRunPermissionAloneIsRejected() {
+    // The requester (dry-run tier) cannot self-approve from the dry-run permission.
+    deny("POST", REQUEST_BASE + "/approve", "STAFF_DATA_REPAIR_DRYRUN", "STAFF_DATA_REPAIR_APPROVE");
+    deny("POST", REQUEST_BASE + "/reject", "STAFF_DATA_REPAIR_DRYRUN", "STAFF_DATA_REPAIR_APPROVE");
+  }
+
+  // --- OP-CAP-52: request-approval stays at the requester tier STAFF_DATA_REPAIR_DRYRUN ---
+
+  @Test
+  void dataRepairRequestApprovalRequiresDryRunTierPermission() {
+    allow("POST", REQUEST_BASE + "/request-approval", "STAFF_DATA_REPAIR_DRYRUN");
+    deny("POST", REQUEST_BASE + "/request-approval", "STAFF_DATA_REPAIR_APPROVE", "STAFF_DATA_REPAIR_DRYRUN");
+  }
+
+  // --- OP-CAP-52: execution attempt requires the strongest STAFF_DATA_REPAIR_EXECUTION_ATTEMPT ---
+
+  @Test
+  void dataRepairExecuteRequiresExecutionAttemptPermission() {
+    allow("POST", REQUEST_BASE + "/execute", "STAFF_DATA_REPAIR_EXECUTION_ATTEMPT");
+  }
+
+  @Test
+  void dataRepairExecuteWithWeakerSupportPermissionsIsRejected() {
+    deny("POST", REQUEST_BASE + "/execute", "STAFF_DATA_REPAIR_APPROVE", "STAFF_DATA_REPAIR_EXECUTION_ATTEMPT");
+    deny("POST", REQUEST_BASE + "/execute", "STAFF_DATA_REPAIR_DRYRUN", "STAFF_DATA_REPAIR_EXECUTION_ATTEMPT");
+    deny("POST", REQUEST_BASE + "/execute", "REVIEW_ACTION", "STAFF_DATA_REPAIR_EXECUTION_ATTEMPT");
+  }
+
+  // --- OP-CAP-52: an unknown internal support sub-route still fails closed onto a STAFF_* requirement ---
+
+  @Test
+  void unknownInternalSupportWriteFailsClosedOntoStaffPermission() {
+    deny("POST", "/api/v1/internal/support/tenants/" + TENANT + "/unknown-action", "REVIEW_ACTION",
+        "STAFF_SUPPORT_GRANT_MANAGE");
+    deny("GET", "/api/v1/internal/support/tenants/" + TENANT + "/unknown-thing", "ADMIN_SETTINGS_READ",
+        "STAFF_SUPPORT_READ");
+  }
 }
