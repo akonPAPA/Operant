@@ -9,6 +9,7 @@ import com.orderpilot.common.idempotency.IdempotencyConflictException;
 import com.orderpilot.common.idempotency.IdempotencyInProgressException;
 import com.orderpilot.application.services.journey.PublicTrackingRateLimitedException;
 import com.orderpilot.application.services.runtime.RuntimeLimitException;
+import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
 import com.orderpilot.security.ActorVerificationException;
@@ -134,6 +135,13 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(TenantPolicyException.class)
   ResponseEntity<ApiErrorResponse> handleTenantPolicy(TenantPolicyException ex, HttpServletRequest request) {
     return build(HttpStatus.FORBIDDEN, "TENANT_POLICY_DENIED", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(SupportAccessDeniedException.class)
+  ResponseEntity<ApiErrorResponse> handleSupportAccessDenied(SupportAccessDeniedException ex, HttpServletRequest request) {
+    // OP-CAP-51: a support access decision failed closed (no grant / expired / wrong tenant / wrong scope /
+    // unknown staff principal). Stable, generic 403 — the message never reveals which condition failed.
+    return build(HttpStatus.FORBIDDEN, "SUPPORT_ACCESS_DENIED", ex.getMessage(), request, List.of());
   }
 
   @ExceptionHandler(ActorVerificationException.class)

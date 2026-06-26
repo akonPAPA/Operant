@@ -290,7 +290,29 @@ class ApiRouteSecurityClassificationTest {
             "GET",
             "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/operator-timeline",
             SecurityClassification.PROTECTED_READ,
-            ApiPermission.ANALYTICS_READ));
+            ApiPermission.ANALYTICS_READ),
+        // OP-CAP-51: the internal owner-company support surface. Each verb maps to a dedicated STAFF_*
+        // permission (never a tenant business permission), proving the route-edge separation.
+        new RouteExpectation(
+            "GET",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/diagnostics",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_SUPPORT_READ),
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/access-grants",
+            SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.STAFF_SUPPORT_GRANT_MANAGE),
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/maintenance-records",
+            SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.STAFF_MAINTENANCE_RECORD),
+        new RouteExpectation(
+            "POST",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/dry-run",
+            SecurityClassification.PROTECTED_CREATE,
+            ApiPermission.STAFF_DATA_REPAIR_DRYRUN));
   }
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while

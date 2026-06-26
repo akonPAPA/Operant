@@ -73,5 +73,18 @@ public enum ApiPermission {
   CHANGE_REQUEST_CREATE,
   CHANGE_REQUEST_APPROVE,
   CHANGE_REQUEST_REJECT,
-  CHANGE_REQUEST_EXECUTE
+  CHANGE_REQUEST_EXECUTE,
+  // OP-CAP-51: internal owner-company staff/support permissions. These gate the /api/v1/internal/support
+  // surface and are deliberately SEPARATE from every tenant customer/operator business permission above —
+  // a tenant operator/demo permission header never carries them, and no tenant role profile holds them
+  // (see ApiRolePermissionMatrix). They are the route-edge (first) layer; a scoped, reasoned, expiring
+  // SupportAccessGrant validated in the service is the second layer.
+  // Read-only support: tenant diagnostics + support grant/registry reads.
+  STAFF_SUPPORT_READ,
+  // Create/revoke support access grants (support-admin action).
+  STAFF_SUPPORT_GRANT_MANAGE,
+  // Record a maintenance/update action (audit/record only — never triggers execution).
+  STAFF_MAINTENANCE_RECORD,
+  // Request a controlled data-repair dry-run (execution remains disabled in this stage).
+  STAFF_DATA_REPAIR_DRYRUN
 }
