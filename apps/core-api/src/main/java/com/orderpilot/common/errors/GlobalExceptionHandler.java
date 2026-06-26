@@ -7,6 +7,7 @@ import java.util.Map;
 import com.orderpilot.common.tenant.TenantContextMissingException;
 import com.orderpilot.common.idempotency.IdempotencyConflictException;
 import com.orderpilot.common.idempotency.IdempotencyInProgressException;
+import com.orderpilot.application.services.journey.PublicTrackingRateLimitedException;
 import com.orderpilot.application.services.runtime.RuntimeLimitException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
@@ -82,6 +83,22 @@ public class GlobalExceptionHandler {
         request.getRequestURI(),
         clock.instant(),
         List.of()));
+  }
+
+  @ExceptionHandler(PublicTrackingRateLimitedException.class)
+  ResponseEntity<ApiErrorResponse> handlePublicTrackingRateLimited(
+      PublicTrackingRateLimitedException ex, HttpServletRequest request) {
+    // Stage 9 public tracking abuse hardening: a per-client over-limit denial. Generic 429 with a
+    // Retry-After hint and no token/journey/tenant detail — it never reveals whether the token exists.
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header("Retry-After", Long.toString(ex.getRetryAfterSeconds()))
+        .body(new ApiErrorResponse(
+            "PUBLIC_TRACKING_RATE_LIMITED",
+            ex.getMessage(),
+            HttpStatus.TOO_MANY_REQUESTS.value(),
+            request.getRequestURI(),
+            clock.instant(),
+            List.of()));
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
