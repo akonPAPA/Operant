@@ -1,7 +1,12 @@
+import { Suspense } from "react";
 import { getOrderJourney } from "@/lib/order-journey-api";
 import { OrderJourneyTimeline } from "./order-journey-timeline";
 import { FulfillmentSignalPanel } from "./fulfillment-signal-panel";
 import { BlockedBadge } from "./order-journey-status-badge";
+import {
+  OperatorFulfillmentTimeline,
+  OperatorFulfillmentTimelineSkeleton
+} from "./operator-fulfillment-timeline";
 import { OrderJourneyTrackingLinkButton } from "./order-journey-tracking-link-button";
 import { OrderJourneyTrackingLinkRegistry } from "./order-journey-tracking-link-registry";
 
@@ -73,6 +78,12 @@ export async function OrderJourneyDetail({ id }: Readonly<{ id: string }>) {
       </section>
 
       <FulfillmentSignalPanel signals={data.fulfillmentSignals} connected={data.fulfillmentTrackingConnected} />
+
+      {/* OP-CAP-47B — operator fulfillment timeline (signal-derived). Self-fetches the OP-CAP-47A
+          read endpoint so its loading/empty/error states stay local; Suspense gives a stable skeleton. */}
+      <Suspense fallback={<OperatorFulfillmentTimelineSkeleton />}>
+        <OperatorFulfillmentTimeline id={data.id} />
+      </Suspense>
 
       <section className="panel">
         <h2>Customer-safe status preview</h2>
