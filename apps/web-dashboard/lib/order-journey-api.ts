@@ -94,6 +94,39 @@ export type OrderJourneyDetail = {
   generatedAt: string;
 };
 
+// OP-CAP-47B — operator fulfillment timeline read contract. Mirrors the safe backend
+// `OperatorFulfillmentTimelineResponse` / `OperatorTimelineEntry` (OP-CAP-47A) exactly:
+// only operator-safe display fields. Deliberately absent (and never declared here) are the
+// signal entity id, raw payload ref, external/idempotency keys, confidence score, tenant id,
+// source object id, customer account id, and any audit/storage internals. Read-only display data.
+export type OperatorTimelineEntry = {
+  sequence: number;
+  type: string;
+  label: string;
+  status: string | null;
+  sourceType: string;
+  evidenceLevel: string;
+  customerVisible: boolean;
+  receivedAt: string;
+  processedAt: string | null;
+};
+
+export type OperatorFulfillmentTimeline = {
+  journeyId: string;
+  sourceType: string;
+  currentStage: string;
+  currentStatus: string;
+  riskLevel: string;
+  blocked: boolean;
+  signalCount: number;
+  latestSignalReceivedAt: string | null;
+  returnRequested: boolean;
+  timeline: OperatorTimelineEntry[];
+  createdAt: string;
+  updatedAt: string;
+  generatedAt: string;
+};
+
 export type JourneyProjectionHealth = {
   pendingEvents: number;
   failedEvents: number;
@@ -106,6 +139,7 @@ export type JourneyProjectionHealth = {
 export type OrderJourneyListResult = { data: OrderJourneySummary | null; error?: string };
 export type OrderJourneyDetailResult = { data: OrderJourneyDetail | null; error?: string };
 export type JourneyProjectionHealthResult = { data: JourneyProjectionHealth | null; error?: string };
+export type OperatorFulfillmentTimelineResult = { data: OperatorFulfillmentTimeline | null; error?: string };
 
 // OP-CAP-46D — operator-minted secure tracking link result. Mirrors the safe backend DTO:
 // the raw token is embedded once in `trackingPath` for one-shot sharing, and `expiresAt` is
@@ -173,6 +207,15 @@ export async function getOrderJourneyAttention(): Promise<OrderJourneyListResult
 
 export async function getOrderJourney(id: string): Promise<OrderJourneyDetailResult> {
   return read<OrderJourneyDetail>(`/api/v1/order-journeys/${encodeURIComponent(id)}`);
+}
+
+// OP-CAP-47B — operator fulfillment visibility timeline for a single journey. Read-only, tenant-scoped
+// (ANALYTICS_READ, re-validated by the backend on every request). The returned shape is operator-safe
+// display data only; the frontend never mutates milestone/signal/order state from this surface.
+export async function getOperatorFulfillmentTimeline(id: string): Promise<OperatorFulfillmentTimelineResult> {
+  return read<OperatorFulfillmentTimeline>(
+    `/api/v1/order-journeys/${encodeURIComponent(id)}/operator-timeline`
+  );
 }
 
 // OP-CAP-23: bounded, read-only projector health (pending/failed/dead-lettered counts + last processed).

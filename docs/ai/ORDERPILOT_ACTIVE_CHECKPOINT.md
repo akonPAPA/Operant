@@ -241,6 +241,38 @@ Update at the start of a task only when needed:
   (10) and `ChangeRequestServiceStage9Test` (6) regression green — 63/63 targeted.
   Frontend `tests/quote-review-cockpit.test.mjs` (+1 → 20); `tsc` clean, `lint` clean.
 
+### OP-CAP-47C Operator Fulfillment Timeline — render proof
+
+- Stage: **OP-CAP-47C** — operator fulfillment timeline render proof and stage record. Frontend runtime
+  verification; no product-scope expansion, no code changes to 47A/47B implementation.
+- Branch / HEAD: `OP-CAP-47B-Frontend-Dev-Layer` @ `cc5d4fe` (OP-CAP-47B implementation uncommitted in
+  working tree).
+- OP-CAP-47B dependency: ✓ backend endpoint `GET /api/v1/order-journeys/{id}/operator-timeline`
+  present; ✓ frontend surface present (`getOperatorFulfillmentTimeline` client + types
+  `OperatorFulfillmentTimeline`/`OperatorTimelineEntry`; `operator-fulfillment-timeline.tsx`
+  component; `<Suspense>` integrated into `order-journey-detail.tsx` → `/order-journey/[id]`).
+- Files changed this slice: `apps/web-dashboard/tests/operator-fulfillment-timeline.render.test.mjs`
+  (runtime render-proof harness; compiles real `.tsx` with installed `typescript` compiler, stubs
+  network read with fixtures, renders via `react-dom/server`); `docs/ai/ORDERPILOT_ACTIVE_CHECKPOINT.md`
+  (this record). No component, route, backend, migration, AI worker, or public tracking changes.
+- Render states proven (6/6): empty (safe "No fulfillment signals recorded" message; summary fields
+  render; no return badge); return requested (attention badge + note; surface read-only — no
+  mutation/approval/execution control); multi-signal (entries out-of-order 3,1,2 render strictly by
+  backend `sequence` order 1,2,3; status/source/evidence/customer-visible/internal labels render
+  safely; receivedAt/processedAt as ISO timestamps); loading (Suspense skeleton, `aria-busy="true"`);
+  error (safe mapped message only; no raw JSON, no stack trace). Decoy internal fields
+  (journeyId/payloadRef/idempotencyKey/tenantId/sourceId/sourceRef) proven absent from all rendered HTML.
+- Verification: `node --test tests/operator-fulfillment-timeline.render.test.mjs` 6/6 pass;
+  combined `render (6) + source (12) + order-journey regression (11)` = 29/29 pass; `npm run typecheck`
+  clean; `npm run lint` clean. No app-code/route changes this slice; build not re-run (OP-CAP-47B
+  build already green).
+- Data boundary: ✓ no frontend-owned authority; ✓ no mutation path (no `<form>`/`<input>`/`<button>`
+  rendered); ✓ no raw backend/internal fields rendered; ✓ public tracking surface unchanged.
+- Not proven: full app build this slice; real browser/E2E against live backend+DB; full backend suite;
+  full CI; production readiness not claimed.
+- Next action: commit OP-CAP-47A/B/C frontend slice together (only when explicitly asked), or run
+  one-off live-backend smoke of `/order-journey/[id]` with a seeded journey.
+
 ### Previous slice: TBD
 
 - Goal: remove the remaining causes that let future agents reintroduce bad-layer bugs by making
