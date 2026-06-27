@@ -298,6 +298,17 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/diagnostics",
             SecurityClassification.PROTECTED_READ,
             ApiPermission.STAFF_SUPPORT_READ),
+        // OP-CAP-57: the read-only internal tenant locator + per-tenant support context are STAFF_SUPPORT_READ.
+        new RouteExpectation(
+            "GET",
+            "/api/v1/internal/support/tenants/search",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_SUPPORT_READ),
+        new RouteExpectation(
+            "GET",
+            "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/support-context",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_SUPPORT_READ),
         new RouteExpectation(
             "POST",
             "/api/v1/internal/support/access-grants",

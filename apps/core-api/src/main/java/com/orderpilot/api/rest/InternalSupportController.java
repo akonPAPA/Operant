@@ -16,6 +16,8 @@ import com.orderpilot.api.dto.SupportInternalDtos.SupportTenantDiagnosticsRespon
 import com.orderpilot.api.dto.SupportOperationsDtos.DataRepairOperationsViewResponse;
 import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsSummaryResponse;
 import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsTimelineResponse;
+import com.orderpilot.api.dto.SupportTenantLocatorDtos.SupportTenantContextResponse;
+import com.orderpilot.api.dto.SupportTenantLocatorDtos.SupportTenantSearchResponse;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
 import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
@@ -23,6 +25,7 @@ import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
 import com.orderpilot.application.services.support.SupportOperationsService;
+import com.orderpilot.application.services.support.SupportTenantLocatorService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.domain.support.SupportAccessGrant;
@@ -60,6 +63,7 @@ public class InternalSupportController {
   private final DataRepairService dataRepairService;
   private final ProcessingJobRepairExecutor processingJobRepairExecutor;
   private final SupportOperationsService supportOperationsService;
+  private final SupportTenantLocatorService supportTenantLocatorService;
   private final RequestActorResolver actorResolver;
 
   public InternalSupportController(
@@ -69,6 +73,7 @@ public class InternalSupportController {
       DataRepairService dataRepairService,
       ProcessingJobRepairExecutor processingJobRepairExecutor,
       SupportOperationsService supportOperationsService,
+      SupportTenantLocatorService supportTenantLocatorService,
       RequestActorResolver actorResolver) {
     this.supportAccessService = supportAccessService;
     this.diagnosticsService = diagnosticsService;
@@ -76,6 +81,7 @@ public class InternalSupportController {
     this.dataRepairService = dataRepairService;
     this.processingJobRepairExecutor = processingJobRepairExecutor;
     this.supportOperationsService = supportOperationsService;
+    this.supportTenantLocatorService = supportTenantLocatorService;
     this.actorResolver = actorResolver;
   }
 
@@ -139,6 +145,32 @@ public class InternalSupportController {
     UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return diagnosticsService.diagnose(contextTenant);
+  }
+
+  // --- OP-CAP-57: read-only internal tenant locator + JIT grant boundary (STAFF_SUPPORT_READ) ---
+
+  // Cross-tenant locator: there is intentionally NO single tenant context here. The staff actor is the
+  // trusted, backend-resolved request actor (never a body field); the locator service filters discovery to
+  // tenants the actor holds an active DIAGNOSTICS grant for, so a tenant the actor cannot support is never
+  // returned. The query/page/size are safe, bounded locator parameters only — never authority.
+  @GetMapping(BASE + "/tenants/search")
+  public SupportTenantSearchResponse searchTenants(
+      @RequestParam(name = "query", defaultValue = "") String query,
+      @RequestParam(name = "page", defaultValue = "0") int page,
+      @RequestParam(name = "size", defaultValue = "20") int size,
+      HttpServletRequest http) {
+    UUID actor = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    return supportTenantLocatorService.search(actor, query, page, size);
+  }
+
+  // Per-tenant support context for a SELECTED tenant. The path tenant is a navigation handle and must equal
+  // the trusted tenant context; the locator service re-validates an active DIAGNOSTICS grant and fails
+  // closed (generic denial) when the actor may not support this tenant — it never reveals tenant existence.
+  @GetMapping(BASE + "/tenants/{tenantId}/support-context")
+  public SupportTenantContextResponse supportContext(@PathVariable UUID tenantId, HttpServletRequest http) {
+    UUID contextTenant = requireMatchingTenant(tenantId);
+    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    return supportTenantLocatorService.supportContext(actor, contextTenant);
   }
 
   // --- read-only support operations visibility (STAFF_SUPPORT_READ + DIAGNOSTICS grant) ---

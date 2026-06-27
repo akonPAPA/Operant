@@ -25,6 +25,15 @@ public interface SupportAccessGrantRepository extends JpaRepository<SupportAcces
   /** Tenant-scoped management lookup: a grant can only be found (and revoked) within its own tenant. */
   Optional<SupportAccessGrant> findByIdAndTenantId(UUID id, UUID tenantId);
 
+  // OP-CAP-57 — tenant locator + JIT boundary. Grants are looked up ONLY for the specific staff principal,
+  // so a locator can never surface a tenant the actor holds no grant for. Status-filtered to ACTIVE; the
+  // service then enforces approval + expiry against the clock. Bounded in practice by how many grants one
+  // staff principal holds — never a full-tenant-table scan.
+  List<SupportAccessGrant> findByStaffUserIdAndStatus(UUID staffUserId, SupportAccessGrant.Status status);
+
+  List<SupportAccessGrant> findByStaffUserIdAndTenantIdAndStatus(
+      UUID staffUserId, UUID tenantId, SupportAccessGrant.Status status);
+
   /** Tenant-scoped registry listing, newest first. Never returns another tenant's grants. */
   List<SupportAccessGrant> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
 
