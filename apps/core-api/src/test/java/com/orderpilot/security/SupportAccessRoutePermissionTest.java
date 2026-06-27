@@ -31,6 +31,9 @@ class SupportAccessRoutePermissionTest {
       "/api/v1/internal/support/tenants/" + TENANT + "/operations/timeline";
   private static final String OPERATIONS_DETAIL =
       "/api/v1/internal/support/tenants/" + TENANT + "/data-repair-requests/" + TENANT + "/operations-view";
+  private static final String TENANT_SEARCH = "/api/v1/internal/support/tenants/search";
+  private static final String SUPPORT_CONTEXT =
+      "/api/v1/internal/support/tenants/" + TENANT + "/support-context";
 
   private void allow(String method, String path, String permission) {
     MockHttpServletRequest req = new MockHttpServletRequest(method, path);
@@ -84,6 +87,24 @@ class SupportAccessRoutePermissionTest {
   void operationsVisibilityWriteShapedRoutesFailClosedToSupportManagementPermission() {
     deny("POST", OPERATIONS_SUMMARY, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
     deny("POST", OPERATIONS_DETAIL, "STAFF_DATA_REPAIR_DRYRUN", "STAFF_SUPPORT_GRANT_MANAGE");
+  }
+
+  // --- OP-CAP-57: tenant locator + support context require STAFF_SUPPORT_READ (never a tenant permission) ---
+
+  @Test
+  void tenantLocatorAndSupportContextGetRequireStaffSupportRead() {
+    allow("GET", TENANT_SEARCH, "STAFF_SUPPORT_READ");
+    allow("GET", SUPPORT_CONTEXT, "STAFF_SUPPORT_READ");
+    deny("GET", TENANT_SEARCH, "ADMIN_SETTINGS_READ", "STAFF_SUPPORT_READ");
+    deny("GET", TENANT_SEARCH, "REVIEW_READ", "STAFF_SUPPORT_READ");
+    deny("GET", SUPPORT_CONTEXT, "ADMIN_SETTINGS_MANAGE", "STAFF_SUPPORT_READ");
+    deny("GET", SUPPORT_CONTEXT, null, "STAFF_SUPPORT_READ");
+  }
+
+  @Test
+  void tenantLocatorWriteShapedRoutesFailClosedToSupportManagementPermission() {
+    deny("POST", TENANT_SEARCH, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
+    deny("POST", SUPPORT_CONTEXT, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
   }
 
   // --- access grant management requires STAFF_SUPPORT_GRANT_MANAGE (read can't manage) ---

@@ -289,6 +289,14 @@ public class ApiRouteSecurityPolicy {
     if (path.contains("/diagnostics")) {
       return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
+    // OP-CAP-57: the read-only internal tenant locator + per-tenant support context. Both are GET-only and
+    // require STAFF_SUPPORT_READ; the locator service is the second-layer JIT grant boundary. Any
+    // accidental write-shaped variant fails closed onto the strongest support-management staff permission.
+    if (path.endsWith("/tenants/search") || path.contains("/support-context")) {
+      return write
+          ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
+          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    }
     // Fail closed: any other support read is STAFF_SUPPORT_READ; any other support write needs the
     // strongest support-management grant rather than silently falling through to a tenant rule.
     return write

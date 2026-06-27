@@ -10,8 +10,11 @@ import type { SupportOperationsTimelineEntry } from "@/lib/internal-support-oper
 // timeline. It surfaces NO requester/approver/executor identity, NO raw reason body, NO SQL/script, and
 // NO cross-tenant data. Strictly display-only — it renders no execution / approval / repair control.
 
-export async function DataRepairOperationsView({ requestId }: Readonly<{ requestId: string }>) {
-  const { data, error } = await getDataRepairOperationsView(requestId);
+export async function DataRepairOperationsView({
+  tenantId,
+  requestId
+}: Readonly<{ tenantId: string; requestId: string }>) {
+  const { data, error } = await getDataRepairOperationsView(tenantId, requestId);
 
   if (!data) {
     return (
@@ -79,7 +82,7 @@ export async function DataRepairOperationsView({ requestId }: Readonly<{ request
             </thead>
             <tbody>
               {data.timeline.map((entry) => (
-                <TimelineRow key={`${entry.eventType}-${entry.occurredAt}`} entry={entry} />
+                <TimelineRow key={`${entry.eventType}-${entry.referenceId}-${entry.occurredAt}`} entry={entry} />
               ))}
             </tbody>
           </table>

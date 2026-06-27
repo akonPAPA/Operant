@@ -2,23 +2,76 @@ import Link from "next/link";
 
 import {
   getSupportOperationsSummary,
-  getSupportOperationsTimeline
+  getSupportOperationsTimeline,
+  getSupportTenantContext
 } from "@/lib/internal-support-operations-api";
 import type {
   SupportOperationsSummary,
   SupportOperationsTimelineEntry
 } from "@/lib/internal-support-operations-api";
 
-// OP-CAP-56 — internal owner-company support operations visibility surface (read-only).
+// OP-CAP-56/57 — internal owner-company support operations visibility surface (read-only).
 //
-// Consumes the OP-CAP-55 read-only endpoints and renders backend-derived counts and a bounded
-// chronological lifecycle timeline for one tenant. Strictly display-only: it submits nothing and mutates
-// no incident/grant/break-glass/data-repair/business state. It renders ONLY the operator-safe scalar
-// fields the OP-CAP-55 contract returns — never any raw request body, internal actor identity, audit-row
-// internals, storage locators, or the raw backend error body (the contract excludes all of those).
+// Consumes the OP-CAP-55 read-only endpoints for a SELECTED tenant (OP-CAP-57 replaced the demo-tenant env
+// assumption — the tenant id is a navigation handle resolved from the locator, and the backend re-validates
+// the support grant on every call). Renders backend-derived counts and a bounded chronological lifecycle
+// timeline. Strictly display-only: it submits nothing and mutates no incident/grant/break-glass/data-repair/
+// business state. It renders ONLY the operator-safe scalar fields the OP-CAP-55 contract returns — never any
+// raw request body, internal actor identity, audit-row internals, storage locators, or the raw backend error
+// body (the contract excludes all of those).
 
-export async function SupportOperationsSummaryPanel() {
-  const { data, error } = await getSupportOperationsSummary();
+// OP-CAP-57 — the JIT support-grant boundary header. Confirms (read-only) that the staff actor holds an
+// active diagnostics grant for the selected tenant and shows the safe grant boundary (display name, active
+// scopes, expiry). A denied/no-grant/expired-grant state renders a safe message and never reveals whether
+// the tenant exists or which condition failed. Returns whether operations panels should be shown.
+export async function SupportTenantContextPanel({ tenantId }: Readonly<{ tenantId: string }>) {
+  const { data, error } = await getSupportTenantContext(tenantId);
+
+  if (!data) {
+    return (
+      <section className="panel">
+        <h2>Support access</h2>
+        <p className="form-message error">{error ?? "Support access could not be confirmed for this tenant."}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel">
+      <div className="status-row">
+        <h2>{data.displayName}</h2>
+        <span className="status-pill" data-state={data.status}>
+          {data.status}
+        </span>
+        {data.readOnly ? <span className="status-pill" data-customer="true">Read-only</span> : null}
+      </div>
+      <p className="risk-note">
+        Active support grant for this tenant. External execution is {data.externalExecution}. No mutation,
+        impersonation, repair, or break-glass action is available from this surface.
+      </p>
+      <dl className="detail-list">
+        <div>
+          <dt>Tenant handle</dt>
+          <dd>{data.slug}</dd>
+        </div>
+        <div>
+          <dt>Active support scopes</dt>
+          <dd>{data.supportScopes.length > 0 ? data.supportScopes.join(", ") : "—"}</dd>
+        </div>
+        <div>
+          <dt>Grant expires</dt>
+          <dd>{formatTimestamp(data.grantExpiresAt)}</dd>
+        </div>
+      </dl>
+      {data.canViewOperations ? null : (
+        <p className="muted-copy">This grant does not permit read-only operations visibility.</p>
+      )}
+    </section>
+  );
+}
+
+export async function SupportOperationsSummaryPanel({ tenantId }: Readonly<{ tenantId: string }>) {
+  const { data, error } = await getSupportOperationsSummary(tenantId);
 
   if (!data) {
     return (
@@ -63,10 +116,11 @@ export async function SupportOperationsSummaryPanel() {
 }
 
 export async function SupportOperationsTimelinePanel({
+  tenantId,
   page,
   size
-}: Readonly<{ page: number; size: number }>) {
-  const { data, error } = await getSupportOperationsTimeline({ page, size });
+}: Readonly<{ tenantId: string; page: number; size: number }>) {
+  const { data, error } = await getSupportOperationsTimeline(tenantId, { page, size });
 
   if (!data) {
     return (
@@ -105,7 +159,7 @@ export async function SupportOperationsTimelinePanel({
           </tbody>
         </table>
       )}
-      <TimelinePager page={data.page} size={data.pageSize} hasMore={data.hasMore} />
+      <TimelinePager tenantId={tenantId} page={data.page} size={data.pageSize} hasMore={data.hasMore} />
     </section>
   );
 }
@@ -144,21 +198,28 @@ function TimelineRow({ entry }: Readonly<{ entry: SupportOperationsTimelineEntry
   );
 }
 
-// Pagination uses plain links carrying only the safe bounded page/size locators — never any authority,
-// tenant, actor, or status field. The links are disabled (rendered as inert spans) at the page edges.
-function TimelinePager({ page, size, hasMore }: Readonly<{ page: number; size: number; hasMore: boolean }>) {
-  const prevPage = page - 1;
+// Pagination uses plain links carrying only the selected tenant navigation handle plus the safe bounded
+// page/size locators — never any authority, actor, status, or approval field. The links are rendered as
+// inert spans at the page edges.
+function TimelinePager({
+  tenantId,
+  page,
+  size,
+  hasMore
+}: Readonly<{ tenantId: string; page: number; size: number; hasMore: boolean }>) {
+  const href = (target: number) =>
+    `/internal-support/operations?tenantId=${encodeURIComponent(tenantId)}&page=${target}&size=${size}`;
   return (
     <div className="status-row" aria-label="Timeline pagination">
       {page > 0 ? (
-        <Link className="button table-link-button" href={`/internal-support?page=${prevPage}&size=${size}`}>
+        <Link className="button table-link-button" href={href(page - 1)}>
           Newer
         </Link>
       ) : (
         <span className="muted-copy">Newer</span>
       )}
       {hasMore ? (
-        <Link className="button table-link-button" href={`/internal-support?page=${page + 1}&size=${size}`}>
+        <Link className="button table-link-button" href={href(page + 1)}>
           Older
         </Link>
       ) : (
