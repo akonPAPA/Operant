@@ -13,6 +13,16 @@ public final class Stage11ADtos {
 
   public record RfqLineInput(String rawText, String rawSku, BigDecimal quantity, String uom, String requestedLocation) {}
 
+  /** Public HTTP intent. Actor and role are resolved by the controller from trusted runtime context. */
+  public record LegacyDraftQuoteCreateRequest(
+      String sourceType,
+      UUID sourceMessageId,
+      UUID sourceDocumentId,
+      String customerHint,
+      String rawMessageText,
+      List<RfqLineInput> lineItems) {}
+
+  /** Internal service command. Never bind this type directly to a public request body. */
   public record CreateDraftQuoteFromRfqRequest(
       UUID actorId,
       String actorRole,
@@ -125,4 +135,10 @@ public final class Stage11ADtos {
 
   public record SubstituteDecisionCommand(UUID actorId, String actorRole, UUID substituteProductId, String note) {}
   public record QuoteLifecycleCommand(UUID actorId, String actorRole, String reason) {}
+
+  /** Public substitute intent; actor and role are backend-owned. */
+  public record LegacySubstituteDecisionRequest(UUID substituteProductId, String note) {}
+
+  /** Public lifecycle intent; actor and role are backend-owned. */
+  public record LegacyQuoteLifecycleRequest(String reason) {}
 }

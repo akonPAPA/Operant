@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.channel;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.application.services.AuditEventService;
@@ -41,6 +42,20 @@ class ChannelEventNormalizationServiceTest {
     var first = normalizationService.normalize(connection.getId(), ChannelProviderType.WHATSAPP, payload);
     var duplicate = normalizationService.normalize(connection.getId(), ChannelProviderType.WHATSAPP, payload);
     assertThat(duplicate.getId()).isEqualTo(first.getId());
+  }
+
+  @Test void tenantCannotNormalizeAgainstAnotherTenantsConnection() throws Exception {
+    TenantContext.setTenantId(UUID.randomUUID());
+    var tenantAConnection = serviceConnection(ChannelProviderType.TELEGRAM);
+    var payload = new ObjectMapper().readTree(
+        "{\"message\":{\"message_id\":\"cross-tenant\",\"chat\":{\"id\":\"cust-1\"},\"text\":\"Need filters\"}}");
+
+    TenantContext.setTenantId(UUID.randomUUID());
+
+    assertThatThrownBy(() ->
+        normalizationService.normalize(tenantAConnection.getId(), ChannelProviderType.TELEGRAM, payload))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Channel connection not found");
   }
 
   @Test void normalizesWeChatStubWithoutBusinessAction() throws Exception {

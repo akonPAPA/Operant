@@ -1,6 +1,7 @@
 package com.orderpilot.api.rest;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,12 +15,18 @@ import com.orderpilot.application.services.workspace.RfqToDraftQuoteService;
 import com.orderpilot.application.services.workspace.QuoteExternalWritePreparationService;
 import com.orderpilot.application.services.workspace.SubstituteApprovalService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
+import com.orderpilot.common.tenant.TenantContextFilter;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+import com.orderpilot.security.RequestActorResolver;
+import com.orderpilot.security.RequestActorRoleResolver;
+import com.orderpilot.security.policy.ActorRole;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -27,26 +34,55 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(DraftQuoteController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class})
+@Import({
+    CoreConfiguration.class,
+    GlobalExceptionHandler.class,
+    NoopApiPermissionTestConfig.class,
+    TenantContextFilter.class
+})
 class DraftQuoteControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @MockBean private RfqToDraftQuoteService service;
   @MockBean private SubstituteApprovalService substituteApprovalService;
   @MockBean private QuoteExternalWritePreparationService externalWritePreparationService;
+  @MockBean private RequestActorResolver actorResolver;
+  @MockBean private RequestActorRoleResolver roleResolver;
+
+  private final UUID tenantId = UUID.randomUUID();
+  private final UUID trustedActor = UUID.randomUUID();
+
+  @BeforeEach
+  void trustedAuthority() {
+    when(actorResolver.resolveVerifiedActor(any(), any())).thenReturn(trustedActor);
+    when(roleResolver.resolveQuoteRole()).thenReturn(ActorRole.SALES_QUOTE_MANAGER);
+  }
 
   @Test
   void createsDraftQuoteFromRfqEndpoint() throws Exception {
     UUID quoteId = UUID.randomUUID();
-    UUID tenantId = UUID.randomUUID();
     when(service.createFromRfq(any())).thenReturn(new DraftQuoteResponse(quoteId, tenantId, "DQ-1", "API", null, null, null, "Acme", "NEEDS_REVIEW", "NEEDS_REVIEW", true, "USD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, Instant.parse("2026-05-20T00:00:00Z"), List.of(), List.of()));
 
     mockMvc.perform(post("/api/v1/quotes/drafts/from-rfq")
+            .header("X-Tenant-Id", tenantId)
             .contentType("application/json")
-            .content(objectMapper.writeValueAsString(new CreateDraftQuoteFromRfqRequest(UUID.randomUUID(), "OPERATOR", "API", null, null, "Acme", null, List.of(new RfqLineInput("Brake pads", "BRK-001", BigDecimal.ONE, "pcs", null))))))
+            .content(objectMapper.writeValueAsString(new LegacyDraftQuoteCreateRequest(
+                "API",
+                null,
+                null,
+                "Acme",
+                null,
+                List.of(new RfqLineInput("Brake pads", "BRK-001", BigDecimal.ONE, "pcs", null))))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value(quoteId.toString()))
         .andExpect(jsonPath("$.status").value("NEEDS_REVIEW"));
+
+    ArgumentCaptor<CreateDraftQuoteFromRfqRequest> command =
+        ArgumentCaptor.forClass(CreateDraftQuoteFromRfqRequest.class);
+    verify(service).createFromRfq(command.capture());
+    org.assertj.core.api.Assertions.assertThat(command.getValue().actorId()).isEqualTo(trustedActor);
+    org.assertj.core.api.Assertions.assertThat(command.getValue().actorRole())
+        .isEqualTo(ActorRole.SALES_QUOTE_MANAGER.name());
   }
 
   @Test
@@ -65,11 +101,67 @@ class DraftQuoteControllerTest {
     when(externalWritePreparationService.checkReadiness(any(), any())).thenReturn(new QuoteHandoffResponse(quoteId, "APPROVED", "READY_FOR_HANDOFF", List.of(), null, null, null, null, "EXECUTION_DISABLED", List.of("PREPARE_HANDOFF")));
 
     mockMvc.perform(post("/api/v1/quotes/drafts/" + quoteId + "/handoff/readiness")
+            .header("X-Tenant-Id", tenantId)
             .contentType("application/json")
-            .content(objectMapper.writeValueAsString(new QuoteHandoffCommand(UUID.randomUUID(), "OPERATOR", "check"))))
+            .content(objectMapper.writeValueAsString(new LegacyQuoteHandoffRequest("check"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.quoteId").value(quoteId.toString()))
         .andExpect(jsonPath("$.handoffReadinessStatus").value("READY_FOR_HANDOFF"))
         .andExpect(jsonPath("$.executionStatus").value("EXECUTION_DISABLED"));
+  }
+
+  @Test
+  void forgedBodyActorAndOwnerRoleNeverReachDraftService() throws Exception {
+    UUID quoteId = UUID.randomUUID();
+    UUID forgedActor = UUID.randomUUID();
+    when(substituteApprovalService.approveSubstitute(any(), any(), any())).thenReturn(
+        new DraftQuoteResponse(
+            quoteId,
+            tenantId,
+            "DQ-3",
+            "API",
+            null,
+            null,
+            null,
+            "Acme",
+            "READY_FOR_APPROVAL",
+            "VALIDATED",
+            true,
+            "USD",
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            Instant.parse("2026-05-20T00:00:00Z"),
+            List.of(),
+            List.of()));
+
+    UUID lineId = UUID.randomUUID();
+    UUID substituteId = UUID.randomUUID();
+    mockMvc.perform(post("/api/v1/quotes/drafts/{id}/lines/{lineId}/substitute/approve", quoteId, lineId)
+            .header("X-Tenant-Id", tenantId)
+            .contentType("application/json")
+            .content("""
+                {
+                  "substituteProductId":"%s",
+                  "note":"business intent",
+                  "actorId":"%s",
+                  "actorRole":"OWNER_ADMIN"
+                }
+                """.formatted(substituteId, forgedActor)))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<SubstituteDecisionCommand> command =
+        ArgumentCaptor.forClass(SubstituteDecisionCommand.class);
+    verify(substituteApprovalService).approveSubstitute(
+        org.mockito.ArgumentMatchers.eq(quoteId),
+        org.mockito.ArgumentMatchers.eq(lineId),
+        command.capture());
+    org.assertj.core.api.Assertions.assertThat(command.getValue().actorId())
+        .isEqualTo(trustedActor)
+        .isNotEqualTo(forgedActor);
+    org.assertj.core.api.Assertions.assertThat(command.getValue().actorRole())
+        .isEqualTo(ActorRole.SALES_QUOTE_MANAGER.name());
+    org.assertj.core.api.Assertions.assertThat(command.getValue().substituteProductId())
+        .isEqualTo(substituteId);
   }
 }

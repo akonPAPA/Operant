@@ -9,6 +9,7 @@ import com.orderpilot.api.dto.Stage3Dtos.MessageRequest;
 import com.orderpilot.api.dto.Stage3Dtos.WebhookEventResponse;
 import com.orderpilot.api.dto.Stage3Dtos.WebhookPayloadRequest;
 import com.orderpilot.application.services.ChannelMessageService;
+import com.orderpilot.application.services.LegacyWebhookIngressGuard;
 import com.orderpilot.application.services.WebhookEventService;
 import com.orderpilot.application.services.WebhookVerificationService;
 import com.orderpilot.common.tenant.TenantContext;
@@ -34,14 +35,16 @@ public class WebhookController {
   private final WebhookEventService eventService;
   private final ChannelMessageService messageService;
   private final WebhookVerificationService verificationService;
+  private final LegacyWebhookIngressGuard legacyIngressGuard;
   private final InboundAttachmentRepository attachmentRepository;
   private final ObjectMapper objectMapper;
   private final Clock clock;
 
-  public WebhookController(WebhookEventService eventService, ChannelMessageService messageService, WebhookVerificationService verificationService, InboundAttachmentRepository attachmentRepository, ObjectMapper objectMapper, Clock clock) {
+  public WebhookController(WebhookEventService eventService, ChannelMessageService messageService, WebhookVerificationService verificationService, LegacyWebhookIngressGuard legacyIngressGuard, InboundAttachmentRepository attachmentRepository, ObjectMapper objectMapper, Clock clock) {
     this.eventService = eventService;
     this.messageService = messageService;
     this.verificationService = verificationService;
+    this.legacyIngressGuard = legacyIngressGuard;
     this.attachmentRepository = attachmentRepository;
     this.objectMapper = objectMapper;
     this.clock = clock;
@@ -49,6 +52,7 @@ public class WebhookController {
 
   @PostMapping("/email")
   public ChannelMessageResponse email(@RequestHeader Map<String, String> headers, @RequestBody EmailWebhookRequest request) {
+    legacyIngressGuard.requireLocalOrTest();
     String rawPayload = request.rawPayload() == null || request.rawPayload().isBlank() ? writeJson(request) : request.rawPayload();
     var verification = verificationService.verify("EMAIL", rawPayload, headers);
     requireAccepted(verification);
@@ -95,6 +99,7 @@ public class WebhookController {
   }
 
   private ChannelMessageResponse telegramJson(Map<String, String> headers, JsonNode payload, String suppliedExternalEventId) {
+    legacyIngressGuard.requireLocalOrTest();
     String rawPayload = writeJson(payload);
     String externalEventId = firstNonBlank(suppliedExternalEventId, text(payload, "update_id"), text(payload.at("/message"), "message_id"));
     JsonNode messageNode = payload.path("message");
@@ -113,6 +118,7 @@ public class WebhookController {
   }
 
   private ChannelMessageResponse whatsappJson(Map<String, String> headers, JsonNode payload, String suppliedExternalEventId) {
+    legacyIngressGuard.requireLocalOrTest();
     String rawPayload = writeJson(payload);
     JsonNode messageNode = payload.at("/entry/0/changes/0/value/messages/0");
     JsonNode contactNode = payload.at("/entry/0/changes/0/value/contacts/0");

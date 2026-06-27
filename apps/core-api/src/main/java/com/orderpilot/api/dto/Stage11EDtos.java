@@ -7,7 +7,16 @@ import java.util.UUID;
 public final class Stage11EDtos {
   private Stage11EDtos() {}
 
+  /** Public handoff intent; actor and role are resolved from trusted runtime context. */
+  public record LegacyQuoteHandoffRequest(String reason) {}
+
   public record QuoteHandoffCommand(UUID actorId, String actorRole, String reason) {}
+
+  /** Public ChangeRequest-draft intent. Actor is backend-owned. */
+  public record LegacyChangeRequestDraftRequest(
+      String targetSystemType,
+      String targetEntityType,
+      String requestedAction) {}
 
   public record ChangeRequestDraftCommand(
       UUID actorId,
