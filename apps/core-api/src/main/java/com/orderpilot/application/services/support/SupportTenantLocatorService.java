@@ -93,18 +93,25 @@ public class SupportTenantLocatorService {
     int size = clampSize(rawSize);
     String query = normalizeQuery(rawQuery);
 
-    List<SupportAccessGrant> usableGrants = usableDiagnosticsGrants(staffActor);
+    List<SupportAccessGrant> usableGrants = allUsableGrants(staffActor);
+    List<SupportAccessGrant> usableDiagnostics = new ArrayList<>();
+    for (SupportAccessGrant grant : usableGrants) {
+      if (grant.getScope() == StaffSupportScope.DIAGNOSTICS) {
+        usableDiagnostics.add(grant);
+      }
+    }
+
     // Group the actor's usable grants by tenant: collect the safe scope set and the gating diagnostics
     // grant expiry (earliest, most conservative) per tenant.
     Map<UUID, TenantGrantSummary> byTenant = new LinkedHashMap<>();
-    for (SupportAccessGrant grant : allUsableGrants(staffActor)) {
+    for (SupportAccessGrant grant : usableGrants) {
       byTenant
           .computeIfAbsent(grant.getTenantId(), id -> new TenantGrantSummary())
           .add(grant);
     }
     // Only tenants with a usable DIAGNOSTICS grant are eligible for discovery.
     Set<UUID> eligibleTenantIds = new java.util.LinkedHashSet<>();
-    for (SupportAccessGrant grant : usableGrants) {
+    for (SupportAccessGrant grant : usableDiagnostics) {
       eligibleTenantIds.add(grant.getTenantId());
     }
 
