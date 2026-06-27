@@ -82,7 +82,7 @@ export async function DataRepairOperationsView({
             </thead>
             <tbody>
               {data.timeline.map((entry) => (
-                <TimelineRow key={`${entry.eventType}-${entry.occurredAt}`} entry={entry} />
+                <TimelineRow key={`${entry.eventType}-${entry.referenceId}-${entry.occurredAt}`} entry={entry} />
               ))}
             </tbody>
           </table>
