@@ -131,7 +131,7 @@ export type TenantSearchParams = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const internalSupportConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL
+  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL
 };
 
 const NO_TENANT_MESSAGE = "Select a tenant from the internal support locator to open this view.";
