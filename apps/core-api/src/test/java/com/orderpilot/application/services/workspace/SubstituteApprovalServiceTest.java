@@ -77,6 +77,9 @@ class SubstituteApprovalServiceTest {
     assertThat(lineRepository.findByTenantIdAndDraftQuoteId(TenantContext.requireTenantId(), s.quoteId()).get(0).getSelectedSubstituteProductId()).isEqualTo(s.substituteA().getId());
     assertThat(issueRepository.findByTenantIdAndDraftQuoteIdOrderByCreatedAtAsc(TenantContext.requireTenantId(), s.quoteId()).stream().filter(i -> i.getIssueCode().equals("INSUFFICIENT_STOCK")).findFirst().orElseThrow().getStatus()).isEqualTo("RESOLVED");
     assertThat(auditEventRepository.findByTenantIdOrderByOccurredAtDesc(TenantContext.requireTenantId())).extracting("action").contains("SUBSTITUTE_CANDIDATE_APPROVED");
+    assertThat(auditEventRepository.findByTenantIdOrderByOccurredAtDesc(TenantContext.requireTenantId()))
+        .anyMatch(event -> "SUBSTITUTE_CANDIDATE_APPROVED".equals(event.getAction())
+            && actorId.equals(event.getActorId()));
     assertThat(connectorCommandRepository.count()).isZero();
     assertThat(sandboxExecutionRepository.count()).isZero();
     assertThat(compensationPlanRepository.count()).isZero();

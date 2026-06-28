@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { resolveInternalSupportFrontendAccess } from "../lib/internal-support-access.mjs";
 
 const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "internal-support-operations-api.ts"), "utf8");
@@ -31,6 +32,10 @@ const detailPage = readFileSync(
   "utf8"
 );
 const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const supportLayout = readFileSync(
+  join(root, "app", "(dashboard)", "internal-support", "layout.tsx"),
+  "utf8"
+);
 
 // Banned raw/leak FIELD references (requirement #4 banned list, plus connectorSecret/apiKey/password). We
 // match leaky identifiers (camelCase field names that never occur in normal prose) anywhere, plus
@@ -122,6 +127,23 @@ test("forbidden/error states map to safe operator messages, not raw backend bodi
   assert.match(apiClient, /Drain the body/);
 });
 
-test("navigation exposes an Internal Support entry under Control Center", () => {
-  assert.match(navigation, /label: "Internal Support", href: "\/internal-support"/);
+test("tenant navigation does not expose the Operant staff-only Internal Support plane", () => {
+  assert.doesNotMatch(navigation, /label: "Internal Support"/);
+  assert.doesNotMatch(navigation, /href: "\/internal-support"/);
+});
+
+test("staff route group fails closed while no server-side staff session boundary exists", () => {
+  const access = resolveInternalSupportFrontendAccess();
+  assert.deepEqual(access, {
+    allowed: false,
+    reason: "STAFF_AUTHENTICATION_UNAVAILABLE"
+  });
+  assert.match(supportLayout, /resolveInternalSupportFrontendAccess/);
+  assert.match(supportLayout, /notFound\(\)/);
+});
+
+test("browser input cannot manufacture staff frontend access", () => {
+  const resolver = resolveInternalSupportFrontendAccess;
+  assert.equal(resolver.length, 0, "staff access resolver must accept no browser-controlled arguments");
+  assert.equal(resolver({ staffUserId: "forged", permission: "STAFF_SUPPORT_READ" }).allowed, false);
 });

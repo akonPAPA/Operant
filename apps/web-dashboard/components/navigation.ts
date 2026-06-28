@@ -110,7 +110,6 @@ export const navigationGroups: NavigationGroup[] = [
       { label: "Sync Events", href: "/sync-events" },
       { label: "Audit", href: "/audit" },
       { label: "Audit / Security", href: "/audit-log" },
-      { label: "Internal Support", href: "/internal-support" }
     ]
   },
   {

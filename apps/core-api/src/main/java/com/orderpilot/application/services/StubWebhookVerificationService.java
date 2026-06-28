@@ -5,6 +5,8 @@ import java.security.MessageDigest;
 import java.util.Collections;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,11 +22,14 @@ public class StubWebhookVerificationService implements WebhookVerificationServic
   private final String telegramSecretToken;
 
   public StubWebhookVerificationService(
-      @Value("${orderpilot.webhooks.dev-accept-unsigned:true}") boolean devAcceptUnsigned,
+      @Value("${orderpilot.webhooks.dev-accept-unsigned:false}") boolean devAcceptUnsigned,
       @Value("${orderpilot.webhooks.email.dev-token:}") String emailDevToken,
-      @Value("${orderpilot.webhooks.telegram.secret-token:}") String telegramSecretToken
+      @Value("${orderpilot.webhooks.telegram.secret-token:}") String telegramSecretToken,
+      Environment environment
   ) {
-    this.devAcceptUnsigned = devAcceptUnsigned;
+    this.devAcceptUnsigned = devAcceptUnsigned
+        && environment != null
+        && environment.acceptsProfiles(Profiles.of("local", "dev", "test"));
     this.emailDevToken = emailDevToken;
     this.telegramSecretToken = telegramSecretToken;
   }
@@ -47,12 +52,16 @@ public class StubWebhookVerificationService implements WebhookVerificationServic
       }
       return new WebhookVerificationResult(true, "TOKEN_MATCH", "Configured webhook token accepted");
     }
-    boolean hasSignatureMaterial = safeHeaders.entrySet().stream()
-        .anyMatch(entry -> isSignatureHeaderName(entry.getKey()) && entry.getValue() != null && !entry.getValue().isBlank());
-    if (hasSignatureMaterial) {
-      return new WebhookVerificationResult(true, "STUB_SIGNATURE_PRESENT", "Phase 3 stub received signature material");
+    if (devAcceptUnsigned) {
+      return new WebhookVerificationResult(
+          true,
+          "STUB_DEV_UNSIGNED",
+          "Unsigned webhook accepted only in an explicit local/dev/test profile");
     }
-    return new WebhookVerificationResult(devAcceptUnsigned, "STUB_DEV_UNSIGNED", "Unsigned webhook accepted only because local dev stub mode is enabled");
+    return new WebhookVerificationResult(
+        false,
+        "VERIFICATION_NOT_CONFIGURED",
+        "Webhook verification is not configured");
   }
 
   private String firstHeader(Map<String, String> headers, String... names) {
@@ -75,20 +84,6 @@ public class StubWebhookVerificationService implements WebhookVerificationServic
       if (value != null && value.length() > MAX_HEADER_VALUE_LENGTH) return false;
     }
     return true;
-  }
-
-  private boolean isSignatureHeaderName(String name) {
-    return containsIgnoreCase(name, "signature") || containsIgnoreCase(name, "secret") || containsIgnoreCase(name, "token");
-  }
-
-  private boolean containsIgnoreCase(String value, String needle) {
-    if (value == null || value.length() < needle.length()) return false;
-    for (int i = 0; i <= value.length() - needle.length(); i++) {
-      int j = 0;
-      while (j < needle.length() && Character.toLowerCase(value.charAt(i + j)) == needle.charAt(j)) j++;
-      if (j == needle.length()) return true;
-    }
-    return false;
   }
 
   private boolean constantTimeEquals(String expected, String supplied) {

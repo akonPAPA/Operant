@@ -10,7 +10,8 @@ public final class Stage6Dtos {
   private Stage6Dtos() {}
   public record AssignRequest(UUID userId) {}
   public record StatusRequest(String status) {}
-  public record ApprovalDecisionRequest(String targetType, UUID targetId, String decision, String reason, UUID decidedBy) {}
+  // OP-CAP-16J: client-owned authority field removed — backend resolves actor from trusted context.
+  public record ApprovalDecisionRequest(String targetType, UUID targetId, String decision, String reason) {}
   public record NoteRequest(String targetType, UUID targetId, String noteText, UUID createdBy) {}
   public record ReviewActionRequest(UUID actorUserId, String reason) {}
   public record ReviewNoteRequest(String noteText, UUID createdBy) {}
@@ -54,4 +55,29 @@ public final class Stage6Dtos {
   public record DraftReviewSummary(UUID draftId, String draftType, String status, UUID sourceReviewCaseId, UUID sourceValidationRunId, UUID customerAccountId, String customerName, int lineCount, BigDecimal subtotalAmount, BigDecimal totalAmount, String currency, Instant createdAt, Instant updatedAt, String externalExecution, String nextAction) {}
   // OP-CAP-09D: read-only product picker item. No cost / margin / supplier / inventory-private fields.
   public record ProductPickerItem(UUID productId, String sku, String name, String normalizedSku, String status) {}
+
+  // Wave 01A — safe response DTOs for workspace controllers (no tenant/actor/audit/source internal leaks).
+
+  public record WorkspaceNoteDto(UUID id, String targetType, UUID targetId, String noteText, Instant createdAt) {}
+
+  public record WorkspaceDraftQuoteLineDto(
+      UUID id, int lineNumber, UUID productId, String productName, String description,
+      BigDecimal quantity, String uom, BigDecimal unitPrice, BigDecimal discountPercent,
+      BigDecimal lineTotal, BigDecimal marginPercent, String status, String validationStatus) {}
+
+  public record WorkspaceDraftQuoteDto(
+      UUID id, String quoteNumber, UUID customerAccountId, String customerDisplayName,
+      String status, String validationStatus, boolean requiresHumanReview,
+      String currency, BigDecimal subtotalAmount, BigDecimal discountAmount,
+      BigDecimal totalAmount, BigDecimal marginPercent, Instant createdAt) {}
+
+  public record WorkspaceDraftOrderLineDto(
+      UUID id, int lineNumber, UUID productId, String description,
+      BigDecimal quantity, String uom, BigDecimal unitPrice, BigDecimal discountPercent,
+      BigDecimal lineTotal, BigDecimal marginPercent, String status, String validationStatus) {}
+
+  public record WorkspaceDraftOrderDto(
+      UUID id, String orderNumber, UUID customerAccountId,
+      String status, String currency, BigDecimal subtotalAmount, BigDecimal discountAmount,
+      BigDecimal totalAmount, BigDecimal marginPercent, Instant createdAt) {}
 }
