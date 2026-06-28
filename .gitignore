@@ -20,6 +20,7 @@ secrets.*
 *.bak
 *.sqlite
 *.db
+*package.json
 *AGENTS.md
 .claude/
 *CLAUDE.md
@@ -50,7 +51,6 @@ graphify-out/
 .graphify_root
 .graphify_labels.json
 GRAPH_REPORT.md
-
 # ===== Local/private data =====
 local-data/
 private-data/
