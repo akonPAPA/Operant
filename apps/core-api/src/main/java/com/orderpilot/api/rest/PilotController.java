@@ -8,8 +8,11 @@ import com.orderpilot.application.services.pilot.PilotShadowModeService;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.EvidenceReport;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.ExceptionCategorySlice;
 import com.orderpilot.application.services.pilot.PilotShadowModeService.PilotMetrics;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.pilot.HumanCorrection;
 import com.orderpilot.domain.pilot.ShadowRun;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
@@ -19,10 +22,15 @@ import org.springframework.web.bind.annotation.*;
 public class PilotController {
   private final PilotShadowModeService service;
   private final PilotDemoScenarioService demoScenarioService;
+  private final RequestActorResolver actorResolver;
 
-  public PilotController(PilotShadowModeService service, PilotDemoScenarioService demoScenarioService) {
+  public PilotController(
+      PilotShadowModeService service,
+      PilotDemoScenarioService demoScenarioService,
+      RequestActorResolver actorResolver) {
     this.service = service;
     this.demoScenarioService = demoScenarioService;
+    this.actorResolver = actorResolver;
   }
 
   @PostMapping("/shadow-runs")
@@ -40,8 +48,19 @@ public class PilotController {
   }
 
   @PostMapping("/shadow-runs/{id}/corrections")
-  public HumanCorrectionResponse correct(@PathVariable UUID id, @RequestBody HumanCorrectionRequest request) {
-    return toCorrection(service.recordCorrection(id, request.correctedByUserId(), request.correctionType(), request.beforePayloadJson(), request.afterPayloadJson(), request.correctionReason()));
+  public HumanCorrectionResponse correct(
+      @PathVariable UUID id,
+      @RequestBody HumanCorrectionRequest request,
+      HttpServletRequest http) {
+    UUID trustedActorId =
+        actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
+    return toCorrection(service.recordCorrection(
+        id,
+        trustedActorId,
+        request.correctionType(),
+        request.beforePayloadJson(),
+        request.afterPayloadJson(),
+        request.correctionReason()));
   }
 
   @GetMapping("/metrics")

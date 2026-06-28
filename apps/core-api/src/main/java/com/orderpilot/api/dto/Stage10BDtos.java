@@ -44,7 +44,6 @@ public final class Stage10BDtos {
       Instant reviewedAt) {}
 
   public record HumanCorrectionRequest(
-      UUID correctedByUserId,
       String correctionType,
       String beforePayloadJson,
       String afterPayloadJson,
