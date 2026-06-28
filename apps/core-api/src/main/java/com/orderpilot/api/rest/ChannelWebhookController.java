@@ -24,6 +24,6 @@ public class ChannelWebhookController {
   @PostMapping("/wechat/{connectionId}") public InboundChannelEventResponse wechat(@PathVariable UUID connectionId, @RequestHeader Map<String, String> headers, @RequestBody JsonNode payload) { return toResponse(normalizationService.normalize(connectionId, ChannelProviderType.WECHAT, payload, headers)); }
 
   private static InboundChannelEventResponse toResponse(InboundChannelEvent e) {
-    return new InboundChannelEventResponse(e.getId(), e.getChannelConnectionId(), e.getProviderType().name(), e.getExternalEventId(), e.getSourceActorType(), e.getSourceActorExternalId(), e.getNormalizedText(), e.getPayloadHash(), e.getStatus(), e.getVerificationStatus(), e.getVerificationReason(), e.getReceivedAt(), e.getProcessedAt(), e.getErrorCode(), e.getErrorMessage());
+    return new InboundChannelEventResponse(e.getId(), e.getChannelConnectionId(), e.getProviderType().name(), e.getSourceActorType(), e.getNormalizedText(), e.getStatus(), e.getVerificationStatus(), e.getVerificationReason(), e.getReceivedAt(), e.getProcessedAt(), e.getErrorCode());
   }
 }

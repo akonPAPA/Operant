@@ -30,9 +30,8 @@ public class RequestActorRoleResolver {
     if (!authorities.contains(PREFIX + ApiPermission.QUOTE_ACTION.name())) {
       throw new TenantPolicyException("Missing authenticated quote action authority");
     }
-    if (authorities.contains(PREFIX + ApiPermission.ADMIN_SETTINGS_MANAGE.name())) {
-      return ActorRole.OWNER_ADMIN;
-    }
+    // ADMIN_SETTINGS_MANAGE is configuration authority, not quote-owner authority. OWNER_ADMIN
+    // must not be inferred until the API permission model defines a dedicated quote-owner permission.
     return ActorRole.SALES_QUOTE_MANAGER;
   }
 }

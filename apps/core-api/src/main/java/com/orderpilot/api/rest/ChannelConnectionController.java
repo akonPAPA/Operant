@@ -24,7 +24,7 @@ public class ChannelConnectionController {
   }
 
   @GetMapping("/connections") public List<ChannelConnectionResponse> list() { return connectionService.list().stream().map(this::toResponse).toList(); }
-  @PostMapping("/connections") public ChannelConnectionResponse create(@RequestBody ChannelConnectionRequest request) { return toResponse(connectionService.createDraft(ChannelProviderType.valueOf(request.providerType()), request.displayName(), request.externalAccountId(), request.webhookUrl(), request.secretRef(), request.webhookVerificationMode())); }
+  @PostMapping("/connections") public ChannelConnectionResponse create(@RequestBody ChannelConnectionRequest request) { return toResponse(connectionService.createDraft(ChannelProviderType.valueOf(request.providerType()), request.displayName(), request.externalAccountId(), request.webhookUrl(), null, request.webhookVerificationMode())); }
   @GetMapping("/connections/{id}") public ChannelConnectionResponse get(@PathVariable UUID id) { return toResponse(connectionService.get(id)); }
   @PostMapping("/connections/{id}/secret") public ChannelConnectionResponse configureSecret(@PathVariable UUID id, @RequestBody SecretConfigurationRequest request) { return toResponse(connectionService.configureSecret(id, request.secretValue())); }
   @PostMapping("/connections/{id}/activate") public ChannelConnectionResponse activate(@PathVariable UUID id) { return toResponse(connectionService.activate(id)); }
@@ -35,14 +35,13 @@ public class ChannelConnectionController {
 
   private ChannelConnectionResponse toResponse(ChannelConnection c) {
     String referenceId = c.getSecretReferenceId() == null ? c.getSecretRef() : c.getSecretReferenceId();
-    return new ChannelConnectionResponse(c.getId(), c.getProviderType().name(), c.getDisplayName(), c.getStatus(), c.getMode(), c.getExternalAccountId(), c.getWebhookUrl(), referenceId != null && !referenceId.isBlank(), c.getSecretLastUpdatedAt(), mask(referenceId), c.getWebhookVerificationMode(), c.getLastHealthCheckAt(), c.getLastHealthCheckStatus(), c.getLastDiagnosticSummary(), c.getCreatedAt(), c.getUpdatedAt());
+    return new ChannelConnectionResponse(c.getId(), c.getProviderType().name(), c.getDisplayName(), c.getStatus(), c.getMode(), c.getExternalAccountId(), c.getWebhookUrl(), referenceId != null && !referenceId.isBlank(), c.getSecretLastUpdatedAt(), c.getWebhookVerificationMode(), c.getLastHealthCheckAt(), c.getLastHealthCheckStatus(), c.getLastDiagnosticSummary(), c.getCreatedAt(), c.getUpdatedAt());
   }
 
   private InboundChannelEventResponse toResponse(InboundChannelEvent e) {
-    return new InboundChannelEventResponse(e.getId(), e.getChannelConnectionId(), e.getProviderType().name(), e.getExternalEventId(), e.getSourceActorType(), e.getSourceActorExternalId(), e.getNormalizedText(), e.getPayloadHash(), e.getStatus(), e.getVerificationStatus(), e.getVerificationReason(), e.getReceivedAt(), e.getProcessedAt(), e.getErrorCode(), e.getErrorMessage());
+    return new InboundChannelEventResponse(e.getId(), e.getChannelConnectionId(), e.getProviderType().name(), e.getSourceActorType(), e.getNormalizedText(), e.getStatus(), e.getVerificationStatus(), e.getVerificationReason(), e.getReceivedAt(), e.getProcessedAt(), e.getErrorCode());
   }
 
   private static ConnectionDiagnosticResponse toDiagnosticResponse(ConnectionDiagnostic diagnostic) { return new ConnectionDiagnosticResponse(diagnostic.severity().name(), diagnostic.code().name(), diagnostic.message()); }
-  private static String mask(String referenceId) { return referenceId == null || referenceId.isBlank() ? null : "secret-ref:" + Integer.toHexString(referenceId.hashCode()); }
   private static String label(String value) { return value.replace('_', ' '); }
 }

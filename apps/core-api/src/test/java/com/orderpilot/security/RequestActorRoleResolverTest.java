@@ -28,10 +28,17 @@ class RequestActorRoleResolverTest {
   }
 
   @Test
-  void quoteActionPlusAdminManageMapsToOwnerRole() {
+  void quoteActionPlusAdminManageDoesNotManufactureQuoteOwnerRole() {
     authenticate(ApiPermission.QUOTE_ACTION, ApiPermission.ADMIN_SETTINGS_MANAGE);
 
-    assertThat(resolver.resolveQuoteRole()).isEqualTo(ActorRole.OWNER_ADMIN);
+    assertThat(resolver.resolveQuoteRole()).isEqualTo(ActorRole.SALES_QUOTE_MANAGER);
+  }
+
+  @Test
+  void missingAuthenticationIsDenied() {
+    assertThatThrownBy(resolver::resolveQuoteRole)
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("Authenticated quote role");
   }
 
   @Test

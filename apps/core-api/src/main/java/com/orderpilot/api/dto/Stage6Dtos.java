@@ -80,4 +80,19 @@ public final class Stage6Dtos {
       UUID id, String orderNumber, UUID customerAccountId,
       String status, String currency, BigDecimal subtotalAmount, BigDecimal discountAmount,
       BigDecimal totalAmount, BigDecimal marginPercent, Instant createdAt) {}
+
+  // Wave 01B — bounded workspace response contracts. Internal source, tenant, actor and raw JSON
+  // fields remain on domain entities only and are never part of the public controller shape.
+  public record ExceptionCaseDto(
+      UUID id, String caseNumber, String title, String status, String priority, String severity,
+      String summary, Instant createdAt, Instant resolvedAt) {}
+
+  public record ExceptionCaseIssueDto(
+      UUID id, String issueType, String severity, String status, String message) {}
+
+  public record SuggestedFixDto(
+      UUID id, String fixType, String status, BigDecimal confidence, String reason) {}
+
+  public record ApprovalDecisionDto(
+      UUID id, String targetType, UUID targetId, String decision, String reason, Instant decidedAt) {}
 }
