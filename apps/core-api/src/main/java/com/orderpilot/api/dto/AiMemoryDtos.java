@@ -53,6 +53,7 @@ public final class AiMemoryDtos {
       Instant lastAccessedAt,
       long accessCount) {}
 
+  // OP-CAP-17F: actorType/actorId removed — public/default response must not expose internal actor identity.
   public record AiMemoryInvalidationEventDto(
       UUID id,
       UUID aiMemoryRecordId,
@@ -60,8 +61,6 @@ public final class AiMemoryDtos {
       String newStatus,
       String reasonCode,
       String reason,
-      String actorType,
-      UUID actorId,
       Instant createdAt) {}
 
   public record AiRuntimeTraceDto(

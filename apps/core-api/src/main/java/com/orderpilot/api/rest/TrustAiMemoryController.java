@@ -218,7 +218,7 @@ public class TrustAiMemoryController {
   private static AiMemoryInvalidationEventDto toDto(AiMemoryInvalidationEvent e) {
     return new AiMemoryInvalidationEventDto(
         e.getId(), e.getAiMemoryRecordId(), e.getPreviousStatus().name(), e.getNewStatus().name(),
-        e.getReasonCode().name(), e.getReason(), e.getActorType().name(), e.getActorId(), e.getCreatedAt());
+        e.getReasonCode().name(), e.getReason(), e.getCreatedAt());
   }
 
   private static AiRuntimeTraceDto toDto(AiRuntimeTrace t) {

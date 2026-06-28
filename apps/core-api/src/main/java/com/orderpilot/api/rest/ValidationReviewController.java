@@ -10,6 +10,8 @@ import com.orderpilot.api.dto.Stage6Dtos.MapProductRequest;
 import com.orderpilot.api.dto.Stage6Dtos.DraftPreview;
 import com.orderpilot.api.dto.Stage6Dtos.DraftPreparationResult;
 import com.orderpilot.api.dto.Stage6Dtos.SubstituteDecisionRequest;
+import com.orderpilot.api.dto.Stage6Dtos.WorkspaceDraftOrderDto;
+import com.orderpilot.api.dto.Stage6Dtos.WorkspaceDraftQuoteDto;
 import com.orderpilot.application.services.workspace.DraftCommandPreparationService;
 import com.orderpilot.application.services.workspace.ValidationReviewService;
 import com.orderpilot.common.tenant.TenantContext;
@@ -104,8 +106,8 @@ public class ValidationReviewController {
   }
 
   @PostMapping("/api/v1/validation-review/{reviewCaseId}/prepare-draft-quote")
-  public DraftQuote prepareDraftQuote(@PathVariable UUID reviewCaseId, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http) {
-    return draftCommandPreparationService.prepareDraftQuote(reviewCaseId, trustedActor(http));
+  public WorkspaceDraftQuoteDto prepareDraftQuote(@PathVariable UUID reviewCaseId, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http) {
+    return toDto(draftCommandPreparationService.prepareDraftQuote(reviewCaseId, trustedActor(http)));
   }
 
   @GetMapping("/api/v1/validation-review/{reviewCaseId}/draft-preview")
@@ -120,12 +122,22 @@ public class ValidationReviewController {
   }
 
   @PostMapping("/api/v1/validation-review/{reviewCaseId}/prepare-draft-order")
-  public DraftOrder prepareDraftOrder(@PathVariable UUID reviewCaseId, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http) {
-    return draftCommandPreparationService.prepareDraftOrder(reviewCaseId, trustedActor(http));
+  public WorkspaceDraftOrderDto prepareDraftOrder(@PathVariable UUID reviewCaseId, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http) {
+    return toDto(draftCommandPreparationService.prepareDraftOrder(reviewCaseId, trustedActor(http)));
   }
 
   private UUID trustedActor(HttpServletRequest http) {
     return actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+  }
+
+  private static WorkspaceDraftQuoteDto toDto(DraftQuote q) {
+    if (q == null) return null;
+    return new WorkspaceDraftQuoteDto(q.getId(), q.getQuoteNumber(), q.getCustomerAccountId(), q.getCustomerDisplayName(), q.getStatus(), q.getValidationStatus(), q.isRequiresHumanReview(), q.getCurrency(), q.getSubtotalAmount(), q.getDiscountAmount(), q.getTotalAmount(), q.getMarginPercent(), q.getCreatedAt());
+  }
+
+  private static WorkspaceDraftOrderDto toDto(DraftOrder o) {
+    if (o == null) return null;
+    return new WorkspaceDraftOrderDto(o.getId(), o.getOrderNumber(), o.getCustomerAccountId(), o.getStatus(), o.getCurrency(), o.getSubtotalAmount(), o.getDiscountAmount(), o.getTotalAmount(), o.getMarginPercent(), o.getCreatedAt());
   }
 
   private String reason(ReviewActionRequest request) {
