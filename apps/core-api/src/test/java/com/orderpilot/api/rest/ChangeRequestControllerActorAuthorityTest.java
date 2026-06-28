@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.orderpilot.api.dto.Stage11EDtos.ChangeRequestCancelCommand;
+import com.orderpilot.api.dto.Stage11EDtos.QuoteHandoffResponse;
 import com.orderpilot.application.services.integration.ChangeRequestService;
 import com.orderpilot.application.services.workspace.QuoteExternalWritePreparationService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -92,5 +94,40 @@ class ChangeRequestControllerActorAuthorityTest {
             .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\"}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+  }
+
+  @Test
+  void cancelUsesTrustedActorNotBodyActorId() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    UUID changeRequestId = UUID.randomUUID();
+    UUID quoteId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    when(externalWritePreparationService.cancel(eq(changeRequestId), any()))
+        .thenReturn(new QuoteHandoffResponse(
+            quoteId,
+            "APPROVED",
+            "CANCELLED",
+            java.util.List.of(),
+            null,
+            changeRequestId,
+            null,
+            null,
+            "EXECUTION_DISABLED",
+            java.util.List.of()));
+
+    mockMvc.perform(post("/api/v1/change-requests/{id}/cancel", changeRequestId)
+            .header("X-Tenant-Id", tenantId)
+            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_REJECT")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"actorId\":\"" + spoofActor + "\",\"reason\":\"duplicate\"}"))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<ChangeRequestCancelCommand> command =
+        ArgumentCaptor.forClass(ChangeRequestCancelCommand.class);
+    verify(externalWritePreparationService).cancel(eq(changeRequestId), command.capture());
+    assertThat(command.getValue().actorId()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
+    assertThat(command.getValue().reason()).isEqualTo("duplicate");
   }
 }

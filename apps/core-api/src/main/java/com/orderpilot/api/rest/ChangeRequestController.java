@@ -69,8 +69,14 @@ public class ChangeRequestController {
   }
 
   @PostMapping("/change-requests/{id}/cancel")
-  public QuoteHandoffResponse cancel(@PathVariable UUID id, @RequestBody(required = false) ChangeRequestCancelCommand request) {
-    return externalWritePreparationService.cancel(id, request);
+  public QuoteHandoffResponse cancel(
+      @PathVariable UUID id,
+      @RequestBody(required = false) LegacyChangeRequestCancelRequest request,
+      HttpServletRequest http) {
+    UUID actorId =
+        actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
+    return externalWritePreparationService.cancel(
+        id, new ChangeRequestCancelCommand(actorId, request == null ? null : request.reason()));
   }
 
   @PostMapping("/change-requests/{id}/reject")

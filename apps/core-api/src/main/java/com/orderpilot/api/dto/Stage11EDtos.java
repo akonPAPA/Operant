@@ -24,6 +24,10 @@ public final class Stage11EDtos {
       String targetEntityType,
       String requestedAction) {}
 
+  /** Public cancellation intent. Actor identity is resolved from trusted request context. */
+  public record LegacyChangeRequestCancelRequest(String reason) {}
+
+  /** Internal service command. Never bind this type directly to a public request body. */
   public record ChangeRequestCancelCommand(UUID actorId, String reason) {}
 
   public record QuoteHandoffResponse(

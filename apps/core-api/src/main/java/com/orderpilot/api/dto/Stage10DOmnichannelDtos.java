@@ -77,7 +77,6 @@ public final class Stage10DOmnichannelDtos {
   public record ChannelIdentityLinkRequest(
       UUID customerAccountId,
       UUID customerContactId,
-      UUID linkedByUserId,
       String notes) {}
 
   public record ChannelIdentityActionRequest(String notes) {}
