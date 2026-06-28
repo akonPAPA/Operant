@@ -1,5 +1,6 @@
 package com.orderpilot.api.rest;
 
+import com.orderpilot.api.dto.Stage6Dtos.ExceptionCaseDto;
 import com.orderpilot.api.dto.Stage6Dtos.WorkspaceDraftOrderDto;
 import com.orderpilot.api.dto.Stage6Dtos.WorkspaceDraftQuoteDto;
 import com.orderpilot.application.services.workspace.*;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 public class ValidationWorkspaceActionController {
   private final ExceptionCaseService caseService; private final DraftQuoteService quoteService; private final DraftOrderService orderService;
   public ValidationWorkspaceActionController(ExceptionCaseService caseService, DraftQuoteService quoteService, DraftOrderService orderService){this.caseService=caseService;this.quoteService=quoteService;this.orderService=orderService;}
-  @PostMapping("/{id}/create-exception-case") public ExceptionCase createCase(@PathVariable UUID id){return caseService.createFromValidation(id);}
+  @PostMapping("/{id}/create-exception-case") public ExceptionCaseDto createCase(@PathVariable UUID id){return toDto(caseService.createFromValidation(id));}
   @PostMapping("/{id}/create-draft-quote") public WorkspaceDraftQuoteDto createQuote(@PathVariable UUID id){return toDto(quoteService.createFromValidation(id));}
   @PostMapping("/{id}/create-draft-order") public WorkspaceDraftOrderDto createOrder(@PathVariable UUID id){return toDto(orderService.createFromValidation(id));}
 
@@ -24,5 +25,10 @@ public class ValidationWorkspaceActionController {
   private static WorkspaceDraftOrderDto toDto(DraftOrder o) {
     if (o == null) return null;
     return new WorkspaceDraftOrderDto(o.getId(), o.getOrderNumber(), o.getCustomerAccountId(), o.getStatus(), o.getCurrency(), o.getSubtotalAmount(), o.getDiscountAmount(), o.getTotalAmount(), o.getMarginPercent(), o.getCreatedAt());
+  }
+
+  private static ExceptionCaseDto toDto(ExceptionCase c) {
+    if (c == null) return null;
+    return new ExceptionCaseDto(c.getId(), c.getCaseNumber(), c.getTitle(), c.getStatus(), c.getPriority(), c.getSeverity(), c.getSummary(), c.getCreatedAt(), c.getResolvedAt());
   }
 }

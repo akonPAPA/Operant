@@ -16,7 +16,7 @@ public class IntegrationConnectionController {
 
   @GetMapping("/providers") public List<ProviderResponse> providers() { return Arrays.stream(IntegrationProviderType.values()).map(p -> new ProviderResponse(p.name(), label(p.name()), "ADAPTER_READY_STUB", "READ_ONLY")).toList(); }
   @GetMapping("/connections") public List<IntegrationConnectionResponse> list() { return connectionService.list().stream().map(this::toResponse).toList(); }
-  @PostMapping("/connections") public IntegrationConnectionResponse create(@RequestBody IntegrationConnectionRequest request) { return toResponse(connectionService.createDraft(IntegrationProviderType.valueOf(request.providerType()), request.displayName(), request.connectionKind(), request.secretRef(), request.endpointRef())); }
+  @PostMapping("/connections") public IntegrationConnectionResponse create(@RequestBody IntegrationConnectionRequest request) { return toResponse(connectionService.createDraft(IntegrationProviderType.valueOf(request.providerType()), request.displayName(), request.connectionKind(), null, request.endpointRef())); }
   @GetMapping("/connections/{id}") public IntegrationConnectionResponse get(@PathVariable UUID id) { return toResponse(connectionService.get(id)); }
   @PostMapping("/connections/{id}/secret") public IntegrationConnectionResponse configureSecret(@PathVariable UUID id, @RequestBody SecretConfigurationRequest request) { return toResponse(connectionService.configureSecret(id, request.secretValue())); }
   @PostMapping("/connections/{id}/activate") public IntegrationConnectionResponse activate(@PathVariable UUID id) { return toResponse(connectionService.activate(id)); }
@@ -31,14 +31,13 @@ public class IntegrationConnectionController {
 
   private IntegrationConnectionResponse toResponse(IntegrationConnection c) {
     String referenceId = c.getSecretReferenceId() == null ? c.getSecretRef() : c.getSecretReferenceId();
-    return new IntegrationConnectionResponse(c.getId(), c.getProviderType().name(), c.getDisplayName(), c.getStatus(), c.getMode(), c.getConnectionKind(), referenceId != null && !referenceId.isBlank(), c.getSecretLastUpdatedAt(), mask(referenceId), c.getEndpointRef(), c.getLastSyncAt(), c.getLastHealthCheckAt(), c.getLastHealthCheckStatus(), c.getLastDiagnosticSummary(), c.getCreatedAt(), c.getUpdatedAt());
+    return new IntegrationConnectionResponse(c.getId(), c.getProviderType().name(), c.getDisplayName(), c.getStatus(), c.getMode(), c.getConnectionKind(), referenceId != null && !referenceId.isBlank(), c.getSecretLastUpdatedAt(), c.getEndpointRef(), c.getLastSyncAt(), c.getLastHealthCheckAt(), c.getLastHealthCheckStatus(), c.getLastDiagnosticSummary(), c.getCreatedAt(), c.getUpdatedAt());
   }
 
   private ConnectorSyncEventResponse toResponse(ConnectorSyncEvent e) {
-    return new ConnectorSyncEventResponse(e.getId(), e.getIntegrationConnectionId(), e.getProviderType().name(), e.getSyncType(), e.getDirection(), e.getStatus(), e.getRecordsRead(), e.getRecordsWritten(), e.getRecordsFailed(), e.getDurationMs(), e.getErrorCategory(), e.getStartedAt(), e.getFinishedAt(), e.getErrorCode(), e.getErrorMessage());
+    return new ConnectorSyncEventResponse(e.getId(), e.getIntegrationConnectionId(), e.getProviderType().name(), e.getSyncType(), e.getDirection(), e.getStatus(), e.getRecordsRead(), e.getRecordsWritten(), e.getRecordsFailed(), e.getDurationMs(), e.getErrorCategory(), e.getStartedAt(), e.getFinishedAt(), e.getErrorCode());
   }
 
   private static ConnectionDiagnosticResponse toDiagnosticResponse(ConnectionDiagnostic diagnostic) { return new ConnectionDiagnosticResponse(diagnostic.severity().name(), diagnostic.code().name(), diagnostic.message()); }
-  private static String mask(String referenceId) { return referenceId == null || referenceId.isBlank() ? null : "secret-ref:" + Integer.toHexString(referenceId.hashCode()); }
   private static String label(String value) { return value.replace('_', ' '); }
 }

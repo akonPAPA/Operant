@@ -42,21 +42,41 @@ public class WorkspaceController {
     return new WorkspaceDraftOrderLineDto(l.getId(), l.getLineNumber(), l.getProductId(), l.getDescription(), l.getQuantity(), l.getUom(), l.getUnitPrice(), l.getDiscountPercent(), l.getLineTotal(), l.getMarginPercent(), l.getStatus(), l.getValidationStatus());
   }
 
-  @PostMapping("/exception-cases/from-validation/{validationRunId}") public ExceptionCase createCase(@PathVariable UUID validationRunId){return caseService.createFromValidation(validationRunId);}
-  @GetMapping("/exception-cases") public List<ExceptionCase> cases(){return caseService.list();}
-  @GetMapping("/exception-cases/{id}") public ExceptionCase exceptionCase(@PathVariable UUID id){return caseService.get(id);}
-  @GetMapping("/exception-cases/{id}/issues") public List<ExceptionCaseIssue> caseIssues(@PathVariable UUID id){return caseService.issues(id);}
-  @PostMapping("/exception-cases/{id}/assign") public ExceptionCase assign(@PathVariable UUID id, @RequestBody AssignRequest request){return caseService.assign(id, request.userId());}
-  @PostMapping("/exception-cases/{id}/status") public ExceptionCase status(@PathVariable UUID id, @RequestBody StatusRequest request){return caseService.status(id, request.status());}
-  @PostMapping("/exception-cases/{id}/resolve") public ExceptionCase resolve(@PathVariable UUID id){return caseService.resolve(id);}
-  @PostMapping("/exception-cases/{id}/reject") public ExceptionCase rejectCase(@PathVariable UUID id){return caseService.reject(id);}
-  @PostMapping("/exception-cases/{id}/cancel") public ExceptionCase cancelCase(@PathVariable UUID id){return caseService.cancel(id);}
+  private static ExceptionCaseDto toDto(ExceptionCase c) {
+    if (c == null) return null;
+    return new ExceptionCaseDto(c.getId(), c.getCaseNumber(), c.getTitle(), c.getStatus(), c.getPriority(), c.getSeverity(), c.getSummary(), c.getCreatedAt(), c.getResolvedAt());
+  }
 
-  @PostMapping("/suggested-fixes/generate/{validationRunId}") public List<SuggestedFix> generateFixes(@PathVariable UUID validationRunId){return fixService.generate(validationRunId);}
-  @GetMapping("/suggested-fixes") public List<SuggestedFix> fixes(@RequestParam UUID validationRunId){return fixService.list(validationRunId);}
-  @GetMapping("/suggested-fixes/{id}") public SuggestedFix fix(@PathVariable UUID id){return fixService.get(id);}
-  @PostMapping("/suggested-fixes/{id}/accept") public SuggestedFix acceptFix(@PathVariable UUID id){return fixService.accept(id);}
-  @PostMapping("/suggested-fixes/{id}/reject") public SuggestedFix rejectFix(@PathVariable UUID id){return fixService.reject(id);}
+  private static ExceptionCaseIssueDto toDto(ExceptionCaseIssue i) {
+    if (i == null) return null;
+    return new ExceptionCaseIssueDto(i.getId(), i.getIssueType(), i.getSeverity(), i.getStatus(), i.getMessage());
+  }
+
+  private static SuggestedFixDto toDto(SuggestedFix f) {
+    if (f == null) return null;
+    return new SuggestedFixDto(f.getId(), f.getFixType(), f.getStatus(), f.getConfidence(), f.getReason());
+  }
+
+  private static ApprovalDecisionDto toDto(ApprovalDecision d) {
+    if (d == null) return null;
+    return new ApprovalDecisionDto(d.getId(), d.getTargetType(), d.getTargetId(), d.getDecision(), d.getReason(), d.getDecidedAt());
+  }
+
+  @PostMapping("/exception-cases/from-validation/{validationRunId}") public ExceptionCaseDto createCase(@PathVariable UUID validationRunId){return toDto(caseService.createFromValidation(validationRunId));}
+  @GetMapping("/exception-cases") public List<ExceptionCaseDto> cases(){return caseService.list().stream().map(WorkspaceController::toDto).toList();}
+  @GetMapping("/exception-cases/{id}") public ExceptionCaseDto exceptionCase(@PathVariable UUID id){return toDto(caseService.get(id));}
+  @GetMapping("/exception-cases/{id}/issues") public List<ExceptionCaseIssueDto> caseIssues(@PathVariable UUID id){return caseService.issues(id).stream().map(WorkspaceController::toDto).toList();}
+  @PostMapping("/exception-cases/{id}/assign") public ExceptionCaseDto assign(@PathVariable UUID id, @RequestBody AssignRequest request){return toDto(caseService.assign(id, request.userId()));}
+  @PostMapping("/exception-cases/{id}/status") public ExceptionCaseDto status(@PathVariable UUID id, @RequestBody StatusRequest request){return toDto(caseService.status(id, request.status()));}
+  @PostMapping("/exception-cases/{id}/resolve") public ExceptionCaseDto resolve(@PathVariable UUID id){return toDto(caseService.resolve(id));}
+  @PostMapping("/exception-cases/{id}/reject") public ExceptionCaseDto rejectCase(@PathVariable UUID id){return toDto(caseService.reject(id));}
+  @PostMapping("/exception-cases/{id}/cancel") public ExceptionCaseDto cancelCase(@PathVariable UUID id){return toDto(caseService.cancel(id));}
+
+  @PostMapping("/suggested-fixes/generate/{validationRunId}") public List<SuggestedFixDto> generateFixes(@PathVariable UUID validationRunId){return fixService.generate(validationRunId).stream().map(WorkspaceController::toDto).toList();}
+  @GetMapping("/suggested-fixes") public List<SuggestedFixDto> fixes(@RequestParam UUID validationRunId){return fixService.list(validationRunId).stream().map(WorkspaceController::toDto).toList();}
+  @GetMapping("/suggested-fixes/{id}") public SuggestedFixDto fix(@PathVariable UUID id){return toDto(fixService.get(id));}
+  @PostMapping("/suggested-fixes/{id}/accept") public SuggestedFixDto acceptFix(@PathVariable UUID id){return toDto(fixService.accept(id));}
+  @PostMapping("/suggested-fixes/{id}/reject") public SuggestedFixDto rejectFix(@PathVariable UUID id){return toDto(fixService.reject(id));}
 
   @GetMapping("/draft-quotes/review-queue") public List<DraftReviewSummary> quoteReviewQueue(@RequestParam(required = false) String status, @RequestParam(required = false) UUID sourceReviewCaseId, @RequestParam(required = false) String customerRef, @RequestParam(defaultValue = "25") int limit){return draftReviewService.quoteReviewQueue(status, sourceReviewCaseId, customerRef, limit);}
   @PostMapping("/draft-quotes/from-validation/{validationRunId}") public WorkspaceDraftQuoteDto createQuote(@PathVariable UUID validationRunId){return toDto(quoteService.createFromValidation(validationRunId));}
@@ -82,8 +102,8 @@ public class WorkspaceController {
   @PostMapping("/draft-orders/{id}/reject") public WorkspaceDraftOrderDto rejectOrder(@PathVariable UUID id){return toDto(orderService.reject(id));}
   @PostMapping("/draft-orders/{id}/cancel") public WorkspaceDraftOrderDto cancelOrder(@PathVariable UUID id){return toDto(orderService.cancel(id));}
 
-  @PostMapping("/approval-decisions") public ApprovalDecision decide(@RequestBody ApprovalDecisionRequest request, HttpServletRequest http){return approvalService.decide(request.targetType(), request.targetId(), request.decision(), request.reason(), trustedActor(http));}
-  @GetMapping("/approval-decisions") public List<ApprovalDecision> decisions(@RequestParam String targetType, @RequestParam UUID targetId){return approvalService.forTarget(targetType, targetId);}
+  @PostMapping("/approval-decisions") public ApprovalDecisionDto decide(@RequestBody ApprovalDecisionRequest request, HttpServletRequest http){return toDto(approvalService.decide(request.targetType(), request.targetId(), request.decision(), request.reason(), trustedActor(http)));}
+  @GetMapping("/approval-decisions") public List<ApprovalDecisionDto> decisions(@RequestParam String targetType, @RequestParam UUID targetId){return approvalService.forTarget(targetType, targetId).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/timeline") public List<WorkspaceTimelineService.TimelineItem> timeline(@RequestParam String targetType, @RequestParam UUID targetId){return timelineService.timeline(targetType, targetId);}
   @PostMapping("/notes") public WorkspaceNoteDto addNote(@RequestBody NoteRequest request, HttpServletRequest http){return toDto(noteService.add(request.targetType(), request.targetId(), request.noteText(), trustedActor(http)));}
   @GetMapping("/notes") public List<WorkspaceNoteDto> notes(@RequestParam String targetType, @RequestParam UUID targetId){return noteService.list(targetType, targetId).stream().map(WorkspaceController::toDto).toList();}

@@ -40,8 +40,26 @@ class DirectEntityResponseBoundaryTest {
 
   @Test
   void validationWorkspaceActionDraftEndpointsDoNotReturnDomainTypes() {
+    assertNotDomainReturn(ValidationWorkspaceActionController.class, "createCase");
     assertNotDomainReturn(ValidationWorkspaceActionController.class, "createQuote");
     assertNotDomainReturn(ValidationWorkspaceActionController.class, "createOrder");
+  }
+
+  @Test
+  void workspaceExceptionFixAndApprovalEndpointsDoNotReturnDomainTypes() {
+    String[] methods = {
+        "createCase", "cases", "exceptionCase", "caseIssues", "assign", "status", "resolve",
+        "rejectCase", "cancelCase", "generateFixes", "fixes", "fix", "acceptFix", "rejectFix",
+        "decide", "decisions"
+    };
+    for (String methodName : methods) {
+      assertNotDomainReturn(WorkspaceController.class, methodName);
+    }
+  }
+
+  @Test
+  void extractionValidationEndpointDoesNotReturnDomainTypes() {
+    assertNotDomainReturn(ExtractionValidationController.class, "latestValidation");
   }
 
   @Test
