@@ -2,6 +2,7 @@ package com.orderpilot.api.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.orderpilot.api.dto.Stage10BDtos.HumanCorrectionRequest;
 import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityLinkRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacyDraftQuoteCreateRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacyQuoteLifecycleRequest;
@@ -41,6 +42,7 @@ class ActorAuthorityRequestDtoTest {
   void publicRequestRecordsContainBusinessIntentOnly() {
     List<Class<?>> publicRequestTypes = List.of(
         MarkBotResponseReadyRequest.class,
+        HumanCorrectionRequest.class,
         ChannelIdentityLinkRequest.class,
         LegacyDraftQuoteCreateRequest.class,
         LegacySubstituteDecisionRequest.class,

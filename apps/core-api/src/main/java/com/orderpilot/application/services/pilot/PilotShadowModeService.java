@@ -80,16 +80,20 @@ public class PilotShadowModeService {
     return shadowRunRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
   }
 
+  /**
+   * Records a tenant-scoped human correction. {@code trustedActorId} must come from trusted
+   * server-side context, never from a public request body.
+   */
   @Transactional
-  public HumanCorrection recordCorrection(UUID shadowRunId, UUID correctedByUserId, String correctionType, String beforePayloadJson, String afterPayloadJson, String correctionReason) {
+  public HumanCorrection recordCorrection(UUID shadowRunId, UUID trustedActorId, String correctionType, String beforePayloadJson, String afterPayloadJson, String correctionReason) {
     UUID tenantId = TenantContext.requireTenantId();
     requireValue(shadowRunId, "shadowRunId");
     requireValue(correctionType, "correctionType");
     ShadowRun shadowRun = shadowRunRepository.findByIdAndTenantId(shadowRunId, tenantId)
         .orElseThrow(() -> new NotFoundException("Shadow run not found: " + shadowRunId));
-    HumanCorrection correction = humanCorrectionRepository.save(new HumanCorrection(tenantId, shadowRunId, correctedByUserId, correctionType, beforePayloadJson, afterPayloadJson, correctionReason, clock.instant()));
+    HumanCorrection correction = humanCorrectionRepository.save(new HumanCorrection(tenantId, shadowRunId, trustedActorId, correctionType, beforePayloadJson, afterPayloadJson, correctionReason, clock.instant()));
     shadowRun.markReviewed(statusForCorrection(correctionType), clock.instant());
-    auditEventService.record("PILOT_HUMAN_CORRECTION_RECORDED", "SHADOW_RUN", shadowRunId.toString(), correctedByUserId, "{\"correctionType\":\"" + correctionType + "\"}");
+    auditEventService.record("PILOT_HUMAN_CORRECTION_RECORDED", "SHADOW_RUN", shadowRunId.toString(), trustedActorId, "{\"correctionType\":\"" + correctionType + "\"}");
     return correction;
   }
 
