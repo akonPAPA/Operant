@@ -9,6 +9,9 @@ import com.orderpilot.domain.bot.BotConnection;
 import com.orderpilot.domain.bot.BotHandoff;
 import com.orderpilot.domain.bot.BotMessage;
 import com.orderpilot.domain.bot.BotResponseDraft;
+import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
@@ -19,11 +22,17 @@ public class BotRuntimeController {
   private final BotRuntimeService service;
   private final BotResponseDraftService responseDraftService;
   private final BotReviewHandoffService reviewHandoffService;
+  private final RequestActorResolver actorResolver;
 
-  public BotRuntimeController(BotRuntimeService service, BotResponseDraftService responseDraftService, BotReviewHandoffService reviewHandoffService) {
+  public BotRuntimeController(
+      BotRuntimeService service,
+      BotResponseDraftService responseDraftService,
+      BotReviewHandoffService reviewHandoffService,
+      RequestActorResolver actorResolver) {
     this.service = service;
     this.responseDraftService = responseDraftService;
     this.reviewHandoffService = reviewHandoffService;
+    this.actorResolver = actorResolver;
   }
 
   @PostMapping("/messages/simulate")
@@ -104,8 +113,12 @@ public class BotRuntimeController {
   }
 
   @PostMapping("/responses/{id}/mark-ready")
-  public BotResponseDraftResponse markResponseReady(@PathVariable UUID id, @RequestBody(required = false) MarkBotResponseReadyRequest request) {
-    UUID reviewedBy = request == null ? null : request.reviewedBy();
+  public BotResponseDraftResponse markResponseReady(
+      @PathVariable UUID id,
+      @RequestBody(required = false) MarkBotResponseReadyRequest request,
+      HttpServletRequest http) {
+    UUID reviewedBy =
+        actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
     return responseDraft(responseDraftService.markReady(id, reviewedBy));
   }
 

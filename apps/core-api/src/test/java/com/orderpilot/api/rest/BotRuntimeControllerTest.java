@@ -1,6 +1,8 @@
 package com.orderpilot.api.rest;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,9 +19,11 @@ import com.orderpilot.domain.bot.BotPolicyDecision;
 import com.orderpilot.domain.bot.BotConversation;
 import com.orderpilot.domain.bot.BotResponseDraft;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+import com.orderpilot.security.RequestActorResolver;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -34,6 +38,7 @@ class BotRuntimeControllerTest {
   @MockBean private BotRuntimeService service;
   @MockBean private BotResponseDraftService responseDraftService;
   @MockBean private BotReviewHandoffService reviewHandoffService;
+  @MockBean private RequestActorResolver actorResolver;
 
   @Test
   void simulateEndpointReturnsPolicyDecisionAndSafeResponse() throws Exception {
@@ -69,8 +74,11 @@ class BotRuntimeControllerTest {
     UUID conversationId = UUID.randomUUID();
     UUID messageId = UUID.randomUUID();
     UUID responseId = UUID.randomUUID();
+    UUID tenantId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
     BotResponseDraft draft = new BotResponseDraft(UUID.randomUUID(), conversationId, messageId, "TELEGRAM", "RFQ_REQUEST", BotPolicyDecision.REQUIRE_OPERATOR_REVIEW.name(), "We received your request and created an RFQ draft for operator review.", true, Instant.parse("2026-05-26T00:00:00Z"));
     setId(draft, responseId);
+    when(actorResolver.resolveVerifiedActor(any(), eq(tenantId))).thenReturn(trustedActor);
     when(responseDraftService.createDraft(any(), any(), any(Boolean.class))).thenReturn(draft);
     when(responseDraftService.markReady(any(), any())).thenReturn(draft);
     when(responseDraftService.stubSend(any())).thenReturn(draft);
@@ -89,12 +97,46 @@ class BotRuntimeControllerTest {
         .andExpect(jsonPath("$[0].responseText").value("We received your request and created an RFQ draft for operator review."));
 
     mockMvc.perform(post("/api/v1/bot-runtime/responses/{id}/mark-ready", responseId)
+            .header("X-Tenant-Id", tenantId)
             .contentType("application/json")
             .content("{}"))
         .andExpect(status().isOk());
 
     mockMvc.perform(post("/api/v1/bot-runtime/responses/{id}/stub-send", responseId))
         .andExpect(status().isOk());
+  }
+
+  @Test
+  void markReadyUsesTrustedReviewerAndIgnoresBodyReviewedBy() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    UUID responseId = UUID.randomUUID();
+    BotResponseDraft draft = new BotResponseDraft(
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "TELEGRAM",
+        "RFQ_REQUEST",
+        BotPolicyDecision.REQUIRE_OPERATOR_REVIEW.name(),
+        "Ready for operator review.",
+        true,
+        Instant.parse("2026-05-26T00:00:00Z"));
+    setId(draft, responseId);
+    when(actorResolver.resolveVerifiedActor(any(), eq(tenantId))).thenReturn(trustedActor);
+    when(responseDraftService.markReady(eq(responseId), any())).thenReturn(draft);
+
+    mockMvc.perform(post("/api/v1/bot-runtime/responses/{id}/mark-ready", responseId)
+            .header("X-Tenant-Id", tenantId)
+            .contentType("application/json")
+            .content("{\"reviewedBy\":\"" + spoofActor + "\"}"))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<UUID> reviewer = ArgumentCaptor.forClass(UUID.class);
+    verify(responseDraftService).markReady(eq(responseId), reviewer.capture());
+    org.assertj.core.api.Assertions.assertThat(reviewer.getValue())
+        .isEqualTo(trustedActor)
+        .isNotEqualTo(spoofActor);
   }
 
   private void setId(BotResponseDraft draft, UUID id) throws Exception {

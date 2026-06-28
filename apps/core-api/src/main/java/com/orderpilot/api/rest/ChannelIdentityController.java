@@ -5,7 +5,10 @@ import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityLinkRequest
 import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityResponse;
 import com.orderpilot.application.services.channel.ChannelIdentityResolutionMapper;
 import com.orderpilot.application.services.channel.ChannelIdentityService;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelIdentity;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,9 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/channel-identities")
 public class ChannelIdentityController {
   private final ChannelIdentityService service;
+  private final RequestActorResolver actorResolver;
 
-  public ChannelIdentityController(ChannelIdentityService service) {
+  public ChannelIdentityController(
+      ChannelIdentityService service, RequestActorResolver actorResolver) {
     this.service = service;
+    this.actorResolver = actorResolver;
   }
 
   @GetMapping
@@ -44,10 +50,14 @@ public class ChannelIdentityController {
 
   @PostMapping("/{id}/link")
   public ChannelIdentityResponse link(
-      @PathVariable UUID id, @RequestBody ChannelIdentityLinkRequest request) {
+      @PathVariable UUID id,
+      @RequestBody ChannelIdentityLinkRequest request,
+      HttpServletRequest http) {
+    UUID linkedByUserId =
+        actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
     return toResponse(service.linkIdentity(
         id, request.customerAccountId(), request.customerContactId(),
-        request.linkedByUserId(), request.notes()));
+        linkedByUserId, request.notes()));
   }
 
   @PostMapping("/{id}/unlink")

@@ -37,5 +37,6 @@ public final class Stage7Dtos {
   public record CreateHandoffRequest(UUID messageId, String reason) {}
   public record LinkReviewCaseRequest(UUID reviewCaseId) {}
   public record CreateBotResponseDraftRequest(UUID sourceMessageId, boolean knownCustomerIdentity) {}
-  public record MarkBotResponseReadyRequest(UUID reviewedBy) {}
+  /** Public intent only. The reviewer identity is resolved from trusted request context. */
+  public record MarkBotResponseReadyRequest() {}
 }
