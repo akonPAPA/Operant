@@ -50,7 +50,6 @@ graphify-out/
 .graphify_root
 .graphify_labels.json
 GRAPH_REPORT.md
-
 # ===== Local/private data =====
 local-data/
 private-data/
