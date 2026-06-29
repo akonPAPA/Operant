@@ -1,0 +1,138 @@
+﻿name: Snyk Dependency Scan
+
+on:
+  # Temporary policy:
+  # Run Snyk on a weekly schedule and manually until the dependency-remediation PR closes
+  # the current backend high/critical backlog. Do not run this on every PR yet.
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snyk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snyk-web-dashboard:
+    name: Snyk Open Source - web-dashboard
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+    steps:
+      - name: Require Snyk credentials
+        if: env.SNYK_TOKEN == ''
+        shell: bash
+        run: |
+          echo "::error::SNYK_TOKEN is required for scheduled/manual Snyk scans."
+          echo "This workflow is not a fork-PR workflow, so missing credentials must fail closed."
+          exit 1
+
+      - name: Checkout
+        if: env.SNYK_TOKEN != ''
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        if: env.SNYK_TOKEN != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+          cache: "npm"
+          cache-dependency-path: apps/web-dashboard/package-lock.json
+
+      - name: Install dependencies
+        if: env.SNYK_TOKEN != ''
+        working-directory: apps/web-dashboard
+        run: npm ci
+
+      - name: Install pinned Snyk CLI
+        if: env.SNYK_TOKEN != ''
+        run: npm install --global snyk@1.1305.2
+
+      - name: Report all dependency findings
+        if: env.SNYK_TOKEN != ''
+        working-directory: apps/web-dashboard
+        shell: bash
+        run: |
+          set +e
+          snyk test --severity-threshold=low
+          snyk_exit=$?
+          set -e
+
+          if [ "$snyk_exit" -eq 1 ]; then
+            echo "::notice::Snyk dependency findings were reported. High/critical enforcement runs next."
+            exit 0
+          fi
+
+          exit "$snyk_exit"
+
+      - name: Fail scheduled/manual scan on high or critical dependency findings
+        if: env.SNYK_TOKEN != ''
+        working-directory: apps/web-dashboard
+        run: snyk test --severity-threshold=high
+
+  snyk-core-api:
+    name: Snyk Open Source - core-api
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+    steps:
+      - name: Require Snyk credentials
+        if: env.SNYK_TOKEN == ''
+        shell: bash
+        run: |
+          echo "::error::SNYK_TOKEN is required for scheduled/manual Snyk scans."
+          echo "This workflow is not a fork-PR workflow, so missing credentials must fail closed."
+          exit 1
+
+      - name: Checkout
+        if: env.SNYK_TOKEN != ''
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        if: env.SNYK_TOKEN != ''
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
+
+      - name: Setup Node for Snyk CLI
+        if: env.SNYK_TOKEN != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+
+      - name: Install pinned Snyk CLI
+        if: env.SNYK_TOKEN != ''
+        run: npm install --global snyk@1.1305.2
+
+      - name: Report all dependency findings
+        if: env.SNYK_TOKEN != ''
+        working-directory: apps/core-api
+        shell: bash
+        run: |
+          set +e
+          snyk test --file=pom.xml --severity-threshold=low
+          snyk_exit=$?
+          set -e
+
+          if [ "$snyk_exit" -eq 1 ]; then
+            echo "::notice::Snyk dependency findings were reported. High/critical enforcement runs next."
+            exit 0
+          fi
+
+          exit "$snyk_exit"
+
+      - name: Fail scheduled/manual scan on high or critical dependency findings
+        if: env.SNYK_TOKEN != ''
+        working-directory: apps/core-api
+        run: snyk test --file=pom.xml --severity-threshold=high
