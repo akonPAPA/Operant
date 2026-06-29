@@ -9,7 +9,46 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ai_worker: ${{ steps.filter.outputs.ai_worker }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            echo "ai_worker=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "$base" "$head")"
+          printf '%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/ai-worker/|\.github/workflows/ai-worker\.yml$)'; then
+            echo "ai_worker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ai_worker=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
+    needs: changes
+    if: needs.changes.outputs.ai_worker == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -18,10 +57,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: apps/ai-worker/pyproject.toml
+
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest
