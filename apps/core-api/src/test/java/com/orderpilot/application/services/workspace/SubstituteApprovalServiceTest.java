@@ -73,7 +73,9 @@ class SubstituteApprovalServiceTest {
 
     assertThat(approved.status()).isEqualTo("READY_FOR_APPROVAL");
     assertThat(approved.lines().get(0).substituteDecisionStatus()).isEqualTo("SUBSTITUTE_APPROVED");
-    assertThat(approved.lines().get(0).substituteDecidedBy()).isEqualTo(actorId);
+    // Wave 01H Category D: the line response exposes a safe business-facing decision summary (status +
+    // decided-at), not the raw internal actor id. The deciding actor is proven via the audit event below.
+    assertThat(approved.lines().get(0).substituteDecidedAt()).isNotNull();
     assertThat(lineRepository.findByTenantIdAndDraftQuoteId(TenantContext.requireTenantId(), s.quoteId()).get(0).getSelectedSubstituteProductId()).isEqualTo(s.substituteA().getId());
     assertThat(issueRepository.findByTenantIdAndDraftQuoteIdOrderByCreatedAtAsc(TenantContext.requireTenantId(), s.quoteId()).stream().filter(i -> i.getIssueCode().equals("INSUFFICIENT_STOCK")).findFirst().orElseThrow().getStatus()).isEqualTo("RESOLVED");
     assertThat(auditEventRepository.findByTenantIdOrderByOccurredAtDesc(TenantContext.requireTenantId())).extracting("action").contains("SUBSTITUTE_CANDIDATE_APPROVED");

@@ -128,7 +128,7 @@ class DraftLineReviewStage9BTest {
     UUID lineId = draftReviewService.quoteDetail(prepared.draftId()).lines().get(0).lineId();
 
     TenantContext.setTenantId(UUID.randomUUID());
-    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("3"), null, null, null, null, null, UUID.randomUUID())))
+    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("3"), null, null, null, null, null), UUID.randomUUID()))
         .isInstanceOf(RuntimeException.class);
   }
 
@@ -142,7 +142,7 @@ class DraftLineReviewStage9BTest {
     DraftQuoteLineView other = before.get(1);
 
     DraftQuoteDetail updated = draftReviewService.correctQuoteLine(prepared.draftId(), target.lineId(),
-        new DraftLineCorrectionRequest(new BigDecimal("7"), "BOX", "Corrected description", new BigDecimal("12.50"), null, "operator fixed qty", UUID.randomUUID()));
+        new DraftLineCorrectionRequest(new BigDecimal("7"), "BOX", "Corrected description", new BigDecimal("12.50"), null, "operator fixed qty"), UUID.randomUUID());
 
     DraftQuoteLineView updatedTarget = updated.lines().stream().filter(l -> l.lineId().equals(target.lineId())).findFirst().orElseThrow();
     DraftQuoteLineView untouched = updated.lines().stream().filter(l -> l.lineId().equals(other.lineId())).findFirst().orElseThrow();
@@ -166,7 +166,7 @@ class DraftLineReviewStage9BTest {
     DraftOrderLineView other = before.get(1);
 
     DraftOrderDetail updated = draftReviewService.correctOrderLine(prepared.draftId(), target.lineId(),
-        new DraftLineCorrectionRequest(new BigDecimal("4"), "EA", null, null, null, "operator fixed qty", UUID.randomUUID()));
+        new DraftLineCorrectionRequest(new BigDecimal("4"), "EA", null, null, null, "operator fixed qty"), UUID.randomUUID());
 
     DraftOrderLineView updatedTarget = updated.lines().stream().filter(l -> l.lineId().equals(target.lineId())).findFirst().orElseThrow();
     DraftOrderLineView untouched = updated.lines().stream().filter(l -> l.lineId().equals(other.lineId())).findFirst().orElseThrow();
@@ -182,7 +182,7 @@ class DraftLineReviewStage9BTest {
     DraftPreparationResult prepared = prepareQuote(tenantId, List.of("SKU-IQ"));
     UUID lineId = draftReviewService.quoteDetail(prepared.draftId()).lines().get(0).lineId();
 
-    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(BigDecimal.ZERO, null, null, null, null, null, UUID.randomUUID())))
+    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(BigDecimal.ZERO, null, null, null, null, null), UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Quantity must be positive");
   }
@@ -195,7 +195,7 @@ class DraftLineReviewStage9BTest {
     UUID lineId = draftReviewService.quoteDetail(prepared.draftId()).lines().get(0).lineId();
     String tooLong = "x".repeat(513);
 
-    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(null, null, tooLong, null, null, null, UUID.randomUUID())))
+    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(null, null, tooLong, null, null, null), UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Description must be at most");
   }
@@ -206,11 +206,11 @@ class DraftLineReviewStage9BTest {
     TenantContext.setTenantId(tenantId);
     DraftPreparationResult prepared = prepareQuote(tenantId, List.of("SKU-LOCK"));
     UUID lineId = draftReviewService.quoteDetail(prepared.draftId()).lines().get(0).lineId();
-    draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest(UUID.randomUUID(), "ready"));
+    draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest("ready"), UUID.randomUUID());
     // Move to a terminal/locked status outside this service's lifecycle.
     quoteApproveInternal(prepared.draftId(), tenantId);
 
-    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("2"), null, null, null, null, null, UUID.randomUUID())))
+    assertThatThrownBy(() -> draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("2"), null, null, null, null, null), UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("locked");
   }
@@ -221,16 +221,16 @@ class DraftLineReviewStage9BTest {
     TenantContext.setTenantId(tenantId);
     DraftPreparationResult prepared = prepareQuote(tenantId, List.of("SKU-MR"));
 
-    DraftQuoteDetail ready = draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest(UUID.randomUUID(), "ready for internal approval"));
+    DraftQuoteDetail ready = draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest("ready for internal approval"), UUID.randomUUID());
     assertThat(ready.status()).isEqualTo("WAITING_APPROVAL");
 
     // idempotent repeat stays in the same status
-    DraftQuoteDetail again = draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest(UUID.randomUUID(), "again"));
+    DraftQuoteDetail again = draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest("again"), UUID.randomUUID());
     assertThat(again.status()).isEqualTo("WAITING_APPROVAL");
 
     // terminal -> mark-ready fails closed
     quoteApproveInternal(prepared.draftId(), tenantId);
-    assertThatThrownBy(() -> draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest(UUID.randomUUID(), "no")))
+    assertThatThrownBy(() -> draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest("no"), UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("cannot be marked ready");
   }
@@ -241,10 +241,11 @@ class DraftLineReviewStage9BTest {
     TenantContext.setTenantId(tenantId);
     DraftPreparationResult prepared = prepareQuote(tenantId, List.of("SKU-DUP"));
     UUID lineId = draftReviewService.quoteDetail(prepared.draftId()).lines().get(0).lineId();
-    DraftLineCorrectionRequest request = new DraftLineCorrectionRequest(new BigDecimal("3"), "EA", null, null, null, "same", UUID.randomUUID());
+    DraftLineCorrectionRequest request = new DraftLineCorrectionRequest(new BigDecimal("3"), "EA", null, null, null, "same");
+    UUID actorId = UUID.randomUUID();
 
-    draftReviewService.correctQuoteLine(prepared.draftId(), lineId, request);
-    DraftQuoteDetail afterSecond = draftReviewService.correctQuoteLine(prepared.draftId(), lineId, request);
+    draftReviewService.correctQuoteLine(prepared.draftId(), lineId, request, actorId);
+    DraftQuoteDetail afterSecond = draftReviewService.correctQuoteLine(prepared.draftId(), lineId, request, actorId);
 
     assertThat(afterSecond.lineCount()).isEqualTo(1);
     assertThat(quoteLines.findByTenantIdAndDraftQuoteId(tenantId, prepared.draftId())).hasSize(1);
@@ -258,8 +259,8 @@ class DraftLineReviewStage9BTest {
     DraftPreparationResult prepared = prepareQuote(tenantId, List.of("SKU-AUD"));
     UUID lineId = draftReviewService.quoteDetail(prepared.draftId()).lines().get(0).lineId();
 
-    draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("2"), null, null, null, null, "reason", UUID.randomUUID()));
-    draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest(UUID.randomUUID(), "ready"));
+    draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("2"), null, null, null, null, "reason"), UUID.randomUUID());
+    draftReviewService.markQuoteReady(prepared.draftId(), new ReviewActionRequest("ready"), UUID.randomUUID());
 
     assertThat(auditEvents.findByTenantIdOrderByOccurredAtDesc(tenantId))
         .extracting("action")
@@ -294,7 +295,7 @@ class DraftLineReviewStage9BTest {
     long discountsBefore = discounts.count();
     long marginsBefore = margins.count();
 
-    draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("9"), "EA", null, new BigDecimal("5"), null, "reason", UUID.randomUUID()));
+    draftReviewService.correctQuoteLine(prepared.draftId(), lineId, new DraftLineCorrectionRequest(new BigDecimal("9"), "EA", null, new BigDecimal("5"), null, "reason"), UUID.randomUUID());
 
     assertThat(products.count()).isEqualTo(productsBefore);
     assertThat(customers.count()).isEqualTo(customersBefore);

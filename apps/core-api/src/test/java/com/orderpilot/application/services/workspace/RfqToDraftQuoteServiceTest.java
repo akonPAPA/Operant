@@ -91,8 +91,12 @@ class RfqToDraftQuoteServiceTest {
 
     DraftQuoteResponse response = service.createFromRfq(command(actorId, "OPERATOR", "ACME", List.of(new RfqLineInput("Front brake pads", "BRK-001", new BigDecimal("2"), "pcs", "Almaty"))));
 
-    assertThat(response.tenantId()).isEqualTo(tenantId);
-    assertThat(response.customerAccountId()).isEqualTo(customer.getId());
+    // Wave 01H Category D: tenant and internal customer account id are no longer on the operator-safe
+    // response — verify the persisted draft is tenant-scoped and customer-linked via the repository,
+    // and that the safe customer display name is surfaced on the response.
+    assertThat(quoteRepository.findByIdAndTenantId(response.id(), tenantId)).isPresent()
+        .get().satisfies(q -> assertThat(q.getCustomerAccountId()).isEqualTo(customer.getId()));
+    assertThat(response.customerDisplayName()).isEqualTo(customer.getDisplayName());
     assertThat(response.status()).isEqualTo("READY_FOR_APPROVAL");
     assertThat(response.validationStatus()).isEqualTo("VALIDATED");
     assertThat(response.lines()).hasSize(1);

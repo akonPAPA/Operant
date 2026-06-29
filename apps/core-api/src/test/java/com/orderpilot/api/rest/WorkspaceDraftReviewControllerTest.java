@@ -95,7 +95,7 @@ class WorkspaceDraftReviewControllerTest {
     UUID lineId = UUID.randomUUID();
     UUID tenant = UUID.randomUUID();
     UUID actor = UUID.randomUUID();
-    when(draftReviewService.correctQuoteLine(eq(draftId), eq(lineId), any())).thenReturn(detail(draftId, "NEEDS_REVIEW"));
+    when(draftReviewService.correctQuoteLine(eq(draftId), eq(lineId), any(), any())).thenReturn(detail(draftId, "NEEDS_REVIEW"));
 
     mockMvc.perform(patch("/api/v1/workspace/draft-quotes/" + draftId + "/lines/" + lineId)
             .header("X-Tenant-Id", tenant.toString())
@@ -114,7 +114,7 @@ class WorkspaceDraftReviewControllerTest {
     UUID lineId = UUID.randomUUID();
     UUID tenant = UUID.randomUUID();
     UUID actor = UUID.randomUUID();
-    when(draftReviewService.correctQuoteLine(eq(draftId), eq(lineId), any()))
+    when(draftReviewService.correctQuoteLine(eq(draftId), eq(lineId), any(), any()))
         .thenThrow(new IllegalArgumentException("Quantity must be positive"));
 
     mockMvc.perform(patch("/api/v1/workspace/draft-quotes/" + draftId + "/lines/" + lineId)
@@ -134,7 +134,7 @@ class WorkspaceDraftReviewControllerTest {
     UUID spoofActor = UUID.randomUUID();
     UUID draftId = UUID.randomUUID();
     UUID lineId = UUID.randomUUID();
-    when(draftReviewService.correctQuoteLine(eq(draftId), eq(lineId), any()))
+    when(draftReviewService.correctQuoteLine(eq(draftId), eq(lineId), any(), any()))
         .thenReturn(detail(draftId, "NEEDS_REVIEW"));
 
     mockMvc.perform(patch("/api/v1/workspace/draft-quotes/{id}/lines/{lineId}", draftId, lineId)
@@ -145,10 +145,11 @@ class WorkspaceDraftReviewControllerTest {
             .content("{\"quantity\":2,\"uom\":\"EA\",\"actorUserId\":\"" + spoofActor + "\",\"status\":\"APPROVED\"}"))
         .andExpect(status().isOk());
 
-    ArgumentCaptor<com.orderpilot.api.dto.Stage6Dtos.DraftLineCorrectionRequest> captor =
-        ArgumentCaptor.forClass(com.orderpilot.api.dto.Stage6Dtos.DraftLineCorrectionRequest.class);
-    verify(draftReviewService).correctQuoteLine(eq(draftId), eq(lineId), captor.capture());
-    org.assertj.core.api.Assertions.assertThat(captor.getValue().actorUserId()).isEqualTo(trustedActor);
+    // Wave 01H Category C: the actor is the trusted header actor, passed explicitly to the service;
+    // the body actorUserId is an unmapped unknown field and never reaches the service.
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(draftReviewService).correctQuoteLine(eq(draftId), eq(lineId), any(), actorCaptor.capture());
+    org.assertj.core.api.Assertions.assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
   }
 
   @Test
@@ -157,7 +158,7 @@ class WorkspaceDraftReviewControllerTest {
     UUID trustedActor = UUID.randomUUID();
     UUID spoofActor = UUID.randomUUID();
     UUID draftId = UUID.randomUUID();
-    when(draftReviewService.markQuoteReady(eq(draftId), any()))
+    when(draftReviewService.markQuoteReady(eq(draftId), any(), any()))
         .thenReturn(detail(draftId, "WAITING_APPROVAL"));
 
     mockMvc.perform(post("/api/v1/workspace/draft-quotes/{id}/mark-ready", draftId)
@@ -168,10 +169,13 @@ class WorkspaceDraftReviewControllerTest {
             .content("{\"actorUserId\":\"" + spoofActor + "\",\"reason\":\"ready\",\"status\":\"APPROVED\"}"))
         .andExpect(status().isOk());
 
+    // Wave 01H Category C: actor comes from the trusted header (separate service arg); the body still
+    // carries the business reason, but the body actorUserId is an unmapped unknown field.
     ArgumentCaptor<com.orderpilot.api.dto.Stage6Dtos.ReviewActionRequest> captor =
         ArgumentCaptor.forClass(com.orderpilot.api.dto.Stage6Dtos.ReviewActionRequest.class);
-    verify(draftReviewService).markQuoteReady(eq(draftId), captor.capture());
-    org.assertj.core.api.Assertions.assertThat(captor.getValue().actorUserId()).isEqualTo(trustedActor);
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(draftReviewService).markQuoteReady(eq(draftId), captor.capture(), actorCaptor.capture());
+    org.assertj.core.api.Assertions.assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
     org.assertj.core.api.Assertions.assertThat(captor.getValue().reason()).isEqualTo("ready");
   }
 
@@ -224,6 +228,6 @@ class WorkspaceDraftReviewControllerTest {
             .content("{\"quantity\":2}"))
         .andExpect(status().isForbidden());
 
-    verify(draftReviewService, never()).correctQuoteLine(any(), any(), any());
+    verify(draftReviewService, never()).correctQuoteLine(any(), any(), any(), any());
   }
 }

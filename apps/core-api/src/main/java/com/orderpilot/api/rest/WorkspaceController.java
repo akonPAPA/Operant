@@ -84,8 +84,8 @@ public class WorkspaceController {
   @GetMapping("/draft-quotes/{id}") public WorkspaceDraftQuoteDto quote(@PathVariable UUID id){return toDto(quoteService.get(id));}
   @GetMapping("/draft-quotes/{id}/lines") public List<WorkspaceDraftQuoteLineDto> quoteLines(@PathVariable UUID id){return quoteService.lines(id).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/draft-quotes/{id}/review") public DraftQuoteDetail quoteReview(@PathVariable UUID id){return draftReviewService.quoteDetail(id);}
-  @PatchMapping("/draft-quotes/{id}/lines/{lineId}") public DraftQuoteDetail correctQuoteLine(@PathVariable UUID id, @PathVariable UUID lineId, @RequestBody DraftLineCorrectionRequest request, HttpServletRequest http){return draftReviewService.correctQuoteLine(id, lineId, trustedCorrection(request, http));}
-  @PostMapping("/draft-quotes/{id}/mark-ready") public DraftQuoteDetail markQuoteReady(@PathVariable UUID id, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http){return draftReviewService.markQuoteReady(id, trustedReviewAction(request, http));}
+  @PatchMapping("/draft-quotes/{id}/lines/{lineId}") public DraftQuoteDetail correctQuoteLine(@PathVariable UUID id, @PathVariable UUID lineId, @RequestBody DraftLineCorrectionRequest request, HttpServletRequest http){return draftReviewService.correctQuoteLine(id, lineId, request, trustedActor(http));}
+  @PostMapping("/draft-quotes/{id}/mark-ready") public DraftQuoteDetail markQuoteReady(@PathVariable UUID id, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http){return draftReviewService.markQuoteReady(id, request, trustedActor(http));}
   @PostMapping("/draft-quotes/{id}/approve-internal") public WorkspaceDraftQuoteDto approveQuote(@PathVariable UUID id){return toDto(quoteService.approve(id));}
   @PostMapping("/draft-quotes/{id}/reject") public WorkspaceDraftQuoteDto rejectQuote(@PathVariable UUID id){return toDto(quoteService.reject(id));}
   @PostMapping("/draft-quotes/{id}/cancel") public WorkspaceDraftQuoteDto cancelQuote(@PathVariable UUID id){return toDto(quoteService.cancel(id));}
@@ -96,8 +96,8 @@ public class WorkspaceController {
   @GetMapping("/draft-orders/{id}") public WorkspaceDraftOrderDto order(@PathVariable UUID id){return toDto(orderService.get(id));}
   @GetMapping("/draft-orders/{id}/lines") public List<WorkspaceDraftOrderLineDto> orderLines(@PathVariable UUID id){return orderService.lines(id).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/draft-orders/{id}/review") public DraftOrderDetail orderReview(@PathVariable UUID id){return draftReviewService.orderDetail(id);}
-  @PatchMapping("/draft-orders/{id}/lines/{lineId}") public DraftOrderDetail correctOrderLine(@PathVariable UUID id, @PathVariable UUID lineId, @RequestBody DraftLineCorrectionRequest request, HttpServletRequest http){return draftReviewService.correctOrderLine(id, lineId, trustedCorrection(request, http));}
-  @PostMapping("/draft-orders/{id}/mark-ready") public DraftOrderDetail markOrderReady(@PathVariable UUID id, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http){return draftReviewService.markOrderReady(id, trustedReviewAction(request, http));}
+  @PatchMapping("/draft-orders/{id}/lines/{lineId}") public DraftOrderDetail correctOrderLine(@PathVariable UUID id, @PathVariable UUID lineId, @RequestBody DraftLineCorrectionRequest request, HttpServletRequest http){return draftReviewService.correctOrderLine(id, lineId, request, trustedActor(http));}
+  @PostMapping("/draft-orders/{id}/mark-ready") public DraftOrderDetail markOrderReady(@PathVariable UUID id, @RequestBody(required = false) ReviewActionRequest request, HttpServletRequest http){return draftReviewService.markOrderReady(id, request, trustedActor(http));}
   @PostMapping("/draft-orders/{id}/approve-internal") public WorkspaceDraftOrderDto approveOrder(@PathVariable UUID id){return toDto(orderService.approve(id));}
   @PostMapping("/draft-orders/{id}/reject") public WorkspaceDraftOrderDto rejectOrder(@PathVariable UUID id){return toDto(orderService.reject(id));}
   @PostMapping("/draft-orders/{id}/cancel") public WorkspaceDraftOrderDto cancelOrder(@PathVariable UUID id){return toDto(orderService.cancel(id));}
@@ -111,17 +111,6 @@ public class WorkspaceController {
 
   // OP-CAP-09D: read-only, tenant-scoped product picker for line correction. No cost/margin/secret fields.
   @GetMapping("/products/search") public List<ProductPickerItem> searchProducts(@RequestParam(required = false) String q, @RequestParam(defaultValue = "10") int limit){return draftReviewService.searchProducts(q, limit);}
-
-  private DraftLineCorrectionRequest trustedCorrection(DraftLineCorrectionRequest request, HttpServletRequest http) {
-    if (request == null) {
-      return null;
-    }
-    return new DraftLineCorrectionRequest(request.quantity(), request.uom(), request.description(), request.unitPrice(), request.productId(), request.correctionReason(), trustedActor(http));
-  }
-
-  private ReviewActionRequest trustedReviewAction(ReviewActionRequest request, HttpServletRequest http) {
-    return new ReviewActionRequest(trustedActor(http), request == null ? null : request.reason());
-  }
 
   private UUID trustedActor(HttpServletRequest http) {
     UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());

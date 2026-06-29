@@ -66,7 +66,10 @@ public class Stage9IntegrationController {
     // signed) actor context, never from a body-supplied actorId, so a caller cannot forge who created
     // a connector write request. The body carries business intent only.
     UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
-    return toChangeRequest(changeRequestService.createStage9DemoChangeRequest(request.sourceType(), request.sourceId(), request.requestedAction(), request.requestPayloadJson(), actorId));
+    // Wave 01H Category C: the external-write payload is backend-owned. A null payload makes the
+    // domain default to a neutral "{}" — the client cannot inject a payload (e.g. simulateFailure) to
+    // steer demo execution. External execution stays DISABLED.
+    return toChangeRequest(changeRequestService.createStage9DemoChangeRequest(request.sourceType(), request.sourceId(), request.requestedAction(), null, actorId));
   }
 
   @PostMapping("/api/stage9/change-requests/{id}/approve")
@@ -123,7 +126,9 @@ public class Stage9IntegrationController {
   }
 
   private Stage9ChangeRequestResponse toChangeRequest(ChangeRequest request) {
-    return new Stage9ChangeRequestResponse(request.getId(), status(request), request.getTargetSystem(), request.getTargetEntity(), request.getRequestedAction(), request.getSourceType(), request.getValidationStatus(), request.getApprovalStatus(), request.getExecutionStatus(), request.getExternalReference(), request.getFailureReason(), request.getCreatedAt(), request.getApprovedAt(), request.getRejectedAt(), request.getExecutedAt(), request.getConnectorFailureType() == null ? null : request.getConnectorFailureType().name(), request.isConnectorRetryable());
+    // Wave 01H Category D: expose only the operator-safe business rollup `status`; the raw
+    // executionStatus / connector failure type / retryable flag are internal execution machinery.
+    return new Stage9ChangeRequestResponse(request.getId(), status(request), request.getTargetSystem(), request.getTargetEntity(), request.getRequestedAction(), request.getSourceType(), request.getValidationStatus(), request.getApprovalStatus(), request.getExternalReference(), request.getFailureReason(), request.getCreatedAt(), request.getApprovedAt(), request.getRejectedAt(), request.getExecutedAt());
   }
 
   private Stage9ConnectorSyncRunResponse toSyncRun(ConnectorSyncEvent event) {

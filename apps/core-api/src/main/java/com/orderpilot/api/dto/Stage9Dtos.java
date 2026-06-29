@@ -21,15 +21,16 @@ public final class Stage9Dtos {
 
   public record Stage9DemoErpConnectionRequest(String displayName) {}
 
-  // OP-CAP-17F: the connector change-request creator is an authority field resolved server-side from
-  // the trusted actor context (see Stage9IntegrationController#createChangeRequest /
-  // RequestActorResolver). It is never accepted from the request body, so this DTO no longer carries
-  // an actorId — the body holds business intent only.
+  // OP-CAP-17F / Wave 01H Category C: the connector change-request creator is an authority field
+  // resolved server-side from the trusted actor context (see Stage9IntegrationController#createChangeRequest /
+  // RequestActorResolver). The external-write payload (requestPayloadJson) is lower-layer internal
+  // state — a client-supplied value could steer demo execution (e.g. simulateFailure) — so it is NOT
+  // accepted from the request body; the backend builds the canonical payload. The body holds business
+  // intent only.
   public record Stage9ChangeRequestCreateRequest(
       String sourceType,
       UUID sourceId,
-      String requestedAction,
-      String requestPayloadJson
+      String requestedAction
   ) {}
 
   // OP-CAP-32: reject/cancel carry business intent only (the operator's reason). The acting user is
@@ -38,6 +39,9 @@ public final class Stage9Dtos {
   // no longer carries an actorId. A body-supplied actorId is ignored (unknown property).
   public record Stage9ApprovalRequest(String reason) {}
 
+  // Wave 01H Category D: operator-safe connector change-request response. The internal connector
+  // execution machinery (executionStatus, connectorFailureType, connectorRetryable) is not exposed;
+  // the business-facing rollup `status` already conveys execution readiness/outcome in safe terms.
   public record Stage9ChangeRequestResponse(
       UUID id,
       String status,
@@ -47,15 +51,12 @@ public final class Stage9Dtos {
       String sourceType,
       String validationStatus,
       String approvalStatus,
-      String executionStatus,
       String externalReference,
       String failureReason,
       Instant createdAt,
       Instant approvedAt,
       Instant rejectedAt,
-      Instant executedAt,
-      String connectorFailureType,
-      boolean connectorRetryable
+      Instant executedAt
   ) {}
 
   public record Stage9ConnectorSyncRunResponse(

@@ -21,8 +21,12 @@ test("stage9 integration API client exposes tenant-scoped control endpoints", ()
   assert.match(api, /\/api\/stage9\/connectors\/policies/);
   assert.match(api, /\/api\/stage9\/connector-audit/);
   assert.match(api, /X-Tenant-Id/);
-  assert.match(api, /connectorIdempotencyKeyHash/);
-  assert.doesNotMatch(api, /connectorIdempotencyKey\?:/);
+  // Wave 01H Category D: the change-request type is operator-safe — no internal connector/execution
+  // machinery declared in the contract (field declarations checked, not prose).
+  assert.doesNotMatch(api, /executionStatus\s*:/);
+  assert.doesNotMatch(api, /connectorFailureType\s*\??\s*:/);
+  assert.doesNotMatch(api, /connectorRetryable\s*:/);
+  assert.doesNotMatch(api, /connectorIdempotencyKeyHash\s*\??\s*:/);
 });
 
 test("integrations page renders Stage 9A integration control sections", () => {
@@ -35,7 +39,8 @@ test("integrations page renders Stage 9A integration control sections", () => {
   assert.match(syncRuns, /Connector audit timeline/);
   assert.match(auditTimeline, /Connector Audit Timeline/);
   assert.match(queue, /External reference/);
-  assert.match(queue, /maskKeyHash/);
+  // Wave 01H Category D: the queue shows the safe business `status` rollup, not raw connector internals.
+  assert.match(queue, /request\.status/);
 });
 
 test("stage9 integration UI preserves external write safety boundary", () => {
@@ -43,13 +48,13 @@ test("stage9 integration UI preserves external write safety boundary", () => {
   assert.match(control, /Execution mode/);
   assert.match(control, /Credential status/);
   assert.match(control, /Production connector disabled/);
-  assert.match(queue, /Retryable/);
-  assert.match(queue, /Non-retryable/);
-  assert.match(queue, /Manual retry is allowed only for retryable demo failures/);
+  // Wave 01H Category D: the queue no longer surfaces raw connector retry/execution internals; it
+  // states the external-execution-disabled safety boundary in business terms.
+  assert.match(queue, /External execution stays disabled/);
+  assert.doesNotMatch(queue, /connectorRetryable|connectorFailureType|executionStatus/);
   assert.match(control, /Network calls/);
   assert.match(control, /None/);
   assert.match(control, /without production ERP or 1C writes/);
   assert.match(queue, /Only approved validation-backed draft quote\/order ChangeRequests can execute/);
-  assert.match(queue, /connectorIdempotencyKeyHash/);
   assert.doesNotMatch(control + queue + syncRuns + auditTimeline, /sendMessage|reserveInventory|production 1C write|real ERP write|secretValue|connectorIdempotencyKey\)/i);
 });
