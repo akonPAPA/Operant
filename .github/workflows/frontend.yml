@@ -15,12 +15,16 @@ jobs:
       run:
         working-directory: apps/web-dashboard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
         with:
-          node-version: "20"
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
           cache: npm
           cache-dependency-path: apps/web-dashboard/package-lock.json
-      - run: npm install
+      - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run build
+      - run: npm test
