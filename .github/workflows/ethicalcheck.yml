@@ -1,0 +1,37 @@
+name: EthicalCheck API Security Scan
+
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "42 16 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: ethicalcheck-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ethicalcheck:
+    name: EthicalCheck API scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Run EthicalCheck API security scan
+        uses: apisec-inc/ethicalcheck-action@005fac321dd843682b1af6b72f30caaf9952c641
+        with:
+          oas-url: ${{ vars.ETHICALCHECK_OAS_URL }}
+          email: ${{ secrets.ETHICALCHECK_REPORT_EMAIL }}
+          sarif-result-file: "ethicalcheck-results.sarif"
+
+      - name: Upload EthicalCheck SARIF
+        if: ${{ always() && hashFiles('ethicalcheck-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ./ethicalcheck-results.sarif
