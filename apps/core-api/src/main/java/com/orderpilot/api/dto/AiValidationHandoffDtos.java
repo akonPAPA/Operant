@@ -35,20 +35,18 @@ public final class AiValidationHandoffDtos {
       Instant createdAt,
       Instant updatedAt) {}
 
-  public record AiHandoffStartReviewRequest(String reviewedBy) {}
+  public record AiHandoffStartReviewRequest() {}
 
   public record AiHandoffDecisionRequest(
       String decision,
       String reasonCode,
-      String note,
-      String reviewedBy) {}
+      String note) {}
 
   public record AiHandoffCorrectionRequest(
       String correctionSummary,
       String correctedIntent,
       String correctedCustomerRef,
-      Integer correctedLineCount,
-      String reviewedBy) {}
+      Integer correctedLineCount) {}
 
   public record AiHandoffReviewView(
       UUID reviewId,
@@ -66,7 +64,6 @@ public final class AiValidationHandoffDtos {
       String correctedIntent,
       String correctedCustomerRef,
       Integer correctedLineCount,
-      String reviewedBy,
       String externalExecution,
       Instant createdAt,
       Instant updatedAt) {}

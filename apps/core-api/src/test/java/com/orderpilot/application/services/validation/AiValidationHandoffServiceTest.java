@@ -84,6 +84,8 @@ class AiValidationHandoffServiceTest {
   @Autowired private ObjectMapper objectMapper;
 
   private static final Instant T0 = Instant.parse("2026-06-06T00:00:00Z");
+  private static final UUID TRUSTED_ACTOR =
+      UUID.fromString("10000000-0000-0000-0000-000000000001");
 
   @TestConfiguration
   static class JacksonTestConfig {
@@ -348,10 +350,13 @@ class AiValidationHandoffServiceTest {
     long quotes = draftQuoteRepository.count();
     long orders = draftOrderRepository.count();
 
-    var started = reviewService.startReview(handoff.handoffId(), new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest("operator-1"));
+    var started = reviewService.startReview(
+        handoff.handoffId(),
+        TRUSTED_ACTOR);
     var decided = reviewService.decide(handoff.handoffId(),
         new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
-            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", "bounded note", "operator-1"));
+            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", "bounded note"),
+        TRUSTED_ACTOR);
 
     assertThat(started.reviewStatus()).isEqualTo("IN_REVIEW");
     assertThat(decided.reviewStatus()).isEqualTo("DRAFT_PREPARATION_READY");
@@ -376,7 +381,8 @@ class AiValidationHandoffServiceTest {
 
     assertThatThrownBy(() -> reviewService.decide(handoff.handoffId(),
         new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
-            "APPROVE_FOR_DRAFT_PREPARATION", "OVERRIDE", "bounded note", "operator-1")))
+            "APPROVE_FOR_DRAFT_PREPARATION", "OVERRIDE", "bounded note"),
+        TRUSTED_ACTOR))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("not draft eligible");
   }
@@ -394,8 +400,8 @@ class AiValidationHandoffServiceTest {
             "Customer account should be ACME after operator review",
             "RFQ",
             "ACME",
-            1,
-            "operator-1"));
+            1),
+        TRUSTED_ACTOR);
 
     assertThat(review.reviewStatus()).isEqualTo("CORRECTION_REQUESTED");
     assertThat(review.correctionSummary()).contains("ACME");
@@ -430,11 +436,13 @@ class AiValidationHandoffServiceTest {
     AiValidationHandoffView handoff = handoffService.generate(validationId);
     reviewService.decide(handoff.handoffId(),
         new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest(
-            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", null, "operator-1"));
+            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", null),
+        TRUSTED_ACTOR);
 
     assertThatThrownBy(() -> reviewService.recordCorrection(handoff.handoffId(),
         new com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest(
-            "later change", null, null, null, "operator-1")))
+            "later change", null, null, null),
+        TRUSTED_ACTOR))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("already terminal");
   }
