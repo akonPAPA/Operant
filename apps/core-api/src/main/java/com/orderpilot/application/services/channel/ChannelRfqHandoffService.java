@@ -227,10 +227,7 @@ public class ChannelRfqHandoffService {
   private static ChannelRfqHandoffResponse toResponse(ChannelRfqHandoff handoff) {
     return new ChannelRfqHandoffResponse(
         handoff.getId(),
-        handoff.getInboundChannelEventId(),
-        handoff.getChannelConnectionId(),
         handoff.getSourceChannel(),
-        handoff.getSourceExternalEventId(),
         handoff.getSourceActorExternalId(),
         handoff.getCustomerAccountId(),
         handoff.getCustomerContactId(),
@@ -238,7 +235,6 @@ public class ChannelRfqHandoffService {
         preview(handoff.getRequestText()),
         handoff.getDetectedIntent(),
         handoff.getStatus().name(),
-        handoff.getReviewerUserId(),
         handoff.getReviewStartedAt(),
         handoff.getDismissedAt(),
         handoff.getDismissReason(),

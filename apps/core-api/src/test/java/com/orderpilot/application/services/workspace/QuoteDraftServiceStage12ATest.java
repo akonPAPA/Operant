@@ -246,7 +246,8 @@ class QuoteDraftServiceStage12ATest {
 
     QuoteTransactionResponse response = service.createFromRfq(command(tenantId, "CUST-1", null, "UNKNOWN", "1", "0.00", null));
 
-    assertThat(response.auditCorrelationId()).isNotNull();
+    // auditCorrelationId is kept internal (audit only) and no longer exposed on the response.
+    assertThat(response.draftQuoteId()).isNotNull();
     assertThat(auditEvents.findAll()).extracting("action").contains("DRAFT_QUOTE_RFQ_CREATE_REQUESTED", "DRAFT_QUOTE_CREATED");
   }
 
@@ -276,7 +277,8 @@ class QuoteDraftServiceStage12ATest {
 
     assertThat(response.previousStatus()).isEqualTo("DRAFT");
     assertThat(response.newStatus()).isEqualTo("APPROVED");
-    assertThat(response.auditCorrelationId()).isNotNull();
+    // auditCorrelationId is kept internal (audit only); the audit trail below proves it was recorded.
+    assertThat(response.approvalDecision()).isEqualTo("APPROVE");
     assertThat(auditEvents.findAll()).extracting("action").contains("quote.approved", "approval.decision.recorded");
   }
 
@@ -428,7 +430,7 @@ class QuoteDraftServiceStage12ATest {
 
     assertThat(converted.newStatus()).isEqualTo("CONVERTED_TO_INTERNAL_ORDER");
     assertThat(converted.internalDraftOrderId()).isNotNull();
-    assertThat(converted.externalExecutionStatus()).isEqualTo("EXTERNAL_EXECUTION_DISABLED");
+    assertThat(converted.externalExecutionEnabled()).isFalse();
     assertThat(replay.internalDraftOrderId()).isEqualTo(converted.internalDraftOrderId());
     assertThat(internalOrderBoundaries.findByTenantIdAndDraftQuoteId(tenantId, quote.draftQuoteId())).isPresent();
     assertThat(auditEvents.findAll()).extracting("action").contains("quote.converted_to_internal_order");
@@ -462,7 +464,7 @@ class QuoteDraftServiceStage12ATest {
     // Only after APPROVED does conversion to the internal-only boundary succeed.
     QuoteApprovalCommandResponse converted = approvalService.convertApprovedQuoteToInternalDraftOrder(quote.draftQuoteId(), decision(tenantId, "convert"));
     assertThat(converted.newStatus()).isEqualTo("CONVERTED_TO_INTERNAL_ORDER");
-    assertThat(converted.externalExecutionStatus()).isEqualTo("EXTERNAL_EXECUTION_DISABLED");
+    assertThat(converted.externalExecutionEnabled()).isFalse();
   }
 
   private UUID tenant() {

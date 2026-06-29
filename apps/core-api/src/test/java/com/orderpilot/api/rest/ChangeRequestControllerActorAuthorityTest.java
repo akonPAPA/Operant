@@ -109,11 +109,9 @@ class ChangeRequestControllerActorAuthorityTest {
             "APPROVED",
             "CANCELLED",
             java.util.List.of(),
-            null,
+            false,
             changeRequestId,
-            null,
-            null,
-            "EXECUTION_DISABLED",
+            false,
             java.util.List.of()));
 
     mockMvc.perform(post("/api/v1/change-requests/{id}/cancel", changeRequestId)

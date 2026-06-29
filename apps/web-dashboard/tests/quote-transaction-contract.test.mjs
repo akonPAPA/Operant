@@ -74,6 +74,19 @@ test("channel-to-quote response contract exposes no raw internal identifiers", (
   assert.match(block, /reviewRequired/);
 });
 
+// Wave 01J: the Stage12A approval response contract must not declare internal audit/actor/execution
+// internals. External execution is surfaced as a safe boolean only.
+test("approval state/command response contracts expose no audit/actor/internal-execution fields", () => {
+  for (const typeName of ["QuoteApprovalState", "QuoteApprovalCommandResponse", "QuoteTransactionResponse"]) {
+    const block = typeBlock(apiClient, typeName);
+    assert.doesNotMatch(block, /\b(auditCorrelationId|decidedBy|externalExecutionStatus|actorId|actorRole)\??:/, typeName);
+  }
+  const state = typeBlock(apiClient, "QuoteApprovalState");
+  assert.match(state, /externalExecutionEnabled:\s*boolean/);
+  const command = typeBlock(apiClient, "QuoteApprovalCommandResponse");
+  assert.match(command, /externalExecutionEnabled:\s*boolean/);
+});
+
 test("non-2xx responses map to safe messages, never raw backend body dumps", () => {
   assert.match(apiClient, /function safeErrorMessage\(status: number\)/);
   assert.match(apiClient, /throw new Error\(safeErrorMessage\(response\.status\)\)/);

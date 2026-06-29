@@ -37,7 +37,7 @@ public class QuoteExternalWritePreparationService {
   public QuoteHandoffResponse prepareSnapshot(UUID quoteId, QuoteHandoffCommand command) {
     QuoteHandoffSnapshot snapshot = snapshotService.prepare(quoteId, command);
     var quote = readinessService.getQuote(TenantContext.requireTenantId(), quoteId);
-    return new QuoteHandoffResponse(quoteId, quote.getStatus(), "HANDOFF_PREPARED", List.of(), snapshot.getId(), null, snapshot.getPayloadHash(), snapshot.getIdempotencyKey(), "EXECUTION_DISABLED", List.of("CREATE_CHANGE_REQUEST_DRAFT"));
+    return new QuoteHandoffResponse(quoteId, quote.getStatus(), "HANDOFF_PREPARED", List.of(), snapshot != null, null, false, List.of("CREATE_CHANGE_REQUEST_DRAFT"));
   }
 
   @Transactional
@@ -61,7 +61,7 @@ public class QuoteExternalWritePreparationService {
       changeRequestService.blockStage11E(request.getId(), "Stage 11E must not create connector commands");
       throw new QuoteHandoffViolation("Stage 11E must not create connector commands");
     }
-    return new QuoteHandoffResponse(quoteId, quote.getStatus(), "HANDOFF_PREPARED", List.of(), snapshot.getId(), request.getId(), snapshot.getPayloadHash(), request.getIdempotencyKey(), request.getExecutionStatus(), List.of("APPROVE_INTERNAL", "CANCEL"));
+    return new QuoteHandoffResponse(quoteId, quote.getStatus(), "HANDOFF_PREPARED", List.of(), snapshot != null, request.getId(), false, List.of("APPROVE_INTERNAL", "CANCEL"));
   }
 
   @Transactional
@@ -77,8 +77,7 @@ public class QuoteExternalWritePreparationService {
   }
 
   private QuoteHandoffResponse response(ChangeRequest request, List<String> allowedActions) {
-    QuoteHandoffSnapshot snapshot = request.getPayloadSnapshotId() == null ? null : snapshotService.get(request.getPayloadSnapshotId());
-    return new QuoteHandoffResponse(request.getSourceId(), "APPROVED", request.getApprovalStatus(), List.of(), request.getPayloadSnapshotId(), request.getId(), request.getPayloadHash(), request.getIdempotencyKey(), request.getExecutionStatus(), allowedActions);
+    return new QuoteHandoffResponse(request.getSourceId(), "APPROVED", request.getApprovalStatus(), List.of(), request.getPayloadSnapshotId() != null, request.getId(), false, allowedActions);
   }
 
   private static String valueOr(String value, String fallback) {

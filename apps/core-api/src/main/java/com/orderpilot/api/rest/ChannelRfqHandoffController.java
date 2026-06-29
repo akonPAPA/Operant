@@ -3,7 +3,6 @@ package com.orderpilot.api.rest;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.ChannelRfqHandoffResponse;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.DismissRfqHandoffRequest;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.MarkConvertedRfqHandoffRequest;
-import com.orderpilot.api.dto.ChannelRfqHandoffDtos.StartReviewRfqHandoffRequest;
 import com.orderpilot.application.services.channel.ChannelRfqHandoffService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
@@ -56,12 +55,12 @@ public class ChannelRfqHandoffController {
     return handoffService.get(id);
   }
 
-  /** Take a handoff into review (PENDING_REVIEW -&gt; IN_REVIEW). */
+  /**
+   * Take a handoff into review (PENDING_REVIEW -&gt; IN_REVIEW). Carries no client payload: the
+   * acting reviewer is resolved from the trusted request context, never from the request body.
+   */
   @PostMapping("/api/v1/channels/rfq-handoffs/{id}/start-review")
-  public ChannelRfqHandoffResponse startReview(
-      @PathVariable UUID id,
-      @RequestBody(required = false) StartReviewRfqHandoffRequest request,
-      HttpServletRequest http) {
+  public ChannelRfqHandoffResponse startReview(@PathVariable UUID id, HttpServletRequest http) {
     return handoffService.startReview(id, trustedActor(http));
   }
 

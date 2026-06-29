@@ -54,7 +54,7 @@ class QuoteTransactionSecurityTest {
   @Test
   void quoteReadRequiresQuoteReadPermission() throws Exception {
     UUID quoteId = UUID.randomUUID();
-    when(approvalStateMachineService.getQuoteApprovalState(quoteId)).thenReturn(new QuoteApprovalStateResponse(quoteId, "DRAFT", false, List.of(), List.of(), List.of(), null, null, null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID()));
+    when(approvalStateMachineService.getQuoteApprovalState(quoteId)).thenReturn(new QuoteApprovalStateResponse(quoteId, "DRAFT", false, List.of(), List.of(), List.of(), null, null, null, false));
 
     mockMvc.perform(get("/api/v1/quotes/" + quoteId + "/approval-state")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "AUTHENTICATED_PROBE"))
@@ -70,7 +70,7 @@ class QuoteTransactionSecurityTest {
   @Test
   void quoteApprovalMutationRequiresQuoteActionPermission() throws Exception {
     UUID quoteId = UUID.randomUUID();
-    when(approvalStateMachineService.approveQuote(eq(quoteId), any())).thenReturn(new QuoteApprovalCommandResponse(quoteId, "PENDING_APPROVAL", "APPROVED", false, "APPROVE", List.of(), List.of(), null, null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID()));
+    when(approvalStateMachineService.approveQuote(eq(quoteId), any())).thenReturn(new QuoteApprovalCommandResponse(quoteId, "PENDING_APPROVAL", "APPROVED", false, "APPROVE", List.of(), List.of(), null, null, false));
 
     mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/approve")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_READ")

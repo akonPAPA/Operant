@@ -79,6 +79,25 @@ class ChannelRfqHandoffControllerAuthorityBoundaryTest {
   }
 
   @Test
+  void markConvertedUsesTrustedActorAndIgnoresClientAuthorityFields() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID handoffId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+
+    mockMvc.perform(post("/api/v1/channels/rfq-handoffs/{id}/mark-converted", handoffId)
+            .header("X-Tenant-Id", tenant.toString())
+            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"conversionNote\":\"done\",\"actorUserId\":\"" + spoofActor
+                + "\",\"executionStatus\":\"EXECUTED\"}"))
+        .andExpect(status().isOk());
+
+    verify(handoffService).markConverted(handoffId, "done", trustedActor);
+  }
+
+  @Test
   void mutationWithoutChannelPermissionIsDeniedBeforeServiceInvocation() throws Exception {
     UUID tenant = UUID.randomUUID();
     UUID handoffId = UUID.randomUUID();

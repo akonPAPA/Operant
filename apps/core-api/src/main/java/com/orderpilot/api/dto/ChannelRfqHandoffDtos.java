@@ -15,13 +15,18 @@ import java.util.UUID;
 public final class ChannelRfqHandoffDtos {
   private ChannelRfqHandoffDtos() {}
 
-  /** Stable operator view of a single RFQ handoff record, including workflow metadata. */
+  /**
+   * Operator-safe view of a single RFQ handoff record plus workflow metadata.
+   *
+   * <p>Exposes only what the operator review screen needs: the handoff handle, the source channel and
+   * the channel sender identifier, the linked tenant customer/contact handles, the request text/preview,
+   * detected intent, status, and workflow timestamps/notes. It deliberately omits internal actor and
+   * raw source/correlation identifiers: the reviewing Operant user id, the inbound channel event id,
+   * the channel connection id, and the raw external provider event id.
+   */
   public record ChannelRfqHandoffResponse(
       UUID id,
-      UUID inboundChannelEventId,
-      UUID channelConnectionId,
       String sourceChannel,
-      String sourceExternalEventId,
       String sourceActorExternalId,
       UUID customerAccountId,
       UUID customerContactId,
@@ -29,7 +34,6 @@ public final class ChannelRfqHandoffDtos {
       String requestPreview,
       String detectedIntent,
       String status,
-      UUID reviewerUserId,
       Instant reviewStartedAt,
       Instant dismissedAt,
       String dismissReason,
@@ -38,12 +42,19 @@ public final class ChannelRfqHandoffDtos {
       Instant createdAt,
       Instant updatedAt) {}
 
-  /** OP-CAP-06C: take a handoff into review. Reviewer id optional (no enforced auth principal yet). */
-  public record StartReviewRfqHandoffRequest(UUID reviewerUserId) {}
+  /**
+   * OP-CAP-06C: dismiss a handoff as invalid/irrelevant. {@code reason} must be non-blank.
+   *
+   * <p>Business intent only. The acting reviewer is resolved from the trusted request context
+   * ({@link com.orderpilot.security.RequestActorResolver}) — never from the request body.
+   */
+  public record DismissRfqHandoffRequest(String reason) {}
 
-  /** OP-CAP-06C: dismiss a handoff as invalid/irrelevant. {@code reason} must be non-blank. */
-  public record DismissRfqHandoffRequest(String reason, UUID actorUserId) {}
-
-  /** OP-CAP-06C: mark a handoff converted (workflow complete). No quote/order is created here. */
-  public record MarkConvertedRfqHandoffRequest(String conversionNote, UUID actorUserId) {}
+  /**
+   * OP-CAP-06C: mark a handoff converted (workflow complete). No quote/order is created here.
+   *
+   * <p>Business intent only. The acting reviewer is resolved from the trusted request context
+   * ({@link com.orderpilot.security.RequestActorResolver}) — never from the request body.
+   */
+  public record MarkConvertedRfqHandoffRequest(String conversionNote) {}
 }

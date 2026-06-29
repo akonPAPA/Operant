@@ -101,10 +101,10 @@ class QuoteTransactionAuthorityContractTest {
   }
 
   private QuoteTransactionResponse rfqResponse() {
-    return new QuoteTransactionResponse(UUID.randomUUID(), "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of());
+    return new QuoteTransactionResponse(UUID.randomUUID(), "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), List.of());
   }
 
   private QuoteApprovalCommandResponse approvalResponse(UUID quoteId) {
-    return new QuoteApprovalCommandResponse(quoteId, "PENDING_APPROVAL", "APPROVED", false, "APPROVE", List.of(), List.of(), null, null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID());
+    return new QuoteApprovalCommandResponse(quoteId, "PENDING_APPROVAL", "APPROVED", false, "APPROVE", List.of(), List.of(), null, null, false);
   }
 }

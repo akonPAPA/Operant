@@ -66,6 +66,20 @@ test("api client type exposes no secret or raw payload fields", () => {
   assert.doesNotMatch(api, /rawPayloadJson|rawPayload\b/i);
 });
 
+test("RfqHandoff response type declares no internal actor or raw source/correlation ids", () => {
+  // Category D: the operator-safe response contract must not reintroduce these fields.
+  const typeBlock = api.slice(api.indexOf("export type RfqHandoff ="), api.indexOf("export type RfqHandoffApiResult"));
+  assert.doesNotMatch(typeBlock, /reviewerUserId/);
+  assert.doesNotMatch(typeBlock, /inboundChannelEventId/);
+  assert.doesNotMatch(typeBlock, /channelConnectionId/);
+  assert.doesNotMatch(typeBlock, /sourceExternalEventId/);
+  // Still exposes the business fields the operator screen needs.
+  assert.match(typeBlock, /sourceChannel/);
+  assert.match(typeBlock, /sourceActorExternalId/);
+  assert.match(typeBlock, /requestPreview/);
+  assert.match(typeBlock, /status/);
+});
+
 test("api client status helpers cover all four statuses", () => {
   assert.match(api, /statusLabel/);
   assert.match(api, /statusClass/);

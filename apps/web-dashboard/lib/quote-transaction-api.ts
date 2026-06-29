@@ -50,7 +50,6 @@ export type QuoteTransactionResponse = {
   }>;
   approvalRequired: boolean;
   approvalReasons: string[];
-  auditCorrelationId: string;
   approvalRequests: Array<{
     id: string;
     lineId?: string;
@@ -74,16 +73,13 @@ export type QuoteApprovalState = {
     approvalRequestId?: string;
     decision: string;
     comment?: string;
-    decidedBy?: string;
     decidedAt: string;
     previousQuoteStatus: string;
     newQuoteStatus: string;
-    auditCorrelationId: string;
   } | null;
   internalDraftOrderId?: string | null;
   changeRequestId?: string | null;
-  externalExecutionStatus: string;
-  auditCorrelationId: string;
+  externalExecutionEnabled: boolean;
 };
 
 export type QuoteApprovalCommandResponse = {
@@ -96,8 +92,7 @@ export type QuoteApprovalCommandResponse = {
   approvalReasons: string[];
   internalDraftOrderId?: string | null;
   changeRequestId?: string | null;
-  externalExecutionStatus: string;
-  auditCorrelationId: string;
+  externalExecutionEnabled: boolean;
 };
 
 // OP-CAP-32: operator-safe conversion result. The backend deliberately withholds internal

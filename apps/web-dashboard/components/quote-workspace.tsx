@@ -146,7 +146,6 @@ export function QuoteWorkspace() {
             <p>Status: {result.status}</p>
             <p>Customer: {result.resolvedCustomer?.displayName ?? "Unresolved"}</p>
             <p>Approval: {result.approvalRequired ? result.approvalReasons.join(", ") : "Not required"}</p>
-            <p>Audit correlation: {result.auditCorrelationId}</p>
             <p>External ERP write: disabled / not executed</p>
           </section>
           <section className="panel">
@@ -169,8 +168,7 @@ export function QuoteWorkspace() {
                 <p>New status: {approvalResult.newStatus}</p>
                 <p>Internal draft order boundary: {approvalResult.internalDraftOrderId ?? "Not created"}</p>
                 <p>ChangeRequest: {approvalResult.changeRequestId ?? "Not created"}</p>
-                <p>External execution: {approvalResult.externalExecutionStatus}</p>
-                <p>Audit correlation: {approvalResult.auditCorrelationId}</p>
+                <p>External execution: {approvalResult.externalExecutionEnabled ? "Enabled" : "Disabled (no external write)"}</p>
               </div>
             ) : null}
           </section>

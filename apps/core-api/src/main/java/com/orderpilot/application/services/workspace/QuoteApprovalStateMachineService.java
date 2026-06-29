@@ -52,7 +52,7 @@ public class QuoteApprovalStateMachineService {
     CommandContext ctx = context(command);
     DraftQuote quote = quoteForTransition(ctx.tenantId(), quoteId);
     if ("APPROVED".equals(quote.getStatus())) {
-      return commandResponse(ctx.tenantId(), quote, "APPROVED", "APPROVE", quote.getAuditCorrelationId());
+      return commandResponse(ctx.tenantId(), quote, "APPROVED", "APPROVE");
     }
     requireNotTerminalForDecision(quote);
     List<QuoteValidationIssue> hardBlockers = hardBlockers(ctx.tenantId(), quoteId);
@@ -76,7 +76,7 @@ public class QuoteApprovalStateMachineService {
     QuoteApprovalDecision decision = recordDecision(ctx, quote, command == null ? null : command.approvalRequestId(), "APPROVE", previous, "APPROVED", reason(command), reasons(openApprovals), List.of(), auditCorrelationId);
     auditEventService.record("quote.approved", "DRAFT_QUOTE", quote.getId().toString(), ctx.actorId(), metadata(ctx.tenantId(), quote.getId(), previous, "APPROVED", "APPROVE", reason(command), reasons(openApprovals), List.of(), auditCorrelationId, null));
     auditEventService.record("approval.decision.recorded", "QUOTE_APPROVAL_DECISION", decision.getId().toString(), ctx.actorId(), metadata(ctx.tenantId(), quote.getId(), previous, "APPROVED", "APPROVE", reason(command), reasons(openApprovals), List.of(), auditCorrelationId, null));
-    return commandResponse(ctx.tenantId(), quote, previous, "APPROVE", auditCorrelationId);
+    return commandResponse(ctx.tenantId(), quote, previous, "APPROVE");
   }
 
   @Transactional
@@ -98,7 +98,7 @@ public class QuoteApprovalStateMachineService {
     DraftQuote quote = quoteForTransition(ctx.tenantId(), quoteId);
     if ("CONVERTED_TO_INTERNAL_ORDER".equals(quote.getStatus())) {
       QuoteInternalOrderBoundary existing = boundaryRepository.findByTenantIdAndDraftQuoteId(ctx.tenantId(), quoteId).orElseThrow(() -> new QuoteLifecycleViolation("Converted quote is missing its internal boundary record"));
-      return commandResponse(ctx.tenantId(), quote, "CONVERTED_TO_INTERNAL_ORDER", "CONVERT", existing.getId(), existing.getChangeRequestId(), existing.getExternalExecutionStatus(), quote.getAuditCorrelationId());
+      return commandResponse(ctx.tenantId(), quote, "CONVERTED_TO_INTERNAL_ORDER", "CONVERT", existing.getId(), existing.getChangeRequestId(), externalExecutionEnabled(existing.getExternalExecutionStatus()));
     }
     if (!"APPROVED".equals(quote.getStatus())) {
       auditBlocked(ctx, quote, "CONVERT", List.of());
@@ -114,7 +114,7 @@ public class QuoteApprovalStateMachineService {
     quote = quoteRepository.save(quote);
     UUID auditCorrelationId = UUID.randomUUID();
     auditEventService.record("quote.converted_to_internal_order", "DRAFT_QUOTE", quote.getId().toString(), ctx.actorId(), metadata(ctx.tenantId(), quoteId, previous, quote.getStatus(), "CONVERT", reason(command), List.of(), List.of(), auditCorrelationId, boundary.getId()));
-    return commandResponse(ctx.tenantId(), quote, previous, "CONVERT", boundary.getId(), boundary.getChangeRequestId(), boundary.getExternalExecutionStatus(), auditCorrelationId);
+    return commandResponse(ctx.tenantId(), quote, previous, "CONVERT", boundary.getId(), boundary.getChangeRequestId(), externalExecutionEnabled(boundary.getExternalExecutionStatus()));
   }
 
   private QuoteApprovalCommandResponse terminalDecision(UUID quoteId, QuoteApprovalDecisionCommand command, String decisionType, String newStatus, String auditAction) {
@@ -137,7 +137,7 @@ public class QuoteApprovalStateMachineService {
     QuoteApprovalDecision decision = recordDecision(ctx, quote, command == null ? null : command.approvalRequestId(), decisionType, previous, newStatus, reason(command), reasons(openApprovals), hardBlockers(ctx.tenantId(), quoteId).stream().map(QuoteValidationIssue::getIssueCode).toList(), auditCorrelationId);
     auditEventService.record(auditAction, "DRAFT_QUOTE", quote.getId().toString(), ctx.actorId(), metadata(ctx.tenantId(), quoteId, previous, newStatus, decisionType, reason(command), reasons(openApprovals), List.of(), auditCorrelationId, null));
     auditEventService.record("approval.decision.recorded", "QUOTE_APPROVAL_DECISION", decision.getId().toString(), ctx.actorId(), metadata(ctx.tenantId(), quoteId, previous, newStatus, decisionType, reason(command), reasons(openApprovals), List.of(), auditCorrelationId, null));
-    return commandResponse(ctx.tenantId(), quote, previous, decisionType, auditCorrelationId);
+    return commandResponse(ctx.tenantId(), quote, previous, decisionType);
   }
 
   private QuoteApprovalStateResponse state(UUID tenantId, DraftQuote quote) {
@@ -155,20 +155,28 @@ public class QuoteApprovalStateMachineService {
         Stage12ADtos.ApprovalDecision.from(latest),
         boundary == null ? null : boundary.getId(),
         boundary == null ? null : boundary.getChangeRequestId(),
-        boundary == null ? "EXTERNAL_EXECUTION_DISABLED" : boundary.getExternalExecutionStatus(),
-        quote.getAuditCorrelationId());
+        boundary != null && externalExecutionEnabled(boundary.getExternalExecutionStatus()));
   }
 
-  private QuoteApprovalCommandResponse commandResponse(UUID tenantId, DraftQuote quote, String previous, String decision, UUID auditCorrelationId) {
-    return commandResponse(tenantId, quote, previous, decision, null, null, "EXTERNAL_EXECUTION_DISABLED", auditCorrelationId);
+  /**
+   * Maps the lower-layer external execution status to a safe business boolean. Operant keeps external
+   * (ERP/connector) writes disabled, so this is false unless the boundary is explicitly enabled — the
+   * raw internal status string is never exposed on the response.
+   */
+  private static boolean externalExecutionEnabled(String externalExecutionStatus) {
+    return "EXTERNAL_EXECUTION_ENABLED".equals(externalExecutionStatus);
   }
 
-  private QuoteApprovalCommandResponse commandResponse(UUID tenantId, DraftQuote quote, String previous, String decision, UUID internalDraftOrderId, UUID changeRequestId, String externalExecutionStatus, UUID auditCorrelationId) {
+  private QuoteApprovalCommandResponse commandResponse(UUID tenantId, DraftQuote quote, String previous, String decision) {
+    return commandResponse(tenantId, quote, previous, decision, null, null, false);
+  }
+
+  private QuoteApprovalCommandResponse commandResponse(UUID tenantId, DraftQuote quote, String previous, String decision, UUID internalDraftOrderId, UUID changeRequestId, boolean externalExecutionEnabled) {
     List<QuoteValidationIssue> blocking = issueRepository.findByTenantIdAndDraftQuoteIdOrderByCreatedAtAsc(tenantId, quote.getId()).stream()
         .filter(issue -> issue.isBlocking() && "OPEN".equals(issue.getStatus()))
         .toList();
     List<QuoteApprovalRequest> open = openApprovals(tenantId, quote.getId());
-    return new QuoteApprovalCommandResponse(quote.getId(), previous, quote.getStatus(), !open.isEmpty() || quote.isRequiresHumanReview(), decision, blocking.stream().map(ValidationIssue::from).toList(), reasons(open), internalDraftOrderId, changeRequestId, externalExecutionStatus, auditCorrelationId);
+    return new QuoteApprovalCommandResponse(quote.getId(), previous, quote.getStatus(), !open.isEmpty() || quote.isRequiresHumanReview(), decision, blocking.stream().map(ValidationIssue::from).toList(), reasons(open), internalDraftOrderId, changeRequestId, externalExecutionEnabled);
   }
 
   private void requireNotTerminalForDecision(DraftQuote quote) {

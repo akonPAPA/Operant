@@ -66,7 +66,6 @@ public final class Stage12ADtos {
       List<SubstituteCandidate> substituteCandidates,
       boolean approvalRequired,
       List<String> approvalReasons,
-      UUID auditCorrelationId,
       List<ApprovalRequest> approvalRequests) {
     public static QuoteTransactionResponse from(
         DraftQuote quote,
@@ -84,7 +83,6 @@ public final class Stage12ADtos {
           candidates,
           !approvals.isEmpty(),
           approvals.stream().map(QuoteApprovalRequest::getReasonCode).distinct().toList(),
-          quote.getAuditCorrelationId(),
           approvals.stream().map(ApprovalRequest::from).toList());
     }
   }
@@ -138,6 +136,10 @@ public final class Stage12ADtos {
     }
   }
 
+  // Operator-safe approval state. Internal audit correlation id and the lower-layer external
+  // execution status string are deliberately omitted; external execution is surfaced only as a
+  // safe business boolean. internalDraftOrderId/changeRequestId are retained as tenant-scoped
+  // business resource handles the operator screen uses.
   public record QuoteApprovalStateResponse(
       UUID quoteId,
       String status,
@@ -148,8 +150,7 @@ public final class Stage12ADtos {
       ApprovalDecision approvalDecision,
       UUID internalDraftOrderId,
       UUID changeRequestId,
-      String externalExecutionStatus,
-      UUID auditCorrelationId) {}
+      boolean externalExecutionEnabled) {}
 
   public record QuoteApprovalCommandResponse(
       UUID quoteId,
@@ -161,24 +162,23 @@ public final class Stage12ADtos {
       List<String> approvalReasons,
       UUID internalDraftOrderId,
       UUID changeRequestId,
-      String externalExecutionStatus,
-      UUID auditCorrelationId) {}
+      boolean externalExecutionEnabled) {}
 
+  // Operator-safe decision view: the deciding Operant user id (decidedBy) and the internal audit
+  // correlation id are omitted; the decision, comment, timestamp and status transition remain.
   public record ApprovalDecision(
       UUID id,
       UUID approvalRequestId,
       String decision,
       String comment,
-      UUID decidedBy,
       Instant decidedAt,
       String previousQuoteStatus,
-      String newQuoteStatus,
-      UUID auditCorrelationId) {
+      String newQuoteStatus) {
     public static ApprovalDecision from(com.orderpilot.domain.workspace.QuoteApprovalDecision decision) {
       if (decision == null) {
         return null;
       }
-      return new ApprovalDecision(decision.getId(), decision.getApprovalRequestId(), decision.getDecision(), decision.getDecisionComment(), decision.getDecidedBy(), decision.getDecidedAt(), decision.getPreviousQuoteStatus(), decision.getNewQuoteStatus(), decision.getAuditCorrelationId());
+      return new ApprovalDecision(decision.getId(), decision.getApprovalRequestId(), decision.getDecision(), decision.getDecisionComment(), decision.getDecidedAt(), decision.getPreviousQuoteStatus(), decision.getNewQuoteStatus());
     }
   }
 }
