@@ -58,12 +58,14 @@ class ChannelRfqHandoffServiceTest {
 
     assertThat(response.id()).isNotNull();
     assertThat(response.status()).isEqualTo("PENDING_REVIEW");
-    assertThat(response.inboundChannelEventId()).isEqualTo(event.getId());
     assertThat(response.sourceChannel()).isEqualTo("TELEGRAM");
-    assertThat(response.sourceExternalEventId()).isEqualTo("evt-1");
     assertThat(response.requestText()).isEqualTo("Please quote 10 of BRK-100");
     assertThat(response.detectedIntent()).isEqualTo("RFQ_REQUEST");
-    assertThat(handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)).hasSize(1);
+    // Internal source/correlation linkage is persisted server-side but NOT exposed on the response.
+    var saved = handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    assertThat(saved).hasSize(1);
+    assertThat(saved.get(0).getInboundChannelEventId()).isEqualTo(event.getId());
+    assertThat(saved.get(0).getSourceExternalEventId()).isEqualTo("evt-1");
   }
 
   @Test void duplicateSourceEventReturnsExistingHandoffWithoutInsertingDuplicate() {
@@ -163,8 +165,10 @@ class ChannelRfqHandoffServiceTest {
     ChannelRfqHandoffResponse response = handoffService.startReview(id, reviewer);
 
     assertThat(response.status()).isEqualTo("IN_REVIEW");
-    assertThat(response.reviewerUserId()).isEqualTo(reviewer);
     assertThat(response.reviewStartedAt()).isNotNull();
+    // Reviewer is recorded server-side for audit/attribution but is NOT exposed on the operator response.
+    var saved = handoffRepository.findByIdAndTenantId(id, tenantId).orElseThrow();
+    assertThat(saved.getReviewerUserId()).isEqualTo(reviewer);
   }
 
   @Test void startReviewFromDismissedFails() {

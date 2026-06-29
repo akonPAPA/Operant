@@ -63,7 +63,6 @@ class QuoteTransactionControllerTest {
         List.of(),
         false,
         List.of(),
-        UUID.randomUUID(),
         List.of()));
 
     CreateDraftQuoteFromRfqCommand request = new CreateDraftQuoteFromRfqCommand(
@@ -101,14 +100,19 @@ class QuoteTransactionControllerTest {
         null,
         null,
         null,
-        "EXTERNAL_EXECUTION_DISABLED",
-        UUID.randomUUID()));
+        false));
 
     mockMvc.perform(get("/api/v1/quotes/" + quoteId + "/approval-state").header("X-Tenant-Id", UUID.randomUUID().toString()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.quoteId").value(quoteId.toString()))
         .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
-        .andExpect(jsonPath("$.approvalRequired").value(true));
+        .andExpect(jsonPath("$.approvalRequired").value(true))
+        .andExpect(jsonPath("$.externalExecutionEnabled").value(false))
+        // Category D: internal audit/actor/execution internals must not leak on the response.
+        .andExpect(jsonPath("$.auditCorrelationId").doesNotExist())
+        .andExpect(jsonPath("$.externalExecutionStatus").doesNotExist())
+        .andExpect(jsonPath("$.approvalDecision.decidedBy").doesNotExist())
+        .andExpect(jsonPath("$.approvalDecision.auditCorrelationId").doesNotExist());
   }
 
   @Test
@@ -118,7 +122,7 @@ class QuoteTransactionControllerTest {
     QuoteApprovalCommandResponse approved = response(quoteId, "PENDING_APPROVAL", "APPROVED", "APPROVE");
     QuoteApprovalCommandResponse rejected = response(quoteId, "PENDING_APPROVAL", "REJECTED", "REJECT");
     QuoteApprovalCommandResponse changes = response(quoteId, "PENDING_APPROVAL", "CHANGES_REQUESTED", "REQUEST_CHANGES");
-    QuoteApprovalCommandResponse converted = new QuoteApprovalCommandResponse(quoteId, "APPROVED", "CONVERTED_TO_INTERNAL_ORDER", false, "CONVERT", List.of(), List.of(), UUID.randomUUID(), null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID());
+    QuoteApprovalCommandResponse converted = new QuoteApprovalCommandResponse(quoteId, "APPROVED", "CONVERTED_TO_INTERNAL_ORDER", false, "CONVERT", List.of(), List.of(), UUID.randomUUID(), null, false);
     when(approvalStateMachineService.approveQuote(eq(quoteId), any())).thenReturn(approved);
     when(approvalStateMachineService.rejectQuote(eq(quoteId), any())).thenReturn(rejected);
     when(approvalStateMachineService.requestQuoteChanges(eq(quoteId), any())).thenReturn(changes);
@@ -132,7 +136,7 @@ class QuoteTransactionControllerTest {
     mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/request-changes").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).header("Idempotency-Key", "changes-key").content(objectMapper.writeValueAsString(command)))
         .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CHANGES_REQUESTED"));
     mockMvc.perform(post("/api/v1/quotes/" + quoteId + "/convert-to-internal-order").contentType("application/json").header("X-Tenant-Id", tenantId.toString()).header("Idempotency-Key", "convert-key").content(objectMapper.writeValueAsString(command)))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CONVERTED_TO_INTERNAL_ORDER")).andExpect(jsonPath("$.externalExecutionStatus").value("EXTERNAL_EXECUTION_DISABLED"));
+        .andExpect(status().isOk()).andExpect(jsonPath("$.newStatus").value("CONVERTED_TO_INTERNAL_ORDER")).andExpect(jsonPath("$.externalExecutionEnabled").value(false)).andExpect(jsonPath("$.externalExecutionStatus").doesNotExist()).andExpect(jsonPath("$.auditCorrelationId").doesNotExist());
   }
 
   @Test
@@ -160,6 +164,6 @@ class QuoteTransactionControllerTest {
   }
 
   private QuoteApprovalCommandResponse response(UUID quoteId, String previous, String next, String decision) {
-    return new QuoteApprovalCommandResponse(quoteId, previous, next, false, decision, List.of(), List.of(), null, null, "EXTERNAL_EXECUTION_DISABLED", UUID.randomUUID());
+    return new QuoteApprovalCommandResponse(quoteId, previous, next, false, decision, List.of(), List.of(), null, null, false);
   }
 }

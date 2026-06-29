@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
+import com.orderpilot.api.dto.ChannelRfqHandoffDtos.DismissRfqHandoffRequest;
+import com.orderpilot.api.dto.ChannelRfqHandoffDtos.MarkConvertedRfqHandoffRequest;
 import com.orderpilot.api.dto.Stage10BDtos.HumanCorrectionRequest;
 import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityLinkRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacyDraftQuoteCreateRequest;
@@ -34,6 +36,7 @@ class ActorAuthorityRequestDtoTest {
       "createdBy",
       "createdByUserId",
       "reviewedBy",
+      "reviewerUserId",
       "approvedBy",
       "rejectedBy",
       "decidedBy",
@@ -54,6 +57,8 @@ class ActorAuthorityRequestDtoTest {
         MarkBotResponseReadyRequest.class,
         HumanCorrectionRequest.class,
         ChannelIdentityLinkRequest.class,
+        DismissRfqHandoffRequest.class,
+        MarkConvertedRfqHandoffRequest.class,
         LegacyDraftQuoteCreateRequest.class,
         LegacySubstituteDecisionRequest.class,
         LegacyQuoteLifecycleRequest.class,

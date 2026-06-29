@@ -98,7 +98,7 @@ class DraftQuoteControllerTest {
   @Test
   void exposesNarrowHandoffReadinessEndpoint() throws Exception {
     UUID quoteId = UUID.randomUUID();
-    when(externalWritePreparationService.checkReadiness(any(), any())).thenReturn(new QuoteHandoffResponse(quoteId, "APPROVED", "READY_FOR_HANDOFF", List.of(), null, null, null, null, "EXECUTION_DISABLED", List.of("PREPARE_HANDOFF")));
+    when(externalWritePreparationService.checkReadiness(any(), any())).thenReturn(new QuoteHandoffResponse(quoteId, "APPROVED", "READY_FOR_HANDOFF", List.of(), false, null, false, List.of("PREPARE_HANDOFF")));
 
     mockMvc.perform(post("/api/v1/quotes/drafts/" + quoteId + "/handoff/readiness")
             .header("X-Tenant-Id", tenantId)
@@ -107,7 +107,13 @@ class DraftQuoteControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.quoteId").value(quoteId.toString()))
         .andExpect(jsonPath("$.handoffReadinessStatus").value("READY_FOR_HANDOFF"))
-        .andExpect(jsonPath("$.executionStatus").value("EXECUTION_DISABLED"));
+        .andExpect(jsonPath("$.externalExecutionEnabled").value(false))
+        // Category D: internal integrity/dedupe/source internals must not leak on the response.
+        .andExpect(jsonPath("$.payloadHash").doesNotExist())
+        .andExpect(jsonPath("$.idempotencyKey").doesNotExist())
+        .andExpect(jsonPath("$.snapshotId").doesNotExist())
+        .andExpect(jsonPath("$.executionStatus").doesNotExist())
+        .andExpect(jsonPath("$.payloadJson").doesNotExist());
   }
 
   @Test

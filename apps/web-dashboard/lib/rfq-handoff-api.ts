@@ -8,12 +8,12 @@ import type { AiWorkSuggestion, AiWorkType } from "./ai-work-api";
 
 export type RfqHandoffStatus = "PENDING_REVIEW" | "IN_REVIEW" | "CONVERTED" | "DISMISSED";
 
+// Operator-safe shape mirroring the backend ChannelRfqHandoffResponse. Internal actor and raw
+// source/correlation identifiers (reviewerUserId, inboundChannelEventId, channelConnectionId,
+// sourceExternalEventId) are intentionally NOT part of this contract.
 export type RfqHandoff = {
   id: string;
-  inboundChannelEventId: string;
-  channelConnectionId: string;
   sourceChannel: string;
-  sourceExternalEventId?: string;
   sourceActorExternalId?: string;
   customerAccountId?: string;
   customerContactId?: string;
@@ -21,7 +21,6 @@ export type RfqHandoff = {
   requestPreview?: string;
   detectedIntent?: string;
   status: RfqHandoffStatus;
-  reviewerUserId?: string;
   reviewStartedAt?: string;
   dismissedAt?: string;
   dismissReason?: string;

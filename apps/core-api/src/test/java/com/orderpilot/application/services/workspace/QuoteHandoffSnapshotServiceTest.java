@@ -94,7 +94,10 @@ class QuoteHandoffSnapshotServiceTest {
     var response = preparationService.createChangeRequestDraft(s.quoteId(), new ChangeRequestDraftCommand(UUID.randomUUID(), "DEMO_ERP", "DRAFT_QUOTE", "CREATE_DRAFT_QUOTE"));
 
     assertThat(response.changeRequestId()).isNotNull();
-    assertThat(response.executionStatus()).isEqualTo("NOT_EXECUTED");
+    assertThat(response.hasSnapshot()).isTrue();
+    // Stage 11E is external-execution-disabled by design; the response exposes a safe business flag
+    // only, never the lower-layer connector execution status string.
+    assertThat(response.externalExecutionEnabled()).isFalse();
     assertThat(changeRequestRepository.findAll()).hasSize(1);
     assertThat(changeRequestRepository.findAll().get(0).getApprovalStatus()).isEqualTo("DRAFT");
     assertThat(connectorCommandRepository.count()).isZero();

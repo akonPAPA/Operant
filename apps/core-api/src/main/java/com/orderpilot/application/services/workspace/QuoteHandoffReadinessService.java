@@ -42,7 +42,7 @@ public class QuoteHandoffReadinessService {
     List<String> blocking = blockingIssues(tenantId, quote);
     String status = blocking.isEmpty() ? "READY_FOR_HANDOFF" : "HANDOFF_BLOCKED";
     auditEventService.record("QUOTE_HANDOFF_READINESS_CHECKED", "DRAFT_QUOTE", quote.getId().toString(), actorId, metadata(tenantId, quote, null, null, status, String.join("; ", blocking), null, null));
-    return new QuoteHandoffResponse(quote.getId(), quote.getStatus(), status, blocking, null, null, null, null, "EXECUTION_DISABLED", blocking.isEmpty() ? List.of("PREPARE_HANDOFF", "CREATE_CHANGE_REQUEST_DRAFT") : List.of("RESOLVE_BLOCKERS"));
+    return new QuoteHandoffResponse(quote.getId(), quote.getStatus(), status, blocking, false, null, false, blocking.isEmpty() ? List.of("PREPARE_HANDOFF", "CREATE_CHANGE_REQUEST_DRAFT") : List.of("RESOLVE_BLOCKERS"));
   }
 
   @Transactional(readOnly = true)

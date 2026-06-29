@@ -86,7 +86,7 @@ class ChannelToQuoteWiringServiceTest {
     stubAttemptSave();
     when(sourceLinkRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
-    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", new ResolvedCustomer(customerId, null, "CUST-1", "ACME", "RESOLVED"), List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of()));
+    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", new ResolvedCustomer(customerId, null, "CUST-1", "ACME", "RESOLVED"), List.of(), List.of(), List.of(), false, List.of(), List.of()));
 
     var response = service.createFromChannelMessage(messageId, request("idem-1", customerId, false, "USER"));
 
@@ -114,7 +114,7 @@ class ChannelToQuoteWiringServiceTest {
     when(customerAccountRepository.findByIdAndTenantIdAndDeletedAtIsNull(customerId, tenantId)).thenReturn(Optional.of(customer(customerId, "CUST-1")));
     stubAttemptSave();
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
-    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of()));
+    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), List.of()));
 
     var response = service.createFromInboundDocument(documentId, request("doc-idem", customerId, false, "API"));
 
@@ -185,7 +185,7 @@ class ChannelToQuoteWiringServiceTest {
     when(extractionResultRepository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(tenantId, "CHANNEL_MESSAGE", messageId)).thenReturn(List.of());
     stubAttemptSave();
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
-    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of()));
+    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), List.of()));
 
     service.createFromChannelMessage(messageId, request("same-key", customerId, true, "USER"));
     var response = service.createFromChannelMessage(messageId, request("same-key", customerId, false, "USER"));
@@ -314,7 +314,6 @@ class ChannelToQuoteWiringServiceTest {
         List.of(),
         false,
         List.of(),
-        UUID.randomUUID(),
         List.of()));
 
     var response = service.createFromChannelMessage(messageId, request("bad-sku", customerId, false, "USER"));
@@ -378,7 +377,7 @@ class ChannelToQuoteWiringServiceTest {
     when(extractionResultRepository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(tenantId, "CHANNEL_MESSAGE", messageId)).thenReturn(List.of());
     stubAttemptSave();
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
-    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of()));
+    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), List.of()));
 
     service.createFromChannelMessage(messageId, request("audit-1", customerId, false, "API"));
 
@@ -403,7 +402,7 @@ class ChannelToQuoteWiringServiceTest {
     when(extractionResultRepository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(tenantId, "CHANNEL_MESSAGE", messageId)).thenReturn(List.of());
     stubAttemptSave();
     when(auditEventService.record(any(), any(), any(), any(), any())).thenReturn(audit());
-    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), UUID.randomUUID(), List.of()));
+    when(quoteDraftService.createFromRfq(any())).thenReturn(new QuoteTransactionResponse(quoteId, "DRAFT", null, List.of(), List.of(), List.of(), false, List.of(), List.of()));
 
     var response = service.createFromChannelMessage(messageId, request("bot-1", customerId, false, "BOT"), null, "BOT");
 
