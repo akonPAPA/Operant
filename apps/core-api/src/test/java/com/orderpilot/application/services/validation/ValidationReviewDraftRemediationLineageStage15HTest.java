@@ -57,6 +57,7 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 class ValidationReviewDraftRemediationLineageStage15HTest {
   private static final Instant NOW = Instant.parse("2026-06-09T00:00:00Z");
+  private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-4000-8000-000000000015");
 
   @Autowired private ValidationReviewDraftRemediationLineageService lineageService;
   @Autowired private ValidationReviewDraftCommandService draftBridge;
@@ -86,7 +87,7 @@ class ValidationReviewDraftRemediationLineageStage15HTest {
     Run run = cleanRun(tenantId, "CORR");
     // Real 14C structured line-item correction on the drafted source line.
     reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest(
-        "LINE_ITEM", run.lineA, null, "5", null, "fix qty", UUID.randomUUID(), null));
+        "LINE_ITEM", run.lineA, null, "5", null, "fix qty", null), ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
@@ -110,7 +111,9 @@ class ValidationReviewDraftRemediationLineageStage15HTest {
     Run run = cleanRun(tenantId, "ISS");
     ValidationIssue issue = issues.save(new ValidationIssue(tenantId, run.runId, run.extractionResultId, run.lineA, null, "MARGIN_BELOW_GUARDRAIL", "ERROR", "blocking", "{}", NOW));
     // Real 14C structured issue resolution (writes an OperatorAction on the issue id).
-    reviewCommandService.resolveIssue(run.runId, issue.getId(), new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, UUID.randomUUID(), null));
+    reviewCommandService.resolveIssue(
+        run.runId, issue.getId(),
+        new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, null), ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftOrder(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("ORDER", draft.draftId());
@@ -131,7 +134,11 @@ class ValidationReviewDraftRemediationLineageStage15HTest {
     Run run = cleanRun(tenantId, "APPR");
     // Draft first (no open approval blocks readiness), then raise a real 14C approval on the drafted line.
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
-    reviewCommandService.requestApproval(run.runId, new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "needs sign-off", UUID.randomUUID()));
+    reviewCommandService.requestApproval(
+        run.runId,
+        new ValidationApprovalRequestCommand(
+            run.lineA, "OPERATOR_CORRECTION_REVIEW", "needs sign-off"),
+        ACTOR_ID);
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
 
@@ -171,7 +178,10 @@ class ValidationReviewDraftRemediationLineageStage15HTest {
     Run run = cleanRun(tenantId, "RLAP");
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
     // Run-level approval (no extracted line item) — a real 14C action that maps to no drafted line.
-    reviewCommandService.requestApproval(run.runId, new ValidationApprovalRequestCommand(null, "RUN_LEVEL_REVIEW", "run sign-off", UUID.randomUUID()));
+    reviewCommandService.requestApproval(
+        run.runId,
+        new ValidationApprovalRequestCommand(null, "RUN_LEVEL_REVIEW", "run sign-off"),
+        ACTOR_ID);
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
 
@@ -188,7 +198,9 @@ class ValidationReviewDraftRemediationLineageStage15HTest {
     Run run = cleanRun(tenantId, "URES");
     // Issue on a line that is NOT a drafted source line — its resolution cannot attach to a draft line.
     ValidationIssue issue = issues.save(new ValidationIssue(tenantId, run.runId, run.extractionResultId, UUID.randomUUID(), null, "DATA_QUALITY", "WARNING", "non-drafted", "{}", NOW));
-    reviewCommandService.resolveIssue(run.runId, issue.getId(), new ValidationIssueResolutionRequest("RESOLVED", "noted", null, UUID.randomUUID(), null));
+    reviewCommandService.resolveIssue(
+        run.runId, issue.getId(),
+        new ValidationIssueResolutionRequest("RESOLVED", "noted", null, null), ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());

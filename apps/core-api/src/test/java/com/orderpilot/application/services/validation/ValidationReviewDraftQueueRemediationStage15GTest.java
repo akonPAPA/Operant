@@ -54,6 +54,7 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 class ValidationReviewDraftQueueRemediationStage15GTest {
   private static final Instant NOW = Instant.parse("2026-06-09T00:00:00Z");
+  private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-4000-8000-000000000015");
 
   @Autowired private ValidationReviewDraftQueryService queryService;
   @Autowired private ValidationReviewDraftCommandService draftBridge;
@@ -101,7 +102,7 @@ class ValidationReviewDraftQueueRemediationStage15GTest {
     Run run = cleanRun(tenantId, "CORR");
     // Structured 14C line-item correction on the drafted source line (writes a structured OperatorAction).
     reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest(
-        "LINE_ITEM", run.lineA, null, "5", null, "fix qty", UUID.randomUUID(), null));
+        "LINE_ITEM", run.lineA, null, "5", null, "fix qty", null), ACTOR_ID);
     draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationSummary summary = only(queryService.reviewDraftQueue(null, null, null, null)).remediationSummary();
@@ -118,7 +119,9 @@ class ValidationReviewDraftQueueRemediationStage15GTest {
     Run run = cleanRun(tenantId, "ISS");
     ValidationIssue issue = issues.save(new ValidationIssue(tenantId, run.runId, run.extractionResultId, run.lineA, null, "MARGIN_BELOW_GUARDRAIL", "ERROR", "blocking", "{}", NOW));
     // Resolve via the structured 14C command (writes a structured OperatorAction on the issue id).
-    reviewCommandService.resolveIssue(run.runId, issue.getId(), new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, UUID.randomUUID(), null));
+    reviewCommandService.resolveIssue(
+        run.runId, issue.getId(),
+        new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, null), ACTOR_ID);
     draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationSummary summary = only(queryService.reviewDraftQueue(null, null, null, null)).remediationSummary();
@@ -134,7 +137,7 @@ class ValidationReviewDraftQueueRemediationStage15GTest {
     TenantContext.setTenantId(tenantB);
     Run runB = cleanRun(tenantB, "TB");
     reviewCommandService.submitCorrection(runB.runId, new ValidationReviewCorrectionRequest(
-        "LINE_ITEM", runB.lineA, null, "5", null, "foreign fix", UUID.randomUUID(), null));
+        "LINE_ITEM", runB.lineA, null, "5", null, "foreign fix", null), ACTOR_ID);
 
     TenantContext.setTenantId(tenantA);
     Run runA = cleanRun(tenantA, "TA");
@@ -153,7 +156,7 @@ class ValidationReviewDraftQueueRemediationStage15GTest {
     Run other = cleanRun(tenantId, "RB");
     // Correction on a DIFFERENT run's line — not a source line of the drafted run.
     reviewCommandService.submitCorrection(other.runId, new ValidationReviewCorrectionRequest(
-        "LINE_ITEM", other.lineA, null, "5", null, "other run fix", UUID.randomUUID(), null));
+        "LINE_ITEM", other.lineA, null, "5", null, "other run fix", null), ACTOR_ID);
     draftBridge.createDraftQuote(drafted.runId, UUID.randomUUID());
 
     ValidationReviewDraftQueueResponse response = queryService.reviewDraftQueue("QUOTE", null, null, null);
@@ -200,7 +203,10 @@ class ValidationReviewDraftQueueRemediationStage15GTest {
     TenantContext.setTenantId(tenantId);
     Run a = cleanRun(tenantId, "M1");
     Run b = cleanRun(tenantId, "M2");
-    reviewCommandService.submitCorrection(a.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", a.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        a.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", a.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(a.runId, UUID.randomUUID());
     draftBridge.createDraftQuote(b.runId, UUID.randomUUID());
 

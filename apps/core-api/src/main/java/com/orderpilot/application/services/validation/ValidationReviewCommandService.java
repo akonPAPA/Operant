@@ -93,7 +93,8 @@ public class ValidationReviewCommandService {
   }
 
   @Transactional
-  public ValidationReviewActionResult submitCorrection(UUID validationRunId, ValidationReviewCorrectionRequest request) {
+  public ValidationReviewActionResult submitCorrection(
+      UUID validationRunId, ValidationReviewCorrectionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
     ValidationRun run = requireRun(tenantId, validationRunId);
     String targetType = upper(request.targetType());
@@ -102,17 +103,18 @@ public class ValidationReviewCommandService {
     String reason = boundedReason(request.reason());
 
     if (ValidationReviewCommandDtos.TARGET_FIELD.equals(targetType)) {
-      return correctField(tenantId, run, targetId, request, reason);
+      return correctField(tenantId, run, targetId, request, reason, actorId);
     }
     if (ValidationReviewCommandDtos.TARGET_LINE_ITEM.equals(targetType)) {
-      return correctLineItem(tenantId, run, targetId, request, reason);
+      return correctLineItem(tenantId, run, targetId, request, reason, actorId);
     }
     // Strict allowlist: source-evidence / extraction / audit / any other target is not correctable here.
     throw new IllegalArgumentException("unsupported_correction_target");
   }
 
   private ValidationReviewActionResult correctField(
-      UUID tenantId, ValidationRun run, UUID fieldId, ValidationReviewCorrectionRequest request, String reason) {
+      UUID tenantId, ValidationRun run, UUID fieldId, ValidationReviewCorrectionRequest request,
+      String reason, UUID actorId) {
     ExtractedField field = fieldRepository.findByIdAndTenantId(fieldId, tenantId)
         .orElseThrow(() -> new NotFoundException("extracted_field_not_found"));
     if (!field.getExtractionResultId().equals(run.getExtractionResultId())) {
@@ -129,17 +131,18 @@ public class ValidationReviewCommandService {
     metadata.put("beforeValue", boundedValue(before, ValidationReviewCommandDtos.MAX_VALUE));
     metadata.put("afterValue", corrected);
     OperatorAction action = operatorActionService.record(
-        request.actorUserId(), TARGET_FIELD, fieldId, ACTION_FIELD_CORRECTION,
+        actorId, TARGET_FIELD, fieldId, ACTION_FIELD_CORRECTION,
         "Operator corrected an advisory extracted field value", jsonSupport.writeObject(metadata));
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), ValidationReviewCommandDtos.TARGET_FIELD, fieldId, ACTION_FIELD_CORRECTION,
-        "RECORDED", approvalRequired, null, null, null, request.actorUserId(), action.getCreatedAt(),
+        "RECORDED", approvalRequired, null, null, null, actorId, action.getCreatedAt(),
         request.clientRequestId(), "Field correction recorded for operator review.");
   }
 
   private ValidationReviewActionResult correctLineItem(
-      UUID tenantId, ValidationRun run, UUID lineId, ValidationReviewCorrectionRequest request, String reason) {
+      UUID tenantId, ValidationRun run, UUID lineId, ValidationReviewCorrectionRequest request,
+      String reason, UUID actorId) {
     ExtractedLineItem line = lineRepository.findByIdAndTenantId(lineId, tenantId)
         .orElseThrow(() -> new NotFoundException("extracted_line_item_not_found"));
     if (!line.getExtractionResultId().equals(run.getExtractionResultId())) {
@@ -166,17 +169,18 @@ public class ValidationReviewCommandService {
     after.put("uom", correctedUom == null ? before.get("uom") : correctedUom);
     metadata.put("after", after);
     OperatorAction action = operatorActionService.record(
-        request.actorUserId(), TARGET_LINE, lineId, ACTION_LINE_CORRECTION,
+        actorId, TARGET_LINE, lineId, ACTION_LINE_CORRECTION,
         "Operator corrected an advisory extracted line item value", jsonSupport.writeObject(metadata));
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), ValidationReviewCommandDtos.TARGET_LINE_ITEM, lineId, ACTION_LINE_CORRECTION,
-        "RECORDED", approvalRequired, null, null, null, request.actorUserId(), action.getCreatedAt(),
+        "RECORDED", approvalRequired, null, null, null, actorId, action.getCreatedAt(),
         request.clientRequestId(), "Line item correction recorded for operator review.");
   }
 
   @Transactional
-  public ValidationReviewActionResult resolveIssue(UUID validationRunId, UUID issueId, ValidationIssueResolutionRequest request) {
+  public ValidationReviewActionResult resolveIssue(
+      UUID validationRunId, UUID issueId, ValidationIssueResolutionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
     ValidationRun run = requireRun(tenantId, validationRunId);
     String resolution = upper(request.resolution());
@@ -195,7 +199,7 @@ public class ValidationReviewCommandService {
     if (resolution.equals(current)) {
       return new ValidationReviewActionResult(
           null, run.getId(), TARGET_ISSUE, issueId, ACTION_ISSUE_RESOLUTION, current, false, null, issueId,
-          resolution, request.actorUserId(), null, request.clientRequestId(), "Issue already in requested resolution state.");
+          resolution, actorId, null, request.clientRequestId(), "Issue already in requested resolution state.");
     }
     if (!OPEN_ISSUE_STATUSES.contains(current)) {
       // Already decided (RESOLVED/IGNORED/ESCALATED/WAIVED/OVERRIDDEN/CORRECTED) into a different state.
@@ -212,17 +216,18 @@ public class ValidationReviewCommandService {
     metadata.put("severity", issue.getSeverity());
     if (request.correctionActionId() != null) metadata.put("correctionActionId", request.correctionActionId().toString());
     OperatorAction action = operatorActionService.record(
-        request.actorUserId(), TARGET_ISSUE, issueId, ACTION_ISSUE_RESOLUTION,
+        actorId, TARGET_ISSUE, issueId, ACTION_ISSUE_RESOLUTION,
         "Operator " + resolution.toLowerCase(Locale.ROOT) + " a validation issue", jsonSupport.writeObject(metadata));
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), TARGET_ISSUE, issueId, ACTION_ISSUE_RESOLUTION, resolution, false, null,
-        issueId, resolution, request.actorUserId(), action.getCreatedAt(), request.clientRequestId(),
+        issueId, resolution, actorId, action.getCreatedAt(), request.clientRequestId(),
         "Issue marked " + resolution + ".");
   }
 
   @Transactional
-  public ValidationReviewActionResult requestApproval(UUID validationRunId, ValidationApprovalRequestCommand request) {
+  public ValidationReviewActionResult requestApproval(
+      UUID validationRunId, ValidationApprovalRequestCommand request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
     ValidationRun run = requireRun(tenantId, validationRunId);
     String reason = boundedReason(request.reason());
@@ -245,12 +250,12 @@ public class ValidationReviewCommandService {
     metadata.put("requirementType", requirementType);
     if (request.extractedLineItemId() != null) metadata.put("extractedLineItemId", request.extractedLineItemId().toString());
     OperatorAction action = operatorActionService.record(
-        request.actorUserId(), TARGET_APPROVAL, approval.getId(), ACTION_APPROVAL_REQUEST,
+        actorId, TARGET_APPROVAL, approval.getId(), ACTION_APPROVAL_REQUEST,
         "Operator requested approval for a validation-review correction", jsonSupport.writeObject(metadata));
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), TARGET_APPROVAL, approval.getId(), ACTION_APPROVAL_REQUEST,
-        approval.getStatus(), true, approval.getId(), null, null, request.actorUserId(), action.getCreatedAt(),
+        approval.getStatus(), true, approval.getId(), null, null, actorId, action.getCreatedAt(),
         null, "Approval request created and pending review.");
   }
 

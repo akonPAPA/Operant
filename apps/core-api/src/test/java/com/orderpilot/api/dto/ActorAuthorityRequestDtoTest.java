@@ -11,6 +11,10 @@ import com.orderpilot.api.dto.Stage11EDtos.LegacyChangeRequestCancelRequest;
 import com.orderpilot.api.dto.Stage12ADtos.CreateDraftQuoteFromRfqRequest;
 import com.orderpilot.api.dto.Stage12ADtos.QuoteApprovalDecisionRequest;
 import com.orderpilot.api.dto.Stage7Dtos.MarkBotResponseReadyRequest;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationApprovalRequestCommand;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationIssueResolutionRequest;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewCorrectionRequest;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftRequest;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
@@ -49,7 +53,11 @@ class ActorAuthorityRequestDtoTest {
         LegacyQuoteLifecycleRequest.class,
         LegacyChangeRequestCancelRequest.class,
         CreateDraftQuoteFromRfqRequest.class,
-        QuoteApprovalDecisionRequest.class);
+        QuoteApprovalDecisionRequest.class,
+        ValidationReviewCorrectionRequest.class,
+        ValidationIssueResolutionRequest.class,
+        ValidationApprovalRequestCommand.class,
+        ValidationReviewDraftRequest.class);
 
     for (Class<?> requestType : publicRequestTypes) {
       assertThat(componentNames(requestType))

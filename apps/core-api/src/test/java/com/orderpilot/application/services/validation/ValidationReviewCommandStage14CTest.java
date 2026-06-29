@@ -60,6 +60,7 @@ import org.springframework.test.context.ActiveProfiles;
 class ValidationReviewCommandStage14CTest {
   private static final Instant NOW = Instant.parse("2026-06-09T00:00:00Z");
   private static final String SECRET_SENTINEL = "TOP_SECRET_PROMPT_DO_NOT_LEAK_14c";
+  private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-4000-8000-000000000014");
 
   @Autowired private AdvisoryExtractionValidationHandoffService handoffService;
   @Autowired private ValidationReviewCommandService commandService;
@@ -100,12 +101,15 @@ class ValidationReviewCommandStage14CTest {
     long ordersBefore = draftOrders.count();
 
     ValidationReviewActionResult result = commandService.submitCorrection(handoff.validationRunId(),
-        new ValidationReviewCorrectionRequest("FIELD", field.getId(), "Acme Filters LLC", null, null, "operator typo fix", UUID.randomUUID(), "req-1"));
+        new ValidationReviewCorrectionRequest(
+            "FIELD", field.getId(), "Acme Filters LLC", null, null, "operator typo fix", "req-1"),
+        ACTOR_ID);
 
     assertThat(result.actionType()).isEqualTo("VALIDATION_REVIEW_FIELD_CORRECTED");
     assertThat(result.actionStatus()).isEqualTo("RECORDED");
     assertThat(result.validationRunId()).isEqualTo(handoff.validationRunId());
     assertThat(result.clientRequestId()).isEqualTo("req-1");
+    assertThat(result.createdBy()).isEqualTo(ACTOR_ID);
 
     // Advisory field row corrected (not raw value provenance).
     ExtractedField updated = fields.findByIdAndTenantId(field.getId(), tenantId).orElseThrow();
@@ -139,7 +143,9 @@ class ValidationReviewCommandStage14CTest {
     ExtractedLineItem line = lines.findByTenantIdAndExtractionResultId(tenantId, handoff.extractionResultId()).get(0);
 
     ValidationReviewActionResult result = commandService.submitCorrection(handoff.validationRunId(),
-        new ValidationReviewCorrectionRequest("LINE_ITEM", line.getId(), null, "5", "box", "operator qty fix", null, null));
+        new ValidationReviewCorrectionRequest(
+            "LINE_ITEM", line.getId(), null, "5", "box", "operator qty fix", null),
+        ACTOR_ID);
 
     assertThat(result.actionType()).isEqualTo("VALIDATION_REVIEW_LINE_ITEM_CORRECTED");
     ExtractedLineItem updated = lines.findByIdAndTenantId(line.getId(), tenantId).orElseThrow();
@@ -158,7 +164,8 @@ class ValidationReviewCommandStage14CTest {
 
     TenantContext.setTenantId(UUID.randomUUID());
     assertThatThrownBy(() -> commandService.submitCorrection(handoff.validationRunId(),
-        new ValidationReviewCorrectionRequest("FIELD", field.getId(), "x", null, null, "r", null, null)))
+        new ValidationReviewCorrectionRequest("FIELD", field.getId(), "x", null, null, "r", null),
+        ACTOR_ID))
         .isInstanceOf(NotFoundException.class)
         .hasMessageContaining("validation_run_not_found");
   }
@@ -174,7 +181,8 @@ class ValidationReviewCommandStage14CTest {
     ExtractedField foreignField = fields.findByTenantIdAndExtractionResultId(tenantId, runTwo.extractionResultId()).get(0);
 
     assertThatThrownBy(() -> commandService.submitCorrection(runOne.validationRunId(),
-        new ValidationReviewCorrectionRequest("FIELD", foreignField.getId(), "x", null, null, "r", null, null)))
+        new ValidationReviewCorrectionRequest("FIELD", foreignField.getId(), "x", null, null, "r", null),
+        ACTOR_ID))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("target_not_in_validation_run");
   }
@@ -187,7 +195,9 @@ class ValidationReviewCommandStage14CTest {
     AdvisoryValidationHandoffResult handoff = handoff(tenantId, "SKU-R", "2");
 
     assertThatThrownBy(() -> commandService.submitCorrection(handoff.validationRunId(),
-        new ValidationReviewCorrectionRequest("SOURCE_EVIDENCE", UUID.randomUUID(), "x", null, null, "r", null, null)))
+        new ValidationReviewCorrectionRequest(
+            "SOURCE_EVIDENCE", UUID.randomUUID(), "x", null, null, "r", null),
+        ACTOR_ID))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("unsupported_correction_target");
   }
@@ -201,14 +211,14 @@ class ValidationReviewCommandStage14CTest {
     ValidationIssue issue = issues.findByTenantIdAndValidationRunIdOrderByCreatedAtAsc(tenantId, handoff.validationRunId()).get(0);
 
     ValidationReviewActionResult first = commandService.resolveIssue(handoff.validationRunId(), issue.getId(),
-        new ValidationIssueResolutionRequest("RESOLVED", "fixed by operator", null, UUID.randomUUID(), null));
+        new ValidationIssueResolutionRequest("RESOLVED", "fixed by operator", null, null), ACTOR_ID);
     assertThat(first.issueResolution()).isEqualTo("RESOLVED");
     assertThat(first.actionStatus()).isEqualTo("RESOLVED");
     assertThat(issues.findByIdAndTenantId(issue.getId(), tenantId).orElseThrow().getStatus()).isEqualTo("RESOLVED");
 
     // Idempotent: re-resolving to the same state does not create a second action.
     ValidationReviewActionResult second = commandService.resolveIssue(handoff.validationRunId(), issue.getId(),
-        new ValidationIssueResolutionRequest("RESOLVED", "again", null, null, null));
+        new ValidationIssueResolutionRequest("RESOLVED", "again", null, null), ACTOR_ID);
     assertThat(second.actionId()).isNull();
     assertThat(second.actionStatus()).isEqualTo("RESOLVED");
     long actionCount = operatorActions.findByTenantIdAndTargetTypeAndTargetIdOrderByCreatedAtDesc(tenantId, "VALIDATION_ISSUE", issue.getId()).size();
@@ -223,14 +233,14 @@ class ValidationReviewCommandStage14CTest {
     ValidationIssue issue = issues.findByTenantIdAndValidationRunIdOrderByCreatedAtAsc(tenantId, handoff.validationRunId()).get(0);
 
     assertThatThrownBy(() -> commandService.resolveIssue(handoff.validationRunId(), issue.getId(),
-        new ValidationIssueResolutionRequest("BOGUS", "r", null, null, null)))
+        new ValidationIssueResolutionRequest("BOGUS", "r", null, null), ACTOR_ID))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("invalid_resolution");
 
     commandService.resolveIssue(handoff.validationRunId(), issue.getId(),
-        new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, null, null));
+        new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, null), ACTOR_ID);
     // RESOLVED -> ESCALATED is an illegal transition.
     assertThatThrownBy(() -> commandService.resolveIssue(handoff.validationRunId(), issue.getId(),
-        new ValidationIssueResolutionRequest("ESCALATED", "no", null, null, null)))
+        new ValidationIssueResolutionRequest("ESCALATED", "no", null, null), ACTOR_ID))
         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("illegal_issue_transition");
   }
 
@@ -243,7 +253,7 @@ class ValidationReviewCommandStage14CTest {
 
     TenantContext.setTenantId(UUID.randomUUID());
     assertThatThrownBy(() -> commandService.resolveIssue(handoff.validationRunId(), issue.getId(),
-        new ValidationIssueResolutionRequest("RESOLVED", "r", null, null, null)))
+        new ValidationIssueResolutionRequest("RESOLVED", "r", null, null), ACTOR_ID))
         .isInstanceOf(NotFoundException.class).hasMessageContaining("validation_run_not_found");
   }
 
@@ -256,7 +266,9 @@ class ValidationReviewCommandStage14CTest {
     long approvalsBefore = approvals.findByTenantIdAndValidationRunIdOrderByCreatedAtAsc(tenantId, handoff.validationRunId()).size();
 
     ValidationReviewActionResult result = commandService.requestApproval(handoff.validationRunId(),
-        new ValidationApprovalRequestCommand(null, "OPERATOR_CORRECTION_REVIEW", "needs manager sign-off", UUID.randomUUID()));
+        new ValidationApprovalRequestCommand(
+            null, "OPERATOR_CORRECTION_REVIEW", "needs manager sign-off"),
+        ACTOR_ID);
 
     assertThat(result.approvalRequired()).isTrue();
     assertThat(result.approvalRequestId()).isNotNull();
