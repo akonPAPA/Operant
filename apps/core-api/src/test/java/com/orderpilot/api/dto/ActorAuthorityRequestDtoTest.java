@@ -2,6 +2,9 @@ package com.orderpilot.api.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.api.dto.Stage10BDtos.HumanCorrectionRequest;
 import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityLinkRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacyDraftQuoteCreateRequest;
@@ -45,6 +48,9 @@ class ActorAuthorityRequestDtoTest {
   @Test
   void publicRequestRecordsContainBusinessIntentOnly() {
     List<Class<?>> publicRequestTypes = List.of(
+        AiHandoffStartReviewRequest.class,
+        AiHandoffDecisionRequest.class,
+        AiHandoffCorrectionRequest.class,
         MarkBotResponseReadyRequest.class,
         HumanCorrectionRequest.class,
         ChannelIdentityLinkRequest.class,

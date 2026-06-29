@@ -5,7 +5,6 @@ import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDraftPreparationCandidate;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewQueueItem;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewView;
-import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.JsonSupport;
 import com.orderpilot.common.tenant.TenantContext;
@@ -39,7 +38,6 @@ public class AiValidationHandoffReviewService {
   private static final String EXTERNAL_EXECUTION = "DISABLED";
   private static final int MAX_REASON_CODE = 80;
   private static final int MAX_NOTE = 500;
-  private static final int MAX_ACTOR = 120;
   private static final int MAX_CORRECTION_SUMMARY = 500;
   private static final int MAX_INTENT = 120;
   private static final int MAX_CUSTOMER_REF = 160;
@@ -152,8 +150,9 @@ public class AiValidationHandoffReviewService {
   }
 
   @Transactional
-  public AiHandoffReviewView startReview(UUID handoffId, AiHandoffStartReviewRequest request) {
+  public AiHandoffReviewView startReview(UUID handoffId, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
+    String trustedActor = requireActor(actorId).toString();
     AiValidationHandoff handoff = requireHandoff(tenantId, handoffId);
     AiValidationHandoffReview review = getOrCreateReview(tenantId, handoffId);
     if (statusOf(review) == AiHandoffReviewStatus.IN_REVIEW) {
@@ -163,15 +162,17 @@ public class AiValidationHandoffReviewService {
     if (statusOf(review).isTerminal()) {
       throw new IllegalArgumentException("AI handoff review is already terminal");
     }
-    review.markStatus(AiHandoffReviewStatus.IN_REVIEW, bounded(request == null ? null : request.reviewedBy(), MAX_ACTOR), clock.instant());
+    review.markStatus(AiHandoffReviewStatus.IN_REVIEW, trustedActor, clock.instant());
     review = reviewRepository.save(review);
-    audit("ai_validation_handoff_review.started", handoff, review, null);
+    audit("ai_validation_handoff_review.started", handoff, review, null, actorId);
     return toView(handoff, review);
   }
 
   @Transactional
-  public AiHandoffReviewView decide(UUID handoffId, AiHandoffDecisionRequest request) {
+  public AiHandoffReviewView decide(
+      UUID handoffId, AiHandoffDecisionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
+    String trustedActor = requireActor(actorId).toString();
     AiValidationHandoff handoff = requireHandoff(tenantId, handoffId);
     AiValidationHandoffReview review = getOrCreateReview(tenantId, handoffId);
     if (statusOf(review).isTerminal()) {
@@ -186,16 +187,18 @@ public class AiValidationHandoffReviewService {
         decision,
         reasonCode,
         note,
-        bounded(request == null ? null : request.reviewedBy(), MAX_ACTOR),
+        trustedActor,
         clock.instant());
     review = reviewRepository.save(review);
-    audit("ai_validation_handoff_review.decision_recorded", handoff, review, decision);
+    audit("ai_validation_handoff_review.decision_recorded", handoff, review, decision, actorId);
     return toView(handoff, review);
   }
 
   @Transactional
-  public AiHandoffReviewView recordCorrection(UUID handoffId, AiHandoffCorrectionRequest request) {
+  public AiHandoffReviewView recordCorrection(
+      UUID handoffId, AiHandoffCorrectionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
+    String trustedActor = requireActor(actorId).toString();
     AiValidationHandoff handoff = requireHandoff(tenantId, handoffId);
     AiValidationHandoffReview review = getOrCreateReview(tenantId, handoffId);
     if (statusOf(review).isTerminal()) {
@@ -211,9 +214,9 @@ public class AiValidationHandoffReviewService {
         bounded(request == null ? null : request.correctedCustomerRef(), MAX_CUSTOMER_REF),
         correctedLineCount,
         clock.instant());
-    review.markStatus(AiHandoffReviewStatus.CORRECTION_REQUESTED, bounded(request == null ? null : request.reviewedBy(), MAX_ACTOR), clock.instant());
+    review.markStatus(AiHandoffReviewStatus.CORRECTION_REQUESTED, trustedActor, clock.instant());
     review = reviewRepository.save(review);
-    audit("ai_validation_handoff_review.correction_recorded", handoff, review, null);
+    audit("ai_validation_handoff_review.correction_recorded", handoff, review, null, actorId);
     return toView(handoff, review);
   }
 
@@ -281,7 +284,12 @@ public class AiValidationHandoffReviewService {
     }
   }
 
-  private void audit(String action, AiValidationHandoff handoff, AiValidationHandoffReview review, AiHandoffReviewDecision decision) {
+  private void audit(
+      String action,
+      AiValidationHandoff handoff,
+      AiValidationHandoffReview review,
+      AiHandoffReviewDecision decision,
+      UUID actorId) {
     Map<String, Object> metadata = new LinkedHashMap<>();
     metadata.put("handoffId", String.valueOf(handoff.getId()));
     metadata.put("reviewId", String.valueOf(review.getId()));
@@ -294,7 +302,12 @@ public class AiValidationHandoffReviewService {
     metadata.put("reasonCode", safe(review.getReasonCode()));
     metadata.put("reviewedByPresent", review.getReviewedBy() != null && !review.getReviewedBy().isBlank());
     metadata.put("externalExecution", EXTERNAL_EXECUTION);
-    auditEventService.record(action, "ai_validation_handoff_review", review.getId().toString(), null, json.writeObject(metadata));
+    auditEventService.record(
+        action,
+        "ai_validation_handoff_review",
+        review.getId().toString(),
+        actorId,
+        json.writeObject(metadata));
   }
 
   private AiHandoffReviewView toView(AiValidationHandoff handoff, AiValidationHandoffReview review) {
@@ -314,10 +327,16 @@ public class AiValidationHandoffReviewService {
         review == null ? null : review.getCorrectedIntent(),
         review == null ? null : review.getCorrectedCustomerRef(),
         review == null ? null : review.getCorrectedLineCount(),
-        review == null ? null : review.getReviewedBy(),
         EXTERNAL_EXECUTION,
         review == null ? null : review.getCreatedAt(),
         review == null ? null : review.getUpdatedAt());
+  }
+
+  private UUID requireActor(UUID actorId) {
+    if (actorId == null) {
+      throw new IllegalArgumentException("Trusted actor is required");
+    }
+    return actorId;
   }
 
   private String effectiveReviewStatus(AiValidationHandoffReview review) {

@@ -5,11 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.AiValidationDtos.AiValidationResultView;
+import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffCorrectionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDecisionRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffDraftPreparationCandidate;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewQueueItem;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewView;
-import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiValidationHandoffView;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.JsonSupport;
@@ -87,12 +87,14 @@ class AiValidationHandoffReviewServiceTest {
   @Autowired private ObjectMapper objectMapper;
 
   private static final Instant T0 = Instant.parse("2026-06-06T00:00:00Z");
+  private static final UUID TRUSTED_ACTOR =
+      UUID.fromString("10000000-0000-0000-0000-000000000001");
 
   @TestConfiguration
   static class JacksonTestConfig {
     @Bean
     ObjectMapper objectMapper() {
-      return new ObjectMapper();
+      return new ObjectMapper().findAndRegisterModules();
     }
   }
 
@@ -218,7 +220,7 @@ class AiValidationHandoffReviewServiceTest {
     assertThat(reviewService.queue(null, null, null, true, 50))
         .extracting(AiHandoffReviewQueueItem::handoffId).containsExactly(ready.handoffId());
 
-    reviewService.startReview(ready.handoffId(), new AiHandoffStartReviewRequest("operator-1"));
+    reviewService.startReview(ready.handoffId(), TRUSTED_ACTOR);
     assertThat(reviewService.queue("IN_REVIEW", null, null, null, 50))
         .extracting(AiHandoffReviewQueueItem::handoffId).containsExactly(ready.handoffId());
     assertThat(reviewService.queue("PENDING_REVIEW", null, null, null, 50))
@@ -254,8 +256,10 @@ class AiValidationHandoffReviewServiceTest {
     AiValidationHandoffView h = handoff(tenantId, "SUCCEEDED", "ACME", "20");
     long before = countAudits("ai_validation_handoff_review.started");
 
-    AiHandoffReviewView first = reviewService.startReview(h.handoffId(), new AiHandoffStartReviewRequest("operator-1"));
-    AiHandoffReviewView second = reviewService.startReview(h.handoffId(), new AiHandoffStartReviewRequest("operator-1"));
+    AiHandoffReviewView first =
+        reviewService.startReview(h.handoffId(), TRUSTED_ACTOR);
+    AiHandoffReviewView second =
+        reviewService.startReview(h.handoffId(), TRUSTED_ACTOR);
 
     assertThat(first.reviewStatus()).isEqualTo("IN_REVIEW");
     assertThat(second.reviewStatus()).isEqualTo("IN_REVIEW");
@@ -273,12 +277,17 @@ class AiValidationHandoffReviewServiceTest {
     assertThat(h.status()).isEqualTo("NEEDS_HUMAN_REVIEW");
 
     assertThatThrownBy(() -> reviewService.decide(h.handoffId(),
-        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", null, null, "operator-1")))
+        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", null, null),
+        TRUSTED_ACTOR))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("explicit reason");
 
     AiHandoffReviewView decided = reviewService.decide(h.handoffId(),
-        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", "OPERATOR_VERIFIED_CUSTOMER", "confirmed by phone", "operator-1"));
+        new AiHandoffDecisionRequest(
+            "APPROVE_FOR_DRAFT_PREPARATION",
+            "OPERATOR_VERIFIED_CUSTOMER",
+            "confirmed by phone"),
+        TRUSTED_ACTOR);
     assertThat(decided.reviewStatus()).isEqualTo("DRAFT_PREPARATION_READY");
   }
 
@@ -290,7 +299,8 @@ class AiValidationHandoffReviewServiceTest {
     assertThat(h.status()).isEqualTo("FAILED_VALIDATION");
 
     assertThatThrownBy(() -> reviewService.decide(h.handoffId(),
-        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", "OVERRIDE", "note", "operator-1")))
+        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", "OVERRIDE", "note"),
+        TRUSTED_ACTOR))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("not draft eligible");
   }
@@ -321,7 +331,8 @@ class AiValidationHandoffReviewServiceTest {
     long orders = draftOrderRepository.count();
 
     reviewService.decide(h.handoffId(),
-        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED", "ok", "operator-1"));
+        new AiHandoffDecisionRequest("APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED", "ok"),
+        TRUSTED_ACTOR);
     AiHandoffDraftPreparationCandidate candidate = reviewService.draftPreparationCandidate(h.handoffId());
 
     assertThat(candidate.draftPreparationAllowed()).isTrue();
@@ -345,5 +356,42 @@ class AiValidationHandoffReviewServiceTest {
     assertThatThrownBy(() -> reviewService.draftPreparationCandidate(h.handoffId()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("not found for tenant");
+  }
+
+  @Test
+  void reviewMutationsPersistAndAuditOnlyTrustedActorWithoutResponseLeak() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedKnownCustomer(tenantId, "ACME");
+    seedKnownProductWithStockAndPrice(tenantId, "BP-100");
+    AiValidationHandoffView started = handoff(tenantId, "SUCCEEDED", "ACME", "20");
+    AiValidationHandoffView decided = handoff(tenantId, "SUCCEEDED", "ACME", "20");
+    AiValidationHandoffView corrected = handoff(tenantId, "SUCCEEDED", "ACME", "20");
+
+    AiHandoffReviewView startView =
+        reviewService.startReview(started.handoffId(), TRUSTED_ACTOR);
+    reviewService.decide(
+        decided.handoffId(),
+        new AiHandoffDecisionRequest(
+            "APPROVE_FOR_DRAFT_PREPARATION", "VALIDATED_BY_OPERATOR", "verified"),
+        TRUSTED_ACTOR);
+    reviewService.recordCorrection(
+        corrected.handoffId(),
+        new AiHandoffCorrectionRequest("Corrected customer", "RFQ", "ACME", 1),
+        TRUSTED_ACTOR);
+
+    assertThat(reviewRepository.findByTenantIdAndHandoffId(tenantId, started.handoffId())
+        .orElseThrow().getReviewedBy()).isEqualTo(TRUSTED_ACTOR.toString());
+    assertThat(reviewRepository.findByTenantIdAndHandoffId(tenantId, decided.handoffId())
+        .orElseThrow().getReviewedBy()).isEqualTo(TRUSTED_ACTOR.toString());
+    assertThat(reviewRepository.findByTenantIdAndHandoffId(tenantId, corrected.handoffId())
+        .orElseThrow().getReviewedBy()).isEqualTo(TRUSTED_ACTOR.toString());
+
+    assertThat(auditEventRepository.findAll().stream()
+        .filter(event -> event.getAction().startsWith("ai_validation_handoff_review."))
+        .map(event -> event.getActorId()))
+        .containsOnly(TRUSTED_ACTOR);
+    assertThat(writeJson(startView))
+        .doesNotContain("reviewedBy", "actorId", "actorUserId", TRUSTED_ACTOR.toString());
   }
 }

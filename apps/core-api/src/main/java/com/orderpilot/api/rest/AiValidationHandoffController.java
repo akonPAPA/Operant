@@ -9,6 +9,9 @@ import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffReviewView;
 import com.orderpilot.api.dto.AiValidationHandoffDtos.AiHandoffStartReviewRequest;
 import com.orderpilot.application.services.validation.AiValidationHandoffService;
 import com.orderpilot.application.services.validation.AiValidationHandoffReviewService;
+import com.orderpilot.common.tenant.TenantContext;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,10 +35,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class AiValidationHandoffController {
   private final AiValidationHandoffService service;
   private final AiValidationHandoffReviewService reviewService;
+  private final RequestActorResolver actorResolver;
 
-  public AiValidationHandoffController(AiValidationHandoffService service, AiValidationHandoffReviewService reviewService) {
+  public AiValidationHandoffController(
+      AiValidationHandoffService service,
+      AiValidationHandoffReviewService reviewService,
+      RequestActorResolver actorResolver) {
     this.service = service;
     this.reviewService = reviewService;
+    this.actorResolver = actorResolver;
   }
 
   @PostMapping("/api/v1/internal/ai-validations/{validationId}/handoff")
@@ -77,17 +85,30 @@ public class AiValidationHandoffController {
   }
 
   @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/start")
-  public AiHandoffReviewView startReview(@PathVariable UUID handoffId, @RequestBody(required = false) AiHandoffStartReviewRequest request) {
-    return reviewService.startReview(handoffId, request);
+  public AiHandoffReviewView startReview(
+      @PathVariable UUID handoffId,
+      @RequestBody(required = false) AiHandoffStartReviewRequest request,
+      HttpServletRequest http) {
+    return reviewService.startReview(handoffId, trustedActor(http));
   }
 
   @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/decision")
-  public AiHandoffReviewView decide(@PathVariable UUID handoffId, @RequestBody(required = false) AiHandoffDecisionRequest request) {
-    return reviewService.decide(handoffId, request);
+  public AiHandoffReviewView decide(
+      @PathVariable UUID handoffId,
+      @RequestBody(required = false) AiHandoffDecisionRequest request,
+      HttpServletRequest http) {
+    return reviewService.decide(handoffId, request, trustedActor(http));
   }
 
   @PostMapping("/api/v1/ai-validation-handoffs/{handoffId}/review/correction")
-  public AiHandoffReviewView recordCorrection(@PathVariable UUID handoffId, @RequestBody(required = false) AiHandoffCorrectionRequest request) {
-    return reviewService.recordCorrection(handoffId, request);
+  public AiHandoffReviewView recordCorrection(
+      @PathVariable UUID handoffId,
+      @RequestBody(required = false) AiHandoffCorrectionRequest request,
+      HttpServletRequest http) {
+    return reviewService.recordCorrection(handoffId, request, trustedActor(http));
+  }
+
+  private UUID trustedActor(HttpServletRequest http) {
+    return actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
   }
 }
