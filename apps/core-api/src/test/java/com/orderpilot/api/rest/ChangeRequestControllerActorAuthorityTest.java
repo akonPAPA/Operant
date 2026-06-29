@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -36,7 +38,14 @@ import org.springframework.test.web.servlet.MockMvc;
 // trusted actor context, never from the request body, so a caller cannot forge who originated an
 // external-write ChangeRequest.
 @WebMvcTest(ChangeRequestController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class, ApiSecurityWebConfig.class, ApiPermissionInterceptor.class, ApiPermissionGuard.class, RequestActorResolver.class})
+@Import({
+    CoreConfiguration.class,
+    GlobalExceptionHandler.class,
+    ApiSecurityWebConfig.class,
+    ApiPermissionInterceptor.class,
+    ApiPermissionGuard.class,
+    RequestActorResolver.class
+})
 class ChangeRequestControllerActorAuthorityTest {
   @Autowired private MockMvc mockMvc;
   @MockBean private ChangeRequestService service;
@@ -48,19 +57,71 @@ class ChangeRequestControllerActorAuthorityTest {
     UUID trustedActor = UUID.randomUUID();
     UUID spoofActor = UUID.randomUUID();
     Instant now = Instant.parse("2026-05-27T00:00:00Z");
-    ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "ONEC", "ORDER", "CREATE_ORDER", "QUOTE", sourceId, "{}", "key", trustedActor, now);
-    when(service.createChangeRequest(anyString(), anyString(), anyString(), anyString(), any(), anyString(), any(), any())).thenReturn(changeRequest);
 
-    mockMvc.perform(post("/api/v1/change-requests")
-            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\",\"createdByUserId\":\"" + spoofActor + "\"}"))
+    ChangeRequest changeRequest =
+        new ChangeRequest(
+            UUID.randomUUID(),
+            "ONEC",
+            "ORDER",
+            "CREATE_ORDER",
+            "QUOTE",
+            sourceId,
+            "{}",
+            "trusted-header-key",
+            trustedActor,
+            now);
+
+    when(service.createChangeRequest(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            any(),
+            nullable(String.class),
+            nullable(String.class),
+            any()))
+        .thenReturn(changeRequest);
+
+    mockMvc
+        .perform(
+            post("/api/v1/change-requests")
+                .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
+                .header("Idempotency-Key", "trusted-header-key")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"targetSystem\":\"ONEC\","
+                        + "\"targetEntity\":\"ORDER\","
+                        + "\"requestedAction\":\"CREATE_ORDER\","
+                        + "\"sourceType\":\"QUOTE\","
+                        + "\"sourceId\":\""
+                        + sourceId
+                        + "\","
+                        + "\"requestPayloadJson\":\"SMUGGLED-PAYLOAD\","
+                        + "\"idempotencyKey\":\"body-smuggled-key\","
+                        + "\"createdByUserId\":\""
+                        + spoofActor
+                        + "\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.targetSystem").value("ONEC"));
 
+    ArgumentCaptor<String> idempotencyCaptor = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<UUID> createdByCaptor = ArgumentCaptor.forClass(UUID.class);
-    verify(service).createChangeRequest(eq("ONEC"), eq("ORDER"), eq("CREATE_ORDER"), eq("QUOTE"), eq(sourceId), eq("{}"), eq("key"), createdByCaptor.capture());
+
+    verify(service)
+        .createChangeRequest(
+            eq("ONEC"),
+            eq("ORDER"),
+            eq("CREATE_ORDER"),
+            eq("QUOTE"),
+            eq(sourceId),
+            isNull(),
+            idempotencyCaptor.capture(),
+            createdByCaptor.capture());
+
+    assertThat(idempotencyCaptor.getValue())
+        .isEqualTo("trusted-header-key")
+        .isNotEqualTo("body-smuggled-key");
     assertThat(createdByCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
   }
 
@@ -68,30 +129,88 @@ class ChangeRequestControllerActorAuthorityTest {
   void validCreateWithoutActorHeaderUsesSafeSystemActorFallback() throws Exception {
     UUID sourceId = UUID.randomUUID();
     Instant now = Instant.parse("2026-05-27T00:00:00Z");
-    ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "ONEC", "ORDER", "CREATE_ORDER", "QUOTE", sourceId, "{}", "key", RequestActorResolver.SYSTEM_ACTOR, now);
-    when(service.createChangeRequest(anyString(), anyString(), anyString(), anyString(), any(), anyString(), any(), any())).thenReturn(changeRequest);
 
-    mockMvc.perform(post("/api/v1/change-requests")
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\"}"))
+    ChangeRequest changeRequest =
+        new ChangeRequest(
+            UUID.randomUUID(),
+            "ONEC",
+            "ORDER",
+            "CREATE_ORDER",
+            "QUOTE",
+            sourceId,
+            "{}",
+            null,
+            RequestActorResolver.SYSTEM_ACTOR,
+            now);
+
+    when(service.createChangeRequest(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            any(),
+            nullable(String.class),
+            nullable(String.class),
+            any()))
+        .thenReturn(changeRequest);
+
+    mockMvc
+        .perform(
+            post("/api/v1/change-requests")
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"targetSystem\":\"ONEC\","
+                        + "\"targetEntity\":\"ORDER\","
+                        + "\"requestedAction\":\"CREATE_ORDER\","
+                        + "\"sourceType\":\"QUOTE\","
+                        + "\"sourceId\":\""
+                        + sourceId
+                        + "\","
+                        + "\"requestPayloadJson\":\"SMUGGLED-PAYLOAD\","
+                        + "\"idempotencyKey\":\"body-smuggled-key\"}"))
         .andExpect(status().isOk());
 
+    ArgumentCaptor<String> idempotencyCaptor = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<UUID> createdByCaptor = ArgumentCaptor.forClass(UUID.class);
-    verify(service).createChangeRequest(eq("ONEC"), eq("ORDER"), eq("CREATE_ORDER"), eq("QUOTE"), eq(sourceId), eq("{}"), eq("key"), createdByCaptor.capture());
+
+    verify(service)
+        .createChangeRequest(
+            eq("ONEC"),
+            eq("ORDER"),
+            eq("CREATE_ORDER"),
+            eq("QUOTE"),
+            eq(sourceId),
+            isNull(),
+            idempotencyCaptor.capture(),
+            createdByCaptor.capture());
+
     // Unsigned local/dev/test mode: a missing actor header resolves to the stable SYSTEM_ACTOR
-    // sentinel (existing safe behavior), never null-from-body.
+    // sentinel. Body-owned idempotency is ignored because idempotency is header-owned.
+    assertThat(idempotencyCaptor.getValue()).isNull();
     assertThat(createdByCaptor.getValue()).isEqualTo(RequestActorResolver.SYSTEM_ACTOR);
   }
 
   @Test
   void malformedActorHeaderIsRejectedWithBadRequest() throws Exception {
     UUID sourceId = UUID.randomUUID();
-    mockMvc.perform(post("/api/v1/change-requests")
-            .header(RequestActorResolver.ACTOR_HEADER, "not-a-uuid")
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"targetSystem\":\"ONEC\",\"targetEntity\":\"ORDER\",\"requestedAction\":\"CREATE_ORDER\",\"sourceType\":\"QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestPayloadJson\":\"{}\",\"idempotencyKey\":\"key\"}"))
+
+    mockMvc
+        .perform(
+            post("/api/v1/change-requests")
+                .header(RequestActorResolver.ACTOR_HEADER, "not-a-uuid")
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"targetSystem\":\"ONEC\","
+                        + "\"targetEntity\":\"ORDER\","
+                        + "\"requestedAction\":\"CREATE_ORDER\","
+                        + "\"sourceType\":\"QUOTE\","
+                        + "\"sourceId\":\""
+                        + sourceId
+                        + "\","
+                        + "\"requestPayloadJson\":\"{}\","
+                        + "\"idempotencyKey\":\"key\"}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
   }
@@ -103,27 +222,32 @@ class ChangeRequestControllerActorAuthorityTest {
     UUID quoteId = UUID.randomUUID();
     UUID trustedActor = UUID.randomUUID();
     UUID spoofActor = UUID.randomUUID();
-    when(externalWritePreparationService.cancel(eq(changeRequestId), any()))
-        .thenReturn(new QuoteHandoffResponse(
-            quoteId,
-            "APPROVED",
-            "CANCELLED",
-            java.util.List.of(),
-            false,
-            changeRequestId,
-            false,
-            java.util.List.of()));
 
-    mockMvc.perform(post("/api/v1/change-requests/{id}/cancel", changeRequestId)
-            .header("X-Tenant-Id", tenantId)
-            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_REJECT")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"actorId\":\"" + spoofActor + "\",\"reason\":\"duplicate\"}"))
+    when(externalWritePreparationService.cancel(eq(changeRequestId), any()))
+        .thenReturn(
+            new QuoteHandoffResponse(
+                quoteId,
+                "APPROVED",
+                "CANCELLED",
+                java.util.List.of(),
+                false,
+                changeRequestId,
+                false,
+                java.util.List.of()));
+
+    mockMvc
+        .perform(
+            post("/api/v1/change-requests/{id}/cancel", changeRequestId)
+                .header("X-Tenant-Id", tenantId)
+                .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_REJECT")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"actorId\":\"" + spoofActor + "\",\"reason\":\"duplicate\"}"))
         .andExpect(status().isOk());
 
     ArgumentCaptor<ChangeRequestCancelCommand> command =
         ArgumentCaptor.forClass(ChangeRequestCancelCommand.class);
+
     verify(externalWritePreparationService).cancel(eq(changeRequestId), command.capture());
     assertThat(command.getValue().actorId()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
     assertThat(command.getValue().reason()).isEqualTo("duplicate");
