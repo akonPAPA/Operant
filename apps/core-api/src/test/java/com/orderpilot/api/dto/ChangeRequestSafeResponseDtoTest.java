@@ -55,4 +55,14 @@ class ChangeRequestSafeResponseDtoTest {
     List<String> components = componentsOf(ChangeRequestCreateRequest.class);
     assertThat(components).doesNotContain("createdByUserId", "approvedByUserId", "tenantId", "actorId");
   }
+
+  // Wave 01H Category C: the create body must not own lower-layer internal state — the external-write
+  // payload is built server-side, the snapshot id is internal, and idempotency is resolved from the
+  // standard Idempotency-Key header, never from the body.
+  @Test
+  void changeRequestCreateRequestDoesNotAcceptPayloadSnapshotOrIdempotencyState() {
+    List<String> components = componentsOf(ChangeRequestCreateRequest.class);
+    assertThat(components).doesNotContain("requestPayloadJson", "payloadJson", "payloadSnapshotId", "idempotencyKey", "payloadHash");
+    assertThat(components).contains("targetSystem", "targetEntity", "requestedAction", "sourceType", "sourceId");
+  }
 }

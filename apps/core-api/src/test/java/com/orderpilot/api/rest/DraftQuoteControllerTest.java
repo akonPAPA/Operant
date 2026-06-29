@@ -61,7 +61,7 @@ class DraftQuoteControllerTest {
   @Test
   void createsDraftQuoteFromRfqEndpoint() throws Exception {
     UUID quoteId = UUID.randomUUID();
-    when(service.createFromRfq(any())).thenReturn(new DraftQuoteResponse(quoteId, tenantId, "DQ-1", "API", null, null, null, "Acme", "NEEDS_REVIEW", "NEEDS_REVIEW", true, "USD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, Instant.parse("2026-05-20T00:00:00Z"), List.of(), List.of()));
+    when(service.createFromRfq(any())).thenReturn(new DraftQuoteResponse(quoteId, "DQ-1", "API", "Acme", "NEEDS_REVIEW", "NEEDS_REVIEW", true, "USD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, Instant.parse("2026-05-20T00:00:00Z"), List.of(), List.of()));
 
     mockMvc.perform(post("/api/v1/quotes/drafts/from-rfq")
             .header("X-Tenant-Id", tenantId)
@@ -75,7 +75,13 @@ class DraftQuoteControllerTest {
                 List.of(new RfqLineInput("Brake pads", "BRK-001", BigDecimal.ONE, "pcs", null))))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value(quoteId.toString()))
-        .andExpect(jsonPath("$.status").value("NEEDS_REVIEW"));
+        .andExpect(jsonPath("$.status").value("NEEDS_REVIEW"))
+        // Wave 01H Category D: operator-safe response — internal tenant/source/storage ids absent.
+        .andExpect(jsonPath("$.tenantId").doesNotExist())
+        .andExpect(jsonPath("$.sourceMessageId").doesNotExist())
+        .andExpect(jsonPath("$.sourceDocumentId").doesNotExist())
+        .andExpect(jsonPath("$.customerAccountId").doesNotExist())
+        .andExpect(jsonPath("$.sourceType").value("API"));
 
     ArgumentCaptor<CreateDraftQuoteFromRfqRequest> command =
         ArgumentCaptor.forClass(CreateDraftQuoteFromRfqRequest.class);
@@ -88,11 +94,16 @@ class DraftQuoteControllerTest {
   @Test
   void readsTenantScopedDraftQuoteEndpoint() throws Exception {
     UUID quoteId = UUID.randomUUID();
-    when(service.get(quoteId)).thenReturn(new DraftQuoteResponse(quoteId, UUID.randomUUID(), "DQ-2", "API", null, null, null, null, "READY_FOR_APPROVAL", "VALIDATED", true, "USD", BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.TEN, Instant.parse("2026-05-20T00:00:00Z"), List.of(), List.of()));
+    when(service.get(quoteId)).thenReturn(new DraftQuoteResponse(quoteId, "DQ-2", "API", null, "READY_FOR_APPROVAL", "VALIDATED", true, "USD", BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.TEN, Instant.parse("2026-05-20T00:00:00Z"), List.of(), List.of()));
 
     mockMvc.perform(get("/api/v1/quotes/drafts/" + quoteId))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("READY_FOR_APPROVAL"));
+        .andExpect(jsonPath("$.status").value("READY_FOR_APPROVAL"))
+        // Wave 01H Category D: operator-safe response — internal tenant/source/storage ids absent.
+        .andExpect(jsonPath("$.tenantId").doesNotExist())
+        .andExpect(jsonPath("$.sourceMessageId").doesNotExist())
+        .andExpect(jsonPath("$.sourceDocumentId").doesNotExist())
+        .andExpect(jsonPath("$.customerAccountId").doesNotExist());
   }
 
   @Test
@@ -123,12 +134,8 @@ class DraftQuoteControllerTest {
     when(substituteApprovalService.approveSubstitute(any(), any(), any())).thenReturn(
         new DraftQuoteResponse(
             quoteId,
-            tenantId,
             "DQ-3",
             "API",
-            null,
-            null,
-            null,
             "Acme",
             "READY_FOR_APPROVAL",
             "VALIDATED",

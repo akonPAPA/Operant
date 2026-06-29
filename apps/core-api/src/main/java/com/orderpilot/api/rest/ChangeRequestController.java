@@ -28,12 +28,18 @@ public class ChangeRequestController {
   }
 
   @PostMapping("/change-requests")
-  public ChangeRequestResponse create(@RequestBody ChangeRequestCreateRequest request, HttpServletRequest http) {
-    // OP-CAP-17F: createdBy is an authority field (it stamps who originated an external-write
-    // ChangeRequest). It is resolved from the trusted (optionally signed) actor context, never from
-    // the request body, so a caller cannot forge the creator. The body carries business intent only.
+  public ChangeRequestResponse create(
+      @RequestBody ChangeRequestCreateRequest request,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+      HttpServletRequest http) {
+    // OP-CAP-17F / Wave 01H Category C: createdBy is an authority field (it stamps who originated an
+    // external-write ChangeRequest). It is resolved from the trusted (optionally signed) actor
+    // context, never from the request body, so a caller cannot forge the creator. The external-write
+    // payload is backend-owned (a null payload defaults the domain to a neutral "{}") and idempotency
+    // is taken from the standard Idempotency-Key header, never from a lower-layer body field. The body
+    // carries business intent only.
     UUID createdByUserId = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
-    return toChangeRequest(service.createChangeRequest(request.targetSystem(), request.targetEntity(), request.requestedAction(), request.sourceType(), request.sourceId(), request.requestPayloadJson(), request.idempotencyKey(), createdByUserId));
+    return toChangeRequest(service.createChangeRequest(request.targetSystem(), request.targetEntity(), request.requestedAction(), request.sourceType(), request.sourceId(), null, idempotencyKey, createdByUserId));
   }
 
   @GetMapping("/change-requests")

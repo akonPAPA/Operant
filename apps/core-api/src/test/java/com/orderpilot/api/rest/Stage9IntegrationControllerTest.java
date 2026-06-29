@@ -64,7 +64,7 @@ class Stage9IntegrationControllerTest {
     when(integrationConnectionService.activate(any())).thenReturn(connection);
     when(changeRequestService.listChangeRequests()).thenReturn(List.of(changeRequest));
     when(changeRequestService.getChangeRequest(any())).thenReturn(changeRequest);
-    when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), anyString(), any())).thenReturn(changeRequest);
+    when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), nullable(String.class), any())).thenReturn(changeRequest);
     when(changeRequestService.approveChangeRequest(any(), any())).thenReturn(changeRequest);
     when(changeRequestService.rejectChangeRequest(any(), any())).thenReturn(changeRequest);
     when(changeRequestService.executeStage9DemoChangeRequest(any())).thenReturn(changeRequest);
@@ -85,7 +85,11 @@ class Stage9IntegrationControllerTest {
         .andExpect(jsonPath("$.changeRequests[0].sourceId").doesNotExist())
         .andExpect(jsonPath("$.changeRequests[0].createdByUserId").doesNotExist())
         .andExpect(jsonPath("$.changeRequests[0].approvedByUserId").doesNotExist())
-        .andExpect(jsonPath("$.changeRequests[0].connectorIdempotencyKeyHash").doesNotExist());
+        .andExpect(jsonPath("$.changeRequests[0].connectorIdempotencyKeyHash").doesNotExist())
+        // Wave 01H Category D: internal execution machinery is not exposed; business `status` rolls it up.
+        .andExpect(jsonPath("$.changeRequests[0].executionStatus").doesNotExist())
+        .andExpect(jsonPath("$.changeRequests[0].connectorFailureType").doesNotExist())
+        .andExpect(jsonPath("$.changeRequests[0].connectorRetryable").doesNotExist());
     mockMvc.perform(post("/api/stage9/change-requests").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE").contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.targetSystem").value("DEMO_ERP"));
@@ -94,7 +98,8 @@ class Stage9IntegrationControllerTest {
         .andExpect(jsonPath("$.approvalStatus").value("APPROVED"));
     mockMvc.perform(post("/api/stage9/change-requests/" + requestId + "/execute").header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_EXECUTE"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.executionStatus").value("EXECUTED"));
+        .andExpect(jsonPath("$.status").value("EXECUTED"))
+        .andExpect(jsonPath("$.executionStatus").doesNotExist());
     mockMvc.perform(get("/api/stage9/connector-sync-runs").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.syncRuns[0].direction").value("OUTBOUND_DEMO"))
@@ -182,18 +187,21 @@ class Stage9IntegrationControllerTest {
     UUID spoofActor = UUID.randomUUID();
     Instant now = Instant.parse("2026-05-27T00:00:00Z");
     ChangeRequest changeRequest = new ChangeRequest(UUID.randomUUID(), "DEMO_ERP", "DRAFT_QUOTE", "CREATE_DRAFT_QUOTE", "DRAFT_QUOTE", sourceId, "{}", "key", trustedActor, now);
-    when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), anyString(), any())).thenReturn(changeRequest);
+    when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), nullable(String.class), any())).thenReturn(changeRequest);
 
     mockMvc.perform(post("/api/stage9/change-requests")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "CHANGE_REQUEST_CREATE")
             .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{}\",\"actorId\":\"" + spoofActor + "\"}"))
+            .content("{\"sourceType\":\"DRAFT_QUOTE\",\"sourceId\":\"" + sourceId + "\",\"requestedAction\":\"CREATE_DRAFT_QUOTE\",\"requestPayloadJson\":\"{\\\"simulateFailure\\\":true}\",\"actorId\":\"" + spoofActor + "\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.targetSystem").value("DEMO_ERP"));
 
+    // Wave 01H Category C: actor comes from the trusted header, and the client-supplied
+    // requestPayloadJson (here an attempted simulateFailure injection) is NOT forwarded — the backend
+    // builds the payload (null -> neutral default), so the client cannot steer demo execution.
     ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
-    verify(changeRequestService).createStage9DemoChangeRequest(eq("DRAFT_QUOTE"), eq(sourceId), eq("CREATE_DRAFT_QUOTE"), eq("{}"), actorCaptor.capture());
+    verify(changeRequestService).createStage9DemoChangeRequest(eq("DRAFT_QUOTE"), eq(sourceId), eq("CREATE_DRAFT_QUOTE"), isNull(), actorCaptor.capture());
     assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
   }
 

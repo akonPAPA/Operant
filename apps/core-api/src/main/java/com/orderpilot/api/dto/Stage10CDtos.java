@@ -6,19 +6,18 @@ import java.util.UUID;
 public final class Stage10CDtos {
   private Stage10CDtos() {}
 
-  // OP-CAP-17F: the change-request creator is an authority field resolved server-side from the
-  // trusted actor context (see ChangeRequestController#create / RequestActorResolver). It is never
-  // accepted from the request body, so this DTO no longer carries a createdByUserId — the body holds
-  // business intent only.
+  // OP-CAP-17F / Wave 01H Category C: the change-request creator is an authority field resolved
+  // server-side from the trusted actor context (see ChangeRequestController#create /
+  // RequestActorResolver). The external-write payload (requestPayloadJson), the internal snapshot id
+  // (payloadSnapshotId) and the idempotency key are lower-layer internal state: the payload is built
+  // server-side and idempotency is resolved from the standard Idempotency-Key header, never from the
+  // body. The body holds business intent only.
   public static record ChangeRequestCreateRequest(
       String targetSystem,
       String targetEntity,
       String requestedAction,
       String sourceType,
-      UUID sourceId,
-      UUID payloadSnapshotId,
-      String requestPayloadJson,
-      String idempotencyKey) {}
+      UUID sourceId) {}
 
   // OP-CAP-17E: the approver is an authority field resolved server-side from the trusted actor
   // context (see ChangeRequestController#approve / RequestActorResolver); it is never accepted from

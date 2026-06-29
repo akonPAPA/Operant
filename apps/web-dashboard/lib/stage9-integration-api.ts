@@ -15,6 +15,9 @@ export type Stage9Integration = {
   endpointRef?: string;
 };
 
+// Wave 01H Category D: the connector change-request response is operator-safe. The business-facing
+// rollup `status` conveys execution readiness/outcome; the raw internal execution machinery
+// (executionStatus, connectorFailureType, connectorRetryable) is not part of the contract.
 export type Stage9ChangeRequest = {
   id: string;
   status: string;
@@ -22,16 +25,9 @@ export type Stage9ChangeRequest = {
   targetEntity: string;
   requestedAction: string;
   sourceType: string;
-  sourceId: string;
   approvalStatus: string;
-  executionStatus: string;
   externalReference?: string;
   failureReason?: string;
-  connectorIdempotencyKeyHash?: string;
-  connectorAttemptCount: number;
-  connectorMaxAttempts: number;
-  connectorFailureType?: string;
-  connectorRetryable: boolean;
 };
 
 export type Stage9ConnectorSyncRun = {

@@ -2,6 +2,7 @@ package com.orderpilot.api.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.orderpilot.api.dto.Stage9Dtos.Stage9ChangeRequestCreateRequest;
 import com.orderpilot.api.dto.Stage9Dtos.Stage9ChangeRequestResponse;
 import com.orderpilot.api.dto.Stage9Dtos.Stage9ConnectorAuditEventResponse;
 import com.orderpilot.api.dto.Stage9Dtos.Stage9ConnectorPolicyResponse;
@@ -29,7 +30,28 @@ class Stage9ConnectorResponseLeakTest {
         "connectorAttemptCount",
         "connectorMaxAttempts",
         "connectorLastAttemptAt",
-        "connectorNextRetryAt");
+        "connectorNextRetryAt",
+        // Wave 01H Category D: internal connector/execution machinery is not exposed.
+        "executionStatus",
+        "connectorFailureType",
+        "connectorRetryable");
+    // The business-facing rollup status and approval/validation status remain.
+    assertThat(componentsOf(Stage9ChangeRequestResponse.class)).contains("status", "approvalStatus", "validationStatus");
+  }
+
+  @Test
+  void stage9ChangeRequestCreateRequestDoesNotAcceptPayloadOrAuthority() {
+    // Wave 01H Category C: the external-write payload is backend-owned and the actor is server-resolved;
+    // the public create request carries business intent only.
+    assertThat(componentsOf(Stage9ChangeRequestCreateRequest.class)).doesNotContain(
+        "requestPayloadJson",
+        "payloadJson",
+        "idempotencyKey",
+        "actorId",
+        "actorUserId",
+        "createdByUserId",
+        "tenantId");
+    assertThat(componentsOf(Stage9ChangeRequestCreateRequest.class)).contains("sourceType", "sourceId", "requestedAction");
   }
 
   @Test

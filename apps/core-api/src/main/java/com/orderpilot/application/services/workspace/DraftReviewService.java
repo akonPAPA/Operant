@@ -82,7 +82,7 @@ public class DraftReviewService {
   }
 
   @Transactional
-  public DraftQuoteDetail correctQuoteLine(UUID draftQuoteId, UUID lineId, DraftLineCorrectionRequest request) {
+  public DraftQuoteDetail correctQuoteLine(UUID draftQuoteId, UUID lineId, DraftLineCorrectionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
     DraftQuote quote = quoteRepository.findByIdAndTenantId(draftQuoteId, tenantId).orElseThrow();
     ensureCorrectable(quote.getStatus());
@@ -98,16 +98,15 @@ public class DraftReviewService {
     List<DraftQuoteLine> lines = quoteLineRepository.findByTenantIdAndDraftQuoteId(tenantId, draftQuoteId);
     BigDecimal subtotal = sumQuote(lines);
     quote.setTotals(subtotal, nullSafe(quote.getDiscountAmount()), subtotal, quote.getMarginPercent(), clock.instant());
-    quote.setStatus(REVIEW_STATUS, request.actorUserId(), clock.instant());
+    quote.setStatus(REVIEW_STATUS, actorId, clock.instant());
     quoteRepository.save(quote);
-    actionService.record(request.actorUserId(), "DRAFT_QUOTE", draftQuoteId, "DRAFT_QUOTE_LINE_CORRECTED", "Operator corrected draft quote line", correctionMetadata(lineId, request));
+    actionService.record(actorId, "DRAFT_QUOTE", draftQuoteId, "DRAFT_QUOTE_LINE_CORRECTED", "Operator corrected draft quote line", correctionMetadata(lineId, request));
     return quoteDetail(quote, tenantId);
   }
 
   @Transactional
-  public DraftQuoteDetail markQuoteReady(UUID draftQuoteId, ReviewActionRequest request) {
+  public DraftQuoteDetail markQuoteReady(UUID draftQuoteId, ReviewActionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actorId = request == null ? null : request.actorUserId();
     DraftQuote quote = quoteRepository.findByIdAndTenantId(draftQuoteId, tenantId).orElseThrow();
     String from = quote.getStatus();
     if (READY_STATUS.equals(from)) {
@@ -130,7 +129,7 @@ public class DraftReviewService {
   }
 
   @Transactional
-  public DraftOrderDetail correctOrderLine(UUID draftOrderId, UUID lineId, DraftLineCorrectionRequest request) {
+  public DraftOrderDetail correctOrderLine(UUID draftOrderId, UUID lineId, DraftLineCorrectionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
     DraftOrder order = orderRepository.findByIdAndTenantId(draftOrderId, tenantId).orElseThrow();
     ensureCorrectable(order.getStatus());
@@ -145,16 +144,15 @@ public class DraftReviewService {
     List<DraftOrderLine> lines = orderLineRepository.findByTenantIdAndDraftOrderId(tenantId, draftOrderId);
     BigDecimal subtotal = sumOrder(lines);
     order.setTotals(subtotal, nullSafe(order.getDiscountAmount()), subtotal, order.getMarginPercent(), clock.instant());
-    order.setStatus(REVIEW_STATUS, request.actorUserId(), clock.instant());
+    order.setStatus(REVIEW_STATUS, actorId, clock.instant());
     orderRepository.save(order);
-    actionService.record(request.actorUserId(), "DRAFT_ORDER", draftOrderId, "DRAFT_ORDER_LINE_CORRECTED", "Operator corrected draft order line", correctionMetadata(lineId, request));
+    actionService.record(actorId, "DRAFT_ORDER", draftOrderId, "DRAFT_ORDER_LINE_CORRECTED", "Operator corrected draft order line", correctionMetadata(lineId, request));
     return orderDetail(order, tenantId);
   }
 
   @Transactional
-  public DraftOrderDetail markOrderReady(UUID draftOrderId, ReviewActionRequest request) {
+  public DraftOrderDetail markOrderReady(UUID draftOrderId, ReviewActionRequest request, UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actorId = request == null ? null : request.actorUserId();
     DraftOrder order = orderRepository.findByIdAndTenantId(draftOrderId, tenantId).orElseThrow();
     String from = order.getStatus();
     if (READY_STATUS.equals(from)) {

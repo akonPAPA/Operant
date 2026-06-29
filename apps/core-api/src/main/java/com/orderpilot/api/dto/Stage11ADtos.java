@@ -33,14 +33,14 @@ public final class Stage11ADtos {
       String rawMessageText,
       List<RfqLineInput> lineItems) {}
 
+  // Wave 01H Category D: operator-safe draft quote response. The tenant (X-Tenant-Id header), the raw
+  // internal source/storage ids (sourceMessageId, sourceDocumentId) and the internal customer account
+  // id are backend-owned and intentionally not part of the screen contract. The safe-to-display
+  // source kind (sourceType) and customer display name are retained.
   public record DraftQuoteResponse(
       UUID id,
-      UUID tenantId,
       String quoteNumber,
       String sourceType,
-      UUID sourceMessageId,
-      UUID sourceDocumentId,
-      UUID customerAccountId,
       String customerDisplayName,
       String status,
       String validationStatus,
@@ -59,12 +59,8 @@ public final class Stage11ADtos {
     public static DraftQuoteResponse from(DraftQuote quote, List<DraftQuoteLine> lines, List<QuoteValidationIssue> issues, java.util.Map<UUID, List<SubstituteCandidateResponse>> substitutionCandidates) {
       return new DraftQuoteResponse(
           quote.getId(),
-          quote.getTenantId(),
           quote.getQuoteNumber(),
           quote.getSourceType(),
-          quote.getSourceMessageId(),
-          quote.getSourceDocumentId(),
-          quote.getCustomerAccountId(),
           quote.getCustomerDisplayName(),
           quote.getStatus(),
           quote.getValidationStatus(),
@@ -98,7 +94,6 @@ public final class Stage11ADtos {
       String issueCodes,
       String substituteDecisionStatus,
       String substituteDecisionReasonCode,
-      UUID substituteDecidedBy,
       Instant substituteDecidedAt,
       String substituteDecisionNote,
       List<SubstituteCandidateResponse> substitutionCandidates) {
@@ -106,8 +101,10 @@ public final class Stage11ADtos {
       return from(line, List.of());
     }
 
+    // Wave 01H Category D: the raw internal actor id (substituteDecidedBy) is not exposed on the line
+    // response. The business-facing decision summary (status, reason code, decided-at, note) is retained.
     public static DraftQuoteLineResponse from(DraftQuoteLine line, List<SubstituteCandidateResponse> substitutionCandidates) {
-      return new DraftQuoteLineResponse(line.getId(), line.getLineNumber(), line.getRawText(), line.getRawSku(), line.getNormalizedSku(), line.getProductId(), line.getProductName(), line.getQuantity(), line.getUom(), line.getRequestedLocation(), line.getUnitPrice(), line.getLineTotal(), line.getAvailableStock(), line.getConfidenceScore(), line.getValidationStatus(), line.getIssueCodes(), line.getSubstituteDecisionStatus(), line.getSubstituteDecisionReasonCode(), line.getSubstituteDecidedBy(), line.getSubstituteDecidedAt(), line.getSubstituteDecisionNote(), substitutionCandidates);
+      return new DraftQuoteLineResponse(line.getId(), line.getLineNumber(), line.getRawText(), line.getRawSku(), line.getNormalizedSku(), line.getProductId(), line.getProductName(), line.getQuantity(), line.getUom(), line.getRequestedLocation(), line.getUnitPrice(), line.getLineTotal(), line.getAvailableStock(), line.getConfidenceScore(), line.getValidationStatus(), line.getIssueCodes(), line.getSubstituteDecisionStatus(), line.getSubstituteDecisionReasonCode(), line.getSubstituteDecidedAt(), line.getSubstituteDecisionNote(), substitutionCandidates);
     }
   }
 
