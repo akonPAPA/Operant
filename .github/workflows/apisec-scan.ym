@@ -1,0 +1,38 @@
+name: APIsec Scan
+
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "36 15 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: apisec-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apisec:
+    name: APIsec scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Run APIsec scan
+        uses: apisec-inc/apisec-run-scan@025432089674a28ba8fb55f8ab06c10215e772ea
+        with:
+          apisec-username: ${{ secrets.APISEC_USERNAME }}
+          apisec-password: ${{ secrets.APISEC_PASSWORD }}
+          apisec-project: ${{ vars.APISEC_PROJECT }}
+          sarif-result-file: "apisec-results.sarif"
+
+      - name: Upload APIsec SARIF
+        if: ${{ always() && hashFiles('apisec-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ./apisec-results.sarif
