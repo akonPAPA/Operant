@@ -13,6 +13,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationApprovalRequestCommand;
+import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationIssueResolutionRequest;
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewActionResult;
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewCorrectionRequest;
 import com.orderpilot.api.dto.ValidationReviewCommandDtos.ValidationReviewDraftResult;
@@ -148,7 +150,7 @@ class ValidationControllerAuthorityBoundaryTest {
     UUID actionId = UUID.randomUUID();
     UUID trustedActor = UUID.randomUUID();
     UUID spoofActor = UUID.randomUUID();
-    when(validationReviewCommandService.submitCorrection(eq(validationRunId), any()))
+    when(validationReviewCommandService.submitCorrection(eq(validationRunId), any(), any()))
         .thenReturn(new ValidationReviewActionResult(
             actionId, validationRunId, "LINE_ITEM", lineItemId, "VALIDATION_REVIEW_LINE_ITEM_CORRECTED",
             "RECORDED", false, null, null, null, trustedActor, Instant.parse("2026-06-16T00:00:00Z"),
@@ -167,25 +169,130 @@ class ValidationControllerAuthorityBoundaryTest {
                   "correctedUom": "EA",
                   "reason": "operator corrected quantity",
                   "actorUserId": "%s",
+                  "actorId": "%s",
+                  "reviewedBy": "%s",
+                  "decidedBy": "%s",
                   "clientRequestId": "client-1",
                   "tenantId": "00000000-0000-4000-8000-000000000001",
                   "risk": "LOW",
                   "approvalStatus": "APPROVED"
                 }
-                """.formatted(lineItemId, spoofActor)))
+                """.formatted(lineItemId, spoofActor, spoofActor, spoofActor, spoofActor)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.createdBy").value(trustedActor.toString()))
         .andExpect(content().string(not(containsString(spoofActor.toString()))))
-        .andExpect(content().string(not(containsString("approvalStatus"))));
+        .andExpect(content().string(not(containsString("approvalStatus"))))
+        .andExpect(content().string(not(containsString("actorUserId"))))
+        .andExpect(content().string(not(containsString("tenantId"))))
+        .andExpect(content().string(not(containsString("auditCorrelationId"))))
+        .andExpect(content().string(not(containsString("idempotencyKey"))))
+        .andExpect(content().string(not(containsString("rawPayload"))));
 
     ArgumentCaptor<ValidationReviewCorrectionRequest> requestCaptor =
         ArgumentCaptor.forClass(ValidationReviewCorrectionRequest.class);
-    verify(validationReviewCommandService).submitCorrection(eq(validationRunId), requestCaptor.capture());
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(validationReviewCommandService).submitCorrection(
+        eq(validationRunId), requestCaptor.capture(), actorCaptor.capture());
     ValidationReviewCorrectionRequest request = requestCaptor.getValue();
-    assertThat(request.actorUserId()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
+    assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
     assertThat(request.correctedQuantity()).isEqualTo("3");
     assertThat(request.correctedUom()).isEqualTo("EA");
     assertThat(request.reason()).isEqualTo("operator corrected quantity");
+  }
+
+  @Test
+  void issueResolutionUsesTrustedActorAndIgnoresClientAuthorityFields() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID validationRunId = UUID.randomUUID();
+    UUID issueId = UUID.randomUUID();
+    UUID actionId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    when(validationReviewCommandService.resolveIssue(
+            eq(validationRunId), eq(issueId), any(), any()))
+        .thenReturn(new ValidationReviewActionResult(
+            actionId, validationRunId, "VALIDATION_ISSUE", issueId,
+            "VALIDATION_REVIEW_ISSUE_RESOLVED", "RESOLVED", false, null, issueId,
+            "RESOLVED", trustedActor, Instant.parse("2026-06-16T00:00:00Z"), "client-2",
+            "Issue marked RESOLVED."));
+
+    mockMvc.perform(post(
+                "/api/v1/validations/{validationRunId}/review/issues/{issueId}/resolution",
+                validationRunId, issueId)
+            .header(TENANT_HEADER, tenant.toString())
+            .header(ACTOR_HEADER, trustedActor.toString())
+            .header(PERMISSIONS_HEADER, "REVIEW_ACTION")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "resolution": "RESOLVED",
+                  "reason": "operator verified correction",
+                  "clientRequestId": "client-2",
+                  "actorUserId": "%s",
+                  "actorId": "%s",
+                  "reviewedBy": "%s",
+                  "decidedBy": "%s"
+                }
+                """.formatted(spoofActor, spoofActor, spoofActor, spoofActor)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.createdBy").value(trustedActor.toString()))
+        .andExpect(content().string(not(containsString(spoofActor.toString()))));
+
+    ArgumentCaptor<ValidationIssueResolutionRequest> requestCaptor =
+        ArgumentCaptor.forClass(ValidationIssueResolutionRequest.class);
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(validationReviewCommandService).resolveIssue(
+        eq(validationRunId), eq(issueId), requestCaptor.capture(), actorCaptor.capture());
+    assertThat(requestCaptor.getValue().resolution()).isEqualTo("RESOLVED");
+    assertThat(requestCaptor.getValue().reason()).isEqualTo("operator verified correction");
+    assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
+  }
+
+  @Test
+  void approvalRequestUsesTrustedActorAndIgnoresClientAuthorityFields() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID validationRunId = UUID.randomUUID();
+    UUID approvalId = UUID.randomUUID();
+    UUID actionId = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    when(validationReviewCommandService.requestApproval(eq(validationRunId), any(), any()))
+        .thenReturn(new ValidationReviewActionResult(
+            actionId, validationRunId, "APPROVAL_REQUIREMENT", approvalId,
+            "VALIDATION_REVIEW_APPROVAL_REQUESTED", "OPEN", true, approvalId, null, null,
+            trustedActor, Instant.parse("2026-06-16T00:00:00Z"), null,
+            "Approval request created and pending review."));
+
+    mockMvc.perform(post(
+                "/api/v1/validations/{validationRunId}/review/approval-requests",
+                validationRunId)
+            .header(TENANT_HEADER, tenant.toString())
+            .header(ACTOR_HEADER, trustedActor.toString())
+            .header(PERMISSIONS_HEADER, "REVIEW_ACTION")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "requirementType": "OPERATOR_CORRECTION_REVIEW",
+                  "reason": "manager sign-off required",
+                  "actorUserId": "%s",
+                  "actorId": "%s",
+                  "reviewedBy": "%s",
+                  "decidedBy": "%s"
+                }
+                """.formatted(spoofActor, spoofActor, spoofActor, spoofActor)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.createdBy").value(trustedActor.toString()))
+        .andExpect(content().string(not(containsString(spoofActor.toString()))));
+
+    ArgumentCaptor<ValidationApprovalRequestCommand> requestCaptor =
+        ArgumentCaptor.forClass(ValidationApprovalRequestCommand.class);
+    ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
+    verify(validationReviewCommandService).requestApproval(
+        eq(validationRunId), requestCaptor.capture(), actorCaptor.capture());
+    assertThat(requestCaptor.getValue().requirementType())
+        .isEqualTo("OPERATOR_CORRECTION_REVIEW");
+    assertThat(requestCaptor.getValue().reason()).isEqualTo("manager sign-off required");
+    assertThat(actorCaptor.getValue()).isEqualTo(trustedActor).isNotEqualTo(spoofActor);
   }
 
   @Test
@@ -208,7 +315,7 @@ class ValidationControllerAuthorityBoundaryTest {
                 """.formatted(lineItemId)))
         .andExpect(status().isForbidden());
 
-    verify(validationReviewCommandService, never()).submitCorrection(any(), any());
+    verify(validationReviewCommandService, never()).submitCorrection(any(), any(), any());
   }
 
   @Test

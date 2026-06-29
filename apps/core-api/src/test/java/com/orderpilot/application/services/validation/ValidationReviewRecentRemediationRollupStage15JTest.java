@@ -54,6 +54,7 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 class ValidationReviewRecentRemediationRollupStage15JTest {
   private static final Instant NOW = Instant.parse("2026-06-09T00:00:00Z");
+  private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-4000-8000-000000000015");
 
   @Autowired private ValidationReviewDraftQueryService queryService;
   @Autowired private ValidationReviewDraftCommandService draftBridge;
@@ -98,10 +99,18 @@ class ValidationReviewRecentRemediationRollupStage15JTest {
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "AGG");
     ValidationIssue issue = issues.save(new ValidationIssue(tenantId, run.runId, run.extractionResultId, run.lineA, null, "MARGIN_BELOW_GUARDRAIL", "ERROR", "blocking", "{}", NOW));
-    reviewCommandService.resolveIssue(run.runId, issue.getId(), new ValidationIssueResolutionRequest("RESOLVED", "ok", null, UUID.randomUUID(), null));
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.resolveIssue(
+        run.runId, issue.getId(),
+        new ValidationIssueResolutionRequest("RESOLVED", "ok", null, null), ACTOR_ID);
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
-    reviewCommandService.requestApproval(run.runId, new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off", UUID.randomUUID()));
+    reviewCommandService.requestApproval(
+        run.runId,
+        new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off"),
+        ACTOR_ID);
 
     ValidationReviewDraftRecentRemediationRollupResponse rollup = queryService.recentRemediationRollup(null);
 
@@ -126,7 +135,10 @@ class ValidationReviewRecentRemediationRollupStage15JTest {
     TenantContext.setTenantId(tenantId);
     // One review-origin draft with remediation.
     Run run = cleanRun(tenantId, "MIX");
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
     // One non-review-origin manual draft (no source validation run).
     draftQuotes.save(new DraftQuote(tenantId, "DQ-MANUAL", null, UUID.randomUUID(), null, null, "DRAFT", "USD", null, NOW));
@@ -169,10 +181,16 @@ class ValidationReviewRecentRemediationRollupStage15JTest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
     Run a = cleanRun(tenantId, "LA");
-    reviewCommandService.submitCorrection(a.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", a.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        a.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", a.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(a.runId, UUID.randomUUID());
     Run b = cleanRun(tenantId, "LB");
-    reviewCommandService.submitCorrection(b.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", b.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        b.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", b.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(b.runId, UUID.randomUUID());
 
     ValidationReviewDraftRecentRemediationRollupResponse rollup = queryService.recentRemediationRollup(null);
@@ -195,7 +213,10 @@ class ValidationReviewRecentRemediationRollupStage15JTest {
     UUID tenantB = UUID.randomUUID();
     TenantContext.setTenantId(tenantB);
     Run runB = cleanRun(tenantB, "TB");
-    reviewCommandService.submitCorrection(runB.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", runB.lineA, null, "5", null, "foreign", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        runB.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", runB.lineA, null, "5", null, "foreign", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(runB.runId, UUID.randomUUID());
 
     TenantContext.setTenantId(tenantA);

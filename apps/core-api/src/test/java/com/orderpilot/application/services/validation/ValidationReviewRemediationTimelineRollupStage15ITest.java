@@ -62,6 +62,7 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 class ValidationReviewRemediationTimelineRollupStage15ITest {
   private static final Instant NOW = Instant.parse("2026-06-09T00:00:00Z");
+  private static final UUID ACTOR_ID = UUID.fromString("00000000-0000-4000-8000-000000000015");
 
   @Autowired private ValidationReviewDraftRemediationLineageService lineageService;
   @Autowired private ValidationReviewDraftQueryService queryService;
@@ -94,10 +95,18 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "TL");
     ValidationIssue issue = issues.save(new ValidationIssue(tenantId, run.runId, run.extractionResultId, run.lineA, null, "MARGIN_BELOW_GUARDRAIL", "ERROR", "blocking", "{}", NOW));
-    reviewCommandService.resolveIssue(run.runId, issue.getId(), new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, UUID.randomUUID(), null));
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix qty", UUID.randomUUID(), null));
+    reviewCommandService.resolveIssue(
+        run.runId, issue.getId(),
+        new ValidationIssueResolutionRequest("RESOLVED", "fixed", null, null), ACTOR_ID);
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix qty", null),
+        ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
-    reviewCommandService.requestApproval(run.runId, new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off", UUID.randomUUID()));
+    reviewCommandService.requestApproval(
+        run.runId,
+        new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off"),
+        ACTOR_ID);
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
     ValidationReviewDraftRemediationLineageLine line = tracedLine(detail, run.lineA);
@@ -123,8 +132,15 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "FLD");
     // A field-level correction (not line-scoped) plus a line correction on the drafted line.
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("FIELD", run.fieldA, "Acme Fixed", null, null, "fix field", UUID.randomUUID(), null));
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix qty", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest(
+            "FIELD", run.fieldA, "Acme Fixed", null, null, "fix field", null),
+        ACTOR_ID);
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix qty", null),
+        ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
@@ -141,7 +157,11 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "SUM");
     String secretNote = "SECRET-NOTE-9281";
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, secretNote, UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest(
+            "LINE_ITEM", run.lineA, null, "5", null, secretNote, null),
+        ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
@@ -172,7 +192,10 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "RUP");
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
 
     ValidationReviewDraftRemediationRollup rollup = only(queryService.reviewDraftQueue(null, null, null, null)).remediationRollup();
@@ -209,10 +232,18 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "MATCH");
     ValidationIssue issue = issues.save(new ValidationIssue(tenantId, run.runId, run.extractionResultId, run.lineA, null, "MARGIN_BELOW_GUARDRAIL", "ERROR", "blocking", "{}", NOW));
-    reviewCommandService.resolveIssue(run.runId, issue.getId(), new ValidationIssueResolutionRequest("RESOLVED", "ok", null, UUID.randomUUID(), null));
-    reviewCommandService.submitCorrection(run.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+    reviewCommandService.resolveIssue(
+        run.runId, issue.getId(),
+        new ValidationIssueResolutionRequest("RESOLVED", "ok", null, null), ACTOR_ID);
+    reviewCommandService.submitCorrection(
+        run.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     ValidationReviewDraftResult draft = draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
-    reviewCommandService.requestApproval(run.runId, new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off", UUID.randomUUID()));
+    reviewCommandService.requestApproval(
+        run.runId,
+        new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off"),
+        ACTOR_ID);
 
     ValidationReviewDraftRemediationLineageDetail detail = lineageService.remediationLineage("QUOTE", draft.draftId());
     ValidationReviewDraftRemediationRollup rollup = only(queryService.reviewDraftQueue(null, null, null, null)).remediationRollup();
@@ -229,7 +260,10 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     UUID tenantB = UUID.randomUUID();
     TenantContext.setTenantId(tenantB);
     Run runB = cleanRun(tenantB, "TB");
-    reviewCommandService.submitCorrection(runB.runId, new ValidationReviewCorrectionRequest("LINE_ITEM", runB.lineA, null, "5", null, "foreign", UUID.randomUUID(), null));
+    reviewCommandService.submitCorrection(
+        runB.runId,
+        new ValidationReviewCorrectionRequest("LINE_ITEM", runB.lineA, null, "5", null, "foreign", null),
+        ACTOR_ID);
 
     TenantContext.setTenantId(tenantA);
     Run runA = cleanRun(tenantA, "TA");
@@ -247,10 +281,12 @@ class ValidationReviewRemediationTimelineRollupStage15ITest {
     TenantContext.setTenantId(tenantId);
     Run run = cleanRun(tenantId, "LATE");
     reviewCommandService.submitCorrection(run.runId,
-        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", UUID.randomUUID(), null));
+        new ValidationReviewCorrectionRequest("LINE_ITEM", run.lineA, null, "5", null, "fix", null),
+        ACTOR_ID);
     draftBridge.createDraftQuote(run.runId, UUID.randomUUID());
     reviewCommandService.requestApproval(run.runId,
-        new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off", UUID.randomUUID()));
+        new ValidationApprovalRequestCommand(run.lineA, "OPERATOR_CORRECTION_REVIEW", "sign-off"),
+        ACTOR_ID);
 
     ValidationReviewDraftRemediationRollup rollup = only(queryService.reviewDraftQueue(null, null, null, null)).remediationRollup();
 

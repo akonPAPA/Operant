@@ -147,19 +147,19 @@ public class ValidationController {
    */
   @PostMapping("/{validationRunId}/review/corrections")
   public ValidationReviewActionResult submitCorrection(@PathVariable UUID validationRunId, @RequestBody ValidationReviewCorrectionRequest request, HttpServletRequest http) {
-    return validationReviewCommandService.submitCorrection(validationRunId, trusted(request, trustedActor(http)));
+    return validationReviewCommandService.submitCorrection(validationRunId, request, trustedActor(http));
   }
 
   /** OP-CAP-14C — resolve / ignore / escalate a validation issue (tenant-scoped, state-checked, audited). */
   @PostMapping("/{validationRunId}/review/issues/{issueId}/resolution")
   public ValidationReviewActionResult resolveIssue(@PathVariable UUID validationRunId, @PathVariable UUID issueId, @RequestBody ValidationIssueResolutionRequest request, HttpServletRequest http) {
-    return validationReviewCommandService.resolveIssue(validationRunId, issueId, trusted(request, trustedActor(http)));
+    return validationReviewCommandService.resolveIssue(validationRunId, issueId, request, trustedActor(http));
   }
 
   /** OP-CAP-14C — raise a minimal pending approval request (reuses existing approval infrastructure). */
   @PostMapping("/{validationRunId}/review/approval-requests")
   public ValidationReviewActionResult requestApproval(@PathVariable UUID validationRunId, @RequestBody ValidationApprovalRequestCommand request, HttpServletRequest http) {
-    return validationReviewCommandService.requestApproval(validationRunId, trusted(request, trustedActor(http)));
+    return validationReviewCommandService.requestApproval(validationRunId, request, trustedActor(http));
   }
 
   /**
@@ -238,18 +238,4 @@ public class ValidationController {
     return new ValidationRunResponse(run.getId(), run.getExtractionResultId(), run.getSourceType(), run.getStatus(), run.getOverallStatus(), run.getOverallConfidence(), run.getStartedAt(), run.getFinishedAt(), run.getErrorMessage(), run.getCreatedAt());
   }
 
-  private ValidationReviewCorrectionRequest trusted(ValidationReviewCorrectionRequest request, UUID actorId) {
-    if (request == null) return null;
-    return new ValidationReviewCorrectionRequest(request.targetType(), request.targetId(), request.correctedValue(), request.correctedQuantity(), request.correctedUom(), request.reason(), actorId, request.clientRequestId());
-  }
-
-  private ValidationIssueResolutionRequest trusted(ValidationIssueResolutionRequest request, UUID actorId) {
-    if (request == null) return null;
-    return new ValidationIssueResolutionRequest(request.resolution(), request.reason(), request.correctionActionId(), actorId, request.clientRequestId());
-  }
-
-  private ValidationApprovalRequestCommand trusted(ValidationApprovalRequestCommand request, UUID actorId) {
-    if (request == null) return null;
-    return new ValidationApprovalRequestCommand(request.extractedLineItemId(), request.requirementType(), request.reason(), actorId);
-  }
 }

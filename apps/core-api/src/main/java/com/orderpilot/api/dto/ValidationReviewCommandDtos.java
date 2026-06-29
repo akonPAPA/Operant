@@ -38,7 +38,6 @@ public final class ValidationReviewCommandDtos {
    * @param correctedQuantity corrected normalized quantity for a LINE_ITEM target (string, must be > 0)
    * @param correctedUom corrected normalized UOM for a LINE_ITEM target
    * @param reason bounded operator reason (audited)
-   * @param actorUserId optional actor (audit metadata)
    * @param clientRequestId optional idempotency/correlation key echoed back
    */
   public record ValidationReviewCorrectionRequest(
@@ -48,7 +47,6 @@ public final class ValidationReviewCommandDtos {
       String correctedQuantity,
       String correctedUom,
       String reason,
-      UUID actorUserId,
       String clientRequestId) {}
 
   /**
@@ -57,14 +55,12 @@ public final class ValidationReviewCommandDtos {
    * @param resolution RESOLVED / IGNORED / ESCALATED
    * @param reason bounded operator reason (audited)
    * @param correctionActionId optional id of the correction action that resolved the issue
-   * @param actorUserId optional actor (audit metadata)
    * @param clientRequestId optional idempotency/correlation key echoed back
    */
   public record ValidationIssueResolutionRequest(
       String resolution,
       String reason,
       UUID correctionActionId,
-      UUID actorUserId,
       String clientRequestId) {}
 
   /**
@@ -73,13 +69,11 @@ public final class ValidationReviewCommandDtos {
    * @param extractedLineItemId optional line item the approval is about
    * @param requirementType bounded approval requirement type token
    * @param reason bounded operator reason (audited)
-   * @param actorUserId optional actor (audit metadata)
    */
   public record ValidationApprovalRequestCommand(
       UUID extractedLineItemId,
       String requirementType,
-      String reason,
-      UUID actorUserId) {}
+      String reason) {}
 
   /** Maximum length of an operator note attached at draft creation. */
   public static final int MAX_OPERATOR_NOTE = 1000;
@@ -87,13 +81,11 @@ public final class ValidationReviewCommandDtos {
   /**
    * OP-CAP-15B — bounded request for creating an internal draft from a validation review.
    *
-   * @param actorUserId optional actor (audit metadata)
    * @param selectedLineIds optional subset of extracted line item ids; {@code null}/omitted = all
    *     eligible validated lines (OP-CAP-15A behavior); an explicit empty list is rejected (400)
    * @param operatorNote optional bounded operator note (trimmed, max {@value #MAX_OPERATOR_NOTE})
    */
   public record ValidationReviewDraftRequest(
-      UUID actorUserId,
       List<UUID> selectedLineIds,
       String operatorNote) {}
 
