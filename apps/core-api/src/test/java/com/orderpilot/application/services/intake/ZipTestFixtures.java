@@ -21,11 +21,18 @@ final class ZipTestFixtures {
     writeEndOfCentralDirectory(out, 1);
     return out.toByteArray();
   }
+  
+  static byte[] craftedOfficeZipWithTruncatedCompressedPayload() {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    writeLocalEntry(out, "[Content_Types].xml", 100L, 100L, new byte[] {'x'});
+    writeEndOfCentralDirectory(out, 1);
+    return out.toByteArray();
+  }
 
   private static void writeLocalEntry(
       ByteArrayOutputStream out, String name, long uncompressedSize, long compressedSize, byte[] data) {
     byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
-    long actualCompressed = data.length;
+    long declaredCompressed = compressedSize;
     out.writeBytes(new byte[] {'P', 'K', 0x03, 0x04});
     writeU16(out, 20);
     writeU16(out, 0);
@@ -33,7 +40,7 @@ final class ZipTestFixtures {
     writeU16(out, 0);
     writeU16(out, 0);
     writeU32(out, 0);
-    writeU32(out, actualCompressed);
+    writeU32(out, declaredCompressed);
     writeU32(out, uncompressedSize);
     writeU16(out, nameBytes.length);
     writeU16(out, 0);

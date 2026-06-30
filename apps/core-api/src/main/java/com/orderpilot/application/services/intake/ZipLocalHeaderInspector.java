@@ -86,16 +86,6 @@ final class ZipLocalHeaderInspector {
       onEntry.accept(name, entries);
       long dataEnd = headerEnd + compressedSize;
       if (dataEnd > bytes.length) {
-        long available = bytes.length - headerEnd;
-        if (available < 0) {
-          throw new IllegalArgumentException("Archive structure is not allowed");
-        }
-        if (compressedSize > available) {
-          compressedSize = available;
-          dataEnd = bytes.length;
-        }
-      }
-      if (dataEnd > bytes.length) {
         throw new IllegalArgumentException("Archive structure is not allowed");
       }
       pos = (int) dataEnd;
