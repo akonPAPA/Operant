@@ -36,8 +36,8 @@ test("channel-to-quote payload type carries business intent only (no actor, no t
 
 test("channel-to-quote request sends tenant via X-Tenant-Id header only, never in body", () => {
   // The requestQuoteTransaction helper strips the idempotency key from the body and puts
-  // tenantId in the X-Tenant-Id header — tenantId is never serialized to the JSON body.
-  assert.match(apiClient, /"X-Tenant-Id": tenantId/);
+  // the demo-resolved tenant in the X-Tenant-Id header — tenant is never serialized to the JSON body.
+  assert.match(apiClient, /"X-Tenant-Id": requireDemoTenantId\(\)/);
   assert.match(apiClient, /const \{ idempotencyKey, \.\.\.body \} = payload;/);
   // ChannelToQuotePayload must not declare tenantId.
   const block = typeBlock(apiClient, "ChannelToQuotePayload");
@@ -45,8 +45,9 @@ test("channel-to-quote request sends tenant via X-Tenant-Id header only, never i
 });
 
 test("RFQ request strips tenantId from the JSON body (header only)", () => {
-  assert.match(apiClient, /const \{ idempotencyKey, tenantId, \.\.\.body \} = payload;/);
-  assert.match(apiClient, /"X-Tenant-Id": tenantId/);
+  assert.match(apiClient, /const \{ idempotencyKey, \.\.\.body \} = payload;/);
+  assert.match(apiClient, /"X-Tenant-Id": requireDemoTenantId\(\)/);
+  assert.doesNotMatch(apiClient, /tenantId:\s*string/);
 });
 
 test("approval request body contains only business intent, never tenant/actor", () => {
