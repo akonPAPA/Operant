@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-09C Operator Draft Review API client.
 // Typed, tenant-scoped helpers over the existing 09B backend endpoints. Internal draft review only:
 // no final approval, no external/ERP/connector execution, no master-data mutation. The backend remains authoritative.
@@ -96,7 +98,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const draftReviewConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers() {
@@ -109,7 +111,7 @@ function headers() {
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
   if (!draftReviewConfig.tenantId) {
-    return { data: fallbackData as T, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped draft review data." };
+    return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {

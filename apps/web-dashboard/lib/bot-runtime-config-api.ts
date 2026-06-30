@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-06B / OP-CAP-06B.1 Controlled Bot Runtime Configuration client.
 // Surfaces tenant-scoped, per-channel-connection bot runtime configuration and the safe, permissioned
 // edit path. It requests and renders deterministic policy only — never bot tokens, secret references,
@@ -76,7 +78,7 @@ const BOT_ACTION_PERMISSION = "BOT_ACTION";
 
 export const botRuntimeConfigClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers(extra?: Record<string, string>): Record<string, string> {
@@ -89,7 +91,7 @@ function headers(extra?: Record<string, string>): Record<string, string> {
 
 async function requestJson<T>(path: string, init: RequestInit, fallback: T): Promise<BotRuntimeConfigApiResult<T>> {
   if (!botRuntimeConfigClient.tenantId) {
-    return { data: fallback, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped bot runtime configuration." };
+    return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${botRuntimeConfigClient.baseUrl}${path}`, {

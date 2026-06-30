@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export type Product = {
@@ -33,11 +35,11 @@ type DataResult<T> = {
 };
 
 const baseUrl = process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL;
-const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "";
+const tenantId = demoTenantId();
 
 async function fetchTenantData<T>(path: string): Promise<DataResult<T>> {
   if (!tenantId) {
-    return { data: [], message: "Demo tenant is not configured. Run the Stage 2 seed script and set NEXT_PUBLIC_DEMO_TENANT_ID." };
+    return { data: [], message: "Authenticated dashboard access is unavailable." };
   }
 
   try {

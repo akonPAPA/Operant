@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-06C RFQ Handoff Operator Workflow client.
 // Surfaces the controlled channel/bot RFQ handoff review workflow (OP-CAP-06B record + OP-CAP-06C
 // operator transitions). A handoff is a reviewable draft request only — never a quote/order.
@@ -39,7 +41,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const rfqHandoffClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 // All /api/v1/channels endpoints (reads and the OP-CAP-06C transition POSTs) are guarded by
@@ -63,7 +65,7 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
   if (!rfqHandoffClient.tenantId) {
     return {
       data: fallback,
-      error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped RFQ handoff data."
+      error: "Authenticated dashboard access is unavailable."
     };
   }
   try {

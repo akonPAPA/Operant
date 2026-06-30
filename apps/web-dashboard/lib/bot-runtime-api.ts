@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 export type ApiResult<T> = {
   data: T;
   error?: string;
@@ -117,7 +119,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const botRuntimeConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers() {
@@ -130,7 +132,7 @@ function headers() {
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
   if (!botRuntimeConfig.tenantId) {
-    return { data: fallbackData as T, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped bot runtime data." };
+    return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {

@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-14D Operator Validation Review command client.
 // Typed, tenant-scoped helpers over the OP-CAP-14C backend command endpoints ONLY:
 //   POST /api/v1/validations/{validationRunId}/review/corrections
@@ -61,7 +63,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewCommandConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers() {
@@ -76,7 +78,7 @@ function headers() {
 // Errors are mapped to bounded, user-safe messages — never a stack trace or raw backend internals.
 async function postCommand<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   if (!validationReviewCommandConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to submit tenant-scoped validation review actions." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {

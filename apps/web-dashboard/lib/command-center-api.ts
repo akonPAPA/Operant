@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-21 Transaction Command Center read-model client.
 // Read-only, tenant-scoped projection of the Operant command center surface:
 // metrics, work-queue preview, runtime/outbox health, audit timeline preview, and
@@ -113,7 +115,7 @@ const ANALYTICS_READ = "ANALYTICS_READ";
 
 export const commandCenterClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function baseHeaders(): Record<string, string> {
@@ -129,7 +131,7 @@ function baseHeaders(): Record<string, string> {
 
 export async function getCommandCenterSummary(): Promise<CommandCenterResult> {
   if (!commandCenterClient.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read the tenant-scoped command center." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${commandCenterClient.baseUrl}/api/v1/command-center/summary`, {

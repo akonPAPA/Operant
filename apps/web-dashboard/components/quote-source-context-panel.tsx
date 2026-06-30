@@ -7,8 +7,6 @@ import { getQuoteSourceContext, QuoteSourceContext } from "@/lib/quote-transacti
 // OP-CAP-31: tenant is supplied to the API client (X-Tenant-Id header) from configuration, not from
 // an editable operator input. This panel renders a business-facing source summary only — no raw
 // sourceId, conversionAttemptId, or internal actor/user identifiers.
-const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
-
 export function QuoteSourceContextPanel({ quoteId }: { quoteId: string }) {
   const [context, setContext] = useState<QuoteSourceContext | null>(null);
   const [message, setMessage] = useState("");
@@ -18,7 +16,7 @@ export function QuoteSourceContextPanel({ quoteId }: { quoteId: string }) {
     setLoading(true);
     setMessage("");
     try {
-      setContext(await getQuoteSourceContext(tenantId, quoteId));
+      setContext(await getQuoteSourceContext(quoteId));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Source summary unavailable.");
     } finally {

@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-06E Channel Identity operator control and read contract client.
 // Surfaces the hardened OP-CAP-06D backend identity review and mutation surface.
 // Mutations require CHANNEL_IDENTITY_ACTION — never BOT_ACTION.
@@ -68,7 +70,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const channelIdentityClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 // Mutations on /api/v1/channel-identities require CHANNEL_IDENTITY_ACTION, not BOT_ACTION.
@@ -91,7 +93,7 @@ async function request<T>(
   if (!channelIdentityClient.tenantId) {
     return {
       data: fallback,
-      error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped channel identity data."
+      error: "Authenticated dashboard access is unavailable."
     };
   }
   try {

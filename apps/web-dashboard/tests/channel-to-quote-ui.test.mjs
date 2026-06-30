@@ -59,7 +59,8 @@ test("conversion panel does not expose editable tenant id", () => {
   assert.doesNotMatch(panel, /<span>Tenant ID<\/span>/);
   assert.doesNotMatch(panel, /onChange=\{\(event\) => setTenantId/);
   assert.doesNotMatch(panel, /setTenantId/);
-  assert.match(panel, /const tenantId = process\.env\.NEXT_PUBLIC_DEMO_TENANT_ID/);
+  assert.doesNotMatch(panel, /NEXT_PUBLIC_DEMO_TENANT_ID|11111111-1111-4111-8111-111111111111/);
+  assert.doesNotMatch(panel, /name="tenantId"/);
   assert.match(panel, /tenant-context-info/);
 });
 

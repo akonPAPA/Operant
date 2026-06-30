@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-22 Order Journey & Fulfillment Visibility client.
 // Read-only, tenant-scoped views of the commercial transaction lifecycle: list, attention queue,
 // and journey detail (ordered milestones, recent events, fulfillment signals). Reads require
@@ -155,7 +157,7 @@ const REVIEW_ACTION = "REVIEW_ACTION";
 
 export const orderJourneyClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function baseHeaders(): Record<string, string> {
@@ -171,7 +173,7 @@ function baseHeaders(): Record<string, string> {
 
 async function read<T>(path: string): Promise<{ data: T | null; error?: string }> {
   if (!orderJourneyClient.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped order journeys." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${orderJourneyClient.baseUrl}${path}`, {

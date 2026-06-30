@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-07A AI Agent Work Layer (AI Work Assistant) client.
 // Surfaces advisory-only AI suggestions for operator/quote/channel work.
 // Reads require REVIEW_READ; mutations require AI_WORK_ACTION (re-validated by the backend
@@ -60,7 +62,7 @@ const AI_WORK_ACTION = "AI_WORK_ACTION";
 
 export const aiWorkClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 // Operator-safe state messages by HTTP status. 403/404 are valid security/business
@@ -90,7 +92,7 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
   if (!aiWorkClient.tenantId) {
     return {
       data: fallback,
-      error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped AI work suggestions."
+      error: "Authenticated dashboard access is unavailable."
     };
   }
   try {

@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-06A Messenger Chatbot Integration Layer (read-only client).
 // Surfaces the bridge between a verified channel connection inbound event and the
 // controlled bot runtime. No secrets, raw tokens, or raw provider payloads are requested.
@@ -42,12 +44,12 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const channelBotConfig = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 async function getJson<T>(path: string, fallback: T): Promise<ChannelBotApiResult<T>> {
   if (!channelBotConfig.tenantId) {
-    return { data: fallback, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped messenger bridge data." };
+    return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${channelBotConfig.baseUrl}${path}`, {
