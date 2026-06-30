@@ -15,13 +15,10 @@ import {
 } from "@/lib/quote-transaction-api";
 import { generateIdempotencyKey } from "@/lib/security-idempotency";
 
-const demoTenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "11111111-1111-4111-8111-111111111111";
-
 export function QuoteWorkspace() {
   const [result, setResult] = useState<QuoteTransactionResponse | null>(null);
   const [approvalState, setApprovalState] = useState<QuoteApprovalState | null>(null);
   const [approvalResult, setApprovalResult] = useState<QuoteApprovalCommandResponse | null>(null);
-  const [tenantId, setTenantId] = useState(demoTenantId);
   const [decisionReason, setDecisionReason] = useState("");
   const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -46,7 +43,6 @@ export function QuoteWorkspace() {
     const form = new FormData(event.currentTarget);
     try {
       const response = await createDraftQuoteFromRfq({
-        tenantId: String(form.get("tenantId") || demoTenantId),
         customerExternalRef: String(form.get("customerExternalRef") || "CUST-001"),
         requestedLocation: String(form.get("requestedLocation") || "WH-ALM"),
         requestedDiscountPercent: Number(form.get("requestedDiscountPercent") || 0),
@@ -58,12 +54,10 @@ export function QuoteWorkspace() {
           uom: String(form.get("uom") || "EA")
         }]
       });
-      const selectedTenant = String(form.get("tenantId") || demoTenantId);
-      setTenantId(selectedTenant);
       setResult(response);
       setApprovalResult(null);
       createDraftKeyRef.current = null;
-      setApprovalState(await getQuoteApprovalState(selectedTenant, response.draftQuoteId));
+      setApprovalState(await getQuoteApprovalState(response.draftQuoteId));
       setMessage("Draft quote created through the backend transaction service.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Quote request failed.");
@@ -93,7 +87,6 @@ export function QuoteWorkspace() {
     setLoading(true);
     setMessage("");
     const payload = {
-      tenantId,
       reason: decisionReason,
       comment: decisionReason,
       idempotencyKey: approvalActionKeyRef.current.get(actionKey)!
@@ -108,7 +101,7 @@ export function QuoteWorkspace() {
             : await convertQuoteToInternalOrder(result.draftQuoteId, payload);
       setApprovalResult(response);
       approvalActionKeyRef.current.delete(actionKey);
-      setApprovalState(await getQuoteApprovalState(tenantId, result.draftQuoteId));
+      setApprovalState(await getQuoteApprovalState(result.draftQuoteId));
       setResult({ ...result, status: response.newStatus, approvalRequired: response.approvalRequired, approvalReasons: response.approvalReasons });
       setMessage(`${response.approvalDecision} completed. External ERP write was not executed.`);
     } catch (error) {
@@ -125,7 +118,6 @@ export function QuoteWorkspace() {
         <h2>RFQ to Draft Quote</h2>
         <p className="risk-note">Demo path: Steppe Logistics requests out-of-stock OE brake pads. Operant validates the draft, shows substitute/approval context, and keeps externalExecution=DISABLED.</p>
         <form className="upload-form" onSubmit={submit}>
-          <label><span>Tenant ID</span><input name="tenantId" defaultValue={demoTenantId} /></label>
           <label><span>Customer external ref</span><input name="customerExternalRef" defaultValue="CUST-001" /></label>
           <label><span>SKU or alias</span><input name="rawSkuOrAlias" defaultValue="PAD-OE-04465" /></label>
           <label><span>Description</span><input name="description" defaultValue="Original brake pads for Toyota Camry 2018" /></label>

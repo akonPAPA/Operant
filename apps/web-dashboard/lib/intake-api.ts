@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 export type IntakeDocument = {
   id: string;
   sourceChannel: string;
@@ -51,12 +53,12 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const intakeConfig = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 async function getJson<T>(path: string): Promise<IntakeApiResult<T>> {
   if (!intakeConfig.tenantId) {
-    return { data: [] as T, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped intake data." };
+    return { data: [] as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {

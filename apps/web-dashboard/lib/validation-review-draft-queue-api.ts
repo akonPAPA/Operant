@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-15C Review-origin draft queue (lite) API client.
 // Typed, tenant-scoped, read-only helper over the OP-CAP-15C backend endpoint ONLY:
 //   GET /api/v1/validations/review-drafts
@@ -68,7 +70,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const reviewDraftQueueConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers() {
@@ -197,7 +199,7 @@ export function remediationRollupPath(limit?: number): string {
 
 export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Promise<ApiResult<ValidationReviewDraftQueueResponse>> {
   if (!reviewDraftQueueConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped review drafts." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   const params = new URLSearchParams();
   if (filter?.draftType) params.set("draftType", filter.draftType);
@@ -236,7 +238,7 @@ export async function getReviewDraftRemediationLineage(
   draftId: string
 ): Promise<ApiResult<ValidationReviewDraftRemediationLineageDetail>> {
   if (!reviewDraftQueueConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped review drafts." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(
@@ -270,7 +272,7 @@ export async function getReviewDraftRecentRemediationRollup(
   limit?: number
 ): Promise<ApiResult<ValidationReviewDraftRecentRemediationRollupResponse>> {
   if (!reviewDraftQueueConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped review drafts." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${reviewDraftQueueConfig.baseUrl}${remediationRollupPath(limit)}`, {

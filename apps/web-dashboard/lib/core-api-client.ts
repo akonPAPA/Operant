@@ -1,3 +1,9 @@
+import {
+  hasDemoAuthority,
+  missingFrontendAuthorityMessage,
+  requireDemoTenantId
+} from "./frontend-authority.mjs";
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export function coreApiBaseUrl() {
@@ -5,16 +11,15 @@ export function coreApiBaseUrl() {
 }
 
 export function demoScopeHeaders(): Record<string, string> {
-  const configuredScope = process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? "";
-  return configuredScope ? { "X-Tenant-Id": configuredScope } : {};
+  return { "X-Tenant-Id": requireDemoTenantId() };
 }
 
 export function hasDemoScope() {
-  return Boolean(process.env.NEXT_PUBLIC_DEMO_TENANT_ID);
+  return hasDemoAuthority();
 }
 
 export function missingDemoScopeMessage(area: string) {
-  return `Configure NEXT_PUBLIC_DEMO_TENANT_ID for ${area}.`;
+  return missingFrontendAuthorityMessage(area);
 }
 
 // Typed result for tenant-scoped read calls. 403/404 are valid backend

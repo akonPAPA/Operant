@@ -1,3 +1,5 @@
+import { requireDemoTenantId } from "./frontend-authority.mjs";
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export type QuoteTransactionResponse = {
@@ -141,9 +143,8 @@ export type ChannelToQuotePayload = {
   selectedSubstituteIds?: Record<string, string>;
 };
 
-// OP-CAP-31: tenantId is used only to set the X-Tenant-Id header and is stripped from the JSON body.
+// OP-CAP-31: the tenant header is resolved by the explicit local demo authority boundary.
 export type CreateDraftQuoteFromRfqPayload = {
-  tenantId: string;
   customerExternalRef: string;
   requestedLocation: string;
   requestedDiscountPercent: number;
@@ -156,10 +157,9 @@ export type CreateDraftQuoteFromRfqPayload = {
   }>;
 };
 
-// OP-CAP-31: tenantId is used only for the X-Tenant-Id header. The body carries business intent
-// only (approvalRequestId/reason/comment); actor/role are backend-owned authority.
+// OP-CAP-31: the body carries business intent only (approvalRequestId/reason/comment);
+// tenant/actor/role are not caller-provided authority.
 export type QuoteApprovalDecisionPayload = {
-  tenantId: string;
   approvalRequestId?: string;
   reason?: string;
   comment?: string;
@@ -169,13 +169,12 @@ export type QuoteApprovalDecisionPayload = {
 const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
 
 export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPayload): Promise<QuoteTransactionResponse> {
-  // OP-CAP-31: tenantId goes through the header only; it is never serialized into the JSON body.
-  const { idempotencyKey, tenantId, ...body } = payload;
+  const { idempotencyKey, ...body } = payload;
   const response = await fetch(`${baseUrl}/api/v1/quotes/from-rfq`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": tenantId,
+      "X-Tenant-Id": requireDemoTenantId(),
       "Idempotency-Key": idempotencyKey
     },
     body: JSON.stringify(body)
@@ -186,41 +185,41 @@ export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPa
   return response.json() as Promise<QuoteTransactionResponse>;
 }
 
-export function getQuoteApprovalState(tenantId: string, quoteId: string): Promise<QuoteApprovalState> {
-  return requestQuoteApproval<QuoteApprovalState>(tenantId, `/api/v1/quotes/${quoteId}/approval-state`);
+export function getQuoteApprovalState(quoteId: string): Promise<QuoteApprovalState> {
+  return requestQuoteApproval<QuoteApprovalState>(`/api/v1/quotes/${quoteId}/approval-state`);
 }
 
 export function approveQuote(quoteId: string, payload: QuoteApprovalDecisionPayload): Promise<QuoteApprovalCommandResponse> {
-  return requestQuoteApproval<QuoteApprovalCommandResponse>(payload.tenantId, `/api/v1/quotes/${quoteId}/approve`, payload);
+  return requestQuoteApproval<QuoteApprovalCommandResponse>(`/api/v1/quotes/${quoteId}/approve`, payload);
 }
 
 export function rejectQuote(quoteId: string, payload: QuoteApprovalDecisionPayload): Promise<QuoteApprovalCommandResponse> {
-  return requestQuoteApproval<QuoteApprovalCommandResponse>(payload.tenantId, `/api/v1/quotes/${quoteId}/reject`, payload);
+  return requestQuoteApproval<QuoteApprovalCommandResponse>(`/api/v1/quotes/${quoteId}/reject`, payload);
 }
 
 export function requestQuoteChanges(quoteId: string, payload: QuoteApprovalDecisionPayload): Promise<QuoteApprovalCommandResponse> {
-  return requestQuoteApproval<QuoteApprovalCommandResponse>(payload.tenantId, `/api/v1/quotes/${quoteId}/request-changes`, payload);
+  return requestQuoteApproval<QuoteApprovalCommandResponse>(`/api/v1/quotes/${quoteId}/request-changes`, payload);
 }
 
 export function convertQuoteToInternalOrder(quoteId: string, payload: QuoteApprovalDecisionPayload): Promise<QuoteApprovalCommandResponse> {
-  return requestQuoteApproval<QuoteApprovalCommandResponse>(payload.tenantId, `/api/v1/quotes/${quoteId}/convert-to-internal-order`, payload);
+  return requestQuoteApproval<QuoteApprovalCommandResponse>(`/api/v1/quotes/${quoteId}/convert-to-internal-order`, payload);
 }
 
-export function createQuoteFromChannelMessage(tenantId: string, messageId: string, payload: ChannelToQuotePayload): Promise<ChannelToQuoteResponse> {
-  return requestQuoteTransaction<ChannelToQuoteResponse>(tenantId, `/api/v1/quote-transactions/from-channel-message/${messageId}`, payload);
+export function createQuoteFromChannelMessage(messageId: string, payload: ChannelToQuotePayload): Promise<ChannelToQuoteResponse> {
+  return requestQuoteTransaction<ChannelToQuoteResponse>(`/api/v1/quote-transactions/from-channel-message/${messageId}`, payload);
 }
 
-export function createQuoteFromInboundDocument(tenantId: string, documentId: string, payload: ChannelToQuotePayload): Promise<ChannelToQuoteResponse> {
-  return requestQuoteTransaction<ChannelToQuoteResponse>(tenantId, `/api/v1/quote-transactions/from-inbound-document/${documentId}`, payload);
+export function createQuoteFromInboundDocument(documentId: string, payload: ChannelToQuotePayload): Promise<ChannelToQuoteResponse> {
+  return requestQuoteTransaction<ChannelToQuoteResponse>(`/api/v1/quote-transactions/from-inbound-document/${documentId}`, payload);
 }
 
-export function getQuoteSourceContext(tenantId: string, quoteId: string): Promise<QuoteSourceContext> {
-  return requestQuoteApproval<QuoteSourceContext>(tenantId, `/api/v1/quotes/${quoteId}/source-context`);
+export function getQuoteSourceContext(quoteId: string): Promise<QuoteSourceContext> {
+  return requestQuoteApproval<QuoteSourceContext>(`/api/v1/quotes/${quoteId}/source-context`);
 }
 
-async function requestQuoteApproval<T>(tenantId: string, path: string, payload?: QuoteApprovalDecisionPayload): Promise<T> {
-  // OP-CAP-31: tenant goes through the header; the body carries business intent only. tenantId and
-  // the idempotency key are never serialized into the JSON body.
+async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDecisionPayload): Promise<T> {
+  // OP-CAP-31: tenant comes from the explicit local demo resolver. The body carries business
+  // intent only, and the idempotency key is never serialized into the JSON body.
   const idempotencyKey = payload?.idempotencyKey;
   const body = payload
     ? { approvalRequestId: payload.approvalRequestId, reason: payload.reason, comment: payload.comment }
@@ -229,7 +228,7 @@ async function requestQuoteApproval<T>(tenantId: string, path: string, payload?:
     method: payload ? "POST" : "GET",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": tenantId,
+      "X-Tenant-Id": requireDemoTenantId(),
       ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
     },
     body: payload ? JSON.stringify(body) : undefined
@@ -241,13 +240,13 @@ async function requestQuoteApproval<T>(tenantId: string, path: string, payload?:
   return response.json() as Promise<T>;
 }
 
-async function requestQuoteTransaction<T>(tenantId: string, path: string, payload: ChannelToQuotePayload): Promise<T> {
+async function requestQuoteTransaction<T>(path: string, payload: ChannelToQuotePayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Tenant-Id": tenantId,
+      "X-Tenant-Id": requireDemoTenantId(),
       ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
     },
     body: JSON.stringify(body)

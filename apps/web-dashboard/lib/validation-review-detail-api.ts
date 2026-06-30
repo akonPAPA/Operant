@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-14B Operator Validation Review (detail) API client.
 // Typed, tenant-scoped, read-only helper over the OP-CAP-14A backend review contract:
 //   GET /api/v1/validations/{validationRunId}/review
@@ -114,7 +116,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewDetailConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers() {
@@ -128,7 +130,7 @@ function headers() {
 // Read-only GET. Tenant id is taken from configured env (never from user input or request body).
 async function getJson<T>(path: string): Promise<ApiResult<T>> {
   if (!validationReviewDetailConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped validation review data." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {

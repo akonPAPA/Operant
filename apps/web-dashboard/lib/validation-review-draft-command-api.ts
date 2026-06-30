@@ -92,11 +92,13 @@ export type ValidationReviewDraftabilityResponse = {
 
 type BlockingReason = { issueCode?: string; reason?: string };
 
+import { demoTenantId } from "./frontend-authority.mjs";
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewDraftConfig = {
   baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function headers() {
@@ -120,7 +122,7 @@ function draftBody(options?: CreateDraftOptions): string {
 // Errors map to bounded, user-safe messages — never a stack trace or raw backend internals.
 async function postDraftCommand(path: string, options?: CreateDraftOptions): Promise<ApiResult<ValidationReviewDraftResult>> {
   if (!validationReviewDraftConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to create tenant-scoped drafts." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
@@ -162,7 +164,7 @@ async function postDraftCommand(path: string, options?: CreateDraftOptions): Pro
 
 export async function getValidationReviewDraftStatus(validationRunId: string): Promise<ApiResult<ValidationReviewDraftStatus>> {
   if (!validationReviewDraftConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped draft status." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(
@@ -189,7 +191,7 @@ export async function getValidationReviewDraftStatus(validationRunId: string): P
 // OP-CAP-15C read-only advisory draftability hints for the validation review surface.
 export async function getValidationReviewDraftability(validationRunId: string): Promise<ApiResult<ValidationReviewDraftabilityResponse>> {
   if (!validationReviewDraftConfig.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped draftability hints." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(

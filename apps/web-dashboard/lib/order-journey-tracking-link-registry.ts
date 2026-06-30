@@ -38,7 +38,7 @@ export type TrackingLinkListResult = { data: TrackingLinkList | null; error?: st
 // and unreachable responses become a safe `error` string; the raw backend body is never surfaced.
 export async function listOrderJourneyTrackingLinks(journeyId: string): Promise<TrackingLinkListResult> {
   if (!orderJourneyClient.tenantId) {
-    return { data: null, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped tracking links." };
+    return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   let response: Response;
   try {

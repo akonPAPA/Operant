@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 export type Stage8CommandCenterAnalytics = {
   totalInboundRequests: number;
   botOnlyHandoffCount: number;
@@ -54,7 +56,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const stage8AnalyticsConfig = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 export async function getStage8CommandCenterAnalytics(): Promise<Stage8CommandCenterAnalytics | null> {

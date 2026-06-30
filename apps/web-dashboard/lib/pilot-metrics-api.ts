@@ -1,3 +1,5 @@
+import { demoTenantId } from "./frontend-authority.mjs";
+
 // OP-CAP-11F Pilot Shadow-Mode ROI Readiness client.
 // Read-only tenant-scoped pilot evidence: shadow-mode summary + exception breakdown.
 // Reads require ANALYTICS_READ (re-validated by the backend ApiPermissionInterceptor on
@@ -115,7 +117,7 @@ const ANALYTICS_READ = "ANALYTICS_READ";
 
 export const pilotMetricsClient = {
   baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
-  tenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID ?? ""
+  tenantId: demoTenantId()
 };
 
 function baseHeaders(): Record<string, string> {
@@ -131,7 +133,7 @@ function baseHeaders(): Record<string, string> {
 
 async function read<T>(path: string, fallback: T): Promise<PilotApiResult<T>> {
   if (!pilotMetricsClient.tenantId) {
-    return { data: fallback, error: "Set NEXT_PUBLIC_DEMO_TENANT_ID to read tenant-scoped pilot metrics." };
+    return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${pilotMetricsClient.baseUrl}${path}`, {
