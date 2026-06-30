@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.orderpilot.application.services.intake.UploadedFileContentInspector;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.intake.ObjectStorageRecord;
 import com.orderpilot.domain.intake.ObjectStorageRecordRepository;
@@ -42,14 +43,15 @@ class ObjectStorageServiceTest {
     TenantContext.setTenantId(TENANT_ID);
     ObjectStorageService service = service();
 
-    ObjectStorageRecord record = service.store("customer-rfq.pdf", "application/pdf", "safe bytes".getBytes(StandardCharsets.UTF_8));
+    ObjectStorageRecord record = service.store("customer-rfq.pdf", "application/pdf",
+        "%PDF-1.4 test payload".getBytes(StandardCharsets.UTF_8));
 
     Path root = storageRoot.toAbsolutePath().normalize();
     Path target = root.resolve(record.getObjectKey()).normalize();
     assertThat(target.startsWith(root)).isTrue();
     assertThat(record.getObjectKey()).startsWith(TENANT_ID + "/" + record.getSha256Fingerprint() + "/");
     assertThat(record.getObjectKey()).endsWith(".pdf");
-    assertThat(Files.readString(target)).isEqualTo("safe bytes");
+    assertThat(Files.readString(target)).contains("%PDF");
   }
 
   @ParameterizedTest
@@ -94,6 +96,12 @@ class ObjectStorageServiceTest {
   }
 
   private ObjectStorageService service() {
-    return new ObjectStorageService(repository, new IntakeValidationService(), clock, storageRoot.toString());
+    return new ObjectStorageService(
+        repository,
+        new IntakeValidationService(),
+        new UploadedFileContentInspector(false),
+        new com.orderpilot.application.services.intake.PassThroughFileThreatScanService(),
+        clock,
+        storageRoot.toString());
   }
 }

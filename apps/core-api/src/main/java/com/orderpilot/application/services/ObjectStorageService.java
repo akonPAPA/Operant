@@ -1,5 +1,7 @@
 package com.orderpilot.application.services;
 
+import com.orderpilot.application.services.intake.FileThreatScanService;
+import com.orderpilot.application.services.intake.UploadedFileContentInspector;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.intake.ObjectStorageRecord;
 import com.orderpilot.domain.intake.ObjectStorageRecordRepository;
@@ -20,12 +22,37 @@ public class ObjectStorageService {
   private static final int MAX_OBJECT_ID_LENGTH = 128;
   private static final Set<String> SAFE_EXTENSIONS = Set.of(".pdf", ".csv", ".xls", ".xlsx", ".png", ".jpg", ".jpeg", ".txt", ".json");
 
-  private final ObjectStorageRecordRepository repository; private final IntakeValidationService validationService; private final Clock clock; private final Path storageRoot;
-  public ObjectStorageService(ObjectStorageRecordRepository repository, IntakeValidationService validationService, Clock clock, @Value("${orderpilot.storage.local-root:target/local-object-storage}") String localRoot){this.repository=repository; this.validationService=validationService; this.clock=clock; this.storageRoot=Path.of(localRoot).toAbsolutePath().normalize();}
+  private final ObjectStorageRecordRepository repository;
+  private final IntakeValidationService validationService;
+  private final UploadedFileContentInspector contentInspector;
+  private final FileThreatScanService threatScanService;
+  private final Clock clock;
+  private final Path storageRoot;
+
+  public ObjectStorageService(
+      ObjectStorageRecordRepository repository,
+      IntakeValidationService validationService,
+      UploadedFileContentInspector contentInspector,
+      FileThreatScanService threatScanService,
+      Clock clock,
+      @Value("${orderpilot.storage.local-root:target/local-object-storage}") String localRoot) {
+    this.repository = repository;
+    this.validationService = validationService;
+    this.contentInspector = contentInspector;
+    this.threatScanService = threatScanService;
+    this.clock = clock;
+    this.storageRoot = Path.of(localRoot).toAbsolutePath().normalize();
+  }
+
   @Transactional
   public ObjectStorageRecord store(String originalFilename, String contentType, byte[] bytes) {
     validationService.validateFile(originalFilename, contentType, bytes == null ? 0 : bytes.length);
-    return storeValidated(originalFilename, contentType, bytes);
+    String canonicalContentType = contentInspector.inspect(bytes, contentType, originalFilename);
+    FileThreatScanService.Verdict verdict = threatScanService.scan(bytes, canonicalContentType);
+    if (verdict != FileThreatScanService.Verdict.CLEAN) {
+      throw new IllegalArgumentException("Uploaded file rejected by security policy");
+    }
+    return storeValidated(originalFilename, canonicalContentType, bytes);
   }
 
   @Transactional
@@ -34,7 +61,12 @@ public class ObjectStorageService {
     if (bytes.length == 0) throw new IllegalArgumentException("Raw payload must not be empty");
     if (bytes.length > IntakeValidationService.DEFAULT_MAX_FILE_BYTES) throw new IllegalArgumentException("Raw payload exceeds max size");
     String filename = sanitizeDisplayName((source == null ? "payload" : source.toLowerCase()) + "-" + (externalId == null || externalId.isBlank() ? UUID.randomUUID() : externalId) + ".json");
-    return storeValidated(filename, "application/json", bytes);
+    String canonical = contentInspector.inspect(bytes, "application/json", filename);
+    FileThreatScanService.Verdict verdict = threatScanService.scan(bytes, canonical);
+    if (verdict != FileThreatScanService.Verdict.CLEAN) {
+      throw new IllegalArgumentException("Uploaded file rejected by security policy");
+    }
+    return storeValidated(filename, canonical, bytes);
   }
 
   private ObjectStorageRecord storeValidated(String originalFilename, String contentType, byte[] bytes) {
