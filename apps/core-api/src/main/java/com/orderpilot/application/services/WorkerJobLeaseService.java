@@ -82,9 +82,9 @@ public class WorkerJobLeaseService {
    * Returns the number of jobs recovered. Bounded by {@code limit}; never creates a second job.
    */
   @Transactional
-  public int recoverStaleProcessing(Instant cutoff, Integer limit) {
+  public int recoverSystemWideStaleProcessing(Instant cutoff, Integer limit) {
     int clamped = clamp(limit, DEFAULT_RECOVERY_LIMIT, MAX_RECOVERY_LIMIT);
-    List<ProcessingJob> stale = repository.findStaleProcessingWithLock(
+    List<ProcessingJob> stale = repository.findSystemMaintenanceStaleProcessingWithLock(
         ProcessingJobStatus.PROCESSING.name(), cutoff, PageRequest.of(0, clamped));
     Instant now = clock.instant();
     int recovered = 0;
@@ -111,8 +111,8 @@ public class WorkerJobLeaseService {
 
   /** Convenience overload using the default lease timeout relative to the service clock. */
   @Transactional
-  public int recoverStaleProcessing(Integer limit) {
-    return recoverStaleProcessing(clock.instant().minus(DEFAULT_STALE_AFTER), limit);
+  public int recoverSystemWideStaleProcessing(Integer limit) {
+    return recoverSystemWideStaleProcessing(clock.instant().minus(DEFAULT_STALE_AFTER), limit);
   }
 
   private static int clamp(Integer limit, int dflt, int max) {
