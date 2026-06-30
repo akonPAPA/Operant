@@ -77,13 +77,16 @@ function Require-DemoEnv([string]$WebRoot) {
   }
 
   $values = Read-DotEnv $envPath
-  foreach ($name in @("NEXT_PUBLIC_CORE_API_URL", "NEXT_PUBLIC_DEMO_TENANT_ID", "NEXT_PUBLIC_DEMO_PRODUCT_ID", "NEXT_PUBLIC_DEMO_LOCATION_ID")) {
+  foreach ($name in @("NEXT_PUBLIC_CORE_API_URL", "NEXT_PUBLIC_ORDERPILOT_DEMO_MODE", "NEXT_PUBLIC_DEMO_TENANT_ID", "NEXT_PUBLIC_DEMO_PRODUCT_ID", "NEXT_PUBLIC_DEMO_LOCATION_ID")) {
     if (-not $values[$name]) {
       throw "$name is missing from $envPath."
     }
   }
   if ($values["NEXT_PUBLIC_CORE_API_URL"] -ne "http://localhost:8080") {
     throw "NEXT_PUBLIC_CORE_API_URL must be http://localhost:8080 for the standard local investor demo."
+  }
+  if ($values["NEXT_PUBLIC_ORDERPILOT_DEMO_MODE"] -ne "true") {
+    throw "NEXT_PUBLIC_ORDERPILOT_DEMO_MODE must be exactly true for the local investor demo."
   }
   foreach ($name in @("NEXT_PUBLIC_DEMO_TENANT_ID", "NEXT_PUBLIC_DEMO_PRODUCT_ID", "NEXT_PUBLIC_DEMO_LOCATION_ID")) {
     if ($values[$name] -eq "00000000-0000-0000-0000-000000000000") {

@@ -243,6 +243,13 @@ if ($coreApiUrl -eq "http://localhost:8080") {
   Add-RuntimeIssue $failures "NEXT_PUBLIC_CORE_API_URL is missing. Set it to http://localhost:8080 in apps\web-dashboard\.env.local."
 }
 
+$demoMode = Get-EnvValue $envValues "NEXT_PUBLIC_ORDERPILOT_DEMO_MODE"
+if ($demoMode -eq "true") {
+  Write-Host "OK: Explicit local frontend demo mode is enabled."
+} else {
+  Add-RuntimeIssue $failures "NEXT_PUBLIC_ORDERPILOT_DEMO_MODE must be exactly true for the local demo."
+}
+
 foreach ($name in @("NEXT_PUBLIC_DEMO_TENANT_ID", "NEXT_PUBLIC_DEMO_PRODUCT_ID", "NEXT_PUBLIC_DEMO_LOCATION_ID")) {
   Test-DemoUuid $name (Get-EnvValue $envValues $name) $failures ([bool]$AllowFixtureMode)
 }

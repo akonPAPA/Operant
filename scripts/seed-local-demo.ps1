@@ -55,6 +55,7 @@ function Write-FrontendEnv([string]$WebRoot) {
   $content = @"
 # Local investor demo runtime values. Demo-safe; no real secrets.
 NEXT_PUBLIC_CORE_API_URL=http://localhost:8080
+NEXT_PUBLIC_ORDERPILOT_DEMO_MODE=true
 NEXT_PUBLIC_DEMO_TENANT_ID=$DemoTenantId
 NEXT_PUBLIC_DEMO_PRODUCT_ID=$DemoPrimaryProductId
 NEXT_PUBLIC_DEMO_LOCATION_ID=$DemoLocationId

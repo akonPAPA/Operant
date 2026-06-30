@@ -55,7 +55,9 @@ cd C:\OrderPilot\OrderPilot-Core\apps\web-dashboard
 Copy-Item .env.local.example .env.local
 ```
 
-Fill `NEXT_PUBLIC_DEMO_TENANT_ID`, `NEXT_PUBLIC_DEMO_PRODUCT_ID`, and `NEXT_PUBLIC_DEMO_LOCATION_ID` with seeded local demo UUIDs.
+Keep `NEXT_PUBLIC_ORDERPILOT_DEMO_MODE=true` for this local-only workflow, then fill
+`NEXT_PUBLIC_DEMO_TENANT_ID`, `NEXT_PUBLIC_DEMO_PRODUCT_ID`, and
+`NEXT_PUBLIC_DEMO_LOCATION_ID` with seeded local demo UUIDs. Production rejects this demo mode.
 
 6. Start frontend:
 
