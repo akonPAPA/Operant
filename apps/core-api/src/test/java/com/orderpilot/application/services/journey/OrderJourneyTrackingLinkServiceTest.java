@@ -172,6 +172,21 @@ class OrderJourneyTrackingLinkServiceTest {
   }
 
   @Test
+  void resolvePublicTrackingIgnoresPreSetTenantContext() throws Exception {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    OrderJourney journeyA = newApprovedQuoteJourney(tenantA, "Q-CTX");
+    String rawToken = "ctx-tenant-token";
+    trackingLinkRepository.save(new OrderJourneyTrackingLink(
+        tenantA, journeyA.getId(), sha256(rawToken), Instant.parse("2030-01-01T00:00:00Z"), null, NOW));
+
+    TenantContext.setTenantId(tenantB);
+    PublicOrderTrackingView view = trackingLinkService.resolvePublicTracking(rawToken);
+    assertThat(view.statusLabel()).isEqualTo(journeyA.getCustomerVisibleStatus());
+  }
+
+  @Test
   void publicTrackingViewDoesNotSerializeInternalFields() throws Exception {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);

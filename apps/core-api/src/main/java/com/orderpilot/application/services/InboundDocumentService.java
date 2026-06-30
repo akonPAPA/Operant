@@ -22,8 +22,14 @@ public class InboundDocumentService {
   @Transactional(readOnly=true) public List<InboundDocument> list(){ return repository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId()); }
   @Transactional(readOnly=true) public InboundDocument get(UUID id){ return repository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Inbound document not found")); }
   @Transactional public InboundDocument createFromMultipart(MultipartFile file, String sourceChannel, String documentType, String receivedFrom, String subject) {
-    try { return createStored(sourceChannel, documentType, file.getOriginalFilename(), file.getContentType(), file.getBytes(), receivedFrom, subject, "{}"); }
-    catch (Exception ex) { throw new IllegalArgumentException("Unable to read uploaded file"); }
+    // Request thread: validate, persist object metadata, enqueue async processing only after secure store.
+    try {
+      return createStored(sourceChannel, documentType, file.getOriginalFilename(), file.getContentType(), file.getBytes(), receivedFrom, subject, "{}");
+    } catch (IllegalArgumentException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new IllegalArgumentException("Unable to read uploaded file");
+    }
   }
   @Transactional public InboundDocument createFromApi(ApiDocumentUploadRequest request) {
     if (request.contentBase64() == null || request.contentBase64().isBlank()) throw new IllegalArgumentException("contentBase64 is required");

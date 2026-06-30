@@ -56,6 +56,17 @@ orderpilot:
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).
     actor-signing-secret: "${ORDERPILOT_ACTOR_SIGNING_SECRET:}"
     actor-signature-max-skew-seconds: 300
+    # Enterprise OIDC/SSO is not implemented; enabling this in production-like profiles fails startup.
+    oidc:
+      enabled: "${ORDERPILOT_OIDC_ENABLED:false}"
+  intake:
+    allow-legacy-xls: "${ORDERPILOT_INTAKE_ALLOW_LEGACY_XLS:false}"
+    malware-scan:
+      mode: "${ORDERPILOT_INTAKE_MALWARE_SCAN_MODE:pass-through}"
+      external-endpoint: "${ORDERPILOT_INTAKE_MALWARE_SCAN_EXTERNAL_ENDPOINT:}"
+      connect-timeout-ms: "${ORDERPILOT_INTAKE_MALWARE_SCAN_CONNECT_TIMEOUT_MS:2000}"
+      read-timeout-ms: "${ORDERPILOT_INTAKE_MALWARE_SCAN_READ_TIMEOUT_MS:5000}"
+      allow-pass-through-in-production: "${ORDERPILOT_INTAKE_ALLOW_PASS_THROUGH_MALWARE_SCAN_IN_PRODUCTION:false}"
   runtime-control:
     enabled: "${ORDERPILOT_RUNTIME_CONTROL_ENABLED:true}"
     default-ai-enabled: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_AI_ENABLED:true}"

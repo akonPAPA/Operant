@@ -58,3 +58,19 @@ jobs:
 
       - name: Run backend tests
         run: mvn test "-Dtest=!*IntegrationTest"
+
+  core-api-release-docker-guard:
+    name: Core API release Docker guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Validate core-api Dockerfile test gate
+        shell: pwsh
+        run: ./scripts/check-core-api-release-dockerfile.ps1
+
+      - name: Build core-api Docker verify stage
+        run: docker build --target verify -f apps/core-api/Dockerfile .

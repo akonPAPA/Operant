@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import com.orderpilot.application.services.IntakeValidationService;
 import com.orderpilot.application.services.ObjectStorageService;
+import com.orderpilot.application.services.intake.PassThroughFileThreatScanService;
+import com.orderpilot.application.services.intake.UploadedFileContentInspector;
 import com.orderpilot.application.services.bot.BotFlowPolicyDecision;
 import com.orderpilot.application.services.bot.BotRuntimePolicyService;
 import com.orderpilot.application.services.channel.ChannelType;
@@ -34,6 +36,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -283,14 +286,26 @@ class AbuseCorpusFoundationTest {
     when(repository.save(any(ObjectStorageRecord.class))).thenAnswer(inv -> inv.getArgument(0));
     Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     ObjectStorageService storage =
-        new ObjectStorageService(repository, intakeValidation, clock, storageRoot.toString());
+        new ObjectStorageService(
+            repository,
+            intakeValidation,
+            new UploadedFileContentInspector(false),
+            new PassThroughFileThreatScanService(),
+            clock,
+            storageRoot.toString());
     UUID tenantId = UUID.fromString("22222222-2222-2222-2222-222222222222");
     TenantContext.setTenantId(tenantId);
     Path root = storageRoot.toAbsolutePath().normalize();
 
     for (AbuseCorpus.AbuseSample sample : AbuseCorpus.fileTraversalFilenamesWithAllowedExtension()) {
+      String filename = sample.content().toLowerCase(Locale.ROOT).endsWith(".pdf")
+          ? sample.content()
+          : sample.content() + ".pdf";
       ObjectStorageRecord record =
-          storage.store(sample.content(), "application/pdf", "safe bytes".getBytes(StandardCharsets.UTF_8));
+          storage.store(
+              filename,
+              "application/pdf",
+              "%PDF-1.4 abuse-corpus".getBytes(StandardCharsets.UTF_8));
 
       // The hostile filename is retained only as inert display metadata; the storage KEY is built
       // from tenant/sha/random-object-id and contains no traversal sequence.
