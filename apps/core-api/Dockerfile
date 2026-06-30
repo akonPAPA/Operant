@@ -1,6 +1,7 @@
 # Release image: unit tests must pass in the verify stage before packaging.
 FROM maven:3.9-eclipse-temurin-21 AS verify
 WORKDIR /workspace
+ENV SPRING_PROFILES_ACTIVE=test
 COPY pom.xml .
 COPY src ./src
 RUN mvn -q -B test
