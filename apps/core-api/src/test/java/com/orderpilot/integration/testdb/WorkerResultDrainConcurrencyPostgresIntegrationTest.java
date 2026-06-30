@@ -183,7 +183,7 @@ class WorkerResultDrainConcurrencyPostgresIntegrationTest extends DatabaseIntegr
 
       Instant staleCutoff = processing.getStartedAt().plusSeconds(1);
 
-      int recovered = leaseService.recoverStaleProcessing(staleCutoff, null);
+      int recovered = leaseService.recoverSystemWideStaleProcessing(staleCutoff, null);
 
       assertThat(recovered).isEqualTo(1);
 
@@ -357,7 +357,8 @@ void staleRecoveryAndResultIntakeRaceIsSerialized() throws Exception {
         ready.countDown();
         start.await(10, TimeUnit.SECONDS);
         try {
-          return new RecoveryOutcome(leaseService.recoverStaleProcessing(staleCutoff, 10), null);
+          return new RecoveryOutcome(
+              leaseService.recoverSystemWideStaleProcessing(staleCutoff, 10), null);
         } catch (RuntimeException ex) {
           return new RecoveryOutcome(0, ex.getMessage());
         }

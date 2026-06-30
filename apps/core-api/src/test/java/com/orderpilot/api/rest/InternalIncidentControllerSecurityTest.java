@@ -1,5 +1,6 @@
 package com.orderpilot.api.rest;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -81,6 +82,7 @@ class InternalIncidentControllerSecurityTest {
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
         .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_INCIDENT_CREATE"));
+    verifyNoInteractions(incidentResponseService);
   }
 
   @Test
@@ -108,6 +110,32 @@ class InternalIncidentControllerSecurityTest {
             .content("{}"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_BREAK_GLASS_REQUEST"));
+    verifyNoInteractions(incidentResponseService);
+  }
+
+  @Test
+  void requestBreakGlassRejectsTenantAdminPermissionWithoutMutation() throws Exception {
+    mockMvc.perform(post(BREAK_GLASS_CREATE)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_BREAK_GLASS_REQUEST"));
+    verifyNoInteractions(incidentResponseService);
+  }
+
+  @Test
+  void requestBreakGlassRejectsWrongTenantBeforeMutation() throws Exception {
+    mockMvc.perform(post(BREAK_GLASS_CREATE)
+            .header("X-Tenant-Id", "423e4567-e89b-12d3-a456-426614174333")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_BREAK_GLASS_REQUEST")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"scope":"INCIDENT_DIAGNOSTICS","reason":"case-123","ttlSeconds":600}
+                """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("SUPPORT_ACCESS_DENIED"));
+    verifyNoInteractions(incidentResponseService);
   }
 
   @Test

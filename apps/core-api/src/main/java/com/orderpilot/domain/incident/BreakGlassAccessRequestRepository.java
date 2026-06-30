@@ -16,7 +16,11 @@ public interface BreakGlassAccessRequestRepository extends JpaRepository<BreakGl
 
   List<BreakGlassAccessRequest> findByTenantIdOrderByRequestedAtDesc(UUID tenantId);
 
-  List<BreakGlassAccessRequest> findByIncidentIdOrderByRequestedAtDesc(UUID incidentId);
+  /**
+   * Tenant-and-incident-scoped lookup. Incident ids alone must never reveal break-glass requests.
+   */
+  List<BreakGlassAccessRequest> findByTenantIdAndIncidentIdOrderByRequestedAtDesc(
+      UUID tenantId, UUID incidentId);
 
   // OP-CAP-55 — read-only operations visibility (bounded queries, indexed by idx_break_glass_tenant_status).
   long countByTenantIdAndStatus(UUID tenantId, BreakGlassStatus status);

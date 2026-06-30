@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsSummaryResponse;
@@ -349,6 +350,7 @@ class InternalSupportControllerSecurityTest {
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_SUPPORT_READ"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("SUPPORT_ACCESS_DENIED"));
+    verifyNoInteractions(supportTenantLocatorService);
   }
 
   @Test

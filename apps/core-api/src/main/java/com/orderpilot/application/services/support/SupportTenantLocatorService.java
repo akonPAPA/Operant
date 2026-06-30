@@ -59,6 +59,9 @@ public class SupportTenantLocatorService {
 
   private static final String EXTERNAL_EXECUTION_DISABLED = "DISABLED";
   private static final String ENTITY_LOCATOR = "SUPPORT_TENANT_LOCATOR";
+  private static final List<SupportAccessGrant.ApprovalStatus> USABLE_APPROVAL_STATUSES = List.of(
+      SupportAccessGrant.ApprovalStatus.AUTO_APPROVED,
+      SupportAccessGrant.ApprovalStatus.APPROVED);
 
   private final StaffUserRepository staffUserRepository;
   private final SupportAccessGrantRepository grantRepository;
@@ -93,11 +96,11 @@ public class SupportTenantLocatorService {
     int size = clampSize(rawSize);
     String query = normalizeQuery(rawQuery);
 
-    List<SupportAccessGrant> usableGrants = usableDiagnosticsGrants(staffActor);
+    List<SupportAccessGrant> usableGrants = allUsableGrants(staffActor);
     // Group the actor's usable grants by tenant: collect the safe scope set and the gating diagnostics
     // grant expiry (earliest, most conservative) per tenant.
     Map<UUID, TenantGrantSummary> byTenant = new LinkedHashMap<>();
-    for (SupportAccessGrant grant : allUsableGrants(staffActor)) {
+    for (SupportAccessGrant grant : usableGrants) {
       byTenant
           .computeIfAbsent(grant.getTenantId(), id -> new TenantGrantSummary())
           .add(grant);
@@ -105,7 +108,9 @@ public class SupportTenantLocatorService {
     // Only tenants with a usable DIAGNOSTICS grant are eligible for discovery.
     Set<UUID> eligibleTenantIds = new java.util.LinkedHashSet<>();
     for (SupportAccessGrant grant : usableGrants) {
-      eligibleTenantIds.add(grant.getTenantId());
+      if (grant.getScope() == StaffSupportScope.DIAGNOSTICS) {
+        eligibleTenantIds.add(grant.getTenantId());
+      }
     }
 
     List<SupportTenantLocatorResult> matched = new ArrayList<>();
@@ -155,8 +160,12 @@ public class SupportTenantLocatorService {
     StaffUser staff = staffActor == null ? null : staffUserRepository.findById(staffActor).orElse(null);
     List<SupportAccessGrant> tenantGrants = (staff == null || !staff.isActive())
         ? List.of()
-        : grantRepository.findByStaffUserIdAndTenantIdAndStatus(
-            staffActor, tenantId, SupportAccessGrant.Status.ACTIVE);
+        : grantRepository.findByStaffUserIdAndTenantIdAndStatusAndApprovalStatusInAndExpiresAtAfter(
+            staffActor,
+            tenantId,
+            SupportAccessGrant.Status.ACTIVE,
+            USABLE_APPROVAL_STATUSES,
+            now);
 
     Set<StaffSupportScope> usableScopes = EnumSet.noneOf(StaffSupportScope.class);
     Instant diagnosticsExpiresAt = null;
@@ -210,7 +219,11 @@ public class SupportTenantLocatorService {
     }
     Instant now = clock.instant();
     List<SupportAccessGrant> grants =
-        grantRepository.findByStaffUserIdAndStatus(staffActor, SupportAccessGrant.Status.ACTIVE);
+        grantRepository.findByStaffUserIdAndStatusAndApprovalStatusInAndExpiresAtAfter(
+            staffActor,
+            SupportAccessGrant.Status.ACTIVE,
+            USABLE_APPROVAL_STATUSES,
+            now);
     List<SupportAccessGrant> usable = new ArrayList<>();
     for (SupportAccessGrant grant : grants) {
       if (grant.isUsable(now) && staff.permits(grant.getScope())) {
@@ -218,16 +231,6 @@ public class SupportTenantLocatorService {
       }
     }
     return usable;
-  }
-
-  private List<SupportAccessGrant> usableDiagnosticsGrants(UUID staffActor) {
-    List<SupportAccessGrant> diagnostics = new ArrayList<>();
-    for (SupportAccessGrant grant : allUsableGrants(staffActor)) {
-      if (grant.getScope() == StaffSupportScope.DIAGNOSTICS) {
-        diagnostics.add(grant);
-      }
-    }
-    return diagnostics;
   }
 
   private static int clampSize(int rawSize) {

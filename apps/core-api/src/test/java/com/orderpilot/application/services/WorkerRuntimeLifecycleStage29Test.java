@@ -252,7 +252,7 @@ class WorkerRuntimeLifecycleStage29Test {
     ProcessingJob job = pendingJob(tenant, UUID.randomUUID());
     // Claim then let the lease go stale and be recovered to FAILED (terminal) — no advisory run exists.
     leaseService.claim(null);
-    leaseService.recoverStaleProcessing(NOW.plusSeconds(1), null);
+    leaseService.recoverSystemWideStaleProcessing(NOW.plusSeconds(1), null);
     assertThat(reload(job.getId(), tenant).getStatus()).isEqualTo("FAILED");
     long runsBefore = runRepository.count();
 
@@ -298,13 +298,45 @@ class WorkerRuntimeLifecycleStage29Test {
     jobRepository.save(fresh);
     Instant cutoff = NOW.minusSeconds(900); // 15 min
 
-    int recovered = leaseService.recoverStaleProcessing(cutoff, 2); // bounded to 2
+    int recovered = leaseService.recoverSystemWideStaleProcessing(cutoff, 2); // bounded to 2
 
     assertThat(recovered).isEqualTo(2);
     long failed = List.of(s1, s2, s3).stream()
         .filter(j -> reload(j.getId(), tenant).getStatus().equals("FAILED")).count();
     assertThat(failed).isEqualTo(2); // exactly the bounded batch
     assertThat(reload(fresh.getId(), tenant).getStatus()).isEqualTo("PROCESSING"); // fresh untouched
+  }
+
+  @Test
+  void systemWideStaleRecoveryIsCrossTenantBoundedAndOnlyChangesJobLeaseState() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    UUID targetA = UUID.randomUUID();
+    UUID targetB = UUID.randomUUID();
+    ProcessingJob staleA = pendingJob(tenantA, targetA);
+    ProcessingJob staleB = pendingJob(tenantB, targetB);
+    ProcessingJob freshB = pendingJob(tenantB, UUID.randomUUID());
+    staleA.markProcessing(NOW.minusSeconds(3600));
+    staleB.markProcessing(NOW.minusSeconds(3600));
+    freshB.markProcessing(NOW);
+    jobRepository.saveAll(List.of(staleA, staleB, freshB));
+    long jobCountBefore = jobRepository.count();
+
+    // Tenant context is deliberately irrelevant to this trusted fleet-maintenance operation.
+    TenantContext.setTenantId(tenantA);
+    int recovered = leaseService.recoverSystemWideStaleProcessing(NOW.minusSeconds(900), 10);
+
+    ProcessingJob recoveredA = reload(staleA.getId(), tenantA);
+    ProcessingJob recoveredB = reload(staleB.getId(), tenantB);
+    assertThat(recovered).isEqualTo(2);
+    assertThat(recoveredA.getStatus()).isEqualTo("FAILED");
+    assertThat(recoveredB.getStatus()).isEqualTo("FAILED");
+    assertThat(recoveredA.getTenantId()).isEqualTo(tenantA);
+    assertThat(recoveredB.getTenantId()).isEqualTo(tenantB);
+    assertThat(recoveredA.getTargetId()).isEqualTo(targetA);
+    assertThat(recoveredB.getTargetId()).isEqualTo(targetB);
+    assertThat(reload(freshB.getId(), tenantB).getStatus()).isEqualTo("PROCESSING");
+    assertThat(jobRepository.count()).isEqualTo(jobCountBefore);
   }
 
   // ============================= 4. retry interaction (OP-CAP-28) =============================
@@ -315,7 +347,7 @@ class WorkerRuntimeLifecycleStage29Test {
     TenantContext.setTenantId(tenant);
     ProcessingJob job = pendingJob(tenant, UUID.randomUUID());
     leaseService.claim(null);
-    leaseService.recoverStaleProcessing(NOW.plusSeconds(1), null); // -> FAILED, attempts 0
+    leaseService.recoverSystemWideStaleProcessing(NOW.plusSeconds(1), null); // -> FAILED, attempts 0
     long countBefore = jobRepository.count();
 
     ProcessingJob retried = processingJobService.retry(job.getId());

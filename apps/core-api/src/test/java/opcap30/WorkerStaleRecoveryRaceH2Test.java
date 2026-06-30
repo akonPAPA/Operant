@@ -193,7 +193,8 @@ class WorkerStaleRecoveryRaceH2Test {
       ready.countDown();
       start.await(10, TimeUnit.SECONDS);
       try {
-        return new RecoveryOutcome(leaseService.recoverStaleProcessing(BASE.minusSeconds(900), 10), null);
+        return new RecoveryOutcome(
+            leaseService.recoverSystemWideStaleProcessing(BASE.minusSeconds(900), 10), null);
       } catch (RuntimeException ex) {
         return new RecoveryOutcome(0, ex.getMessage());
       }

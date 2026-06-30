@@ -95,7 +95,8 @@ class IncidentResponseServiceTest {
   void createCriticalIncidentRecordsRecordOnlyCriticalAlert() {
     IncidentRecord incident = openIncident("CRITICAL");
 
-    assertThat(alertRepository.findByIncidentIdOrderByCreatedAtDesc(incident.getId()))
+    assertThat(alertRepository.findByTenantIdAndIncidentIdOrderByCreatedAtDesc(
+        tenantId, incident.getId()))
         .extracting("alertType")
         .contains(AlertType.CRITICAL_INCIDENT_CREATED);
     assertThat(auditEventRepository.findAll()).extracting("action").contains("INCIDENT_ALERT_RECORDED");
@@ -162,6 +163,18 @@ class IncidentResponseServiceTest {
         .isInstanceOf(NotFoundException.class);
   }
 
+  @Test
+  void wrongTenantCannotCloseIncidentAndOriginalStateIsUnchanged() {
+    IncidentRecord incident = openIncident("HIGH");
+
+    assertThatThrownBy(() -> service.closeIncident(
+        UUID.randomUUID(), UUID.randomUUID(), incident.getId(), "cross-tenant close"))
+        .isInstanceOf(NotFoundException.class);
+
+    assertThat(incidentRepository.findByIdAndTenantId(incident.getId(), tenantId).orElseThrow().getStatus())
+        .isEqualTo(IncidentStatus.OPEN);
+  }
+
   // --- break-glass lifecycle ---
 
   private BreakGlassAccessRequest request(IncidentRecord incident, UUID requester) {
@@ -179,7 +192,8 @@ class IncidentResponseServiceTest {
     assertThat(req.getStatus()).isEqualTo(BreakGlassStatus.REQUESTED);
     assertThat(req.getExpiresAt()).isEqualTo(T0.plus(Duration.ofMinutes(30)));
     assertThat(auditEventRepository.findAll()).extracting("action").contains("BREAK_GLASS_REQUESTED");
-    assertThat(alertRepository.findByIncidentIdOrderByCreatedAtDesc(incident.getId()))
+    assertThat(alertRepository.findByTenantIdAndIncidentIdOrderByCreatedAtDesc(
+        tenantId, incident.getId()))
         .extracting("alertType").contains(AlertType.BREAK_GLASS_REQUESTED);
     assertThat(processingJobRepository.count()).isZero();
   }
@@ -290,7 +304,8 @@ class IncidentResponseServiceTest {
 
     assertThat(breakGlassRepository.findById(req.getId()).orElseThrow().getStatus())
         .isEqualTo(BreakGlassStatus.EXPIRED);
-    assertThat(alertRepository.findByIncidentIdOrderByCreatedAtDesc(incident.getId()))
+    assertThat(alertRepository.findByTenantIdAndIncidentIdOrderByCreatedAtDesc(
+        tenantId, incident.getId()))
         .extracting("alertType").contains(AlertType.BREAK_GLASS_EXPIRED);
   }
 
@@ -317,6 +332,38 @@ class IncidentResponseServiceTest {
     assertThatThrownBy(() -> service.authorize(
         UUID.randomUUID(), requester, BreakGlassScope.INCIDENT_DIAGNOSTICS, req.getId()))
         .isInstanceOf(SupportAccessDeniedException.class);
+  }
+
+  @Test
+  void wrongTenantCannotApproveBreakGlassAndRequestRemainsPending() {
+    IncidentRecord incident = openIncident("HIGH");
+    BreakGlassAccessRequest req = request(incident, UUID.randomUUID());
+
+    assertThatThrownBy(() -> service.approveBreakGlass(
+        UUID.randomUUID(), UUID.randomUUID(), req.getId(), "cross-tenant approval"))
+        .isInstanceOf(NotFoundException.class);
+
+    assertThat(breakGlassRepository.findByIdAndTenantId(req.getId(), tenantId).orElseThrow().getStatus())
+        .isEqualTo(BreakGlassStatus.REQUESTED);
+  }
+
+  @Test
+  void incidentAlertAndBreakGlassQueriesRequireTenantAndIncidentScope() {
+    IncidentRecord incident = openIncident("CRITICAL");
+    BreakGlassAccessRequest req = request(incident, UUID.randomUUID());
+    UUID otherTenant = UUID.randomUUID();
+
+    assertThat(alertRepository.findByTenantIdAndIncidentIdOrderByCreatedAtDesc(
+        tenantId, incident.getId())).isNotEmpty();
+    assertThat(breakGlassRepository.findByTenantIdAndIncidentIdOrderByRequestedAtDesc(
+        tenantId, incident.getId())).extracting(BreakGlassAccessRequest::getId).containsExactly(req.getId());
+
+    assertThat(alertRepository.findByTenantIdAndIncidentIdOrderByCreatedAtDesc(
+        otherTenant, incident.getId())).isEmpty();
+    assertThat(breakGlassRepository.findByTenantIdAndIncidentIdOrderByRequestedAtDesc(
+        otherTenant, incident.getId())).isEmpty();
+    assertThat(breakGlassRepository.findByTenantIdAndIncidentIdOrderByRequestedAtDesc(
+        tenantId, UUID.randomUUID())).isEmpty();
   }
 
   @Test
