@@ -125,7 +125,7 @@ class BulkImportGuardStage16FTest {
   }
 
   private UUID validatedJob(UUID tenantId, String csv) {
-    ImportJob job = service.create(new ImportJobRequest(null, "PRODUCTS", "bulk.csv", null, csv));
+    ImportJob job = service.create(new ImportJobRequest(null, "PRODUCTS", "bulk.csv", csv), null);
     var report = service.validate(job.getId());
     assertThat(report.validationErrors()).isEmpty();
     return job.getId();

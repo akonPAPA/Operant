@@ -6,8 +6,11 @@ import com.orderpilot.api.dto.Stage2Dtos.ImportRowRequest;
 import com.orderpilot.api.dto.Stage2Dtos.ImportRowResponse;
 import com.orderpilot.api.dto.Stage2Dtos.ValidationReportResponse;
 import com.orderpilot.application.services.ImportJobService;
+import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.imports.ImportJob;
 import com.orderpilot.domain.imports.ImportStagingRow;
+import com.orderpilot.security.RequestActorResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,10 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping({"/api/v1/imports", "/api/v1/imports/jobs", "/api/v1/import-jobs"})
 public class ImportController {
   private final ImportJobService service;
-  public ImportController(ImportJobService service) { this.service = service; }
+  private final RequestActorResolver actorResolver;
+  public ImportController(ImportJobService service, RequestActorResolver actorResolver) {
+    this.service = service;
+    this.actorResolver = actorResolver;
+  }
 
-  @PostMapping public ImportJobResponse create(@RequestBody ImportJobRequest request) { return toResponse(service.create(request)); }
-  @PostMapping("/{type}") public ImportJobResponse createForType(@PathVariable String type, @RequestBody ImportJobRequest request) { return toResponse(service.createForType(type, request)); }
+  @PostMapping public ImportJobResponse create(@RequestBody ImportJobRequest request, HttpServletRequest http) { return toResponse(service.create(request, trustedActor(http))); }
+  @PostMapping("/{type}") public ImportJobResponse createForType(@PathVariable String type, @RequestBody ImportJobRequest request, HttpServletRequest http) { return toResponse(service.createForType(type, request, trustedActor(http))); }
   @GetMapping public List<ImportJobResponse> list() { return service.list().stream().map(this::toResponse).toList(); }
   @GetMapping("/{id}") public ImportJobResponse get(@PathVariable UUID id) { return toResponse(service.get(id)); }
   @PostMapping("/{id}/rows") public ImportRowResponse addRow(@PathVariable UUID id, @RequestBody ImportRowRequest request) { return toResponse(service.addRow(id, request)); }
@@ -36,4 +43,8 @@ public class ImportController {
 
   private ImportJobResponse toResponse(ImportJob job) { return new ImportJobResponse(job.getId(), job.getImportType(), job.getOriginalFilename(), job.getStatus(), job.getTotalRows(), job.getValidRows(), job.getInvalidRows(), job.getErrorSummary()); }
   private ImportRowResponse toResponse(ImportStagingRow row) { return new ImportRowResponse(row.getId(), row.getRowNumber(), row.getValidationStatus(), row.getMappedData(), row.getValidationErrors()); }
+  private UUID trustedActor(HttpServletRequest http) {
+    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
+    return RequestActorResolver.SYSTEM_ACTOR.equals(actorId) ? null : actorId;
+  }
 }

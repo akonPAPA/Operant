@@ -44,7 +44,7 @@ class ImportActivationServiceTest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
 
-    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", null, "sku,name,baseUom,cost,currency\nSTG-100,Stage Brake Pad,EA,12.50,USD"));
+    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", "sku,name,baseUom,cost,currency\nSTG-100,Stage Brake Pad,EA,12.50,USD"), null);
     var report = service.validate(job.getId());
     assertThat(report.validationErrors()).isEmpty();
     var activated = service.activate(job.getId());
@@ -59,7 +59,7 @@ class ImportActivationServiceTest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
 
-    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", null, "sku,name,baseUom\nDUP-1,Pad A,EA\nDUP-1,Pad B,EA"));
+    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", "sku,name,baseUom\nDUP-1,Pad A,EA\nDUP-1,Pad B,EA"), null);
     var report = service.validate(job.getId());
 
     assertThat(report.invalidRows()).isEqualTo(2);
@@ -71,7 +71,7 @@ class ImportActivationServiceTest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
 
-    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", null, "sku,baseUom\nBAD-1,EA"));
+    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", "sku,baseUom\nBAD-1,EA"), null);
     var report = service.validate(job.getId());
 
     assertThat(report.invalidRows()).isEqualTo(1);
@@ -84,7 +84,7 @@ class ImportActivationServiceTest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
 
-    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", null, "sku,name,baseUom,cost\nBAD-2,Bad Price,EA,not-a-number"));
+    var job = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", "sku,name,baseUom,cost\nBAD-2,Bad Price,EA,not-a-number"), null);
     var report = service.validate(job.getId());
 
     assertThat(report.invalidRows()).isEqualTo(1);
@@ -97,11 +97,11 @@ class ImportActivationServiceTest {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
 
-    var first = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", null, "sku,name,baseUom\nREPEAT-1,Repeat Pad,EA"));
+    var first = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", "sku,name,baseUom\nREPEAT-1,Repeat Pad,EA"), null);
     service.validate(first.getId());
     service.activate(first.getId());
 
-    var duplicate = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", null, "sku,name,baseUom\nREPEAT-1,Repeat Pad,EA"));
+    var duplicate = service.create(new ImportJobRequest(null, "PRODUCTS", "products.csv", "sku,name,baseUom\nREPEAT-1,Repeat Pad,EA"), null);
     var report = service.validate(duplicate.getId());
 
     assertThat(report.invalidRows()).isEqualTo(1);
@@ -148,7 +148,7 @@ class ImportActivationServiceTest {
   }
 
   private void activate(String importType, String filename, String csv) {
-    var job = service.create(new ImportJobRequest(null, importType, filename, null, csv));
+    var job = service.create(new ImportJobRequest(null, importType, filename, csv), null);
     var report = service.validate(job.getId());
     assertThat(report.validationErrors()).isEmpty();
     service.activate(job.getId());

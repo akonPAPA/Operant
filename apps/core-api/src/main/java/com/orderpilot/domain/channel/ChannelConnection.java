@@ -1,5 +1,6 @@
 package com.orderpilot.domain.channel;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -58,7 +59,9 @@ public class ChannelConnection {
   public String getMode() { return mode; }
   public String getExternalAccountId() { return externalAccountId; }
   public String getWebhookUrl() { return webhookUrl; }
+  @JsonIgnore
   public String getSecretRef() { return secretRef; }
+  @JsonIgnore
   public String getSecretReferenceId() { return secretReferenceId; }
   public Instant getSecretLastUpdatedAt() { return secretLastUpdatedAt; }
   public String getWebhookVerificationMode() { return webhookVerificationMode; }

@@ -204,38 +204,78 @@ public class ValidationController {
   @GetMapping("/runs/{id}/summary")
   public ValidationRunService.ValidationSummary summary(@PathVariable UUID id) { return runService.summary(id); }
   @GetMapping("/runs/{id}/issues")
-  public List<ValidationIssue> issues(@PathVariable UUID id) { return issueService.list(id); }
+  public List<ValidationIssueResponse> issues(@PathVariable UUID id) { return issueService.list(id).stream().map(ValidationController::toIssue).toList(); }
   @GetMapping("/runs/{id}/customer-match")
-  public CustomerMatchResult customerMatch(@PathVariable UUID id) { return customerMatchingService.get(id); }
+  public CustomerMatchResponse customerMatch(@PathVariable UUID id) { return toCustomerMatch(customerMatchingService.get(id)); }
   @GetMapping("/runs/{id}/product-matches")
-  public List<ProductMatchResult> productMatches(@PathVariable UUID id) { return productMatchingService.list(id); }
+  public List<ProductMatchValidationResponse> productMatches(@PathVariable UUID id) { return productMatchingService.list(id).stream().map(ValidationController::toProductMatch).toList(); }
   @GetMapping("/runs/{id}/uom-normalizations")
-  public List<UomNormalizationResult> uomNormalizations(@PathVariable UUID id) { return uomNormalizationService.list(id); }
+  public List<UomNormalizationResponse> uomNormalizations(@PathVariable UUID id) { return uomNormalizationService.list(id).stream().map(ValidationController::toUomNormalization).toList(); }
   @GetMapping("/runs/{id}/inventory-checks")
-  public List<InventoryCheckResult> inventoryChecks(@PathVariable UUID id) { return inventoryValidationService.list(id); }
+  public List<InventoryCheckResponse> inventoryChecks(@PathVariable UUID id) { return inventoryValidationService.list(id).stream().map(ValidationController::toInventoryCheck).toList(); }
   @GetMapping("/runs/{id}/price-checks")
-  public List<PriceCheckResult> priceChecks(@PathVariable UUID id) { return pricingValidationService.list(id); }
+  public List<PriceCheckResponse> priceChecks(@PathVariable UUID id) { return pricingValidationService.list(id).stream().map(ValidationController::toPriceCheck).toList(); }
   @GetMapping("/runs/{id}/discount-checks")
-  public List<DiscountCheckResult> discountChecks(@PathVariable UUID id) { return discountValidationService.list(id); }
+  public List<DiscountCheckResponse> discountChecks(@PathVariable UUID id) { return discountValidationService.list(id).stream().map(ValidationController::toDiscountCheck).toList(); }
   @GetMapping("/runs/{id}/margin-checks")
-  public List<MarginCheckResult> marginChecks(@PathVariable UUID id) { return marginValidationService.list(id); }
+  public List<MarginCheckResponse> marginChecks(@PathVariable UUID id) { return marginValidationService.list(id).stream().map(ValidationController::toMarginCheck).toList(); }
   @GetMapping("/runs/{id}/substitute-candidates")
-  public List<SubstituteCandidate> substitutes(@PathVariable UUID id) { return substitutionEngineService.list(id); }
+  public List<SubstituteCandidateResponse> substitutes(@PathVariable UUID id) { return substitutionEngineService.list(id).stream().map(ValidationController::toSubstitute).toList(); }
   @GetMapping("/runs/{id}/approval-requirements")
-  public List<ApprovalRequirement> approvals(@PathVariable UUID id) { return approvalRequirementService.list(id); }
+  public List<ApprovalRequirementResponse> approvals(@PathVariable UUID id) { return approvalRequirementService.list(id).stream().map(ValidationController::toApproval).toList(); }
   @GetMapping("/sources/{sourceType}/{sourceId}/issues")
-  public List<ValidationIssue> sourceIssues(@PathVariable String sourceType, @PathVariable UUID sourceId) { return extractionValidationService.issuesBySource(sourceType, sourceId); }
+  public List<ValidationIssueResponse> sourceIssues(@PathVariable String sourceType, @PathVariable UUID sourceId) { return extractionValidationService.issuesBySource(sourceType, sourceId).stream().map(ValidationController::toIssue).toList(); }
   @PostMapping("/issues/{id}/resolve")
-  public ValidationIssue resolve(@PathVariable UUID id) { return issueService.resolve(id); }
+  public ValidationIssueResponse resolve(@PathVariable UUID id) { return toIssue(issueService.resolve(id)); }
   @PostMapping("/issues/{id}/waive")
-  public ValidationIssue waive(@PathVariable UUID id) { return issueService.waive(id); }
+  public ValidationIssueResponse waive(@PathVariable UUID id) { return toIssue(issueService.waive(id)); }
   @PostMapping("/approval-requirements/{id}/approve")
-  public ApprovalRequirement approve(@PathVariable UUID id) { return approvalRequirementService.approve(id); }
+  public ApprovalRequirementResponse approve(@PathVariable UUID id) { return toApproval(approvalRequirementService.approve(id)); }
   @PostMapping("/approval-requirements/{id}/reject")
-  public ApprovalRequirement reject(@PathVariable UUID id) { return approvalRequirementService.reject(id); }
+  public ApprovalRequirementResponse reject(@PathVariable UUID id) { return toApproval(approvalRequirementService.reject(id)); }
 
   private ValidationRunResponse toRun(ValidationRun run) {
     return new ValidationRunResponse(run.getId(), run.getExtractionResultId(), run.getSourceType(), run.getStatus(), run.getOverallStatus(), run.getOverallConfidence(), run.getStartedAt(), run.getFinishedAt(), run.getErrorMessage(), run.getCreatedAt());
+  }
+
+  private static ValidationIssueResponse toIssue(ValidationIssue issue) {
+    return new ValidationIssueResponse(issue.getId(), issue.getExtractedLineItemId(), issue.getIssueType(), issue.getSeverity(), issue.getMessage(), issue.getStatus(), issue.getCreatedAt());
+  }
+
+  private static ApprovalRequirementResponse toApproval(ApprovalRequirement requirement) {
+    return new ApprovalRequirementResponse(requirement.getId(), requirement.getExtractedLineItemId(), requirement.getRequirementType(), requirement.getSeverity(), requirement.getReason(), requirement.getStatus(), requirement.getCreatedAt());
+  }
+
+  private static SubstituteCandidateResponse toSubstitute(SubstituteCandidate candidate) {
+    return new SubstituteCandidateResponse(candidate.getId(), candidate.getSubstituteProductId(), candidate.getSubstituteType(), candidate.getRiskLevel(), candidate.getRankScore(), candidate.getReason(), candidate.getInventoryStatus(), candidate.getMarginStatus(), candidate.isRequiresApproval(), candidate.getStatus());
+  }
+
+  private static CustomerMatchResponse toCustomerMatch(CustomerMatchResult result) {
+    return new CustomerMatchResponse(result.getId(), result.getMatchedCustomerAccountId(), result.getRawCustomerHint(), result.getMatchType(), result.getConfidence(), result.getStatus());
+  }
+
+  private static ProductMatchValidationResponse toProductMatch(ProductMatchResult result) {
+    return new ProductMatchValidationResponse(result.getId(), result.getExtractedLineItemId(), result.getMatchedProductId(), result.getRawSku(), result.getRawDescription(), result.getMatchType(), result.getConfidence(), result.getStatus());
+  }
+
+  private static UomNormalizationResponse toUomNormalization(UomNormalizationResult result) {
+    return new UomNormalizationResponse(result.getId(), result.getExtractedLineItemId(), result.getRawUom(), result.getNormalizedUom(), result.getStatus(), result.getConfidence());
+  }
+
+  private static InventoryCheckResponse toInventoryCheck(InventoryCheckResult result) {
+    return new InventoryCheckResponse(result.getId(), result.getExtractedLineItemId(), result.getProductId(), result.getLocationId(), result.getRequestedQuantity(), result.getQuantityAvailable(), result.getStatus());
+  }
+
+  private static PriceCheckResponse toPriceCheck(PriceCheckResult result) {
+    return new PriceCheckResponse(result.getId(), result.getExtractedLineItemId(), result.getProductId(), result.getUnitPrice(), result.getCurrency(), result.getStatus());
+  }
+
+  private static DiscountCheckResponse toDiscountCheck(DiscountCheckResult result) {
+    return new DiscountCheckResponse(result.getId(), result.getExtractedLineItemId(), result.getRequestedDiscountPercent(), result.getMaxAllowedDiscountPercent(), result.isRequiresApproval(), result.getStatus());
+  }
+
+  private static MarginCheckResponse toMarginCheck(MarginCheckResult result) {
+    return new MarginCheckResponse(result.getId(), result.getExtractedLineItemId(), result.getProductId(), result.getGrossMarginPercent(), result.isRequiresApproval(), result.getStatus());
   }
 
 }

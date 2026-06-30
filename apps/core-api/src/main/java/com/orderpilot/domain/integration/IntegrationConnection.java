@@ -1,5 +1,6 @@
 package com.orderpilot.domain.integration;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -56,7 +57,9 @@ public class IntegrationConnection {
   public String getStatus() { return status; }
   public String getMode() { return mode; }
   public String getConnectionKind() { return connectionKind; }
+  @JsonIgnore
   public String getSecretRef() { return secretRef; }
+  @JsonIgnore
   public String getSecretReferenceId() { return secretReferenceId; }
   public Instant getSecretLastUpdatedAt() { return secretLastUpdatedAt; }
   public String getEndpointRef() { return endpointRef; }
