@@ -89,7 +89,6 @@ public class CommandCenterReadService {
     UUID tenantId = TenantContext.requireTenantId();
     Instant generatedAt = clock.instant();
     return new CommandCenterSummaryDto(
-        tenantId,
         metrics(tenantId),
         workQueue(tenantId, generatedAt),
         runtimeHealth(tenantId),
@@ -194,7 +193,7 @@ public class CommandCenterReadService {
   private AuditTimelineItemDto toAuditItem(AuditEvent e) {
     // Identifiers + action only. The audit metadata JSON blob is intentionally excluded.
     return new AuditTimelineItemDto(
-        e.getActorId(), e.getAction(), e.getEntityType(), e.getEntityId(), e.getOccurredAt());
+        e.getAction(), e.getEntityType(), e.getEntityId(), e.getOccurredAt());
   }
 
   private ReconciliationPreviewDto reconciliation(UUID tenantId, Instant generatedAt) {

@@ -162,7 +162,6 @@ public final class ValidationReviewCommandDtos {
       UUID approvalRequestId,
       UUID resolvedIssueId,
       String issueResolution,
-      UUID createdBy,
       Instant createdAt,
       String clientRequestId,
       String message) {}

@@ -204,7 +204,7 @@ public class TrustAiMemoryController {
         r.getId(), r.getNamespace().name(), r.getMemoryKey(), r.getMemoryType().name(), r.getStatus().name(),
         r.getAuthorityLevel().name(), r.getSourceType().name(), r.getSourceId(), r.getSourceRef(),
         r.getTitle(), r.getSummary(), r.getNormalizedValue(), r.getConfidence(), r.getWeight(),
-        r.getVersion(), r.getExpiresAt(), r.getInvalidatedAt(), r.getInvalidationReason(), r.getCreatedBy(),
+        r.getVersion(), r.getExpiresAt(), r.getInvalidatedAt(), r.getInvalidationReason(),
         r.getCreatedAt(), r.getUpdatedAt(), r.getLastAccessedAt(), r.getAccessCount());
   }
 

@@ -36,7 +36,6 @@ public final class AiMemoryEvaluationDtos {
       int passedCases,
       int failedCases,
       BigDecimal averageScore,
-      UUID createdBy,
       Instant createdAt) {}
 
   public record EvaluationCaseDto(

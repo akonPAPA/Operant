@@ -47,7 +47,6 @@ public final class AiMemoryDtos {
       Instant expiresAt,
       Instant invalidatedAt,
       String invalidationReason,
-      UUID createdBy,
       Instant createdAt,
       Instant updatedAt,
       Instant lastAccessedAt,

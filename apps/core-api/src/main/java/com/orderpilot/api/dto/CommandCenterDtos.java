@@ -20,7 +20,6 @@ public final class CommandCenterDtos {
   private CommandCenterDtos() {}
 
   public record CommandCenterSummaryDto(
-      UUID tenantId,
       List<CommandCenterMetricDto> metrics,
       WorkQueuePreviewDto workQueue,
       RuntimeHealthDto runtime,
@@ -97,7 +96,6 @@ public final class CommandCenterDtos {
 
   /** A bounded audit row. Carries identifiers + action only — never the audit metadata JSON blob. */
   public record AuditTimelineItemDto(
-      UUID actorId,
       String action,
       String entityType,
       String entityId,

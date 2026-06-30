@@ -153,7 +153,7 @@ class ValidationControllerAuthorityBoundaryTest {
     when(validationReviewCommandService.submitCorrection(eq(validationRunId), any(), any()))
         .thenReturn(new ValidationReviewActionResult(
             actionId, validationRunId, "LINE_ITEM", lineItemId, "VALIDATION_REVIEW_LINE_ITEM_CORRECTED",
-            "RECORDED", false, null, null, null, trustedActor, Instant.parse("2026-06-16T00:00:00Z"),
+            "RECORDED", false, null, null, null, Instant.parse("2026-06-16T00:00:00Z"),
             "client-1", "Line item correction recorded for operator review."));
 
     mockMvc.perform(post("/api/v1/validations/{validationRunId}/review/corrections", validationRunId)
@@ -179,7 +179,7 @@ class ValidationControllerAuthorityBoundaryTest {
                 }
                 """.formatted(lineItemId, spoofActor, spoofActor, spoofActor, spoofActor)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.createdBy").value(trustedActor.toString()))
+        .andExpect(jsonPath("$.createdBy").doesNotExist())
         .andExpect(content().string(not(containsString(spoofActor.toString()))))
         .andExpect(content().string(not(containsString("approvalStatus"))))
         .andExpect(content().string(not(containsString("actorUserId"))))
@@ -213,7 +213,7 @@ class ValidationControllerAuthorityBoundaryTest {
         .thenReturn(new ValidationReviewActionResult(
             actionId, validationRunId, "VALIDATION_ISSUE", issueId,
             "VALIDATION_REVIEW_ISSUE_RESOLVED", "RESOLVED", false, null, issueId,
-            "RESOLVED", trustedActor, Instant.parse("2026-06-16T00:00:00Z"), "client-2",
+            "RESOLVED", Instant.parse("2026-06-16T00:00:00Z"), "client-2",
             "Issue marked RESOLVED."));
 
     mockMvc.perform(post(
@@ -235,7 +235,7 @@ class ValidationControllerAuthorityBoundaryTest {
                 }
                 """.formatted(spoofActor, spoofActor, spoofActor, spoofActor)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.createdBy").value(trustedActor.toString()))
+        .andExpect(jsonPath("$.createdBy").doesNotExist())
         .andExpect(content().string(not(containsString(spoofActor.toString()))));
 
     ArgumentCaptor<ValidationIssueResolutionRequest> requestCaptor =
@@ -260,7 +260,7 @@ class ValidationControllerAuthorityBoundaryTest {
         .thenReturn(new ValidationReviewActionResult(
             actionId, validationRunId, "APPROVAL_REQUIREMENT", approvalId,
             "VALIDATION_REVIEW_APPROVAL_REQUESTED", "OPEN", true, approvalId, null, null,
-            trustedActor, Instant.parse("2026-06-16T00:00:00Z"), null,
+            Instant.parse("2026-06-16T00:00:00Z"), null,
             "Approval request created and pending review."));
 
     mockMvc.perform(post(
@@ -281,7 +281,7 @@ class ValidationControllerAuthorityBoundaryTest {
                 }
                 """.formatted(spoofActor, spoofActor, spoofActor, spoofActor)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.createdBy").value(trustedActor.toString()))
+        .andExpect(jsonPath("$.createdBy").doesNotExist())
         .andExpect(content().string(not(containsString(spoofActor.toString()))));
 
     ArgumentCaptor<ValidationApprovalRequestCommand> requestCaptor =

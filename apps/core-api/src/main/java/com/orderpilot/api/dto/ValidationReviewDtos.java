@@ -116,7 +116,6 @@ public final class ValidationReviewDtos {
       String snippet) {}
 
   public record AuditTimelineItem(
-      UUID actorId,
       String action,
       String entityType,
       String entityId,
