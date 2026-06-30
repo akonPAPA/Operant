@@ -233,7 +233,7 @@ public class ValidationReviewQueryService {
 
   private AuditTimelineItem toAuditItem(AuditEvent event) {
     // Bounded metadata only — action/actor/when. Raw metadata JSON is intentionally not exposed.
-    return new AuditTimelineItem(event.getActorId(), event.getAction(), event.getEntityType(), event.getEntityId(), event.getOccurredAt());
+    return new AuditTimelineItem(event.getAction(), event.getEntityType(), event.getEntityId(), event.getOccurredAt());
   }
 
   private List<AllowedReviewAction> allowedActions(List<ValidationIssue> issues, List<ApprovalRequirement> approvals) {

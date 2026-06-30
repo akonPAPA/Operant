@@ -135,7 +135,7 @@ public class AiMemoryEvaluationController {
   private static EvaluationRunDto toDto(AiMemoryEvaluationRun r) {
     return new EvaluationRunDto(r.getId(), r.getRunType().name(), r.getStatus().name(), r.getStartedAt(),
         r.getCompletedAt(), r.getTotalCases(), r.getPassedCases(), r.getFailedCases(), r.getAverageScore(),
-        r.getCreatedBy(), r.getCreatedAt());
+        r.getCreatedAt());
   }
 
   private static EvaluationCaseDto toDto(AiMemoryEvaluationCase c) {

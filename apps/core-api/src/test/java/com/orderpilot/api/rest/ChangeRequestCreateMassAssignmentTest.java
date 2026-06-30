@@ -91,7 +91,7 @@ class ChangeRequestCreateMassAssignmentTest {
         // Backend-owned lifecycle state — NOT the attacker's claimed APPROVED/EXECUTED/VALIDATED.
         .andExpect(jsonPath("$.validationStatus").value("PENDING_VALIDATION"))
         .andExpect(jsonPath("$.approvalStatus").value("PENDING_APPROVAL"))
-        .andExpect(jsonPath("$.executionStatus").value("EXECUTION_DISABLED"))
+        .andExpect(jsonPath("$.executionStatus").doesNotExist())
         // The forged authority/internal fields are neither honoured nor echoed back on the response.
         .andExpect(jsonPath("$.tenantId").doesNotExist())
         .andExpect(jsonPath("$.createdByUserId").doesNotExist())
@@ -100,6 +100,7 @@ class ChangeRequestCreateMassAssignmentTest {
         .andExpect(jsonPath("$.externalWriteAuthority").doesNotExist())
         .andExpect(jsonPath("$.riskLevel").doesNotExist())
         .andExpect(jsonPath("$.connectorId").doesNotExist());
+    assertThat(persisted.getExecutionStatus()).isEqualTo("EXECUTION_DISABLED");
 
     // Wave 01H Category C: the command the service receives carries only business intent. The
     // external-write payload is backend-owned (null -> neutral default), so the body's SMUGGLED-PAYLOAD

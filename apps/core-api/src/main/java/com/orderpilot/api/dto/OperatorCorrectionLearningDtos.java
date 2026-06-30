@@ -31,7 +31,6 @@ public final class OperatorCorrectionLearningDtos {
       String status,
       boolean learningEligible,
       UUID linkedAiMemoryRecordId,
-      UUID createdBy,
       Instant createdAt,
       Instant reviewedAt,
       Instant rejectedAt,

@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -109,7 +110,6 @@ class ValidationReviewCommandStage14CTest {
     assertThat(result.actionStatus()).isEqualTo("RECORDED");
     assertThat(result.validationRunId()).isEqualTo(handoff.validationRunId());
     assertThat(result.clientRequestId()).isEqualTo("req-1");
-    assertThat(result.createdBy()).isEqualTo(ACTOR_ID);
 
     // Advisory field row corrected (not raw value provenance).
     ExtractedField updated = fields.findByIdAndTenantId(field.getId(), tenantId).orElseThrow();
@@ -118,6 +118,7 @@ class ValidationReviewCommandStage14CTest {
 
     // OperatorAction + AuditEvent recorded with bounded metadata; no raw advisory payload.
     OperatorAction action = operatorActions.findById(result.actionId()).orElseThrow();
+    assertThat(ReflectionTestUtils.getField(action, "actorUserId")).isEqualTo(ACTOR_ID);
     assertThat(action.getMessage()).doesNotContain(SECRET_SENTINEL);
     Map<String, Object> metadata = json.parseObject(operatorActionMetadata(action));
     assertThat(metadata.get("afterValue")).isEqualTo("Acme Filters LLC");

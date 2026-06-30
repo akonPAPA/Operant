@@ -144,7 +144,7 @@ public class BotRuntimeController {
   }
 
   private BotResponseDraftResponse responseDraft(BotResponseDraft draft) {
-    return new BotResponseDraftResponse(draft.getId(), draft.getConversationId(), draft.getSourceMessageId(), draft.getChannel(), draft.getResponseType(), draft.getPolicyDecision(), draft.getStatus(), draft.getResponseText(), draft.isRequiresOperatorReview(), draft.getReviewedBy(), draft.getReviewedAt(), draft.getStubSentAt(), draft.getCreatedAt(), draft.getUpdatedAt());
+    return new BotResponseDraftResponse(draft.getId(), draft.getConversationId(), draft.getSourceMessageId(), draft.getChannel(), draft.getResponseType(), draft.getPolicyDecision(), draft.getStatus(), draft.getResponseText(), draft.isRequiresOperatorReview(), draft.getReviewedAt(), draft.getStubSentAt(), draft.getCreatedAt(), draft.getUpdatedAt());
   }
 
   private BotRuntimeSettingsResponse settings(BotConnection connection) {

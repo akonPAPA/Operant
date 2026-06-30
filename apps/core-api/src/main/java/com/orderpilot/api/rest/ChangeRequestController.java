@@ -103,7 +103,7 @@ public class ChangeRequestController {
   private ChangeRequestResponse toChangeRequest(ChangeRequest request) {
     // OP-CAP-31: map only operator-safe fields. Raw payload, idempotency key, payload hash, and
     // internal createdBy/approvedBy actor ids are intentionally not exposed on this response.
-    return new ChangeRequestResponse(request.getId(),request.getTargetSystem(),request.getTargetEntity(),request.getRequestedAction(),request.getSourceType(),request.getSourceId(),request.getValidationStatus(),request.getApprovalStatus(),request.getExecutionStatus(),request.getCreatedAt(),request.getValidatedAt(),request.getApprovedAt(),request.getRejectedAt(),request.getExecutedAt(),request.getExternalReference(),request.getFailureReason(),request.getCancellationReason());
+    return new ChangeRequestResponse(request.getId(),request.getTargetSystem(),request.getTargetEntity(),request.getRequestedAction(),request.getSourceType(),request.getSourceId(),request.getValidationStatus(),request.getApprovalStatus(),request.getCreatedAt(),request.getValidatedAt(),request.getApprovedAt(),request.getRejectedAt(),request.getExecutedAt(),request.getExternalReference(),request.getFailureReason(),request.getCancellationReason());
   }
 
   private OutboxEventResponse toOutboxEvent(OutboxEvent event) {

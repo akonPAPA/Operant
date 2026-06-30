@@ -40,7 +40,6 @@ public final class Stage10CDtos {
       UUID sourceId,
       String validationStatus,
       String approvalStatus,
-      String executionStatus,
       Instant createdAt,
       Instant validatedAt,
       Instant approvedAt,

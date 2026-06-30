@@ -97,7 +97,7 @@ public class TrustAiProjectionController {
   private static TrustAiDomainEventDto toDto(TrustAiDomainEvent e) {
     return new TrustAiDomainEventDto(
         e.getId(), e.getEventType().name(), e.getSourceType().name(), e.getSourceId(), e.getSubjectType(),
-        e.getSubjectId(), e.getIdempotencyKey(), e.getStatus().name(), e.getPayloadVersion(),
+        e.getSubjectId(), e.getStatus().name(), e.getPayloadVersion(),
         e.getPayloadSummary(), e.getOccurredAt(), e.getCreatedAt(), e.getProcessedAt(), e.getFailedAt(),
         e.getFailureCode(), e.getFailureMessage(), e.getRetryCount(), e.getNextRetryAt());
   }

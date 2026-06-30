@@ -97,7 +97,7 @@ public class OperatorCorrectionLearningController {
         r.getId(), r.getCorrectionType().name(), r.getSourceType().name(), r.getSourceId(),
         r.getTargetType(), r.getTargetId(), r.getFieldKey(), r.getPreviousValueHash(),
         r.getCorrectedValueHash(), r.getNormalizedCorrection(), r.getCorrectionSummary(), r.getConfidence(),
-        r.getStatus().name(), r.isLearningEligible(), r.getLinkedAiMemoryRecordId(), r.getCreatedBy(),
+        r.getStatus().name(), r.isLearningEligible(), r.getLinkedAiMemoryRecordId(),
         r.getCreatedAt(), r.getReviewedAt(), r.getRejectedAt(), r.getRejectionReason());
   }
 

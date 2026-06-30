@@ -136,7 +136,7 @@ public class ValidationReviewCommandService {
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), ValidationReviewCommandDtos.TARGET_FIELD, fieldId, ACTION_FIELD_CORRECTION,
-        "RECORDED", approvalRequired, null, null, null, actorId, action.getCreatedAt(),
+        "RECORDED", approvalRequired, null, null, null, action.getCreatedAt(),
         request.clientRequestId(), "Field correction recorded for operator review.");
   }
 
@@ -174,7 +174,7 @@ public class ValidationReviewCommandService {
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), ValidationReviewCommandDtos.TARGET_LINE_ITEM, lineId, ACTION_LINE_CORRECTION,
-        "RECORDED", approvalRequired, null, null, null, actorId, action.getCreatedAt(),
+        "RECORDED", approvalRequired, null, null, null, action.getCreatedAt(),
         request.clientRequestId(), "Line item correction recorded for operator review.");
   }
 
@@ -199,7 +199,7 @@ public class ValidationReviewCommandService {
     if (resolution.equals(current)) {
       return new ValidationReviewActionResult(
           null, run.getId(), TARGET_ISSUE, issueId, ACTION_ISSUE_RESOLUTION, current, false, null, issueId,
-          resolution, actorId, null, request.clientRequestId(), "Issue already in requested resolution state.");
+          resolution, null, request.clientRequestId(), "Issue already in requested resolution state.");
     }
     if (!OPEN_ISSUE_STATUSES.contains(current)) {
       // Already decided (RESOLVED/IGNORED/ESCALATED/WAIVED/OVERRIDDEN/CORRECTED) into a different state.
@@ -221,7 +221,7 @@ public class ValidationReviewCommandService {
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), TARGET_ISSUE, issueId, ACTION_ISSUE_RESOLUTION, resolution, false, null,
-        issueId, resolution, actorId, action.getCreatedAt(), request.clientRequestId(),
+        issueId, resolution, action.getCreatedAt(), request.clientRequestId(),
         "Issue marked " + resolution + ".");
   }
 
@@ -255,7 +255,7 @@ public class ValidationReviewCommandService {
 
     return new ValidationReviewActionResult(
         action.getId(), run.getId(), TARGET_APPROVAL, approval.getId(), ACTION_APPROVAL_REQUEST,
-        approval.getStatus(), true, approval.getId(), null, null, actorId, action.getCreatedAt(),
+        approval.getStatus(), true, approval.getId(), null, null, action.getCreatedAt(),
         null, "Approval request created and pending review.");
   }
 

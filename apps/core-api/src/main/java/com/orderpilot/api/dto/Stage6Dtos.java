@@ -39,7 +39,7 @@ public final class Stage6Dtos {
   public record FieldReview(UUID id, String fieldName, String rawValue, String normalizedValue, BigDecimal confidence, String validationStatus, EvidenceReference evidence) {}
   public record LineItemReview(UUID id, int lineNumber, String rawSku, String rawDescription, String rawQuantity, BigDecimal normalizedQuantity, String rawUom, String normalizedUom, LocalDate requestedDate, BigDecimal confidence, String validationStatus, EvidenceReference evidence) {}
   public record EvidenceReference(UUID id, String sourceType, UUID sourceId, String evidenceType, Integer pageNumber, Integer startOffset, Integer endOffset, String snippet) {}
-  public record NoteReview(UUID id, String noteText, UUID createdBy, Instant createdAt) {}
+  public record NoteReview(UUID id, String noteText, Instant createdAt) {}
   public record OperatorActionReview(UUID id, String actionType, String message, Instant createdAt) {}
   public record ReviewReadiness(String readinessStatus, boolean draftPreparationAllowed, List<BlockingReason> blockingReasons, List<ApprovalRequirementReview> pendingApprovals, List<ApprovalRequirementReview> rejectedApprovals, List<ApprovalRequirementReview> resolvedApprovals, List<String> nextRequiredActions) {}
   public record DraftPreview(String targetType, boolean draftPreparationAllowed, List<BlockingReason> blockingReasons, ReviewReadiness readiness, List<DraftPreviewLine> lines, BigDecimal subtotal, String currency, boolean externalExecutionDisabled, boolean inventoryReservationDisabled) {}

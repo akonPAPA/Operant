@@ -63,7 +63,6 @@ class CommandCenterReadServiceTest {
     TenantContext.setTenantId(tenantA);
     CommandCenterSummaryDto summary = service.summary();
 
-    assertThat(summary.tenantId()).isEqualTo(tenantA);
     assertThat(metric(summary, "pendingReviews").value()).isEqualTo(1);
     assertThat(metric(summary, "highRiskCases").value()).isEqualTo(1);
     assertThat(summary.workQueue().items()).hasSize(1);

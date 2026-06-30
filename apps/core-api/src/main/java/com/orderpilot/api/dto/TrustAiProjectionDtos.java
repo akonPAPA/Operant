@@ -20,7 +20,6 @@ public final class TrustAiProjectionDtos {
       UUID sourceId,
       String subjectType,
       UUID subjectId,
-      String idempotencyKey,
       String status,
       int payloadVersion,
       String payloadSummary,

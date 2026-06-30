@@ -27,7 +27,8 @@ class ChangeRequestSafeResponseDtoTest {
         "idempotencyKey",
         "payloadHash",
         "createdByUserId",
-        "approvedByUserId");
+        "approvedByUserId",
+        "executionStatus");
   }
 
   @Test
@@ -39,7 +40,6 @@ class ChangeRequestSafeResponseDtoTest {
         "requestedAction",
         "validationStatus",
         "approvalStatus",
-        "executionStatus",
         "externalReference");
   }
 

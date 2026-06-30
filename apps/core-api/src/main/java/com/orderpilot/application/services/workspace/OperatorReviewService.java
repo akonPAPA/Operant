@@ -125,7 +125,7 @@ public class OperatorReviewService {
         substitutes.stream().map(s -> substituteReview(tenantId, s)).toList(),
         fieldRepository.findByTenantIdAndExtractionResultId(tenantId, extraction.getId()).stream().map(f -> new FieldReview(f.getId(), f.getFieldName(), f.getRawValue(), f.getNormalizedValue(), f.getConfidence(), f.getValidationStatus(), evidence(evidence.get(f.getSourceEvidenceId())))).toList(),
         lineRepository.findByTenantIdAndExtractionResultId(tenantId, extraction.getId()).stream().map(l -> new LineItemReview(l.getId(), l.getLineNumber(), l.getRawSku(), l.getRawDescription(), l.getRawQuantity(), l.getNormalizedQuantity(), l.getRawUom(), l.getNormalizedUom(), l.getRequestedDate(), l.getConfidence(), l.getValidationStatus(), evidence(evidence.get(l.getSourceEvidenceId())))).toList(),
-        noteRepository.findByTenantIdAndTargetTypeAndTargetIdOrderByCreatedAtDesc(tenantId, "REVIEW_CASE", reviewCase.getId()).stream().map(n -> new NoteReview(n.getId(), n.getNoteText(), n.getCreatedBy(), n.getCreatedAt())).toList(),
+        noteRepository.findByTenantIdAndTargetTypeAndTargetIdOrderByCreatedAtDesc(tenantId, "REVIEW_CASE", reviewCase.getId()).stream().map(n -> new NoteReview(n.getId(), n.getNoteText(), n.getCreatedAt())).toList(),
         timeline,
         timeline.stream().filter(a -> correctionAction(a.actionType())).toList(),
         readiness.draftPreparationAllowed(),
