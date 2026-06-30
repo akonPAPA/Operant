@@ -112,25 +112,25 @@ public class ImportJobService {
   }
 
   @Transactional
-  public ImportJob create(ImportJobRequest request) {
-    ImportJob job = new ImportJob(TenantContext.requireTenantId(), request.dataSourceId(), normalizeImportType(request.importType()), request.originalFilename(), request.createdBy(), clock.instant());
+  public ImportJob create(ImportJobRequest request, UUID actorId) {
+    ImportJob job = new ImportJob(TenantContext.requireTenantId(), request.dataSourceId(), normalizeImportType(request.importType()), request.originalFilename(), actorId, clock.instant());
     ImportJob saved = jobRepository.save(job);
-    auditEventService.record("import_job.created", "import_job", saved.getId().toString(), request.createdBy(), "{\"source\":\"core-api\"}");
+    auditEventService.record("import_job.created", "import_job", saved.getId().toString(), actorId, "{\"source\":\"core-api\"}");
     if (request.csvContent() != null && !request.csvContent().isBlank()) {
       int rowNumber = 1;
       for (Map<String, String> row : parseCsv(request.csvContent())) {
         rowRepository.save(new ImportStagingRow(saved.getTenantId(), saved.getId(), rowNumber++, jsonSupport.writeObject(row), clock.instant()));
       }
       saved.markStaged(rowNumber - 1, clock.instant());
-      auditEventService.record("import_csv.staged", "import_job", saved.getId().toString(), request.createdBy(), "{\"source\":\"core-api\",\"format\":\"csv\"}");
+      auditEventService.record("import_csv.staged", "import_job", saved.getId().toString(), actorId, "{\"source\":\"core-api\",\"format\":\"csv\"}");
     }
     return saved;
   }
 
   @Transactional
-  public ImportJob createForType(String type, ImportJobRequest request) {
-    ImportJobRequest typed = new ImportJobRequest(request.dataSourceId(), type, request.originalFilename(), request.createdBy(), request.csvContent());
-    return create(typed);
+  public ImportJob createForType(String type, ImportJobRequest request, UUID actorId) {
+    ImportJobRequest typed = new ImportJobRequest(request.dataSourceId(), type, request.originalFilename(), request.csvContent());
+    return create(typed, actorId);
   }
 
   @Transactional
@@ -524,7 +524,6 @@ public class ImportJobService {
     return new ValidationReportResponse(
         report.getId(),
         report.getImportJobId(),
-        job.getTenantId(),
         job.getImportType(),
         job.getTotalRows(),
         job.getValidRows(),

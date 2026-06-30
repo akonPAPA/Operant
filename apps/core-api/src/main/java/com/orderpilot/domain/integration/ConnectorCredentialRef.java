@@ -1,5 +1,6 @@
 package com.orderpilot.domain.integration;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -29,6 +30,7 @@ public class ConnectorCredentialRef {
   public UUID getId() { return id; }
   public UUID getTenantId() { return tenantId; }
   public UUID getIntegrationConnectionId() { return integrationConnectionId; }
+  @JsonIgnore
   public String getSecretRef() { return secretRef; }
   public CredentialStatus getStatus() { return status; }
   public Instant getCreatedAt() { return createdAt; }

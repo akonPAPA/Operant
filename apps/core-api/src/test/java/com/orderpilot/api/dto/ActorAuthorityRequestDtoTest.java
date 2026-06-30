@@ -9,6 +9,7 @@ import com.orderpilot.api.dto.ChannelRfqHandoffDtos.DismissRfqHandoffRequest;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.MarkConvertedRfqHandoffRequest;
 import com.orderpilot.api.dto.Stage10BDtos.HumanCorrectionRequest;
 import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityLinkRequest;
+import com.orderpilot.api.dto.Stage2Dtos.ImportJobRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacyDraftQuoteCreateRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacyQuoteLifecycleRequest;
 import com.orderpilot.api.dto.Stage11ADtos.LegacySubstituteDecisionRequest;
@@ -59,6 +60,7 @@ class ActorAuthorityRequestDtoTest {
         ChannelIdentityLinkRequest.class,
         DismissRfqHandoffRequest.class,
         MarkConvertedRfqHandoffRequest.class,
+        ImportJobRequest.class,
         LegacyDraftQuoteCreateRequest.class,
         LegacySubstituteDecisionRequest.class,
         LegacyQuoteLifecycleRequest.class,

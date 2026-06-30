@@ -42,4 +42,32 @@ public final class Stage5Dtos {
   public record ApprovalRequirementResponse(
       UUID id, UUID lineItemId, String requirementType, String severity, String reason,
       String status, Instant createdAt) {}
+
+  public record CustomerMatchResponse(
+      UUID id, UUID matchedCustomerAccountId, String rawCustomerHint, String matchType,
+      BigDecimal confidence, String status) {}
+
+  public record ProductMatchValidationResponse(
+      UUID id, UUID lineItemId, UUID matchedProductId, String rawSku, String rawDescription,
+      String matchType, BigDecimal confidence, String status) {}
+
+  public record UomNormalizationResponse(
+      UUID id, UUID lineItemId, String rawUom, String normalizedUom, String status,
+      BigDecimal confidence) {}
+
+  public record InventoryCheckResponse(
+      UUID id, UUID lineItemId, UUID productId, UUID locationId, BigDecimal requestedQuantity,
+      BigDecimal quantityAvailable, String status) {}
+
+  public record PriceCheckResponse(
+      UUID id, UUID lineItemId, UUID productId, BigDecimal unitPrice, String currency,
+      String status) {}
+
+  public record DiscountCheckResponse(
+      UUID id, UUID lineItemId, BigDecimal requestedDiscountPercent,
+      BigDecimal maxAllowedDiscountPercent, boolean requiresApproval, String status) {}
+
+  public record MarginCheckResponse(
+      UUID id, UUID lineItemId, UUID productId, BigDecimal grossMarginPercent,
+      boolean requiresApproval, String status) {}
 }

@@ -33,10 +33,10 @@ public final class Stage2Dtos {
   public record DemoTenantRequest(String slug, String legalName) {}
   public record DemoTenantResponse(UUID id, String slug, String legalName, String status, boolean created) {}
 
-  public record ImportJobRequest(UUID dataSourceId, String importType, String originalFilename, UUID createdBy, String csvContent) {}
+  public record ImportJobRequest(UUID dataSourceId, String importType, String originalFilename, String csvContent) {}
   public record ImportJobResponse(UUID id, String importType, String originalFilename, String status, int totalRows, int validRows, int invalidRows, String errorSummary) {}
   public record ImportRowRequest(int rowNumber, String rawData) {}
   public record ImportRowResponse(UUID id, int rowNumber, String validationStatus, String mappedData, String validationErrors) {}
   public record ValidationError(int rowNumber, List<String> errors) {}
-  public record ValidationReportResponse(UUID id, UUID importJobId, UUID tenantId, String importType, int totalRows, int validRows, int invalidRows, String status, List<ValidationError> validationErrors, String summary) {}
+  public record ValidationReportResponse(UUID id, UUID importJobId, String importType, int totalRows, int validRows, int invalidRows, String status, List<ValidationError> validationErrors, String summary) {}
 }
