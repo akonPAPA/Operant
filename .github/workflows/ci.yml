@@ -72,5 +72,5 @@ jobs:
         shell: pwsh
         run: ./scripts/check-core-api-release-dockerfile.ps1
 
-      - name: Build core-api Docker verify stage
-        run: docker build --target verify -f apps/core-api/Dockerfile .
+      - name: Build test-gated core-api release image
+        run: docker build -f apps/core-api/Dockerfile .

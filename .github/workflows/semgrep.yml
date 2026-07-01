@@ -6,6 +6,9 @@ on:
     paths:
       - "apps/core-api/**"
       - "apps/web-dashboard/**"
+      - "apps/ai-worker/**"
+      - "infra/**"
+      - "scripts/**"
       - ".github/workflows/**"
       - ".semgrep/**"
   push:
@@ -13,6 +16,9 @@ on:
     paths:
       - "apps/core-api/**"
       - "apps/web-dashboard/**"
+      - "apps/ai-worker/**"
+      - "infra/**"
+      - "scripts/**"
       - ".github/workflows/**"
       - ".semgrep/**"
   schedule:
@@ -31,9 +37,6 @@ jobs:
   semgrep:
     name: Semgrep SAST / OP policy scan
     runs-on: ubuntu-latest
-
-    # Avoid token/permission edge cases on Dependabot PRs.
-    if: github.actor != 'dependabot[bot]'
 
     steps:
       - name: Checkout repository
@@ -67,6 +70,7 @@ jobs:
             --config p/owasp-top-ten
             --config p/java
             --config p/javascript
+            --config p/python
             --config p/typescript
           )
 

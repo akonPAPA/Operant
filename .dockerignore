@@ -1,0 +1,58 @@
+# Git / local metadata
+.git
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+tmp/
+temp/
+
+# Java / Maven build outputs
+**/target/
+
+# Node / frontend build outputs
+**/node_modules/
+**/.next/
+**/out/
+**/dist/
+**/build/
+**/coverage/
+
+# Python build/cache outputs
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/venv/
+
+# Local test/cache artifacts
+.audit_git_files.txt
+*.zip
+*.tar
+*.tar.gz
+
+# Not needed for core-api release Docker build from repo root.
+# Keep apps/core-api, docs, and scripts available because apps/core-api/Dockerfile copies them.
+apps/web-dashboard/
+apps/ai-worker/
