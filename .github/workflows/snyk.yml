@@ -1,4 +1,4 @@
-﻿name: Snyk Dependency Scan
+﻿name: Snyk Dependency Scan (scheduled/manual)
 
 on:
   # Temporary policy:

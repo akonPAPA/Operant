@@ -5,11 +5,28 @@ if (-not (Test-Path $dockerfile)) {
   throw "Missing Dockerfile at $dockerfile"
 }
 $text = Get-Content -Raw $dockerfile
-if ($text -match 'FROM[^\r\n]+AS\s+verify' -and $text -match 'FROM\s+verify\s+AS\s+package') {
-  Write-Host "OK: core-api Dockerfile chains verify -> package."
-  exit 0
+
+$verifyStage = [regex]::Match(
+  $text,
+  '(?ms)^FROM[^\r\n]+\s+AS\s+verify\s*$.*?(?=^FROM|\z)')
+if (-not $verifyStage.Success) {
+  throw "core-api Dockerfile is missing a verify stage"
 }
-if ($text -match 'mvn[^\r\n]*-DskipTests[^\r\n]*package' -and $text -notmatch 'AS\s+verify') {
-  throw "core-api Dockerfile runs skipTests package without a verify stage"
+
+if ($verifyStage.Value -notmatch '(?m)^RUN\s+mvn[^\r\n]*\btest\b') {
+  throw "core-api Dockerfile verify stage does not run Maven tests"
 }
-throw "core-api Dockerfile release path is not test-gated (expected verify stage before package)"
+
+if ($verifyStage.Value -match 'skipTests|maven\.test\.skip') {
+  throw "core-api Dockerfile verify stage disables tests"
+}
+
+if ($text -notmatch '(?m)^FROM\s+verify\s+AS\s+package\s*$') {
+  throw "core-api Dockerfile package stage does not derive from verify"
+}
+
+if ($text -notmatch '(?m)^COPY\s+--from=package\b') {
+  throw "core-api Dockerfile final image does not copy the verified package artifact"
+}
+
+Write-Host "OK: core-api Dockerfile runs tests and chains verify -> package -> final image."

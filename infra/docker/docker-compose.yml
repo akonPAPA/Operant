@@ -34,7 +34,8 @@ services:
   core-api:
     container_name: orderpilot-core-api
     build:
-      context: ../../apps/core-api
+      context: ../..
+      dockerfile: apps/core-api/Dockerfile
     environment:
       ORDERPILOT_DB_NAME: ${ORDERPILOT_DB_NAME:-orderpilot_local}
       ORDERPILOT_DB_USER: ${ORDERPILOT_DB_USER:-orderpilot_local_user}
