@@ -244,8 +244,12 @@ public class RfqToDraftQuoteService {
     BigDecimal available = null;
     if (product.isPresent()) {
       Product p = product.get();
-      Optional<PriceRule> price = priceRuleRepository.findByTenantIdOrderByPriorityAsc(tenantId).stream()
-          .filter(rule -> rule.isActive() && rule.getProductId().equals(p.getId()))
+      // Index-backed tenant+product fetch (priority asc) instead of loading every tenant
+      // price rule per RFQ line. product_id is NOT NULL, so the row set and priority order
+      // match the previous product filter; findFirst still selects the same rule.
+      Optional<PriceRule> price = priceRuleRepository
+          .findByTenantIdAndProductIdOrderByPriorityAsc(tenantId, p.getId()).stream()
+          .filter(PriceRule::isActive)
           .filter(rule -> rule.getCustomerAccountId() == null || (customer != null && rule.getCustomerAccountId().equals(customer.getId())))
           .filter(rule -> rule.getUom().equalsIgnoreCase(normalizedUom))
           .filter(rule -> rule.getMinQuantity().compareTo(quantity) <= 0)

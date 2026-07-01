@@ -23,9 +23,11 @@ public class PricingService {
   public Optional<PriceRule> selectPrice(UUID tenantId, Product product, CustomerAccount customer, UUID locationId, BigDecimal quantity, String uom) {
     BigDecimal requestedQuantity = quantity == null ? BigDecimal.ZERO : quantity;
     String requestedUom = uom == null ? "" : uom;
-    return repository.findByTenantIdOrderByPriorityAsc(tenantId).stream()
+    // Index-backed tenant+product fetch instead of loading every tenant price rule and
+    // discarding other products in memory. product_id is NOT NULL, so this returns the
+    // same rows the product filter produced; final selection is by the explicit sort.
+    return repository.findByTenantIdAndProductIdOrderByPriorityAsc(tenantId, product.getId()).stream()
         .filter(PriceRule::isActive)
-        .filter(rule -> rule.getProductId().equals(product.getId()))
         .filter(rule -> rule.getCustomerAccountId() == null || (customer != null && rule.getCustomerAccountId().equals(customer.getId())))
         .filter(rule -> rule.getLocationId() == null || rule.getLocationId().equals(locationId))
         .filter(rule -> rule.getUom().equalsIgnoreCase(requestedUom))

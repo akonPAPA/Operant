@@ -28,8 +28,15 @@ public class PricingValidationService {
     BigDecimal requested = line.getNormalizedQuantity() == null ? BigDecimal.ONE : line.getNormalizedQuantity();
     UUID segmentId = customerAccountId == null ? null : customerRepository.findByIdAndTenantIdAndDeletedAtIsNull(customerAccountId, tenantId).map(CustomerAccount::getSegmentId).orElse(null);
     Instant now = clock.instant();
-    List<PriceRule> matches = priceRuleRepository.findByTenantIdOrderByPriorityAsc(tenantId).stream()
-        .filter(r -> r.isActive() && productId != null && productId.equals(r.getProductId()))
+    // Fetch only this tenant's rules for this product (index-backed) instead of loading
+    // every tenant price rule per line and discarding non-matching products in memory.
+    // product_id is NOT NULL on price_rule, so a null productId can never match a rule;
+    // preserve the previous "no match" outcome without a query in that case.
+    List<PriceRule> candidates = productId == null
+        ? List.of()
+        : priceRuleRepository.findByTenantIdAndProductIdOrderByPriorityAsc(tenantId, productId);
+    List<PriceRule> matches = candidates.stream()
+        .filter(PriceRule::isActive)
         .filter(r -> r.getMinQuantity() == null || requested.compareTo(r.getMinQuantity()) >= 0)
         .filter(r -> uom == null || r.getUom() == null || r.getUom().equalsIgnoreCase(uom))
         .filter(r -> !r.getActiveFrom().isAfter(now) && (r.getActiveTo() == null || r.getActiveTo().isAfter(now)))

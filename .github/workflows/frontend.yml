@@ -46,9 +46,11 @@ jobs:
             echo "frontend=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Required branch-protection check: "Frontend / build".
+  # This job MUST always run and reach a terminal success/failure conclusion so it is
+  # never reported as skipped/neutral. When there are no frontend changes it satisfies
+  # the required check with a no-op step; the real build runs only when frontend=true.
   build:
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,6 +59,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: No frontend changes (required check satisfied)
+        run: echo "No frontend changes detected; Frontend required check satisfied."
 
       - uses: actions/setup-node@v6
         with:
