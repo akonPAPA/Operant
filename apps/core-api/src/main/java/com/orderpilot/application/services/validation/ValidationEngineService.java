@@ -369,9 +369,13 @@ public class ValidationEngineService {
   private PriceOutcome checkPrice(UUID tenantId, UUID customerId, UUID productId, ValidationLineInput line, int idx, List<ValidationIssueView> issues) {
     Instant now = clock.instant();
     BigDecimal qty = line.quantity();
-    Optional<PriceRule> match = priceRuleRepository.findByTenantIdOrderByPriorityAsc(tenantId).stream()
+    // Fetch only this tenant's rules for this product (index-backed, priority asc) rather
+    // than loading every tenant price rule per line and filtering the product in memory.
+    // product_id is NOT NULL on price_rule and productId is required here, so this returns
+    // exactly the same rows in the same priority order the previous filter produced.
+    Optional<PriceRule> match = priceRuleRepository
+        .findByTenantIdAndProductIdOrderByPriorityAsc(tenantId, productId).stream()
         .filter(PriceRule::isActive)
-        .filter(r -> productId.equals(r.getProductId()))
         .filter(r -> r.getCustomerAccountId() == null || r.getCustomerAccountId().equals(customerId))
         .filter(r -> qty == null || r.getMinQuantity() == null || qty.compareTo(r.getMinQuantity()) >= 0)
         .filter(r -> withinWindow(r, now))
