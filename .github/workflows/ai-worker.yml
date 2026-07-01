@@ -46,9 +46,12 @@ jobs:
             echo "ai_worker=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Required branch-protection check: "AI Worker / test".
+  # This job MUST always run and reach a terminal success/failure conclusion so it is
+  # never reported as skipped/neutral. When there are no AI Worker changes it satisfies
+  # the required check with a no-op step; pytest runs only when ai_worker=true.
   test:
     needs: changes
-    if: needs.changes.outputs.ai_worker == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -58,11 +61,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: No AI Worker changes (required check satisfied)
+        if: needs.changes.outputs.ai_worker != 'true'
+        run: echo "No AI Worker changes detected; AI Worker required check satisfied."
+
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.ai_worker == 'true'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: apps/ai-worker/pyproject.toml
 
-      - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest
+      - if: needs.changes.outputs.ai_worker == 'true'
+        run: python -m pip install -e ".[dev]"
+      - if: needs.changes.outputs.ai_worker == 'true'
+        run: python -m pytest

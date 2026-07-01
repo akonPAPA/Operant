@@ -316,7 +316,7 @@ class ValidationEngineServiceTest {
     lenient().when(rule.getUnitPrice()).thenReturn(new BigDecimal(unitPrice));
     lenient().when(rule.getActiveFrom()).thenReturn(Instant.parse("2020-01-01T00:00:00Z"));
     lenient().when(rule.getActiveTo()).thenReturn(null);
-    when(priceRuleRepository.findByTenantIdOrderByPriorityAsc(tenantId)).thenReturn(List.of(rule));
+    when(priceRuleRepository.findByTenantIdAndProductIdOrderByPriorityAsc(tenantId, pid)).thenReturn(List.of(rule));
   }
 
   private UUID stubCustomerById() {
