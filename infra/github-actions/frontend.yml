@@ -1,6 +1,6 @@
 name: Frontend
 
-# Reference workflow kept in sync with .github/workflows/frontend.yml.
+# Reference workflow: keep the build steps in sync with the build job in .github/workflows/frontend.yml.
 on:
   pull_request:
   push:
