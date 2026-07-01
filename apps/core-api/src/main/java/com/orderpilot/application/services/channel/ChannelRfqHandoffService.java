@@ -70,9 +70,8 @@ public class ChannelRfqHandoffService {
       throw new IllegalArgumentException("Source channel event reference is required for RFQ handoff");
     }
 
-    // Enforce tenant boundary against the source event itself, never trusting caller-asserted ids.
-    InboundChannelEvent event = eventRepository.findById(command.inboundChannelEventId())
-        .filter(e -> tenantId.equals(e.getTenantId()))
+    // Enforce tenant ownership in the database query, before the source event can be accessed.
+    InboundChannelEvent event = eventRepository.findByIdAndTenantId(command.inboundChannelEventId(), tenantId)
         .orElseThrow(() -> new NotFoundException("Source channel event not found for tenant"));
 
     // Idempotency: a re-delivered source event must not create a duplicate handoff.
