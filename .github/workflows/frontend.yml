@@ -51,7 +51,6 @@ jobs:
   # never reported as skipped/neutral. When there are no frontend changes it satisfies
   # the required check with a no-op step; the real build runs only when frontend=true.
   build:
-    needs: changes
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -62,23 +61,16 @@ jobs:
           persist-credentials: false
 
       - name: No frontend changes (required check satisfied)
-        if: needs.changes.outputs.frontend != 'true'
         run: echo "No frontend changes detected; Frontend required check satisfied."
 
       - uses: actions/setup-node@v6
-        if: needs.changes.outputs.frontend == 'true'
         with:
           node-version: "22.18.0"
           cache: npm
           cache-dependency-path: apps/web-dashboard/package-lock.json
 
-      - if: needs.changes.outputs.frontend == 'true'
-        run: npm ci
-      - if: needs.changes.outputs.frontend == 'true'
-        run: npm run lint
-      - if: needs.changes.outputs.frontend == 'true'
-        run: npm run typecheck
-      - if: needs.changes.outputs.frontend == 'true'
-        run: npm run build
-      - if: needs.changes.outputs.frontend == 'true'
-        run: npm test
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
