@@ -9,6 +9,7 @@ import org.springframework.util.AntPathMatcher;
 @Component
 public class ApiRouteSecurityPolicy {
   private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+  private static final String INTERNAL_SUPPORT_BASE = "/api/v1/internal/support";
 
   private static final List<PrefixRule> PREFIX_RULES = List.of(
       rule("/api/v1/analytics", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),
@@ -112,7 +113,7 @@ public class ApiRouteSecurityPolicy {
     if (path.startsWith("/api/v1/internal/processing-jobs") && !HttpMethod.GET.matches(method)) {
       return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.AI_RESULT_INTAKE);
     }
-    if (path.startsWith("/api/v1/internal/support")) {
+    if (path.equals(INTERNAL_SUPPORT_BASE) || path.startsWith(INTERNAL_SUPPORT_BASE + "/")) {
       return supportDecision(method, path);
     }
     if (path.startsWith("/api/v1/runtime") && !HttpMethod.GET.matches(method)) {
@@ -204,16 +205,19 @@ public class ApiRouteSecurityPolicy {
   }
 
   // OP-CAP-51: the internal owner-company support/maintenance surface. Every route is protected by a
-  // dedicated STAFF_SUPPORT_* permission — none of these is a tenant business permission, so a tenant
+  // dedicated STAFF_* permission — none of these is a tenant business permission, so a tenant
   // operator/demo permission header can never satisfy them. Distinct verbs map to distinct permissions so
-  // a read grant can never reach grant-management, maintenance recording, or a data-repair dry-run. Any
-  // support sub-path that is not explicitly matched still fails closed onto a STAFF_SUPPORT_* requirement
-  // (never public, never a weaker tenant permission).
+  // a read grant can never reach grant-management, maintenance recording, or a data-repair dry-run.
+  // Unknown paths and wrong-method variants remain unclassified and hit the global /api/** default-deny.
   private Optional<RouteDecision> supportDecision(String method, String path) {
     boolean write = !HttpMethod.GET.matches(method);
     // OP-CAP-53: break-glass must be matched BEFORE the incident branch — a break-glass create path is
     // nested under an incident (.../incidents/{id}/break-glass-requests) and so contains both substrings.
-    if (path.contains("/break-glass-requests")) {
+    if (HttpMethod.POST.matches(method)
+        && (matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/incidents/*/break-glass-requests")
+            || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/break-glass-requests/*/approve")
+            || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/break-glass-requests/*/reject")
+            || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/break-glass-requests/*/revoke"))) {
       if (write && path.endsWith("/approve")) {
         return protectedRoute(SecurityClassification.PROTECTED_APPROVE, ApiPermission.STAFF_BREAK_GLASS_APPROVE);
       }
@@ -223,13 +227,14 @@ public class ApiRouteSecurityPolicy {
       if (write && path.endsWith("/revoke")) {
         return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.STAFF_BREAK_GLASS_REVOKE);
       }
-      return write
-          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_BREAK_GLASS_REQUEST)
-          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_INCIDENT_READ);
+      return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_BREAK_GLASS_REQUEST);
     }
     // OP-CAP-53: incident records. Distinct verbs map to distinct STAFF_INCIDENT_* permissions; closing is
     // separated from creating so an incident-creator cannot silently close incidents from the create grant.
-    if (path.contains("/incidents")) {
+    if ((HttpMethod.GET.matches(method) && matches(path, INTERNAL_SUPPORT_BASE + "/incidents/*"))
+        || (HttpMethod.POST.matches(method)
+            && (path.equals(INTERNAL_SUPPORT_BASE + "/incidents")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/incidents/*/close")))) {
       if (write && path.endsWith("/close")) {
         return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.STAFF_INCIDENT_CLOSE);
       }
@@ -237,7 +242,13 @@ public class ApiRouteSecurityPolicy {
           ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_INCIDENT_CREATE)
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_INCIDENT_READ);
     }
-    if (path.contains("/access-grants")) {
+    if ((HttpMethod.GET.matches(method)
+            && matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/access-grants"))
+        || (HttpMethod.POST.matches(method)
+            && (path.equals(INTERNAL_SUPPORT_BASE + "/access-grants")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/access-grants/*/revoke")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/access-grants/*/approve")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/access-grants/*/reject")))) {
       // OP-CAP-52: approving/rejecting a grant is a separate, stronger authority than creating/revoking it,
       // so a STAFF_SUPPORT_GRANT_MANAGE actor that minted a grant request cannot also approve it.
       if (write && (path.endsWith("/approve") || path.endsWith("/reject"))) {
@@ -247,24 +258,31 @@ public class ApiRouteSecurityPolicy {
           ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
           : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
-    if (path.contains("/maintenance-records")) {
-      return write
-          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_MAINTENANCE_RECORD)
-          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    if (HttpMethod.POST.matches(method)
+        && matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/maintenance-records")) {
+      return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_MAINTENANCE_RECORD);
     }
     // OP-CAP-55: read-only internal support operations visibility. GET is the only implemented verb and
-    // requires STAFF_SUPPORT_READ; any accidental write-shaped operations route still fails closed onto the
-    // strongest support-management staff permission rather than a tenant permission or data-repair tier.
-    if (path.contains("/operations/")) {
-      return write
-          ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
-          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    // requires STAFF_SUPPORT_READ; write-shaped variants remain unclassified and hit default-deny.
+    if (HttpMethod.GET.matches(method)
+        && (matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/operations/summary")
+            || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/operations/timeline"))) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
-    if (path.contains("/data-repair-requests")) {
+    if ((HttpMethod.GET.matches(method)
+            && matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/data-repair-requests/*/operations-view"))
+        || (HttpMethod.POST.matches(method)
+            && (matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/data-repair-requests/dry-run")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/data-repair-requests/*/request-approval")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/data-repair-requests/*/approve")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/data-repair-requests/*/reject")
+                || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/data-repair-requests/*/execute")
+                || matches(
+                    path,
+                    INTERNAL_SUPPORT_BASE
+                        + "/tenants/*/data-repair-requests/*/execute-processing-job-repair")))) {
       if (path.endsWith("/operations-view")) {
-        return write
-            ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
-            : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+        return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
       }
       // OP-CAP-54: the ONE bounded real-execution verb. Matched BEFORE the generic /execute stub so the
       // processing-job status-repair executor (the only path that can mutate a processing_job row) requires
@@ -282,26 +300,22 @@ public class ApiRouteSecurityPolicy {
       if (write && (path.endsWith("/approve") || path.endsWith("/reject"))) {
         return protectedRoute(approveOrReject(path), ApiPermission.STAFF_DATA_REPAIR_APPROVE);
       }
-      return write
-          ? protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_DATA_REPAIR_DRYRUN)
-          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+      return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_DATA_REPAIR_DRYRUN);
     }
-    if (path.contains("/diagnostics")) {
+    if (HttpMethod.GET.matches(method)
+        && matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/diagnostics")) {
       return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
     // OP-CAP-57: the read-only internal tenant locator + per-tenant support context. Both are GET-only and
-    // require STAFF_SUPPORT_READ; the locator service is the second-layer JIT grant boundary. Any
-    // accidental write-shaped variant fails closed onto the strongest support-management staff permission.
-    if (path.endsWith("/tenants/search") || path.contains("/support-context")) {
-      return write
-          ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
-          : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    // require STAFF_SUPPORT_READ; the locator service is the second-layer JIT grant boundary. Write-shaped
+    // variants remain unclassified and hit default-deny.
+    if (HttpMethod.GET.matches(method)
+        && (path.equals(INTERNAL_SUPPORT_BASE + "/tenants/search")
+            || matches(path, INTERNAL_SUPPORT_BASE + "/tenants/*/support-context"))) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
-    // Fail closed: any other support read is STAFF_SUPPORT_READ; any other support write needs the
-    // strongest support-management grant rather than silently falling through to a tenant rule.
-    return write
-        ? protectedRoute(classificationForMethod(method), ApiPermission.STAFF_SUPPORT_GRANT_MANAGE)
-        : protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
+    // Fail closed: only the explicit controller route/method matrix above is classified.
+    return Optional.empty();
   }
 
   private Optional<RouteDecision> changeRequestDecision(String path, boolean stage9) {
@@ -344,6 +358,10 @@ public class ApiRouteSecurityPolicy {
       }
     }
     return false;
+  }
+
+  private static boolean matches(String path, String pattern) {
+    return PATH_MATCHER.match(pattern, path);
   }
 
   private static PrefixRule rule(String prefix, ApiPermission readPermission, ApiPermission writePermission) {

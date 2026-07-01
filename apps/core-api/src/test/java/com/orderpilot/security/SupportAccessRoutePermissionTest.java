@@ -51,6 +51,16 @@ class SupportAccessRoutePermissionTest {
         .hasMessageContaining(expectedMissing);
   }
 
+  private void denyUnclassified(String method, String path, String permissionOrNull) {
+    MockHttpServletRequest req = new MockHttpServletRequest(method, path);
+    if (permissionOrNull != null) {
+      req.addHeader(ApiPermissionGuard.PERMISSIONS_HEADER, permissionOrNull);
+    }
+    assertThatThrownBy(() -> interceptor.preHandle(req, new MockHttpServletResponse(), HANDLER))
+        .isInstanceOf(TenantPolicyException.class)
+        .hasMessageContaining("Unclassified API route");
+  }
+
   // --- diagnostics (read) requires STAFF_SUPPORT_READ ---
 
   @Test
@@ -84,9 +94,9 @@ class SupportAccessRoutePermissionTest {
   }
 
   @Test
-  void operationsVisibilityWriteShapedRoutesFailClosedToSupportManagementPermission() {
-    deny("POST", OPERATIONS_SUMMARY, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
-    deny("POST", OPERATIONS_DETAIL, "STAFF_DATA_REPAIR_DRYRUN", "STAFF_SUPPORT_GRANT_MANAGE");
+  void operationsVisibilityWriteShapedRoutesAreDefaultDenied() {
+    denyUnclassified("POST", OPERATIONS_SUMMARY, "STAFF_SUPPORT_READ");
+    denyUnclassified("POST", OPERATIONS_DETAIL, "STAFF_DATA_REPAIR_DRYRUN");
   }
 
   // --- OP-CAP-57: tenant locator + support context require STAFF_SUPPORT_READ (never a tenant permission) ---
@@ -102,9 +112,9 @@ class SupportAccessRoutePermissionTest {
   }
 
   @Test
-  void tenantLocatorWriteShapedRoutesFailClosedToSupportManagementPermission() {
-    deny("POST", TENANT_SEARCH, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
-    deny("POST", SUPPORT_CONTEXT, "STAFF_SUPPORT_READ", "STAFF_SUPPORT_GRANT_MANAGE");
+  void tenantLocatorWriteShapedRoutesAreDefaultDenied() {
+    denyUnclassified("POST", TENANT_SEARCH, "STAFF_SUPPORT_READ");
+    denyUnclassified("POST", SUPPORT_CONTEXT, "STAFF_SUPPORT_READ");
   }
 
   // --- access grant management requires STAFF_SUPPORT_GRANT_MANAGE (read can't manage) ---
@@ -228,13 +238,13 @@ class SupportAccessRoutePermissionTest {
     deny("POST", REQUEST_BASE + "/execute", "REVIEW_ACTION", "STAFF_DATA_REPAIR_EXECUTION_ATTEMPT");
   }
 
-  // --- OP-CAP-52: an unknown internal support sub-route still fails closed onto a STAFF_* requirement ---
+  // --- Unknown internal support sub-routes remain unclassified and hit the global /api/** default-deny ---
 
   @Test
-  void unknownInternalSupportWriteFailsClosedOntoStaffPermission() {
-    deny("POST", "/api/v1/internal/support/tenants/" + TENANT + "/unknown-action", "REVIEW_ACTION",
-        "STAFF_SUPPORT_GRANT_MANAGE");
-    deny("GET", "/api/v1/internal/support/tenants/" + TENANT + "/unknown-thing", "ADMIN_SETTINGS_READ",
-        "STAFF_SUPPORT_READ");
+  void unknownInternalSupportRoutesAreDefaultDenied() {
+    denyUnclassified(
+        "POST", "/api/v1/internal/support/tenants/" + TENANT + "/unknown-action", "REVIEW_ACTION");
+    denyUnclassified(
+        "GET", "/api/v1/internal/support/tenants/" + TENANT + "/unknown-thing", "ADMIN_SETTINGS_READ");
   }
 }
