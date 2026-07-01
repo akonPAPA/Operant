@@ -131,14 +131,41 @@ class SupportOperationsServiceTest {
 
   @Test
   void timelineIsBoundedPagedAndSortedDescendingWithoutCrossTenantEvents() {
+    UUID otherTenant = UUID.randomUUID();
     IncidentRecord oldest = incidentRepository.save(new IncidentRecord(
         tenantId, "old", "reason", IncidentSeverity.MEDIUM, IncidentType.SUPPORT_ESCALATION, staffActor, T0));
     oldest.close("done", T0.plusSeconds(10));
     incidentRepository.save(oldest);
     processingRepair(tenantId, T0.plusSeconds(20));
-    incidentRepository.save(new IncidentRecord(
-        UUID.randomUUID(), "other", "reason", IncidentSeverity.CRITICAL, IncidentType.PRODUCTION_OUTAGE,
+    BreakGlassAccessRequest ownBreakGlass = breakGlassRepository.save(new BreakGlassAccessRequest(
+        tenantId,
+        oldest.getId(),
+        staffActor,
+        BreakGlassScope.INCIDENT_DIAGNOSTICS,
+        "own request",
+        T0.plusSeconds(25),
+        T0.plusSeconds(85)));
+
+    IncidentRecord otherIncident = incidentRepository.save(new IncidentRecord(
+        otherTenant, "other", "reason", IncidentSeverity.CRITICAL, IncidentType.PRODUCTION_OUTAGE,
         staffActor, T0.plusSeconds(100)));
+    BreakGlassAccessRequest otherBreakGlass = breakGlassRepository.save(new BreakGlassAccessRequest(
+        otherTenant,
+        otherIncident.getId(),
+        staffActor,
+        BreakGlassScope.INCIDENT_DIAGNOSTICS,
+        "other request",
+        T0.plusSeconds(101),
+        T0.plusSeconds(161)));
+    SupportAccessGrant otherGrant = grantRepository.save(new SupportAccessGrant(
+        staffActor,
+        otherTenant,
+        StaffSupportScope.DIAGNOSTICS,
+        "other grant",
+        T0.plusSeconds(200),
+        staffActor,
+        T0.plusSeconds(102)));
+    DataRepairRequest otherRepair = processingRepair(otherTenant, T0.plusSeconds(103));
 
     SupportOperationsTimelineResponse response = serviceAt(T0.plusSeconds(30)).timeline(tenantId, staffActor, 0, 999);
 
@@ -147,8 +174,15 @@ class SupportOperationsServiceTest {
     assertThat(response.entries()).extracting(SupportOperationsTimelineEntry::occurredAt)
         .isSortedAccordingTo(java.util.Comparator.reverseOrder());
     assertThat(response.entries()).extracting(SupportOperationsTimelineEntry::eventType)
-        .contains("INCIDENT_CREATED", "INCIDENT_CLOSED", "PROCESSING_JOB_REPAIR_EXECUTED")
-        .doesNotContain("OTHER_TENANT_EVENT");
+        .contains("INCIDENT_CREATED", "INCIDENT_CLOSED", "BREAK_GLASS_REQUESTED",
+            "PROCESSING_JOB_REPAIR_EXECUTED");
+    assertThat(response.entries()).extracting(SupportOperationsTimelineEntry::referenceId)
+        .contains(ownBreakGlass.getId())
+        .doesNotContain(
+            otherIncident.getId(),
+            otherBreakGlass.getId(),
+            otherGrant.getId(),
+            otherRepair.getId());
     assertThat(auditEventRepository.findAll()).anyMatch(e -> "SUPPORT_OPERATIONS_TIMELINE_VIEWED".equals(e.getAction()));
   }
 

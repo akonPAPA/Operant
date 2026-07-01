@@ -2,6 +2,12 @@ package com.orderpilot.application.services.incident;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.application.services.AuditEventService;
@@ -24,6 +30,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -173,6 +180,35 @@ class IncidentResponseServiceTest {
 
     assertThat(incidentRepository.findByIdAndTenantId(incident.getId(), tenantId).orElseThrow().getStatus())
         .isEqualTo(IncidentStatus.OPEN);
+  }
+
+  @Test
+  void serviceRepositoryLookupsIncludeTenantBeforeReturningRecords() {
+    IncidentRecordRepository incidents = mock(IncidentRecordRepository.class);
+    BreakGlassAccessRequestRepository breakGlass = mock(BreakGlassAccessRequestRepository.class);
+    IncidentAlertRecordRepository alerts = mock(IncidentAlertRecordRepository.class);
+    AuditEventService audit = mock(AuditEventService.class);
+    IncidentResponseService isolated = new IncidentResponseService(
+        incidents, breakGlass, alerts, audit, new ObjectMapper(), Clock.fixed(T0, ZoneOffset.UTC));
+    UUID scopedTenant = UUID.randomUUID();
+    UUID incidentId = UUID.randomUUID();
+    UUID requestId = UUID.randomUUID();
+    when(incidents.findByIdAndTenantId(incidentId, scopedTenant)).thenReturn(Optional.empty());
+    when(breakGlass.findByIdAndTenantId(requestId, scopedTenant)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> isolated.getIncident(scopedTenant, incidentId))
+        .isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> isolated.approveBreakGlass(
+        scopedTenant, UUID.randomUUID(), requestId, "decision"))
+        .isInstanceOf(NotFoundException.class);
+
+    verify(incidents).findByIdAndTenantId(incidentId, scopedTenant);
+    verify(breakGlass).findByIdAndTenantId(requestId, scopedTenant);
+    verify(incidents, never()).findById(incidentId);
+    verify(breakGlass, never()).findById(requestId);
+    verify(incidents, never()).save(any(IncidentRecord.class));
+    verify(breakGlass, never()).save(any(BreakGlassAccessRequest.class));
+    verifyNoInteractions(alerts, audit);
   }
 
   // --- break-glass lifecycle ---
@@ -332,6 +368,8 @@ class IncidentResponseServiceTest {
     assertThatThrownBy(() -> service.authorize(
         UUID.randomUUID(), requester, BreakGlassScope.INCIDENT_DIAGNOSTICS, req.getId()))
         .isInstanceOf(SupportAccessDeniedException.class);
+    assertThat(breakGlassRepository.findByIdAndTenantId(req.getId(), tenantId).orElseThrow().getStatus())
+        .isEqualTo(BreakGlassStatus.APPROVED);
   }
 
   @Test
@@ -344,6 +382,46 @@ class IncidentResponseServiceTest {
         .isInstanceOf(NotFoundException.class);
 
     assertThat(breakGlassRepository.findByIdAndTenantId(req.getId(), tenantId).orElseThrow().getStatus())
+        .isEqualTo(BreakGlassStatus.REQUESTED);
+  }
+
+  @Test
+  void wrongTenantCannotRequestBreakGlassAgainstForeignIncident() {
+    IncidentRecord incident = openIncident("HIGH");
+
+    assertThatThrownBy(() -> service.requestBreakGlass(
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        incident.getId(),
+        "INCIDENT_DIAGNOSTICS",
+        "cross-tenant request",
+        Duration.ofMinutes(10)))
+        .isInstanceOf(NotFoundException.class);
+
+    assertThat(breakGlassRepository.count()).isZero();
+    assertThat(alertRepository.findByTenantIdAndIncidentIdOrderByCreatedAtDesc(
+        tenantId, incident.getId())).isEmpty();
+  }
+
+  @Test
+  void wrongTenantCannotRejectOrRevokeBreakGlassAndRequestsRemainPending() {
+    IncidentRecord incident = openIncident("HIGH");
+    BreakGlassAccessRequest rejectTarget = request(incident, UUID.randomUUID());
+    BreakGlassAccessRequest revokeTarget = request(incident, UUID.randomUUID());
+    UUID wrongTenant = UUID.randomUUID();
+
+    assertThatThrownBy(() -> service.rejectBreakGlass(
+        wrongTenant, UUID.randomUUID(), rejectTarget.getId(), "cross-tenant rejection"))
+        .isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> service.revokeBreakGlass(
+        wrongTenant, UUID.randomUUID(), revokeTarget.getId(), "cross-tenant revocation"))
+        .isInstanceOf(NotFoundException.class);
+
+    assertThat(breakGlassRepository.findByIdAndTenantId(
+        rejectTarget.getId(), tenantId).orElseThrow().getStatus())
+        .isEqualTo(BreakGlassStatus.REQUESTED);
+    assertThat(breakGlassRepository.findByIdAndTenantId(
+        revokeTarget.getId(), tenantId).orElseThrow().getStatus())
         .isEqualTo(BreakGlassStatus.REQUESTED);
   }
 
