@@ -2,6 +2,7 @@ package com.orderpilot.application.services.integration;
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.connector.*;
+import com.orderpilot.common.api.TenantScopedListLimits;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.integration.*;
 import java.time.Clock;
@@ -39,7 +40,11 @@ public class IntegrationConnectionService {
   @Transactional public IntegrationConnection activate(UUID id) { IntegrationConnection c = get(id); requireValidConfig(c); c.activate(clock.instant()); auditEventService.record("INTEGRATION_CONNECTION_ACTIVATED", "INTEGRATION_CONNECTION", c.getId().toString(), null, "{}"); return c; }
   @Transactional public IntegrationConnection pause(UUID id) { IntegrationConnection c = get(id); c.pause(clock.instant()); auditEventService.record("INTEGRATION_CONNECTION_PAUSED", "INTEGRATION_CONNECTION", c.getId().toString(), null, "{}"); return c; }
   @Transactional public IntegrationConnection disable(UUID id) { IntegrationConnection c = get(id); c.disable(clock.instant()); auditEventService.record("INTEGRATION_CONNECTION_DISABLED", "INTEGRATION_CONNECTION", c.getId().toString(), null, "{}"); return c; }
-  @Transactional(readOnly = true) public List<IntegrationConnection> list() { return repository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId()); }
+  @Transactional(readOnly = true) public List<IntegrationConnection> list() { return list(TenantScopedListLimits.GENERAL_LIST_DEFAULT); }
+  @Transactional(readOnly = true) public List<IntegrationConnection> list(int limit) {
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.GENERAL_LIST_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return repository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId(), org.springframework.data.domain.PageRequest.of(0, clamped));
+  }
   @Transactional(readOnly = true) public IntegrationConnection get(UUID id) { return repository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Integration connection not found")); }
 
   @Transactional

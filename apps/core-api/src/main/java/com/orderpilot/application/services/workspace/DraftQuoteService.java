@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.workspace;
 
 import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
+import com.orderpilot.common.api.TenantScopedListLimits;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.*;
 import com.orderpilot.domain.journey.JourneySourceType;
@@ -12,6 +13,7 @@ import java.time.Clock;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +57,11 @@ public class DraftQuoteService {
         JourneySourceType.DRAFT_QUOTE, saved.getId(), null);
     return saved;
   }
-  @Transactional(readOnly = true) public List<DraftQuote> list(){return quoteRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());}
+  @Transactional(readOnly = true) public List<DraftQuote> list(){return list(TenantScopedListLimits.WORKSPACE_PREVIEW_DEFAULT);}
+  @Transactional(readOnly = true) public List<DraftQuote> list(int limit){
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.WORKSPACE_PREVIEW_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return quoteRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId(), PageRequest.of(0, clamped));
+  }
   @Transactional(readOnly = true) public DraftQuote get(UUID id){return quoteRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow();}
   @Transactional(readOnly = true) public List<DraftQuoteLine> lines(UUID id){return lineOutRepository.findByTenantIdAndDraftQuoteId(TenantContext.requireTenantId(), id);}
   @Transactional public DraftQuote approve(UUID id){DraftQuote q=get(id); q.setStatus("APPROVED_INTERNAL", null, clock.instant()); actionService.record(null, "DRAFT_QUOTE", id, "APPROVAL_DECIDED", "Draft quote approved internally only", "{}"); return quoteRepository.save(q);}

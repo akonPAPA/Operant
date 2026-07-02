@@ -2,6 +2,7 @@ package com.orderpilot.application.services.integration;
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.common.errors.NotFoundException;
+import com.orderpilot.common.api.TenantScopedListLimits;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.integration.ChangeRequest;
 import com.orderpilot.domain.integration.ChangeRequestRepository;
@@ -321,7 +322,14 @@ public class ChangeRequestService {
 
   @Transactional(readOnly = true)
   public List<ChangeRequest> listChangeRequests() {
-    return changeRequestRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());
+    return listChangeRequests(TenantScopedListLimits.GENERAL_LIST_DEFAULT);
+  }
+
+  @Transactional(readOnly = true)
+  public List<ChangeRequest> listChangeRequests(int limit) {
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.GENERAL_LIST_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return changeRequestRepository.findByTenantIdOrderByCreatedAtDesc(
+        TenantContext.requireTenantId(), org.springframework.data.domain.PageRequest.of(0, clamped));
   }
 
   @Transactional(readOnly = true)
@@ -331,7 +339,14 @@ public class ChangeRequestService {
 
   @Transactional(readOnly = true)
   public List<OutboxEvent> listOutboxEvents() {
-    return outboxEventRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());
+    return listOutboxEvents(TenantScopedListLimits.AUDIT_PREVIEW_DEFAULT);
+  }
+
+  @Transactional(readOnly = true)
+  public List<OutboxEvent> listOutboxEvents(int limit) {
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.AUDIT_PREVIEW_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return outboxEventRepository.findByTenantIdOrderByCreatedAtDesc(
+        TenantContext.requireTenantId(), org.springframework.data.domain.PageRequest.of(0, clamped));
   }
 
   private ChangeRequest getMutable(UUID id) {

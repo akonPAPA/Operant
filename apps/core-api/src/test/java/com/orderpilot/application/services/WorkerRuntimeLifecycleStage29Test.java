@@ -15,6 +15,7 @@ import com.orderpilot.domain.extraction.ExtractionResultRepository;
 import com.orderpilot.domain.extraction.ExtractionRunRepository;
 import com.orderpilot.domain.intake.ProcessingJob;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
+import com.orderpilot.domain.audit.AuditEventRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -55,6 +56,7 @@ class WorkerRuntimeLifecycleStage29Test {
   @Autowired private AiWorkerResultIntakeService intakeService;
   @Autowired private ProcessingJobService processingJobService;
   @Autowired private ProcessingJobRepository jobRepository;
+  @Autowired private AuditEventRepository auditEventRepository;
   @Autowired private ExtractionRunRepository runRepository;
   @Autowired private ExtractionResultRepository resultRepository;
 
@@ -301,6 +303,9 @@ class WorkerRuntimeLifecycleStage29Test {
     int recovered = leaseService.recoverSystemWideStaleProcessing(cutoff, 2); // bounded to 2
 
     assertThat(recovered).isEqualTo(2);
+    assertThat(auditEventRepository.findAll().stream()
+        .filter(e -> "PROCESSING_JOB_STALE_RECOVERED".equals(e.getAction()))
+        .count()).isEqualTo(2);
     long failed = List.of(s1, s2, s3).stream()
         .filter(j -> reload(j.getId(), tenant).getStatus().equals("FAILED")).count();
     assertThat(failed).isEqualTo(2); // exactly the bounded batch

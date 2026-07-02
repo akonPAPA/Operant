@@ -58,17 +58,17 @@ class Stage9IntegrationControllerTest {
     changeRequest.markExecuted("DEMO-QUOTE-123", "sha256:abc123", now);
     ConnectorSyncEvent sync = new ConnectorSyncEvent(UUID.randomUUID(), connectionId, IntegrationProviderType.OTHER_ERP, "CREATE_DRAFT_QUOTE", "OUTBOUND_DEMO", now);
     sync.complete(0, 0, 0, now);
-    when(integrationConnectionService.list()).thenReturn(List.of(connection));
+    when(integrationConnectionService.list(anyInt())).thenReturn(List.of(connection));
     when(integrationConnectionService.get(any())).thenReturn(connection);
     when(integrationConnectionService.createDraft(eq(IntegrationProviderType.OTHER_ERP), anyString(), eq("DEMO_ERP_LOCAL"), isNull(), eq("demo://local"))).thenReturn(connection);
     when(integrationConnectionService.activate(any())).thenReturn(connection);
-    when(changeRequestService.listChangeRequests()).thenReturn(List.of(changeRequest));
+    when(changeRequestService.listChangeRequests(anyInt())).thenReturn(List.of(changeRequest));
     when(changeRequestService.getChangeRequest(any())).thenReturn(changeRequest);
     when(changeRequestService.createStage9DemoChangeRequest(anyString(), any(), anyString(), nullable(String.class), any())).thenReturn(changeRequest);
     when(changeRequestService.approveChangeRequest(any(), any())).thenReturn(changeRequest);
     when(changeRequestService.rejectChangeRequest(any(), any())).thenReturn(changeRequest);
     when(changeRequestService.executeStage9DemoChangeRequest(any())).thenReturn(changeRequest);
-    when(connectorSyncEventService.list()).thenReturn(List.of(sync));
+    when(connectorSyncEventService.list(anyInt())).thenReturn(List.of(sync));
 
     mockMvc.perform(get("/api/stage9/integrations").header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ"))
         .andExpect(status().isOk())

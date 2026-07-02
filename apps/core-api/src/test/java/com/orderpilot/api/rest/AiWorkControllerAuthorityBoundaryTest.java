@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.orderpilot.application.services.aiwork.AiWorkPublicResponseMapper;
 import com.orderpilot.application.services.aiwork.AiWorkService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.common.tenant.TenantContextFilter;
@@ -37,7 +38,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AiWorkController.class)
-@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class, RequestActorResolver.class, TenantContextFilter.class})
+@Import({CoreConfiguration.class, GlobalExceptionHandler.class, NoopApiPermissionTestConfig.class, RequestActorResolver.class, TenantContextFilter.class, AiWorkPublicResponseMapper.class})
 class AiWorkControllerAuthorityBoundaryTest {
   private static final String TENANT_HEADER = "X-Tenant-Id";
   private static final String ACTOR_HEADER = "X-OrderPilot-Actor-Id";
@@ -72,6 +73,7 @@ class AiWorkControllerAuthorityBoundaryTest {
     mockMvc.perform(post("/api/v1/ai-work/suggestions")
             .header(TENANT_HEADER, tenant.toString())
             .header(ACTOR_HEADER, trustedActor.toString())
+            .header("Idempotency-Key", "idem-1")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
@@ -79,21 +81,23 @@ class AiWorkControllerAuthorityBoundaryTest {
                   "sourceType": "CHANNEL_MESSAGE",
                   "sourceId": "%s",
                   "contextText": "visible operator context",
-                  "idempotencyKey": "idem-1",
                   "createdByUserId": "%s",
                   "status": "ACCEPTED",
                   "riskLevel": "LOW",
                   "confidence": 1,
                   "modelName": "client-selected-model",
-                  "llmApproved": true
+                  "llmApproved": true,
+                  "idempotencyKey": "body-smuggled-key"
                 }
                 """.formatted(sourceId, spoofUser)))
         .andExpect(status().isOk())
         .andExpect(content().string(not(containsString(spoofUser.toString()))))
         .andExpect(content().string(not(containsString("client-selected-model"))));
 
+    ArgumentCaptor<String> idempotencyCaptor = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<UUID> actorCaptor = ArgumentCaptor.forClass(UUID.class);
-    verify(service).createSuggestion(any(), any(), any(), any(), any(), actorCaptor.capture());
+    verify(service).createSuggestion(any(), any(), any(), any(), idempotencyCaptor.capture(), actorCaptor.capture());
+    assertThat(idempotencyCaptor.getValue()).isEqualTo("idem-1");
     assertThat(actorCaptor.getValue()).isEqualTo(trustedActor);
   }
 
@@ -183,15 +187,16 @@ class AiWorkControllerAuthorityBoundaryTest {
     mockMvc.perform(post("/api/v1/ai-work/rfq-handoffs/{handoffId}/suggestions", handoffId)
             .header(TENANT_HEADER, tenant.toString())
             .header(ACTOR_HEADER, trustedActor.toString())
+            .header("Idempotency-Key", "handoff-idem")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
                   "workType": "NEXT_ACTION_SUGGESTION",
-                  "idempotencyKey": "handoff-idem",
                   "sourceType": "QUOTE",
                   "sourceId": "%s",
                   "contextText": "client supplied context must not be used",
-                  "status": "ACCEPTED"
+                  "status": "ACCEPTED",
+                  "idempotencyKey": "body-smuggled"
                 }
                 """.formatted(spoofSourceId)))
         .andExpect(status().isOk())
@@ -290,6 +295,7 @@ class AiWorkControllerAuthorityBoundaryTest {
         .andExpect(content().string(not(containsString("tenant/raw/private.txt"))))
         .andExpect(content().string(not(containsString("promptText"))))
         .andExpect(content().string(not(containsString("secret-token"))))
-        .andExpect(content().string(not(containsString("s3cr3t"))));
+        .andExpect(content().string(not(containsString("structuredPayloadJson"))))
+        .andExpect(content().string(not(containsString("evidenceRefsJson"))));
   }
 }

@@ -43,8 +43,8 @@ public class ChangeRequestController {
   }
 
   @GetMapping("/change-requests")
-  public List<ChangeRequestResponse> list() {
-    return service.listChangeRequests().stream().map(this::toChangeRequest).toList();
+  public List<ChangeRequestResponse> list(@RequestParam(defaultValue = "50") int limit) {
+    return service.listChangeRequests(limit).stream().map(this::toChangeRequest).toList();
   }
 
   @GetMapping("/change-requests/{id}")
@@ -96,8 +96,8 @@ public class ChangeRequestController {
   }
 
   @GetMapping("/outbox-events")
-  public List<OutboxEventResponse> outboxEvents() {
-    return service.listOutboxEvents().stream().map(this::toOutboxEvent).toList();
+  public List<OutboxEventResponse> outboxEvents(@RequestParam(defaultValue = "20") int limit) {
+    return service.listOutboxEvents(limit).stream().map(this::toOutboxEvent).toList();
   }
 
   private ChangeRequestResponse toChangeRequest(ChangeRequest request) {

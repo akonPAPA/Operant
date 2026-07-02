@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   acceptAiWorkSuggestion,
-  extractNextActions,
   listRecentAiWork,
   rejectAiWorkSuggestion,
   riskClass,
@@ -142,9 +141,7 @@ function AiWorkDetail({
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
 }>) {
-  const nextActions = suggestion.workType === "NEXT_ACTION_SUGGESTION"
-    ? extractNextActions(suggestion.structuredPayloadJson)
-    : [];
+  const nextActions = suggestion.nextActionCandidates ?? [];
   const isDraft = suggestion.workType === "CUSTOMER_REPLY_DRAFT";
   const decided = suggestion.status !== "GENERATED";
 
@@ -158,7 +155,7 @@ function AiWorkDetail({
       </div>
 
       <h3>{workTypeLabel(suggestion.workType)}</h3>
-      <p className="generated-text">{suggestion.generatedText}</p>
+      <p className="generated-text">{suggestion.summary}</p>
 
       {nextActions.length > 0 && (
         <div>

@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.workspace;
 
 import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
+import com.orderpilot.common.api.TenantScopedListLimits;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.extraction.*;
 import com.orderpilot.domain.journey.JourneySourceType;
@@ -12,6 +13,7 @@ import java.time.Clock;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,7 +59,11 @@ public class DraftOrderService {
         JourneySourceType.DRAFT_ORDER, saved.getId(), null);
     return saved;
   }
-  @Transactional(readOnly = true) public List<DraftOrder> list(){return orderRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());}
+  @Transactional(readOnly = true) public List<DraftOrder> list(){return list(TenantScopedListLimits.WORKSPACE_PREVIEW_DEFAULT);}
+  @Transactional(readOnly = true) public List<DraftOrder> list(int limit){
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.WORKSPACE_PREVIEW_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return orderRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId(), PageRequest.of(0, clamped));
+  }
   @Transactional(readOnly = true) public DraftOrder get(UUID id){return orderRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow();}
   @Transactional(readOnly = true) public List<DraftOrderLine> lines(UUID id){return lineOutRepository.findByTenantIdAndDraftOrderId(TenantContext.requireTenantId(), id);}
   @Transactional public DraftOrder approve(UUID id){DraftOrder o=get(id); o.setStatus("APPROVED_INTERNAL", null, clock.instant()); actionService.record(null, "DRAFT_ORDER", id, "APPROVAL_DECIDED", "Draft order approved internally only; no ERP or inventory write", "{}"); return orderRepository.save(o);}

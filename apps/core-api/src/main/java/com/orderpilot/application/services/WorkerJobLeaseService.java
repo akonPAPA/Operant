@@ -98,12 +98,14 @@ public class WorkerJobLeaseService {
       if (job.getStartedAt() == null || !job.getStartedAt().isBefore(cutoff)) {
         continue;
       }
-      // No audit row here: this reaper is a deliberately cross-tenant system sweep with no single
-      // TenantContext, and AuditEventService stamps the audit tenant from TenantContext. The recovery is
-      // instead evidenced deterministically on the job itself — status=FAILED, finishedAt, and the safe
-      // lastError token "stale_processing_timeout" — which is sufficient operational evidence and avoids
-      // forcing a tenant identity onto a fleet-wide maintenance operation.
       job.markFailed("stale_processing_timeout", now);
+      auditEventService.recordForTenant(
+          job.getTenantId(),
+          "PROCESSING_JOB_STALE_RECOVERED",
+          "PROCESSING_JOB",
+          job.getId().toString(),
+          null,
+          "{\"previousStatus\":\"PROCESSING\",\"newStatus\":\"FAILED\",\"recoveryReason\":\"stale_processing_timeout\"}");
       recovered++;
     }
     return recovered;

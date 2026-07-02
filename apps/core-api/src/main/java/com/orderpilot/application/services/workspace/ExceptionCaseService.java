@@ -1,6 +1,7 @@
 package com.orderpilot.application.services.workspace;
 
 import com.orderpilot.application.services.journey.OrderJourneyProjectionPublisher;
+import com.orderpilot.common.api.TenantScopedListLimits;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.journey.JourneySourceType;
 import com.orderpilot.domain.journey.events.JourneyProjectionEventType;
@@ -9,6 +10,7 @@ import com.orderpilot.domain.workspace.*;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,7 +34,11 @@ public class ExceptionCaseService {
         JourneySourceType.VALIDATION_REVIEW, c.getId(), null);
     return c;
   }
-  @Transactional(readOnly = true) public List<ExceptionCase> list(){return caseRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId());}
+  @Transactional(readOnly = true) public List<ExceptionCase> list(){return list(TenantScopedListLimits.WORKSPACE_PREVIEW_DEFAULT);}
+  @Transactional(readOnly = true) public List<ExceptionCase> list(int limit){
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.WORKSPACE_PREVIEW_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return caseRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.requireTenantId(), PageRequest.of(0, clamped));
+  }
   @Transactional(readOnly = true) public ExceptionCase get(UUID id){return caseRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow();}
   @Transactional(readOnly = true) public List<ExceptionCaseIssue> issues(UUID id){return caseIssueRepository.findByTenantIdAndExceptionCaseId(TenantContext.requireTenantId(), id);}
   @Transactional public ExceptionCase assign(UUID id, UUID userId){ExceptionCase c=get(id); c.assign(userId, clock.instant()); actionService.record(userId, "EXCEPTION_CASE", id, "CASE_ASSIGNED", "Case assigned", "{}"); return caseRepository.save(c);}

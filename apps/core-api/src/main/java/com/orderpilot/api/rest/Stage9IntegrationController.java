@@ -34,8 +34,8 @@ public class Stage9IntegrationController {
   }
 
   @GetMapping("/api/stage9/integrations")
-  public Stage9IntegrationListResponse integrations() {
-    return new Stage9IntegrationListResponse(integrationConnectionService.list().stream().map(this::toIntegration).toList());
+  public Stage9IntegrationListResponse integrations(@RequestParam(defaultValue = "50") int limit) {
+    return new Stage9IntegrationListResponse(integrationConnectionService.list(limit).stream().map(this::toIntegration).toList());
   }
 
   @GetMapping("/api/stage9/integrations/{connectionId}")
@@ -51,8 +51,8 @@ public class Stage9IntegrationController {
   }
 
   @GetMapping("/api/stage9/change-requests")
-  public Stage9ChangeRequestListResponse changeRequests() {
-    return new Stage9ChangeRequestListResponse(changeRequestService.listChangeRequests().stream().map(this::toChangeRequest).toList());
+  public Stage9ChangeRequestListResponse changeRequests(@RequestParam(defaultValue = "50") int limit) {
+    return new Stage9ChangeRequestListResponse(changeRequestService.listChangeRequests(limit).stream().map(this::toChangeRequest).toList());
   }
 
   @GetMapping("/api/stage9/change-requests/{id}")
@@ -107,8 +107,8 @@ public class Stage9IntegrationController {
   }
 
   @GetMapping("/api/stage9/connector-sync-runs")
-  public Stage9ConnectorSyncRunListResponse syncRuns() {
-    return new Stage9ConnectorSyncRunListResponse(connectorSyncEventService.list().stream().map(this::toSyncRun).toList());
+  public Stage9ConnectorSyncRunListResponse syncRuns(@RequestParam(defaultValue = "50") int limit) {
+    return new Stage9ConnectorSyncRunListResponse(connectorSyncEventService.list(limit).stream().map(this::toSyncRun).toList());
   }
 
   @GetMapping("/api/stage9/connector-sync-runs/{id}")

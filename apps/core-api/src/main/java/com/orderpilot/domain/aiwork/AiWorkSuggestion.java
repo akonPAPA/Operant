@@ -1,5 +1,6 @@
 package com.orderpilot.domain.aiwork;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -118,13 +119,13 @@ public class AiWorkSuggestion {
   public String getRiskLevel() { return riskLevel; }
   public BigDecimal getConfidence() { return confidence; }
   public String getGeneratedText() { return generatedText; }
-  public String getStructuredPayloadJson() { return structuredPayloadJson; }
-  public String getEvidenceRefsJson() { return evidenceRefsJson; }
-  public String getIdempotencyKey() { return idempotencyKey; }
-  public UUID getCreatedByUserId() { return createdByUserId; }
+  @JsonIgnore public String getStructuredPayloadJson() { return structuredPayloadJson; }
+  @JsonIgnore public String getEvidenceRefsJson() { return evidenceRefsJson; }
+  @JsonIgnore public String getIdempotencyKey() { return idempotencyKey; }
+  @JsonIgnore public UUID getCreatedByUserId() { return createdByUserId; }
   public Instant getCreatedAt() { return createdAt; }
   public Instant getUpdatedAt() { return updatedAt; }
-  public UUID getDecidedByUserId() { return decidedByUserId; }
+  @JsonIgnore public UUID getDecidedByUserId() { return decidedByUserId; }
   public Instant getDecidedAt() { return decidedAt; }
   public String getDecisionReason() { return decisionReason; }
 }

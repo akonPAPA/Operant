@@ -2,14 +2,15 @@ package com.orderpilot.api.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
  * OP-CAP-07A AI Agent Work Layer DTOs.
  *
- * <p>Responses expose advisory suggestion fields only. They never expose secrets, tokens, raw
- * provider prompts, or trusted business state. {@code structuredPayloadJson} and
- * {@code evidenceRefsJson} are JSON strings the operator UI parses for display.
+ * <p>Responses expose typed, allowlisted advisory fields only. They never expose secrets, tokens, raw
+ * provider prompts, raw JSON payloads, or trusted business state. Idempotency is carried on the
+ * {@code Idempotency-Key} request header, not in the body.
  */
 public final class AiWorkDtos {
   private AiWorkDtos() {}
@@ -19,16 +20,21 @@ public final class AiWorkDtos {
       String workType,
       String sourceType,
       UUID sourceId,
-      String contextText,
-      String idempotencyKey) {}
+      String contextText) {}
 
   /** Create an advisory suggestion from a backend-resolved resource context. */
-  public record CreateContextualAiWorkSuggestionRequest(
-      String workType,
-      String idempotencyKey) {}
+  public record CreateContextualAiWorkSuggestionRequest(String workType) {}
 
   /** Operator accept/reject decision. Advisory only — never approves business state. */
   public record AiWorkDecisionRequest(String reason) {}
+
+  public record AiWorkDisplayField(
+      String label, String value, BigDecimal confidence, String sourceLabel) {}
+
+  public record AiWorkEvidenceItem(String label, String excerpt, Integer page, String field) {}
+
+  public record AiWorkNextActionCandidate(
+      String actionCode, String label, boolean requiresHumanApproval) {}
 
   public record AiWorkSuggestionResponse(
       UUID id,
@@ -38,9 +44,11 @@ public final class AiWorkDtos {
       String strategyVersion,
       String riskLevel,
       BigDecimal confidence,
-      String generatedText,
-      String structuredPayloadJson,
-      String evidenceRefsJson,
+      String summary,
+      List<AiWorkDisplayField> displayFields,
+      List<AiWorkEvidenceItem> evidence,
+      List<AiWorkNextActionCandidate> nextActionCandidates,
+      List<String> riskFlags,
       boolean advisoryOnly,
       Instant createdAt,
       Instant updatedAt,

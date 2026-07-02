@@ -25,6 +25,26 @@ export type AiWorkSourceType =
 
 export type AiWorkStatus = "GENERATED" | "ACCEPTED" | "REJECTED";
 
+export type AiWorkDisplayField = {
+  label: string;
+  value: string;
+  confidence?: number;
+  sourceLabel?: string;
+};
+
+export type AiWorkEvidenceItem = {
+  label: string;
+  excerpt?: string;
+  page?: number;
+  field?: string;
+};
+
+export type AiWorkNextActionCandidate = {
+  actionCode: string;
+  label: string;
+  requiresHumanApproval: boolean;
+};
+
 export type AiWorkSuggestion = {
   id: string;
   workType: AiWorkType;
@@ -33,11 +53,12 @@ export type AiWorkSuggestion = {
   strategyVersion: string;
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
   confidence?: number;
-  generatedText: string;
-  /** JSON string the UI parses for structured display (e.g. next-action candidates). */
-  structuredPayloadJson: string;
-  /** JSON string anchoring the suggestion to its source evidence. */
-  evidenceRefsJson: string;
+  /** Operator-safe advisory text (not raw provider output). */
+  summary: string;
+  displayFields: AiWorkDisplayField[];
+  evidence: AiWorkEvidenceItem[];
+  nextActionCandidates: AiWorkNextActionCandidate[];
+  riskFlags: string[];
   advisoryOnly: boolean;
   createdAt: string;
   updatedAt: string;
@@ -204,33 +225,4 @@ export function riskClass(risk: string): string {
     case "LOW": return "ok";
     default: return "";
   }
-}
-
-/** Safely parse a structured payload JSON string for display; never throws. */
-export function parseStructuredPayload(json: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
-export type NextActionCandidate = {
-  actionCode: string;
-  label: string;
-  requiresHumanApproval: boolean;
-};
-
-export function extractNextActions(json: string): NextActionCandidate[] {
-  const payload = parseStructuredPayload(json);
-  const candidates = payload["candidates"];
-  if (!Array.isArray(candidates)) return [];
-  return candidates
-    .filter((c): c is NextActionCandidate => !!c && typeof c === "object" && "actionCode" in c)
-    .map((c) => ({
-      actionCode: String(c.actionCode),
-      label: String(c.label ?? c.actionCode),
-      requiresHumanApproval: c.requiresHumanApproval !== false
-    }));
 }

@@ -4,7 +4,9 @@ import com.orderpilot.api.dto.AiWorkDtos.AiWorkDecisionRequest;
 import com.orderpilot.api.dto.AiWorkDtos.AiWorkSuggestionResponse;
 import com.orderpilot.api.dto.AiWorkDtos.CreateContextualAiWorkSuggestionRequest;
 import com.orderpilot.api.dto.AiWorkDtos.CreateAiWorkSuggestionRequest;
+import com.orderpilot.application.services.aiwork.AiWorkPublicResponseMapper;
 import com.orderpilot.application.services.aiwork.AiWorkService;
+import com.orderpilot.common.api.ClientIdempotencyKey;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelRfqHandoff;
@@ -16,12 +18,12 @@ import com.orderpilot.domain.aiwork.AiWorkType;
 import com.orderpilot.security.RequestActorResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,34 +42,41 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/ai-work")
 public class AiWorkController {
   private final AiWorkService service;
+  private final AiWorkPublicResponseMapper responseMapper;
   private final RequestActorResolver actorResolver;
   private final ChannelRfqHandoffRepository handoffRepository;
 
   public AiWorkController(
       AiWorkService service,
+      AiWorkPublicResponseMapper responseMapper,
       RequestActorResolver actorResolver,
       ChannelRfqHandoffRepository handoffRepository) {
     this.service = service;
+    this.responseMapper = responseMapper;
     this.actorResolver = actorResolver;
     this.handoffRepository = handoffRepository;
   }
 
   @PostMapping("/suggestions")
-  public AiWorkSuggestionResponse create(@RequestBody CreateAiWorkSuggestionRequest request, HttpServletRequest http) {
+  public AiWorkSuggestionResponse create(
+      @RequestBody CreateAiWorkSuggestionRequest request,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+      HttpServletRequest http) {
     AiWorkSuggestion saved = service.createSuggestion(
         parseWorkType(request.workType()),
         parseSourceType(request.sourceType()),
         request.sourceId(),
         request.contextText(),
-        request.idempotencyKey(),
+        ClientIdempotencyKey.normalize(idempotencyKey),
         trustedActor(http));
-    return toResponse(saved);
+    return responseMapper.toResponse(saved);
   }
 
   @PostMapping("/rfq-handoffs/{handoffId}/suggestions")
   public AiWorkSuggestionResponse createForRfqHandoff(
       @PathVariable UUID handoffId,
       @RequestBody(required = false) CreateContextualAiWorkSuggestionRequest request,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
       HttpServletRequest http) {
     UUID tenantId = TenantContext.requireTenantId();
     ChannelRfqHandoff handoff = handoffRepository.findByIdAndTenantId(handoffId, tenantId)
@@ -84,14 +93,14 @@ public class AiWorkController {
         AiWorkSourceType.RFQ_HANDOFF,
         handoffId,
         rfqHandoffContext(handoff),
-        request == null ? null : request.idempotencyKey(),
+        ClientIdempotencyKey.normalize(idempotencyKey),
         trustedActor(http));
-    return toResponse(saved);
+    return responseMapper.toResponse(saved);
   }
 
   @GetMapping("/suggestions/{id}")
   public AiWorkSuggestionResponse get(@PathVariable UUID id) {
-    return toResponse(service.getSuggestion(id));
+    return responseMapper.toResponse(service.getSuggestion(id));
   }
 
   @GetMapping("/suggestions")
@@ -100,22 +109,22 @@ public class AiWorkController {
       @RequestParam(name = "sourceId", required = false) UUID sourceId,
       @RequestParam(name = "limit", required = false, defaultValue = "50") int limit) {
     List<AiWorkSuggestion> suggestions = (sourceType != null && sourceId != null)
-        ? service.listForSource(parseSourceType(sourceType), sourceId)
+        ? service.listForSource(parseSourceType(sourceType), sourceId, limit)
         : service.listRecent(limit);
-    return suggestions.stream().map(this::toResponse).toList();
+    return suggestions.stream().map(responseMapper::toResponse).toList();
   }
 
   @PostMapping("/suggestions/{id}/accept")
   public AiWorkSuggestionResponse accept(
       @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request, HttpServletRequest http) {
-    return toResponse(service.accept(
+    return responseMapper.toResponse(service.accept(
         id, trustedActor(http), request == null ? null : request.reason()));
   }
 
   @PostMapping("/suggestions/{id}/reject")
   public AiWorkSuggestionResponse reject(
       @PathVariable UUID id, @RequestBody(required = false) AiWorkDecisionRequest request, HttpServletRequest http) {
-    return toResponse(service.reject(
+    return responseMapper.toResponse(service.reject(
         id, trustedActor(http), request == null ? null : request.reason()));
   }
 
@@ -160,51 +169,5 @@ public class AiWorkController {
     } catch (IllegalArgumentException ex) {
       throw new IllegalArgumentException("Unsupported source_type: " + value);
     }
-  }
-
-  private AiWorkSuggestionResponse toResponse(AiWorkSuggestion s) {
-    return new AiWorkSuggestionResponse(
-        s.getId(),
-        s.getWorkType(),
-        s.getSourceType(),
-        s.getStatus(),
-        s.getStrategyVersion(),
-        s.getRiskLevel(),
-        s.getConfidence(),
-        safeDisplayText(s.getGeneratedText()),
-        safeJsonField(s.getStructuredPayloadJson(), "{}"),
-        safeJsonField(s.getEvidenceRefsJson(), "[]"),
-        true,
-        s.getCreatedAt(),
-        s.getUpdatedAt(),
-        s.getDecidedAt(),
-        s.getDecisionReason());
-  }
-
-  private static String safeDisplayText(String value) {
-    return containsLeakMarker(value) ? "Advisory output withheld by safety filter." : value;
-  }
-
-  private static String safeJsonField(String value, String fallback) {
-    if (value == null || value.isBlank()) {
-      return fallback;
-    }
-    return containsLeakMarker(value) ? fallback : value;
-  }
-
-  private static boolean containsLeakMarker(String value) {
-    if (value == null) {
-      return false;
-    }
-    String lower = value.toLowerCase(Locale.ROOT);
-    return lower.contains("objectstoragekey")
-        || lower.contains("storagekey")
-        || lower.contains("rawpayload")
-        || lower.contains("rawdocument")
-        || lower.contains("prompttext")
-        || lower.contains("stacktrace")
-        || lower.contains("connectorcredential")
-        || lower.contains("secret")
-        || lower.contains("token");
   }
 }

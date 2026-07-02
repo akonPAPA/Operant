@@ -63,7 +63,7 @@ public class WorkspaceController {
   }
 
   @PostMapping("/exception-cases/from-validation/{validationRunId}") public ExceptionCaseDto createCase(@PathVariable UUID validationRunId){return toDto(caseService.createFromValidation(validationRunId));}
-  @GetMapping("/exception-cases") public List<ExceptionCaseDto> cases(){return caseService.list().stream().map(WorkspaceController::toDto).toList();}
+  @GetMapping("/exception-cases") public List<ExceptionCaseDto> cases(@RequestParam(defaultValue = "25") int limit){return caseService.list(limit).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/exception-cases/{id}") public ExceptionCaseDto exceptionCase(@PathVariable UUID id){return toDto(caseService.get(id));}
   @GetMapping("/exception-cases/{id}/issues") public List<ExceptionCaseIssueDto> caseIssues(@PathVariable UUID id){return caseService.issues(id).stream().map(WorkspaceController::toDto).toList();}
   @PostMapping("/exception-cases/{id}/assign") public ExceptionCaseDto assign(@PathVariable UUID id, @RequestBody(required = false) AssignRequest request, HttpServletRequest http){return toDto(caseService.assign(id, actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId())));}
@@ -80,7 +80,7 @@ public class WorkspaceController {
 
   @GetMapping("/draft-quotes/review-queue") public List<DraftReviewSummary> quoteReviewQueue(@RequestParam(required = false) String status, @RequestParam(required = false) UUID sourceReviewCaseId, @RequestParam(required = false) String customerRef, @RequestParam(defaultValue = "25") int limit){return draftReviewService.quoteReviewQueue(status, sourceReviewCaseId, customerRef, limit);}
   @PostMapping("/draft-quotes/from-validation/{validationRunId}") public WorkspaceDraftQuoteDto createQuote(@PathVariable UUID validationRunId){return toDto(quoteService.createFromValidation(validationRunId));}
-  @GetMapping("/draft-quotes") public List<WorkspaceDraftQuoteDto> quotes(){return quoteService.list().stream().map(WorkspaceController::toDto).toList();}
+  @GetMapping("/draft-quotes") public List<WorkspaceDraftQuoteDto> quotes(@RequestParam(defaultValue = "25") int limit){return quoteService.list(limit).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/draft-quotes/{id}") public WorkspaceDraftQuoteDto quote(@PathVariable UUID id){return toDto(quoteService.get(id));}
   @GetMapping("/draft-quotes/{id}/lines") public List<WorkspaceDraftQuoteLineDto> quoteLines(@PathVariable UUID id){return quoteService.lines(id).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/draft-quotes/{id}/review") public DraftQuoteDetail quoteReview(@PathVariable UUID id){return draftReviewService.quoteDetail(id);}
@@ -92,7 +92,7 @@ public class WorkspaceController {
 
   @GetMapping("/draft-orders/review-queue") public List<DraftReviewSummary> orderReviewQueue(@RequestParam(required = false) String status, @RequestParam(required = false) UUID sourceReviewCaseId, @RequestParam(required = false) String customerRef, @RequestParam(defaultValue = "25") int limit){return draftReviewService.orderReviewQueue(status, sourceReviewCaseId, customerRef, limit);}
   @PostMapping("/draft-orders/from-validation/{validationRunId}") public WorkspaceDraftOrderDto createOrder(@PathVariable UUID validationRunId){return toDto(orderService.createFromValidation(validationRunId));}
-  @GetMapping("/draft-orders") public List<WorkspaceDraftOrderDto> orders(){return orderService.list().stream().map(WorkspaceController::toDto).toList();}
+  @GetMapping("/draft-orders") public List<WorkspaceDraftOrderDto> orders(@RequestParam(defaultValue = "25") int limit){return orderService.list(limit).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/draft-orders/{id}") public WorkspaceDraftOrderDto order(@PathVariable UUID id){return toDto(orderService.get(id));}
   @GetMapping("/draft-orders/{id}/lines") public List<WorkspaceDraftOrderLineDto> orderLines(@PathVariable UUID id){return orderService.lines(id).stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/draft-orders/{id}/review") public DraftOrderDetail orderReview(@PathVariable UUID id){return draftReviewService.orderDetail(id);}
