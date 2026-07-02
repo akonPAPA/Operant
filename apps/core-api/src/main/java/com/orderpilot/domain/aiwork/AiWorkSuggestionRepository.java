@@ -14,6 +14,9 @@ public interface AiWorkSuggestionRepository extends JpaRepository<AiWorkSuggesti
   Optional<AiWorkSuggestion> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 
   List<AiWorkSuggestion> findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(
+      UUID tenantId, String sourceType, UUID sourceId, Pageable pageable);
+
+  List<AiWorkSuggestion> findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(
       UUID tenantId, String sourceType, UUID sourceId);
 
   List<AiWorkSuggestion> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable pageable);

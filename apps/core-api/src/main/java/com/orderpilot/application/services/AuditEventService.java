@@ -21,7 +21,15 @@ public class AuditEventService {
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public AuditEvent record(String action, String entityType, String entityId, UUID actorId, String metadataJson) {
-    UUID tenantId = TenantContext.requireTenantId();
+    return recordForTenant(TenantContext.requireTenantId(), action, entityType, entityId, actorId, metadataJson);
+  }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public AuditEvent recordForTenant(
+      UUID tenantId, String action, String entityType, String entityId, UUID actorId, String metadataJson) {
+    if (tenantId == null) {
+      throw new IllegalArgumentException("tenant_id is required for audit");
+    }
     String metadata = metadataJson == null || metadataJson.isBlank() ? "{}" : metadataJson;
     AuditEvent event = new AuditEvent(tenantId, actorId, action, entityType, entityId, metadata, clock.instant());
     return auditEventRepository.save(event);

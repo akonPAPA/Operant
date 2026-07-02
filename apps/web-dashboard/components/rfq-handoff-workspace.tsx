@@ -301,7 +301,7 @@ export function RfqHandoffWorkspace({
           {aiSuggestion ? (
             <div className="control-grid">
               <h3>Advisory suggestion</h3>
-              <p className="generated-text">{aiSuggestion.generatedText}</p>
+              <p className="generated-text">{aiSuggestion.summary}</p>
               <div className="tag-row">
                 <span className="status-pill">Advisory only</span>
                 <span className="status-pill warning">Risk: {aiSuggestion.riskLevel}</span>

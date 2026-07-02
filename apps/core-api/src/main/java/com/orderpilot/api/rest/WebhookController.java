@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -85,8 +86,8 @@ public class WebhookController {
   }
 
   @GetMapping("/events")
-  public List<WebhookEventResponse> events() {
-    return eventService.list().stream().map(this::toEvent).toList();
+  public List<WebhookEventResponse> events(@RequestParam(defaultValue = "50") int limit) {
+    return eventService.list(limit).stream().map(this::toEvent).toList();
   }
 
   @GetMapping("/events/{id}")

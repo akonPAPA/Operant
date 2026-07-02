@@ -134,12 +134,16 @@ export function generateRfqHandoffAiSuggestion(
   id: string,
   workType: AiWorkType = "NEXT_ACTION_SUGGESTION"
 ) {
+  const idempotencyKey = `rfq-handoff-${id}-${workType}`;
   return request<AiWorkSuggestion | null>(
     `/api/v1/ai-work/rfq-handoffs/${id}/suggestions`,
     {
       method: "POST",
-      headers: { "X-OrderPilot-Permissions": AI_WORK_ACTION },
-      body: JSON.stringify({ workType, idempotencyKey: `rfq-handoff-${id}-${workType}` })
+      headers: {
+        "X-OrderPilot-Permissions": AI_WORK_ACTION,
+        "Idempotency-Key": idempotencyKey
+      },
+      body: JSON.stringify({ workType })
     },
     null
   );

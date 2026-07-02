@@ -51,9 +51,16 @@ test("api client transition payloads do not send backend-owned actor fields", ()
 
 test("api client contextual AI payload does not send source ids or context text", () => {
   assert.match(api, /\/api\/v1\/ai-work\/rfq-handoffs\/\$\{id\}\/suggestions/);
+  assert.match(api, /"Idempotency-Key": idempotencyKey/);
+  assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*idempotencyKey/s);
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*sourceId/s);
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*sourceType/s);
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*contextText/s);
+});
+
+test("workspace renders AI suggestion summary field not raw generatedText", () => {
+  assert.match(workspace, /aiSuggestion\.summary/);
+  assert.doesNotMatch(workspace, /aiSuggestion\.generatedText/);
 });
 
 test("api client has no manual create function and no quote/order/erp action", () => {

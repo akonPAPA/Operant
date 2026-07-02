@@ -73,6 +73,12 @@ test("frontend command payloads do not expose client-supplied authority or calcu
 
   assert.doesNotMatch(aiWorkApi, /export function createAiWorkSuggestion/);
   assert.doesNotMatch(aiWorkApi, /export type CreateAiWorkSuggestionRequest/);
+  assert.doesNotMatch(aiWorkApi, /structuredPayloadJson/);
+  assert.doesNotMatch(aiWorkApi, /evidenceRefsJson/);
+  assert.doesNotMatch(aiWorkApi, /idempotencyKey/);
+  const aiSuggestion = typeBlock(aiWorkApi, "AiWorkSuggestion");
+  assert.match(aiSuggestion, /\bsummary:/);
+  assert.match(aiSuggestion, /\bnextActionCandidates:/);
   assert.doesNotMatch(aiWorkApi, /\b(createdByUserId|decidedByUserId)\??:/);
   assert.doesNotMatch(quoteReviewApi, /auditTimeline: Array<\{[^}]*\b(id|entityId|actorId)\??:/);
   assert.doesNotMatch(quoteReviewApi, /auditTimeline: Array<\{[^}]*\bmetadata\??:/);

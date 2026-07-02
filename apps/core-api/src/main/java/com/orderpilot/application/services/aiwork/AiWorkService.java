@@ -7,6 +7,7 @@ import com.orderpilot.application.services.runtime.RuntimeGuardService;
 import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimateRequest;
 import com.orderpilot.application.services.runtime.RuntimeUnitEstimator;
+import com.orderpilot.common.api.ClientIdempotencyKey;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkStatus;
@@ -71,7 +72,7 @@ public class AiWorkService {
     if (sourceType == null) throw new IllegalArgumentException("source_type is required");
     if (sourceId == null) throw new IllegalArgumentException("source_id is required");
 
-    String normalizedKey = normalize(idempotencyKey);
+    String normalizedKey = ClientIdempotencyKey.normalize(idempotencyKey);
     if (normalizedKey != null) {
       // Retry-safe create: a repeated idempotency key returns the existing advisory suggestion
       // without re-generating or re-auditing.
@@ -169,10 +170,16 @@ public class AiWorkService {
 
   @Transactional(readOnly = true)
   public List<AiWorkSuggestion> listForSource(AiWorkSourceType sourceType, UUID sourceId) {
+    return listForSource(sourceType, sourceId, MAX_RECENT_LIMIT);
+  }
+
+  @Transactional(readOnly = true)
+  public List<AiWorkSuggestion> listForSource(AiWorkSourceType sourceType, UUID sourceId, int limit) {
     if (sourceType == null) throw new IllegalArgumentException("source_type is required");
     if (sourceId == null) throw new IllegalArgumentException("source_id is required");
+    int bounded = Math.min(Math.max(limit, 1), MAX_RECENT_LIMIT);
     return repository.findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(
-        TenantContext.requireTenantId(), sourceType.name(), sourceId);
+        TenantContext.requireTenantId(), sourceType.name(), sourceId, PageRequest.of(0, bounded));
   }
 
   @Transactional(readOnly = true)
@@ -189,7 +196,7 @@ public class AiWorkService {
   }
 
   private static String normalize(String value) {
-    return value == null || value.isBlank() ? null : value.trim();
+    return ClientIdempotencyKey.normalize(value);
   }
 
   /**

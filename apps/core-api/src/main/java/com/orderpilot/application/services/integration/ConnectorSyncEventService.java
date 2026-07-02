@@ -1,12 +1,14 @@
 package com.orderpilot.application.services.integration;
 
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.common.api.TenantScopedListLimits;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.integration.*;
 import java.time.Clock;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,7 +62,11 @@ public class ConnectorSyncEventService {
 
   @Transactional public ConnectorSyncEvent complete(UUID id, int read, int written, int failed) { ConnectorSyncEvent event = get(id); event.complete(read, written, failed, clock.instant()); auditEventService.record("CONNECTOR_SYNC_COMPLETED", "CONNECTOR_SYNC_EVENT", event.getId().toString(), null, "{}"); return event; }
   @Transactional public ConnectorSyncEvent fail(UUID id, String code, String message) { ConnectorSyncEvent event = get(id); event.fail(code, message, clock.instant()); auditEventService.record("CONNECTOR_SYNC_FAILED", "CONNECTOR_SYNC_EVENT", event.getId().toString(), null, "{\"errorCode\":\"" + code + "\"}"); return event; }
-  @Transactional(readOnly = true) public List<ConnectorSyncEvent> list() { return syncEventRepository.findByTenantIdOrderByStartedAtDesc(TenantContext.requireTenantId()); }
+  @Transactional(readOnly = true) public List<ConnectorSyncEvent> list() { return list(TenantScopedListLimits.GENERAL_LIST_DEFAULT); }
+  @Transactional(readOnly = true) public List<ConnectorSyncEvent> list(int limit) {
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.GENERAL_LIST_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return syncEventRepository.findByTenantIdOrderByStartedAtDesc(TenantContext.requireTenantId(), PageRequest.of(0, clamped));
+  }
   @Transactional(readOnly = true) public ConnectorSyncEvent get(UUID id) { return syncEventRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Connector sync event not found")); }
 
   private IntegrationConnection getActiveConnection(UUID connectionId) {
