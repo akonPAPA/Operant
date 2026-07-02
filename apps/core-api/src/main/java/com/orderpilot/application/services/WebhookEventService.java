@@ -27,6 +27,10 @@ public class WebhookEventService {
     return repository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId(), PageRequest.of(0, clamped));
   }
   @Transactional(readOnly=true) public WebhookEvent get(UUID id){ return repository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Webhook event not found")); }
-  @Transactional(readOnly=true) public List<InboundEventLedger> listLedger(){ return ledgerRepository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId()); }
+  @Transactional(readOnly=true) public List<InboundEventLedger> listLedger(){ return listLedger(TenantScopedListLimits.GENERAL_LIST_DEFAULT); }
+  @Transactional(readOnly=true) public List<InboundEventLedger> listLedger(int limit){
+    int clamped = TenantScopedListLimits.clamp(limit, TenantScopedListLimits.GENERAL_LIST_DEFAULT, TenantScopedListLimits.GENERAL_LIST_MAX);
+    return ledgerRepository.findByTenantIdOrderByReceivedAtDesc(TenantContext.requireTenantId(), PageRequest.of(0, clamped));
+  }
   @Transactional(readOnly=true) public InboundEventLedger getLedger(UUID id){ return ledgerRepository.findByIdAndTenantId(id, TenantContext.requireTenantId()).orElseThrow(() -> new IllegalArgumentException("Inbound event not found")); }
 }

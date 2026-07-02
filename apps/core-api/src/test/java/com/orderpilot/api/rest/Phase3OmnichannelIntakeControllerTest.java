@@ -7,13 +7,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.domain.audit.AuditEventRepository;
+import com.orderpilot.domain.intake.ChannelMessage;
 import com.orderpilot.domain.intake.ChannelMessageRepository;
 import com.orderpilot.domain.intake.InboundAttachmentRepository;
 import com.orderpilot.domain.intake.InboundDocumentRepository;
+import com.orderpilot.domain.intake.InboundEventLedger;
 import com.orderpilot.domain.intake.InboundEventLedgerRepository;
 import com.orderpilot.domain.intake.ProcessingJobRepository;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +42,7 @@ class Phase3OmnichannelIntakeControllerTest {
   private static final String PERMISSIONS = "X-OrderPilot-Permissions";
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private ObjectMapper objectMapper;
   @Autowired private InboundDocumentRepository documentRepository;
   @Autowired private ChannelMessageRepository messageRepository;
   @Autowired private ProcessingJobRepository jobRepository;
@@ -293,6 +301,65 @@ class Phase3OmnichannelIntakeControllerTest {
         .andReturn().getResponse().getContentAsString();
 
     assertThat(body).doesNotContain(rawStorageKey);
+  }
+
+  @Test
+  void intakeListLimitsPreserveOrderingAndPublicResponseShapes() throws Exception {
+    UUID tenantId = UUID.randomUUID();
+    String conversationId = "bounded-conversation";
+    Instant older = Instant.parse("2026-06-01T10:00:00Z");
+    Instant newer = older.plusSeconds(60);
+    messageRepository.save(new ChannelMessage(
+        tenantId, "API", "older-message", conversationId, "buyer-old", "Buyer Old", null,
+        "INBOUND", "TEXT", "Older", "Older", "{\"internal\":\"old\"}",
+        "tenant/internal/old", "QUEUED", older));
+    messageRepository.save(new ChannelMessage(
+        tenantId, "API", "newer-message", conversationId, "buyer-new", "Buyer New", null,
+        "INBOUND", "TEXT", "Newer", "Newer", "{\"internal\":\"new\"}",
+        "tenant/internal/new", "QUEUED", newer));
+    ledgerRepository.save(new InboundEventLedger(
+        tenantId, "API", "older-event", "MESSAGE_RECEIVED", "old-fingerprint", "QUEUED",
+        "tenant/internal/old-event", older));
+    ledgerRepository.save(new InboundEventLedger(
+        tenantId, "API", "newer-event", "MESSAGE_RECEIVED", "new-fingerprint", "QUEUED",
+        "tenant/internal/new-event", newer));
+
+    JsonNode messages = responseJson("/api/v1/intake/messages", tenantId);
+    assertThat(messages).hasSize(1);
+    assertThat(messages.get(0).get("externalMessageId").asText()).isEqualTo("newer-message");
+    assertThat(fieldNames(messages.get(0))).containsExactlyInAnyOrder(
+        "id", "channel", "externalMessageId", "conversationId", "senderHandle",
+        "messageType", "textContent", "status", "receivedAt");
+
+    JsonNode conversation = responseJson(
+        "/api/v1/intake/conversations/" + conversationId, tenantId);
+    assertThat(conversation).hasSize(1);
+    assertThat(conversation.get(0).get("externalMessageId").asText()).isEqualTo("older-message");
+    assertThat(fieldNames(conversation.get(0))).containsExactlyInAnyOrderElementsOf(
+        fieldNames(messages.get(0)));
+
+    JsonNode events = responseJson("/api/v1/intake/events", tenantId);
+    assertThat(events).hasSize(1);
+    assertThat(events.get(0).get("externalEventId").asText()).isEqualTo("newer-event");
+    assertThat(fieldNames(events.get(0))).containsExactlyInAnyOrder(
+        "id", "source", "externalEventId", "eventType", "fingerprintSha256", "status",
+        "rawPayloadStored");
+  }
+
+  private JsonNode responseJson(String path, UUID tenantId) throws Exception {
+    String body = mockMvc.perform(get(path)
+            .header(TENANT, tenantId.toString())
+            .header(PERMISSIONS, "INTAKE_READ")
+            .param("limit", "1"))
+        .andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
+    return objectMapper.readTree(body);
+  }
+
+  private static Set<String> fieldNames(JsonNode node) {
+    Set<String> names = new HashSet<>();
+    node.fieldNames().forEachRemaining(names::add);
+    return names;
   }
 
   private org.springframework.test.web.servlet.ResultActions uploadCsv(UUID tenantId, byte[] bytes) throws Exception {
