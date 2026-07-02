@@ -53,7 +53,6 @@ export type ValidationReviewActionResult = {
   approvalRequestId?: string | null;
   resolvedIssueId?: string | null;
   issueResolution?: string | null;
-  createdBy?: string | null;
   createdAt?: string | null;
   clientRequestId?: string | null;
   message: string;

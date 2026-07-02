@@ -20,14 +20,8 @@ export async function IntegrationControl() {
         <div className="kpi-grid">
           <Metric label="Mode" value="READ_ONLY default" />
           <Metric label="Execution mode" value={policy?.executionMode ?? "DEMO_ONLY"} />
-          <Metric label="Credential status" value={policy?.credentialStatus ?? "CONFIGURED_PLACEHOLDER"} />
-          <Metric label="External writes" value="Blocked for production" />
-          <Metric label="Network calls" value="None" />
-        </div>
-        <div className="tag-row">
-          {(policy?.capabilities ?? ["READ_CUSTOMERS", "READ_PRODUCTS", "READ_INVENTORY", "CREATE_DRAFT_QUOTE", "CREATE_DRAFT_ORDER", "FETCH_STATUS"]).map((capability) => (
-            <span className="status-pill" key={capability}>{capability}</span>
-          ))}
+          <Metric label="Production writes" value={policy?.productionWritesEnabled ? "Enabled" : "Disabled"} />
+          <Metric label="Network calls" value={policy?.networkCallsAllowed ? "Enabled" : "Disabled"} />
         </div>
         <p className="risk-note">Demo ERP only: Stage 9B hardens connector safety without production ERP or 1C writes, secrets, connector commands from bot handoffs, or inventory mutation.</p>
         <p className="risk-note">Production connector disabled: activation requires separate security acceptance, real secret-manager custody, idempotency review, and runbook signoff.</p>
@@ -39,8 +33,7 @@ export async function IntegrationControl() {
           <div><dt>Status</dt><dd>{demoErp?.status ?? "Not created"}</dd></div>
           <div><dt>Mode</dt><dd>{demoErp?.mode ?? "READ_ONLY"}</dd></div>
           <div><dt>Connection kind</dt><dd>{demoErp?.connectionKind ?? "DEMO_ERP_LOCAL"}</dd></div>
-          <div><dt>Endpoint</dt><dd>{demoErp?.endpointRef ?? "demo://local"}</dd></div>
-          <div><dt>Credential</dt><dd>{policy?.maskedCredentialRef ?? "placeholder:not-configured"}</dd></div>
+          <div><dt>Safety policy</dt><dd>{policy?.warning ?? "Production connector execution is disabled."}</dd></div>
         </dl>
         <p className="risk-note">The Demo ERP adapter generates deterministic local external references and stores sync/audit records only.</p>
       </section>

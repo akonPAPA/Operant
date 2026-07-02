@@ -147,7 +147,7 @@ public class AiMemoryEvaluationController {
   private static EvaluationResultDto toDto(AiMemoryEvaluationResult r) {
     return new EvaluationResultDto(r.getId(), r.getRunId(), r.getCaseId(), r.getStatus().name(),
         r.getTopMemoryRecordId(), r.getTopMemoryKey(), r.getTopScore(), r.isExpectedMatched(),
-        r.isExcludedUnsafe(), r.isTenantIsolated(), r.getFailureReason(), r.getCreatedAt());
+        r.isExcludedUnsafe(), r.isTenantIsolated(), r.getCreatedAt());
   }
 
   private static ManualCaseSpec toManualCaseSpec(BatchCaseRequest c) {

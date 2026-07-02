@@ -193,7 +193,7 @@ public class CommandCenterReadService {
   private AuditTimelineItemDto toAuditItem(AuditEvent e) {
     // Identifiers + action only. The audit metadata JSON blob is intentionally excluded.
     return new AuditTimelineItemDto(
-        e.getAction(), e.getEntityType(), e.getEntityId(), e.getOccurredAt());
+        e.getAction(), e.getEntityType(), e.getOccurredAt());
   }
 
   private ReconciliationPreviewDto reconciliation(UUID tenantId, Instant generatedAt) {

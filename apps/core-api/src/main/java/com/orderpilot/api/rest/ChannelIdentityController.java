@@ -96,7 +96,6 @@ public class ChannelIdentityController {
         identity.getCreatedAt(),
         identity.getUpdatedAt(),
         identity.getLinkedAt(),
-        identity.getLinkedByUserId(),
         identity.getNotes(),
         ChannelIdentityResolutionMapper.toResolutionView(identity));
   }

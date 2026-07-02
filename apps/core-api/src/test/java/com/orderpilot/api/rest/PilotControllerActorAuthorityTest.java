@@ -92,6 +92,7 @@ class PilotControllerActorAuthorityTest {
         .andExpect(jsonPath("$.tenantId").doesNotExist())
         .andExpect(jsonPath("$.auditCorrelationId").doesNotExist())
         .andExpect(jsonPath("$.idempotencyKey").doesNotExist())
+        .andExpect(jsonPath("$.correctedByUserId").doesNotExist())
         .andExpect(jsonPath("$.beforePayloadJson").doesNotExist())
         .andExpect(jsonPath("$.afterPayloadJson").doesNotExist());
 

@@ -392,8 +392,8 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
           <section className="panel table-panel">
             <h2>Audit Timeline</h2>
             <table className="data-table">
-              <thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Metadata</th></tr></thead>
-              <tbody>{detail.auditTimeline.length ? detail.auditTimeline.map((event) => <tr key={`${event.occurredAt}-${event.action}`}><td>{event.occurredAt}</td><td>{humanize(event.action)}</td><td>{auditActorLabel(event.metadata)}</td><td>{summarizeMetadata(event.metadata)}</td></tr>) : <tr><td colSpan={4}>No mutation audit events yet. Create or review a draft quote to populate the controlled audit trail.</td></tr>}</tbody>
+              <thead><tr><th>When</th><th>Action</th></tr></thead>
+              <tbody>{detail.auditTimeline.length ? detail.auditTimeline.map((event) => <tr key={`${event.occurredAt}-${event.action}`}><td>{event.occurredAt}</td><td>{humanize(event.action)}</td></tr>) : <tr><td colSpan={2}>No mutation audit events yet. Create or review a draft quote to populate the controlled audit trail.</td></tr>}</tbody>
             </table>
           </section>
         </>
@@ -421,25 +421,4 @@ function humanize(value?: string | null) {
 
 function formatList(values: string[]) {
   return values.length ? values.map(humanize).join(", ") : "None";
-}
-
-function summarizeMetadata(metadata: string) {
-  try {
-    const parsed = JSON.parse(metadata) as Record<string, unknown>;
-    const parts = ["reason", "reasonCode", "decision", "externalExecution", "newStatus", "previousStatus"]
-      .map((key) => parsed[key] ? `${humanize(key)}: ${String(parsed[key])}` : "")
-      .filter(Boolean);
-    return parts.length ? parts.join(" | ") : metadata;
-  } catch {
-    return metadata;
-  }
-}
-
-function auditActorLabel(metadata: string) {
-  try {
-    const parsed = JSON.parse(metadata) as Record<string, unknown>;
-    return parsed["actorType"] ? humanize(String(parsed["actorType"])) : "system";
-  } catch {
-    return "system";
-  }
 }

@@ -66,7 +66,7 @@ public class WorkspaceController {
   @GetMapping("/exception-cases") public List<ExceptionCaseDto> cases(){return caseService.list().stream().map(WorkspaceController::toDto).toList();}
   @GetMapping("/exception-cases/{id}") public ExceptionCaseDto exceptionCase(@PathVariable UUID id){return toDto(caseService.get(id));}
   @GetMapping("/exception-cases/{id}/issues") public List<ExceptionCaseIssueDto> caseIssues(@PathVariable UUID id){return caseService.issues(id).stream().map(WorkspaceController::toDto).toList();}
-  @PostMapping("/exception-cases/{id}/assign") public ExceptionCaseDto assign(@PathVariable UUID id, @RequestBody AssignRequest request){return toDto(caseService.assign(id, request.userId()));}
+  @PostMapping("/exception-cases/{id}/assign") public ExceptionCaseDto assign(@PathVariable UUID id, @RequestBody(required = false) AssignRequest request, HttpServletRequest http){return toDto(caseService.assign(id, actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId())));}
   @PostMapping("/exception-cases/{id}/status") public ExceptionCaseDto status(@PathVariable UUID id, @RequestBody StatusRequest request){return toDto(caseService.status(id, request.status()));}
   @PostMapping("/exception-cases/{id}/resolve") public ExceptionCaseDto resolve(@PathVariable UUID id){return toDto(caseService.resolve(id));}
   @PostMapping("/exception-cases/{id}/reject") public ExceptionCaseDto rejectCase(@PathVariable UUID id){return toDto(caseService.reject(id));}

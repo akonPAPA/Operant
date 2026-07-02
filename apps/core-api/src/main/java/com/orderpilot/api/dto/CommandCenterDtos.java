@@ -98,7 +98,6 @@ public final class CommandCenterDtos {
   public record AuditTimelineItemDto(
       String action,
       String entityType,
-      String entityId,
       Instant occurredAt) {}
 
   public record ReconciliationPreviewDto(

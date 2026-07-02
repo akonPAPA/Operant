@@ -118,7 +118,6 @@ public final class ValidationReviewDtos {
   public record AuditTimelineItem(
       String action,
       String entityType,
-      String entityId,
       Instant occurredAt) {}
 
   public record AllowedReviewAction(

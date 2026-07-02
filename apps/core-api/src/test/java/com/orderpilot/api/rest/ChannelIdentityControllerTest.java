@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orderpilot.application.services.channel.ChannelIdentityService;
@@ -65,7 +66,8 @@ class ChannelIdentityControllerTest {
                   "notes":"confirmed"
                 }
                 """.formatted(accountId, spoofActor)))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.linkedByUserId").doesNotExist());
 
     ArgumentCaptor<UUID> linkedBy = ArgumentCaptor.forClass(UUID.class);
     verify(service).linkIdentity(

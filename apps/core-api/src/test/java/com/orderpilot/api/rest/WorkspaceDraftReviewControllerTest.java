@@ -216,6 +216,24 @@ class WorkspaceDraftReviewControllerTest {
   }
 
   @Test
+  void exceptionCaseAssignmentUsesTrustedActorAndIgnoresClientUserId() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID trustedActor = UUID.randomUUID();
+    UUID spoofActor = UUID.randomUUID();
+    UUID caseId = UUID.randomUUID();
+
+    mockMvc.perform(post("/api/v1/workspace/exception-cases/{id}/assign", caseId)
+            .header("X-Tenant-Id", tenant.toString())
+            .header(RequestActorResolver.ACTOR_HEADER, trustedActor.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "REVIEW_ACTION")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"userId\":\"" + spoofActor + "\",\"actorId\":\"" + spoofActor + "\"}"))
+        .andExpect(status().isOk());
+
+    verify(caseService).assign(caseId, trustedActor);
+  }
+
+  @Test
   void draftMutationWithoutReviewActionIsDeniedBeforeServiceInvocation() throws Exception {
     UUID tenant = UUID.randomUUID();
     UUID draftId = UUID.randomUUID();

@@ -23,6 +23,7 @@ class ClientAuthorityOverrideContractTest {
       "actorId",
       "actorRole",
       "actorUserId",
+      "userId",
       "staffUserId",
       "createdBy",
       "approvedBy",

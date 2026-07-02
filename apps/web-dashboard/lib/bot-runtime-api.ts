@@ -63,14 +63,12 @@ export type BotRuntimeSettings = {
 export type BotResponseDraft = {
   id: string;
   conversationId: string;
-  sourceMessageId: string;
   channel: string;
   responseType: string;
   policyDecision: string;
   status: string;
   responseText: string;
   requiresOperatorReview: boolean;
-  reviewedBy?: string;
   reviewedAt?: string;
   stubSentAt?: string;
   createdAt: string;

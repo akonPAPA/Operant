@@ -52,7 +52,6 @@ public final class Stage9Dtos {
       String validationStatus,
       String approvalStatus,
       String externalReference,
-      String failureReason,
       Instant createdAt,
       Instant approvedAt,
       Instant rejectedAt,

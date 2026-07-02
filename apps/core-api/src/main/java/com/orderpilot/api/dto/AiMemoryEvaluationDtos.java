@@ -63,6 +63,5 @@ public final class AiMemoryEvaluationDtos {
       boolean expectedMatched,
       boolean excludedUnsafe,
       boolean tenantIsolated,
-      String failureReason,
       Instant createdAt) {}
 }

@@ -87,10 +87,8 @@ export type SourceEvidenceReviewItem = {
 };
 
 export type AuditTimelineItem = {
-  actorId?: string | null;
   action: string;
   entityType: string;
-  entityId: string;
   occurredAt: string;
 };
 

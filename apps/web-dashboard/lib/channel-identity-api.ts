@@ -31,7 +31,6 @@ export type ChannelIdentity = {
   createdAt: string;
   updatedAt: string;
   linkedAt?: string;
-  linkedByUserId?: string;
   notes?: string;
   identityResolution?: ChannelIdentityResolutionView;
 };
@@ -39,7 +38,6 @@ export type ChannelIdentity = {
 export type ChannelIdentityLinkRequest = {
   customerAccountId?: string;
   customerContactId?: string;
-  linkedByUserId?: string;
   notes?: string;
 };
 
