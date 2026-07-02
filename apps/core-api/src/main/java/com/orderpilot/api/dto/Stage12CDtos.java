@@ -156,10 +156,9 @@ public final class Stage12CDtos {
 
   public record AuditTimelineEvent(
       String action,
-      Instant occurredAt,
-      String metadata) {
+      Instant occurredAt) {
     public static AuditTimelineEvent from(AuditEvent event) {
-      return new AuditTimelineEvent(event.getAction(), event.getOccurredAt(), event.getMetadata());
+      return new AuditTimelineEvent(event.getAction(), event.getOccurredAt());
     }
   }
 

@@ -135,7 +135,7 @@ public class PilotController {
 
   private HumanCorrectionResponse toCorrection(HumanCorrection correction) {
     return new HumanCorrectionResponse(
-        correction.getId(), correction.getShadowRunId(), correction.getCorrectedByUserId(), correction.getCorrectionType(),
+        correction.getId(), correction.getShadowRunId(), correction.getCorrectionType(),
         hasContent(correction.getBeforePayloadJson()), hasContent(correction.getAfterPayloadJson()), correction.getCorrectionReason(), correction.getCreatedAt());
   }
 

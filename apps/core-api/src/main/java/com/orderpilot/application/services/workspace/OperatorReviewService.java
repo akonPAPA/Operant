@@ -120,7 +120,7 @@ public class OperatorReviewService {
         approvalReviews.stream().filter(a -> "OPEN".equals(a.status())).toList(),
         approvalReviews.stream().filter(a -> "REJECTED".equals(a.status())).toList(),
         approvalReviews.stream().filter(a -> List.of("APPROVED", "CORRECTED", "OVERRIDDEN", "ACKNOWLEDGED").contains(a.status())).toList(),
-        fixes.stream().map(f -> new SuggestedActionReview(f.getId(), f.getValidationIssueId(), f.getExtractedLineItemId(), f.getFixType(), f.getStatus(), f.getConfidence(), f.getReason(), f.getSuggestionJson())).toList(),
+        fixes.stream().map(f -> new SuggestedActionReview(f.getId(), f.getValidationIssueId(), f.getExtractedLineItemId(), f.getFixType(), f.getStatus(), f.getConfidence(), f.getReason())).toList(),
         productCandidates(tenantId, run.getId()),
         substitutes.stream().map(s -> substituteReview(tenantId, s)).toList(),
         fieldRepository.findByTenantIdAndExtractionResultId(tenantId, extraction.getId()).stream().map(f -> new FieldReview(f.getId(), f.getFieldName(), f.getRawValue(), f.getNormalizedValue(), f.getConfidence(), f.getValidationStatus(), evidence(evidence.get(f.getSourceEvidenceId())))).toList(),
@@ -182,7 +182,7 @@ public class OperatorReviewService {
   private List<IssueGroup> issueGroups(List<ValidationIssue> issues) {
     Map<String, List<IssueReview>> grouped = new LinkedHashMap<>();
     GROUP_ORDER.forEach(group -> grouped.put(group, new ArrayList<>()));
-    issues.forEach(issue -> grouped.get(group(issue.getIssueType())).add(new IssueReview(issue.getId(), issue.getExtractedLineItemId(), issue.getExtractedFieldId(), issue.getIssueType(), issue.getSeverity(), issue.getStatus(), issue.getMessage(), issue.getDetailsJson(), suggestedAction(issue.getIssueType()), risk(issue.getSeverity()))));
+    issues.forEach(issue -> grouped.get(group(issue.getIssueType())).add(new IssueReview(issue.getId(), issue.getExtractedLineItemId(), issue.getExtractedFieldId(), issue.getIssueType(), issue.getSeverity(), issue.getStatus(), issue.getMessage(), suggestedAction(issue.getIssueType()), risk(issue.getSeverity()))));
     return grouped.entrySet().stream().filter(e -> !e.getValue().isEmpty()).map(e -> new IssueGroup(e.getKey(), e.getValue())).toList();
   }
 

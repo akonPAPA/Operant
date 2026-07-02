@@ -14,7 +14,6 @@ export type Stage9Integration = {
   status: string;
   mode: string;
   connectionKind: string;
-  endpointRef?: string;
 };
 
 // Wave 01H Category D: the connector change-request response is operator-safe. The business-facing
@@ -29,12 +28,10 @@ export type Stage9ChangeRequest = {
   sourceType: string;
   approvalStatus: string;
   externalReference?: string;
-  failureReason?: string;
 };
 
 export type Stage9ConnectorSyncRun = {
   id: string;
-  integrationConnectionId: string;
   providerType: string;
   syncType: string;
   direction: string;
@@ -43,25 +40,18 @@ export type Stage9ConnectorSyncRun = {
   recordsWritten: number;
   recordsFailed: number;
   errorCode?: string;
-  errorMessage?: string;
 };
 
 export type Stage9ConnectorPolicy = {
   executionMode: string;
-  capabilities: string[];
-  credentialStatus: string;
-  maskedCredentialRef: string;
   productionWritesEnabled: boolean;
   networkCallsAllowed: boolean;
   warning: string;
 };
 
 export type Stage9ConnectorAuditEvent = {
-  id: string;
   action: string;
   entityType: string;
-  entityId: string;
-  metadata: string;
   occurredAt: string;
 };
 

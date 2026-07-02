@@ -84,7 +84,7 @@ test("audit timeline has a graceful empty state", () => {
   assert.match(components, /Audit timeline/);
   assert.match(components, /No audit activity has been recorded/);
   assert.match(components, /a\.action/);
-  assert.match(components, /a\.actorId/);
+  assert.doesNotMatch(components, /a\.(actorId|entityId)/);
 });
 
 test("allowed actions render as declarative hints with disabled/not-implemented state", () => {

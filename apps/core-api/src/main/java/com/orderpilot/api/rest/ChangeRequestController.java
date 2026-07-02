@@ -103,11 +103,11 @@ public class ChangeRequestController {
   private ChangeRequestResponse toChangeRequest(ChangeRequest request) {
     // OP-CAP-31: map only operator-safe fields. Raw payload, idempotency key, payload hash, and
     // internal createdBy/approvedBy actor ids are intentionally not exposed on this response.
-    return new ChangeRequestResponse(request.getId(),request.getTargetSystem(),request.getTargetEntity(),request.getRequestedAction(),request.getSourceType(),request.getSourceId(),request.getValidationStatus(),request.getApprovalStatus(),request.getCreatedAt(),request.getValidatedAt(),request.getApprovedAt(),request.getRejectedAt(),request.getExecutedAt(),request.getExternalReference(),request.getFailureReason(),request.getCancellationReason());
+    return new ChangeRequestResponse(request.getId(),request.getTargetSystem(),request.getTargetEntity(),request.getRequestedAction(),request.getSourceType(),request.getValidationStatus(),request.getApprovalStatus(),request.getCreatedAt(),request.getValidatedAt(),request.getApprovedAt(),request.getRejectedAt(),request.getExecutedAt(),request.getExternalReference(),request.getCancellationReason());
   }
 
   private OutboxEventResponse toOutboxEvent(OutboxEvent event) {
     // OP-CAP-31: the raw outbox payload is intentionally not exposed on this response.
-    return new OutboxEventResponse(event.getId(), event.getAggregateType(), event.getAggregateId(), event.getEventType(), event.getStatus(), event.getCreatedAt(), event.getPublishedAt(), event.getAttemptCount(), event.getLastError());
+    return new OutboxEventResponse(event.getAggregateType(), event.getEventType(), event.getStatus(), event.getCreatedAt(), event.getPublishedAt());
   }
 }

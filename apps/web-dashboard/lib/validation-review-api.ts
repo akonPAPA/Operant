@@ -45,7 +45,6 @@ export type IssueReview = {
   severity: string;
   status: string;
   message: string;
-  detailsJson?: string;
   suggestedAction?: string;
   riskLevel?: string;
 };

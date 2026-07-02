@@ -46,14 +46,15 @@ test("integrations page renders Stage 9A integration control sections", () => {
 test("stage9 integration UI preserves external write safety boundary", () => {
   assert.match(control, /Demo ERP only/);
   assert.match(control, /Execution mode/);
-  assert.match(control, /Credential status/);
+  assert.match(control, /Production writes/);
   assert.match(control, /Production connector disabled/);
+  assert.doesNotMatch(control, /credentialStatus|maskedCredentialRef|capabilities/);
   // Wave 01H Category D: the queue no longer surfaces raw connector retry/execution internals; it
   // states the external-execution-disabled safety boundary in business terms.
   assert.match(queue, /External execution stays disabled/);
   assert.doesNotMatch(queue, /connectorRetryable|connectorFailureType|executionStatus/);
   assert.match(control, /Network calls/);
-  assert.match(control, /None/);
+  assert.match(control, /Disabled/);
   assert.match(control, /without production ERP or 1C writes/);
   assert.match(queue, /Only approved validation-backed draft quote\/order ChangeRequests can execute/);
   assert.doesNotMatch(control + queue + syncRuns + auditTimeline, /sendMessage|reserveInventory|production 1C write|real ERP write|secretValue|connectorIdempotencyKey\)/i);

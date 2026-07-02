@@ -202,15 +202,14 @@ export function AuditTimelinePanel({ timeline }: Readonly<{ timeline: AuditTimel
       ) : (
         <table className="data-table">
           <thead>
-            <tr><th>When</th><th>Action</th><th>Entity</th><th>Actor</th></tr>
+            <tr><th>When</th><th>Action</th><th>Entity type</th></tr>
           </thead>
           <tbody>
             {timeline.map((a, index) => (
               <tr key={`${a.action}-${a.occurredAt}-${index}`}>
                 <td>{formatTimestamp(a.occurredAt)}</td>
                 <td>{a.action}</td>
-                <td>{a.entityType} {a.entityId.slice(0, 8)}…</td>
-                <td>{show(a.actorId)}</td>
+                <td>{a.entityType}</td>
               </tr>
             ))}
           </tbody>

@@ -10,8 +10,14 @@ import com.orderpilot.api.dto.CommandCenterDtos.AuditTimelineItemDto;
 import com.orderpilot.api.dto.CommandCenterDtos.CommandCenterSummaryDto;
 import com.orderpilot.api.dto.OperatorCorrectionLearningDtos.OperatorCorrectionLearningRecordDto;
 import com.orderpilot.api.dto.Stage6Dtos.NoteReview;
+import com.orderpilot.api.dto.Stage6Dtos.IssueReview;
+import com.orderpilot.api.dto.Stage6Dtos.SuggestedActionReview;
 import com.orderpilot.api.dto.Stage7Dtos.BotResponseDraftResponse;
+import com.orderpilot.api.dto.Stage10BDtos.HumanCorrectionResponse;
 import com.orderpilot.api.dto.Stage10CDtos.ChangeRequestResponse;
+import com.orderpilot.api.dto.Stage10CDtos.OutboxEventResponse;
+import com.orderpilot.api.dto.Stage10DOmnichannelDtos.ChannelIdentityResponse;
+import com.orderpilot.api.dto.Stage12CDtos.AuditTimelineEvent;
 import com.orderpilot.api.dto.Stage11EDtos.QuoteHandoffResponse;
 import com.orderpilot.api.dto.Stage12ADtos.ApprovalDecision;
 import com.orderpilot.api.dto.Stage12ADtos.QuoteApprovalCommandResponse;
@@ -57,11 +63,16 @@ class ResponseDtoLeakContractTest {
       "approvedBy",
       "actorId",
       "actorRole",
+      "userId",
+      "linkedByUserId",
+      "correctedByUserId",
       "reviewerUserId",
       "secretRef",
       "secretValue",
       "secretReferenceId",
       "snapshotId",
+      "failureReason",
+      "lastError",
       "executionStatus",
       "externalExecutionStatus");
 
@@ -80,11 +91,16 @@ class ResponseDtoLeakContractTest {
       "approvedBy",
       "actorId",
       "actorRole",
+      "userId",
+      "linkedByUserId",
+      "correctedByUserId",
       "reviewerUserId",
       "secretRef",
       "secretValue",
       "secretReferenceId",
       "snapshotId",
+      "failureReason",
+      "lastError",
       "executionStatus",
       "externalExecutionStatus",
       "sourceExternalEventId",
@@ -188,6 +204,30 @@ class ResponseDtoLeakContractTest {
     assertThat(names).doesNotContainAnyElementsOf(FORBIDDEN_RESPONSE_FIELDS);
     assertThat(names).contains(
         "sourceChannel", "sourceActorExternalId", "requestPreview", "status", "detectedIntent");
+  }
+
+  @Test
+  void repairedResponsesExposeNoRawActorSourceErrorOrAuditDetailFields() {
+    assertThat(componentNames(HumanCorrectionResponse.class))
+        .doesNotContain("correctedByUserId");
+    assertThat(componentNames(ChannelIdentityResponse.class))
+        .doesNotContain("linkedByUserId");
+    assertThat(componentNames(BotResponseDraftResponse.class))
+        .doesNotContain("sourceMessageId", "reviewedBy");
+    assertThat(componentNames(ChangeRequestResponse.class))
+        .doesNotContain("sourceId", "failureReason");
+    assertThat(componentNames(OutboxEventResponse.class))
+        .doesNotContain("id", "aggregateId", "payloadJson", "attemptCount", "lastError");
+    assertThat(componentNames(IssueReview.class))
+        .doesNotContain("detailsJson");
+    assertThat(componentNames(SuggestedActionReview.class))
+        .doesNotContain("suggestionJson");
+    assertThat(componentNames(AuditTimelineEvent.class))
+        .doesNotContain("metadata");
+    assertThat(componentNames(AuditTimelineItemDto.class))
+        .doesNotContain("entityId", "actorId");
+    assertThat(componentNames(AuditTimelineItem.class))
+        .doesNotContain("entityId", "actorId");
   }
 
   private static Set<String> componentNames(Class<?> recordType) {

@@ -54,7 +54,7 @@ export type QuoteReviewDetail = {
   proposedSubstitutes: Array<{ lineId?: string | null; productId: string; sku: string; productName: string; riskLevel: string; reasonCode: string; availableStock?: number | string | null; stockStatus: string; requiresApproval: boolean; blocked: boolean; explanation: string }>;
   pricingSummary: { subtotalAmount?: number | string | null; discountAmount?: number | string | null; totalAmount?: number | string | null; marginPercent?: number | string | null; marginRisk: boolean; discountRisk: boolean; approvalRequired: boolean };
   approvalRequirements: Array<{ id: string; lineId?: string | null; requestType: string; severity: string; reasonCode: string; reason: string; status: string }>;
-  auditTimeline: Array<{ action: string; occurredAt: string; metadata: string }>;
+  auditTimeline: Array<{ action: string; occurredAt: string }>;
   reviewRequiredReasons: string[];
 };
 

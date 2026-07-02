@@ -31,6 +31,7 @@ class Stage9ConnectorResponseLeakTest {
         "connectorMaxAttempts",
         "connectorLastAttemptAt",
         "connectorNextRetryAt",
+        "failureReason",
         // Wave 01H Category D: internal connector/execution machinery is not exposed.
         "executionStatus",
         "connectorFailureType",

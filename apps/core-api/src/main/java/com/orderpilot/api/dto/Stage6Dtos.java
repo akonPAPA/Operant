@@ -8,7 +8,8 @@ import java.util.UUID;
 
 public final class Stage6Dtos {
   private Stage6Dtos() {}
-  public record AssignRequest(UUID userId) {}
+  /** Self-assignment carries no client-owned user authority; the backend resolves the actor. */
+  public record AssignRequest() {}
   public record StatusRequest(String status) {}
   // OP-CAP-16J: client-owned authority field removed — backend resolves actor from trusted context.
   public record ApprovalDecisionRequest(String targetType, UUID targetId, String decision, String reason) {}
@@ -30,10 +31,10 @@ public final class Stage6Dtos {
   public record ExtractionSummary(UUID id, String sourceType, UUID sourceId, String detectedIntent, String documentType, BigDecimal confidence, String validationStatus) {}
   public record ValidationSummary(UUID id, String status, String overallStatus, BigDecimal confidence, String riskLevel, Instant startedAt, Instant finishedAt) {}
   public record IssueGroup(String group, List<IssueReview> issues) {}
-  public record IssueReview(UUID id, UUID extractedLineItemId, UUID extractedFieldId, String issueType, String severity, String status, String message, String detailsJson, String suggestedAction, String riskLevel) {}
+  public record IssueReview(UUID id, UUID extractedLineItemId, UUID extractedFieldId, String issueType, String severity, String status, String message, String suggestedAction, String riskLevel) {}
   public record IssueStatusReview(UUID issueId, String issueType, String status, boolean blocking, boolean pendingApproval, String lifecycleLabel) {}
   public record ApprovalRequirementReview(UUID id, UUID extractedLineItemId, String requirementType, String severity, String status, String reason, Instant createdAt) {}
-  public record SuggestedActionReview(UUID id, UUID validationIssueId, UUID extractedLineItemId, String actionType, String status, BigDecimal confidence, String reason, String suggestionJson) {}
+  public record SuggestedActionReview(UUID id, UUID validationIssueId, UUID extractedLineItemId, String actionType, String status, BigDecimal confidence, String reason) {}
   public record ProductCandidateReview(UUID extractedLineItemId, UUID productId, String sku, String name, String matchType, BigDecimal confidence, String status) {}
   public record SubstituteCandidateReview(UUID id, UUID extractedLineItemId, UUID sourceProductId, UUID substituteProductId, String substituteSku, String substituteName, String substituteType, String riskLevel, BigDecimal rankScore, boolean requiresApproval, String status, String inventoryStatus, String marginStatus, String reason) {}
   public record FieldReview(UUID id, String fieldName, String rawValue, String normalizedValue, BigDecimal confidence, String validationStatus, EvidenceReference evidence) {}

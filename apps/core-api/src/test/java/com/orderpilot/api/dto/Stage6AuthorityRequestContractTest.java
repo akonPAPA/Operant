@@ -62,7 +62,7 @@ class Stage6AuthorityRequestContractTest {
   // accept a client-owned actor/authority or workflow-state field. The acting user, idempotency and
   // status are backend-owned and resolved server-side (RequestActorResolver / trusted context).
   private static final Set<String> FORBIDDEN_AUTHORITY = Set.of(
-      "actoruserid", "actorid", "actorrole", "createdby", "createdbyuserid",
+      "actoruserid", "actorid", "actorrole", "userid", "createdby", "createdbyuserid",
       "correctedbyuserid", "reviewedby", "decidedby", "approvedby",
       "approvalstatus", "executionstatus", "tenantid", "idempotencykey");
 

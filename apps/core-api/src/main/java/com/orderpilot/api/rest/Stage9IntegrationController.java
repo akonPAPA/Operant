@@ -128,7 +128,7 @@ public class Stage9IntegrationController {
   private Stage9ChangeRequestResponse toChangeRequest(ChangeRequest request) {
     // Wave 01H Category D: expose only the operator-safe business rollup `status`; the raw
     // executionStatus / connector failure type / retryable flag are internal execution machinery.
-    return new Stage9ChangeRequestResponse(request.getId(), status(request), request.getTargetSystem(), request.getTargetEntity(), request.getRequestedAction(), request.getSourceType(), request.getValidationStatus(), request.getApprovalStatus(), request.getExternalReference(), request.getFailureReason(), request.getCreatedAt(), request.getApprovedAt(), request.getRejectedAt(), request.getExecutedAt());
+    return new Stage9ChangeRequestResponse(request.getId(), status(request), request.getTargetSystem(), request.getTargetEntity(), request.getRequestedAction(), request.getSourceType(), request.getValidationStatus(), request.getApprovalStatus(), request.getExternalReference(), request.getCreatedAt(), request.getApprovedAt(), request.getRejectedAt(), request.getExecutedAt());
   }
 
   private Stage9ConnectorSyncRunResponse toSyncRun(ConnectorSyncEvent event) {

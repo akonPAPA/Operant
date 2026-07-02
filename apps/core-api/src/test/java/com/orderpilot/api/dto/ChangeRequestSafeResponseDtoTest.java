@@ -26,8 +26,10 @@ class ChangeRequestSafeResponseDtoTest {
         "requestPayloadJson",
         "idempotencyKey",
         "payloadHash",
+        "sourceId",
         "createdByUserId",
         "approvedByUserId",
+        "failureReason",
         "executionStatus");
   }
 
@@ -46,8 +48,9 @@ class ChangeRequestSafeResponseDtoTest {
   @Test
   void outboxDefaultResponseDoesNotLeakRawPayload() {
     List<String> components = componentsOf(OutboxEventResponse.class);
-    assertThat(components).doesNotContain("payloadJson");
-    assertThat(components).contains("id", "aggregateType", "eventType", "status");
+    assertThat(components).doesNotContain(
+        "id", "aggregateId", "payloadJson", "attemptCount", "lastError");
+    assertThat(components).contains("aggregateType", "eventType", "status");
   }
 
   @Test

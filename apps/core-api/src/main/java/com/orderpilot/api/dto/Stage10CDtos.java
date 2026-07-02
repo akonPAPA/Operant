@@ -37,7 +37,6 @@ public final class Stage10CDtos {
       String targetEntity,
       String requestedAction,
       String sourceType,
-      UUID sourceId,
       String validationStatus,
       String approvalStatus,
       Instant createdAt,
@@ -46,19 +45,14 @@ public final class Stage10CDtos {
       Instant rejectedAt,
       Instant executedAt,
       String externalReference,
-      String failureReason,
       String cancellationReason) {}
 
   // OP-CAP-31: the raw outbox payload (payloadJson) is an internal external-write artifact and is
   // not exposed on the default operator response.
   public static record OutboxEventResponse(
-      UUID id,
       String aggregateType,
-      UUID aggregateId,
       String eventType,
       String status,
       Instant createdAt,
-      Instant publishedAt,
-      int attemptCount,
-      String lastError) {}
+      Instant publishedAt) {}
 }

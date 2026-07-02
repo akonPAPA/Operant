@@ -7,14 +7,14 @@ export function ConnectorAuditTimeline({ events }: Readonly<{ events: Stage9Conn
       <div className="timeline">
         {events.length === 0 ? (
           <p>No connector audit events yet.</p>
-        ) : events.slice(0, 12).map((event) => (
-          <div className="timeline-item" key={event.id}>
+        ) : events.slice(0, 12).map((event, index) => (
+          <div className="timeline-item" key={`${event.action}-${event.occurredAt}-${index}`}>
             <strong>{event.action}</strong>
-            <span>{event.entityType} / {event.entityId}</span>
+            <span>{event.entityType} / {event.occurredAt}</span>
           </div>
         ))}
       </div>
-      <p className="risk-note">Audit metadata is connector-specific and must not contain raw credential values or production secrets.</p>
+      <p className="risk-note">Only safe audit classifications are shown; raw metadata and internal identifiers are not returned.</p>
     </section>
   );
 }

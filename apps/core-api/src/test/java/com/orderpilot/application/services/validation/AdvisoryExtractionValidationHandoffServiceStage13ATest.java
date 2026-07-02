@@ -114,7 +114,7 @@ class AdvisoryExtractionValidationHandoffServiceStage13ATest {
     assertThat(handoff.handoffStatus()).isEqualTo("FAILED_EXTRACTION");
     assertThat(handoff.validationRunId()).isNull();
     assertThat(handoff.decomposedLineCount()).isZero();
-    assertThat(handoff.failureReason()).isEqualTo("provider_error");
+    assertThat(handoff.failureCode()).isEqualTo("provider_error");
     assertThat(handoff.advisoryOnly()).isTrue();
     assertThat(lines.findByTenantIdAndExtractionResultId(tenantId, result.getId())).isEmpty();
     assertThat(validationRuns.findByTenantIdAndExtractionResultIdOrderByCreatedAtDesc(tenantId, result.getId())).isEmpty();
@@ -132,7 +132,7 @@ class AdvisoryExtractionValidationHandoffServiceStage13ATest {
     AdvisoryValidationHandoffResult handoff = service.handoff(result.getId());
 
     assertThat(handoff.handoffStatus()).isEqualTo("UNSAFE_OUTPUT_REJECTED");
-    assertThat(handoff.failureReason()).isEqualTo("forbidden_action_key");
+    assertThat(handoff.failureCode()).isEqualTo("forbidden_action_key");
     assertThat(handoff.validationRunId()).isNull();
     assertThat(lines.findByTenantIdAndExtractionResultId(tenantId, result.getId())).isEmpty();
     assertThat(validationRuns.findByTenantIdAndExtractionResultIdOrderByCreatedAtDesc(tenantId, result.getId())).isEmpty();

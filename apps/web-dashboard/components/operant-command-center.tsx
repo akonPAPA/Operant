@@ -75,11 +75,11 @@ export async function OperantCommandCenter() {
         ) : (
           <ul className="detail-list">
             {data.auditTimeline.items.map((item, index) => (
-              <AuditRow key={`${item.entityId}-${item.occurredAt}-${index}`} item={item} />
+              <AuditRow key={`${item.action}-${item.occurredAt}-${index}`} item={item} />
             ))}
           </ul>
         )}
-        <p className="risk-note">Identifiers and action types only. No audit detail blobs are exposed to the frontend.</p>
+        <p className="risk-note">Action classifications only. No audit identifiers or detail blobs are exposed to the frontend.</p>
       </section>
 
       <section className="panel">
@@ -141,7 +141,7 @@ function AuditRow({ item }: Readonly<{ item: AuditTimelineItem }>) {
   return (
     <div>
       <dt>{item.action}</dt>
-      <dd>{item.entityType} · {item.entityId} · {item.occurredAt}</dd>
+      <dd>{item.entityType} · {item.occurredAt}</dd>
     </div>
   );
 }

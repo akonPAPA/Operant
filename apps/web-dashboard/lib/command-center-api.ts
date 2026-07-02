@@ -59,10 +59,8 @@ export type OutboxHealth = {
 };
 
 export type AuditTimelineItem = {
-  actorId: string | null;
   action: string;
   entityType: string;
-  entityId: string;
   occurredAt: string;
 };
 
@@ -95,7 +93,6 @@ export type ReconciliationPreview = {
 };
 
 export type CommandCenterSummary = {
-  tenantId: string;
   metrics: CommandCenterMetric[];
   workQueue: WorkQueuePreview;
   runtime: RuntimeHealth;

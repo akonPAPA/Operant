@@ -52,7 +52,6 @@ public final class Stage10BDtos {
   public record HumanCorrectionResponse(
       UUID id,
       UUID shadowRunId,
-      UUID correctedByUserId,
       String correctionType,
       boolean hasBeforePayload,
       boolean hasAfterPayload,

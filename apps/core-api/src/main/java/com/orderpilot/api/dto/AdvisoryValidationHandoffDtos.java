@@ -37,7 +37,7 @@ public final class AdvisoryValidationHandoffDtos {
    * @param approvalRequirementCount approval/review requirements raised by deterministic validation
    * @param duplicate true when this was an idempotent repeat of an already-validated handoff
    * @param advisoryOnly always {@code true}
-   * @param failureReason bounded safe reason on a controlled failure, else {@code null}
+   * @param failureCode bounded safe code on a controlled failure, else {@code null}
    */
   public record AdvisoryValidationHandoffResult(
       UUID extractionResultId,
@@ -54,5 +54,5 @@ public final class AdvisoryValidationHandoffDtos {
       int approvalRequirementCount,
       boolean duplicate,
       boolean advisoryOnly,
-      String failureReason) {}
+      String failureCode) {}
 }

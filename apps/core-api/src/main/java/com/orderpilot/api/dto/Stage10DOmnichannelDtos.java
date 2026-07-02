@@ -70,7 +70,6 @@ public final class Stage10DOmnichannelDtos {
       Instant createdAt,
       Instant updatedAt,
       Instant linkedAt,
-      UUID linkedByUserId,
       String notes,
       ChannelIdentityResolutionView identityResolution) {}
 

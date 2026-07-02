@@ -50,6 +50,7 @@ test("api client exposes customer account and contact list functions", () => {
 test("api client type declares no secret or raw token/payload fields", () => {
   assert.doesNotMatch(api, /secretRef|secretReference|botToken|webhookSecret/i);
   assert.doesNotMatch(api, /rawPayloadJson|rawPayload\b/i);
+  assert.doesNotMatch(api, /linkedByUserId/i);
 });
 
 test("api client formatSenderId truncates long sender IDs", () => {
