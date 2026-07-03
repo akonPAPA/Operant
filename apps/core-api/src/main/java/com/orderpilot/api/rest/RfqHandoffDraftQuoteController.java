@@ -8,6 +8,7 @@ import com.orderpilot.common.idempotency.IdempotencyService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.security.RequestActorResolver;
 import com.orderpilot.security.RequestActorRoleResolver;
+import com.orderpilot.security.policy.TenantPolicyException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,6 +64,9 @@ public class RfqHandoffDraftQuoteController {
     }
     UUID tenantId = TenantContext.requireTenantId();
     UUID actorId = actorResolver.resolveVerifiedActor(http, tenantId);
+    if (RequestActorResolver.SYSTEM_ACTOR.equals(actorId)) {
+      throw new TenantPolicyException("Tenant operator actor is required");
+    }
     var role = roleResolver.resolveQuoteRole();
     RfqHandoffDecisionRequest businessIntent =
         request == null ? new RfqHandoffDecisionRequest(null, null) : request;

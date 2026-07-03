@@ -251,7 +251,7 @@ class RfqHandoffDraftQuoteControllerTest {
   @Test
   void decisionWrongPermissionIsDeniedBeforeIdempotencyOrMutation() throws Exception {
     for (String unrelatedPermission :
-        List.of("QUOTE_READ", "REVIEW_ACTION", "STAFF_SUPPORT_READ")) {
+        List.of("QUOTE_READ", "REVIEW_ACTION", "AI_RESULT_INTAKE", "STAFF_SUPPORT_READ")) {
       mockMvc
           .perform(
               post(
@@ -270,6 +270,31 @@ class RfqHandoffDraftQuoteControllerTest {
           .andExpect(
               jsonPath("$.message").value("Missing required API permission QUOTE_ACTION"));
     }
+
+    verifyNoInteractions(service, idempotencyService);
+  }
+
+  @Test
+  void systemActorCannotUseTenantOperatorDecisionEvenWithQuotePermission() throws Exception {
+    when(actorResolver.resolveVerifiedActor(any(), any()))
+        .thenReturn(RequestActorResolver.SYSTEM_ACTOR);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + UUID.randomUUID()
+                        + "/decision")
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .header("Idempotency-Key", "system-actor-denied")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"decision":"COMPLETE_DEMO","note":"Service account attempt"}
+                    """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Tenant operator actor is required"));
 
     verifyNoInteractions(service, idempotencyService);
   }
