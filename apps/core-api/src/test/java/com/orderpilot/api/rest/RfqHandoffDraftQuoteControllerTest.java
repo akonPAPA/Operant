@@ -62,6 +62,7 @@ class RfqHandoffDraftQuoteControllerTest {
   @BeforeEach
   void trustedAuthority() {
     when(actorResolver.resolveVerifiedActor(any(), any())).thenReturn(trustedActor);
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any())).thenReturn(trustedActor);
     when(roleResolver.resolveQuoteRole()).thenReturn(ActorRole.SALES_QUOTE_MANAGER);
     lenient()
         .when(
@@ -229,6 +230,59 @@ class RfqHandoffDraftQuoteControllerTest {
   }
 
   @Test
+  void headerlessDashboardDecisionUsesBackendOwnedLocalDemoOperator() throws Exception {
+    UUID handoffId = UUID.randomUUID();
+    UUID quoteId = UUID.randomUUID();
+    UUID localDemoActor = RequestActorResolver.LOCAL_DEMO_OPERATOR_ACTOR;
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any()))
+        .thenReturn(localDemoActor);
+    when(service.decide(
+            handoffId,
+            localDemoActor,
+            ActorRole.SALES_QUOTE_MANAGER,
+            "COMPLETE_DEMO",
+            "Dashboard local demo decision"))
+        .thenReturn(
+            new RfqHandoffDecisionResult(
+                handoffId,
+                quoteId,
+                "DQ-DEMO",
+                "COMPLETE_DEMO",
+                "DEMO_COMPLETED",
+                "SAFE_DEMO_TERMINAL",
+                "DISABLED",
+                "NOT_INVOKED",
+                "NOT_REQUESTED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + handoffId
+                        + "/decision")
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .header("Idempotency-Key", "dashboard-local-demo")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"decision":"COMPLETE_DEMO","note":"Dashboard local demo decision"}
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.decision").value("COMPLETE_DEMO"))
+        .andExpect(jsonPath("$.terminalState").value("SAFE_DEMO_TERMINAL"))
+        .andExpect(jsonPath("$.externalExecution").value("DISABLED"));
+
+    verify(service)
+        .decide(
+            handoffId,
+            localDemoActor,
+            ActorRole.SALES_QUOTE_MANAGER,
+            "COMPLETE_DEMO",
+            "Dashboard local demo decision");
+  }
+
+  @Test
   void decisionRequiresIdempotencyKey() throws Exception {
     mockMvc
         .perform(
@@ -276,7 +330,7 @@ class RfqHandoffDraftQuoteControllerTest {
 
   @Test
   void systemActorCannotUseTenantOperatorDecisionEvenWithQuotePermission() throws Exception {
-    when(actorResolver.resolveVerifiedActor(any(), any()))
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any()))
         .thenReturn(RequestActorResolver.SYSTEM_ACTOR);
 
     mockMvc

@@ -63,11 +63,11 @@ public class RfqHandoffDraftQuoteController {
           "Idempotency-Key header is required for this mutation");
     }
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actorId = actorResolver.resolveVerifiedActor(http, tenantId);
+    var role = roleResolver.resolveQuoteRole();
+    UUID actorId = actorResolver.resolveVerifiedLocalDemoOperator(http, tenantId);
     if (RequestActorResolver.SYSTEM_ACTOR.equals(actorId)) {
       throw new TenantPolicyException("Tenant operator actor is required");
     }
-    var role = roleResolver.resolveQuoteRole();
     RfqHandoffDecisionRequest businessIntent =
         request == null ? new RfqHandoffDecisionRequest(null, null) : request;
     return idempotencyService.execute(

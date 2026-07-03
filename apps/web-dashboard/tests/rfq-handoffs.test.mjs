@@ -227,6 +227,14 @@ test("operator decision submits business intent and idempotency header only", ()
     action,
     /JSON\.stringify\(\{[^}]*tenantId|JSON\.stringify\(\{[^}]*actorId|JSON\.stringify\(\{[^}]*status|JSON\.stringify\(\{[^}]*approval|JSON\.stringify\(\{[^}]*execution|JSON\.stringify\(\{[^}]*risk|JSON\.stringify\(\{[^}]*margin|JSON\.stringify\(\{[^}]*stock/
   );
+  assert.doesNotMatch(action, /X-OrderPilot-Actor-Id/);
+  assert.doesNotMatch(action, /["']actorId["']\s*:/);
+});
+
+test("local demo actor authority remains backend-owned", () => {
+  assert.doesNotMatch(api, /X-OrderPilot-Actor-Id/);
+  assert.doesNotMatch(api, /NEXT_PUBLIC_.*ACTOR/);
+  assert.match(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
 });
 
 test("workspace displays terminal decision, audit, and disabled external execution state", () => {

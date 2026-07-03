@@ -81,6 +81,14 @@ The client sends only `decision` and `note`. The backend resolves tenant, actor,
 handoff, associated draft quote, current state, valid transition, audit, and terminal execution
 safety. A retry with the same idempotency key and business intent returns the stored safe response.
 
+The local/demo dashboard intentionally does not send `X-OrderPilot-Actor-Id`. When actor signing is
+not configured and Core runs with the documented default local runtime or an explicit
+`local`/`dev`/`test`/`demo` profile, this endpoint alone maps the missing header to a stable
+backend-owned local demo operator. The browser cannot choose or override that actor. A supplied
+`SYSTEM_ACTOR` remains denied. When actor signing is configured, a missing actor still fails
+verification; production-like `prod`/`production`/`cloud`/`staging` profiles never receive the
+unsigned local-demo fallback.
+
 The response exposes only public workflow handles, quote number, decision/terminal display states,
 and fixed safety summaries. It omits tenant/actor IDs, raw AI payloads, idempotency values, audit
 internals, connector internals, credentials, and raw errors.

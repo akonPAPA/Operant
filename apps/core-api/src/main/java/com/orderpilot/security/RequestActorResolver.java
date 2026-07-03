@@ -2,8 +2,11 @@ package com.orderpilot.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,6 +34,10 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RequestActorResolver {
+  private static final Set<String> LOCAL_DEMO_PROFILES = Set.of("local", "dev", "test", "demo");
+  private static final Set<String> PRODUCTION_LIKE_PROFILES =
+      Set.of("prod", "production", "cloud", "staging");
+
   public static final String ACTOR_HEADER = "X-OrderPilot-Actor-Id";
   public static final String SIGNATURE_HEADER = "X-OrderPilot-Actor-Signature";
   public static final String TIMESTAMP_HEADER = "X-OrderPilot-Actor-Timestamp";
@@ -38,13 +45,23 @@ public class RequestActorResolver {
   /** Stable sentinel recorded when no trusted actor header is supplied (unsigned fallback mode). */
   public static final UUID SYSTEM_ACTOR = new UUID(0L, 0L);
 
+  /**
+   * Backend-owned actor used only by {@link #resolveVerifiedLocalDemoOperator} for a headerless,
+   * unsigned local/demo tenant-operator request. It is distinct from {@link #SYSTEM_ACTOR}.
+   */
+  public static final UUID LOCAL_DEMO_OPERATOR_ACTOR =
+      UUID.fromString("00000000-0000-4000-8000-000000000002");
+
   private final SignedActorVerifier verifier;
+  private final boolean localDemoRuntime;
 
   public RequestActorResolver(
       @Value("${orderpilot.security.actor-signing-secret:}") String signingSecret,
       @Value("${orderpilot.security.actor-signature-max-skew-seconds:300}") long maxSkewSeconds,
-      Clock clock) {
+      Clock clock,
+      Environment environment) {
     this.verifier = new SignedActorVerifier(signingSecret, maxSkewSeconds, clock);
+    this.localDemoRuntime = isLocalDemoRuntime(environment);
   }
 
   /**
@@ -66,6 +83,48 @@ public class RequestActorResolver {
     }
     // Unsigned local/dev/test fallback (16J behavior preserved).
     return actorId == null ? SYSTEM_ACTOR : actorId;
+  }
+
+  /**
+   * Endpoint-scoped local/demo operator resolution for the RFQ demo decision flow.
+   *
+   * <p>A missing actor header becomes a backend-owned demo operator only when actor signing is not
+   * configured and the runtime is explicitly local/dev/test/demo (or has no active profile, the
+   * repository's documented local default). A supplied actor header is always resolved normally, so
+   * an explicit {@link #SYSTEM_ACTOR} remains distinguishable and denyable. Signed mode still
+   * rejects a missing actor before this fallback is considered.
+   */
+  public UUID resolveVerifiedLocalDemoOperator(HttpServletRequest request, UUID tenantId) {
+    UUID actorId = resolveVerifiedActor(request, tenantId);
+    if (!SYSTEM_ACTOR.equals(actorId)) {
+      return actorId;
+    }
+    String suppliedActor = header(request, ACTOR_HEADER);
+    if (suppliedActor != null && !suppliedActor.isBlank()) {
+      return SYSTEM_ACTOR;
+    }
+    return !verifier.isConfigured() && localDemoRuntime
+        ? LOCAL_DEMO_OPERATOR_ACTOR
+        : SYSTEM_ACTOR;
+  }
+
+  private static boolean isLocalDemoRuntime(Environment environment) {
+    if (environment == null) {
+      return false;
+    }
+    String[] profiles = environment.getActiveProfiles();
+    if (profiles.length == 0) {
+      return true;
+    }
+    boolean localDemo = false;
+    for (String profile : profiles) {
+      String normalized = profile == null ? "" : profile.trim().toLowerCase(Locale.ROOT);
+      if (PRODUCTION_LIKE_PROFILES.contains(normalized)) {
+        return false;
+      }
+      localDemo = localDemo || LOCAL_DEMO_PROFILES.contains(normalized);
+    }
+    return localDemo;
   }
 
   private static UUID parseActorId(HttpServletRequest request) {
