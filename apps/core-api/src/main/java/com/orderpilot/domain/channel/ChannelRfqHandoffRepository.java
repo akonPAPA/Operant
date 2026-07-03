@@ -26,9 +26,12 @@ public interface ChannelRfqHandoffRepository extends JpaRepository<ChannelRfqHan
 
   List<ChannelRfqHandoff> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, ChannelRfqHandoffStatus status);
 
-  List<ChannelRfqHandoff> findByTenantIdOrderByCreatedAtDesc(
+  // PR#236: tie-stable bounded ordering (createdAt desc, id desc). The secondary id key gives a
+  // deterministic total order so handoffs sharing the same createdAt cannot overlap or reorder
+  // across pages under large-tenant reads. These are the only bounded list methods the service uses.
+  List<ChannelRfqHandoff> findByTenantIdOrderByCreatedAtDescIdDesc(
       UUID tenantId, Pageable pageable);
 
-  List<ChannelRfqHandoff> findByTenantIdAndStatusOrderByCreatedAtDesc(
+  List<ChannelRfqHandoff> findByTenantIdAndStatusOrderByCreatedAtDescIdDesc(
       UUID tenantId, ChannelRfqHandoffStatus status, Pageable pageable);
 }

@@ -225,20 +225,56 @@ public class RfqToDraftQuoteService {
     List<DraftQuote> quotes;
     if (!isBlank(status) && !isBlank(sourceType)) {
       quotes =
-          quoteRepository.findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDesc(
+          quoteRepository.findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDescIdDesc(
               tenantId, status, sourceType, pageable);
     } else if (!isBlank(status)) {
       quotes =
-          quoteRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
+          quoteRepository.findByTenantIdAndStatusOrderByCreatedAtDescIdDesc(
               tenantId, status, pageable);
     } else if (!isBlank(sourceType)) {
       quotes =
-          quoteRepository.findByTenantIdAndSourceTypeOrderByCreatedAtDesc(
+          quoteRepository.findByTenantIdAndSourceTypeOrderByCreatedAtDescIdDesc(
               tenantId, sourceType, pageable);
     } else {
-      quotes = quoteRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable);
+      quotes = quoteRepository.findByTenantIdOrderByCreatedAtDescIdDesc(tenantId, pageable);
     }
-    return quotes.stream().map(this::response).toList();
+    return responsesForList(tenantId, quotes);
+  }
+
+  /**
+   * List-read mapper for the bounded operator draft-quote list. Bulk-loads lines and validation
+   * issues for the whole page with two grouped tenant-scoped queries instead of per-quote loads, and
+   * intentionally does NOT recompute dynamic substitute suggestions per line — substitute candidates
+   * are a detail-view concern surfaced by {@link #get(UUID)} and create. The response JSON shape is
+   * unchanged; list rows carry empty {@code substitutionCandidates} arrays. Grouping is tenant-scoped
+   * on ids that already belong to this tenant's page, so no cross-tenant line/issue can leak in.
+   */
+  private List<DraftQuoteResponse> responsesForList(UUID tenantId, List<DraftQuote> quotes) {
+    if (quotes.isEmpty()) {
+      return List.of();
+    }
+    List<UUID> quoteIds = quotes.stream().map(DraftQuote::getId).toList();
+    Map<UUID, List<DraftQuoteLine>> linesByQuote = new HashMap<>();
+    for (DraftQuoteLine line :
+        lineRepository.findByTenantIdAndDraftQuoteIdInOrderByDraftQuoteIdAscLineNumberAsc(
+            tenantId, quoteIds)) {
+      linesByQuote.computeIfAbsent(line.getDraftQuoteId(), key -> new ArrayList<>()).add(line);
+    }
+    Map<UUID, List<QuoteValidationIssue>> issuesByQuote = new HashMap<>();
+    for (QuoteValidationIssue issue :
+        issueRepository.findByTenantIdAndDraftQuoteIdInOrderByDraftQuoteIdAscCreatedAtAsc(
+            tenantId, quoteIds)) {
+      issuesByQuote.computeIfAbsent(issue.getDraftQuoteId(), key -> new ArrayList<>()).add(issue);
+    }
+    List<DraftQuoteResponse> responses = new ArrayList<>(quotes.size());
+    for (DraftQuote quote : quotes) {
+      responses.add(
+          DraftQuoteResponse.from(
+              quote,
+              linesByQuote.getOrDefault(quote.getId(), List.of()),
+              issuesByQuote.getOrDefault(quote.getId(), List.of())));
+    }
+    return responses;
   }
 
   private DraftQuoteResponse response(DraftQuote quote) {

@@ -19,6 +19,13 @@ public interface DraftQuoteRepository extends JpaRepository<DraftQuote, UUID> {
   List<DraftQuote> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, String status, Pageable pageable);
   List<DraftQuote> findByTenantIdAndSourceTypeOrderByCreatedAtDesc(UUID tenantId, String sourceType, Pageable pageable);
   List<DraftQuote> findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDesc(UUID tenantId, String status, String sourceType, Pageable pageable);
+  // PR#236: tie-stable bounded ordering (createdAt desc, id desc) for the operator draft-quote list.
+  // The secondary id key gives a deterministic total order so quotes sharing the same createdAt do
+  // not overlap or reorder across pages. Filter shape matches the existing single-key variants.
+  List<DraftQuote> findByTenantIdOrderByCreatedAtDescIdDesc(UUID tenantId, Pageable pageable);
+  List<DraftQuote> findByTenantIdAndStatusOrderByCreatedAtDescIdDesc(UUID tenantId, String status, Pageable pageable);
+  List<DraftQuote> findByTenantIdAndSourceTypeOrderByCreatedAtDescIdDesc(UUID tenantId, String sourceType, Pageable pageable);
+  List<DraftQuote> findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDescIdDesc(UUID tenantId, String status, String sourceType, Pageable pageable);
   List<DraftQuote> findByTenantIdAndRequiresHumanReviewOrderByCreatedAtDesc(UUID tenantId, boolean requiresHumanReview);
   List<DraftQuote> findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(UUID tenantId, Instant from, Instant to);
 }
