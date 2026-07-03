@@ -98,6 +98,19 @@ npm run dev
 - no connector command, sandbox execution, compensation plan, ChangeRequest, or outbox event is
   created by this flow.
 
+## Bounded list behavior
+
+- `GET /api/v1/channels/rfq-handoffs` and `GET /api/v1/quotes/drafts` keep their existing JSON
+  array response shape and accept optional `page` and `size` query parameters;
+- omitted parameters use `page=0` and `size=50`;
+- the backend clamps requested sizes above `100` to `100`;
+- negative pages and non-positive sizes are rejected with `400`;
+- tenant, status, and draft `sourceType` filtering remain backend-enforced in bounded repository
+  queries.
+
+These bounds protect the visible dashboard list paths from full-tenant reads. They do not prove
+production-scale readiness, cursor stability under concurrent writes, or end-to-end load capacity.
+
 ## Targeted tests
 
 ```powershell

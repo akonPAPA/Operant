@@ -75,6 +75,8 @@ public final class Stage11ADtos {
     }
   }
 
+  // productId is retained only for the permissioned tenant-operator quote workspace so operators
+  // can select/review catalog products. This DTO is not an external-customer response contract.
   public record DraftQuoteLineResponse(
       UUID id,
       int lineNumber,

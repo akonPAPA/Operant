@@ -11,6 +11,7 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.audit.AuditEvent;
 import com.orderpilot.domain.audit.AuditEventRepository;
 import com.orderpilot.domain.channel.ChannelProviderType;
+import com.orderpilot.domain.channel.ChannelRfqHandoff;
 import com.orderpilot.domain.channel.ChannelRfqHandoffRepository;
 import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
 import com.orderpilot.domain.channel.InboundChannelEvent;
@@ -19,6 +20,7 @@ import com.orderpilot.domain.tenant.Tenant;
 import com.orderpilot.domain.tenant.TenantRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -106,6 +108,40 @@ class ChannelRfqHandoffServiceTest {
     assertThat(handoffService.list(null)).isEmpty();
   }
 
+  @Test
+  void listAppliesDefaultCustomPageAndMaximumBounds() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    seedDirectHandoffs(tenantId, 105, "bounded");
+
+    List<ChannelRfqHandoffResponse> defaultPage = handoffService.list(null, null, null);
+    List<ChannelRfqHandoffResponse> customFirstPage = handoffService.list(null, 0, 7);
+    List<ChannelRfqHandoffResponse> customSecondPage = handoffService.list(null, 1, 7);
+    List<ChannelRfqHandoffResponse> clampedPage = handoffService.list(null, 0, 1_000);
+
+    assertThat(defaultPage).hasSize(ChannelRfqHandoffService.DEFAULT_PAGE_SIZE);
+    assertThat(customFirstPage).hasSize(7);
+    assertThat(customSecondPage).hasSize(7);
+    assertThat(customFirstPage)
+        .extracting(ChannelRfqHandoffResponse::id)
+        .doesNotContainAnyElementsOf(
+            customSecondPage.stream().map(ChannelRfqHandoffResponse::id).toList());
+    assertThat(clampedPage).hasSize(ChannelRfqHandoffService.MAX_PAGE_SIZE);
+  }
+
+  @Test
+  void listRejectsNegativePageAndNonPositiveSize() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+
+    assertThatThrownBy(() -> handoffService.list(null, -1, 10))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("page");
+    assertThatThrownBy(() -> handoffService.list(null, 0, 0))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("size");
+  }
+
   @Test void auditEventIsEmittedWhenHandoffIsCreated() {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
@@ -149,8 +185,8 @@ class ChannelRfqHandoffServiceTest {
     InboundChannelEvent event = seedEvent(tenantId, "evt-list", "rfq");
     handoffService.createFromChannelEvent(commandFor(event));
 
-    assertThat(handoffService.list(ChannelRfqHandoffStatus.PENDING_REVIEW)).hasSize(1);
-    assertThat(handoffService.list(ChannelRfqHandoffStatus.CONVERTED)).isEmpty();
+    assertThat(handoffService.list(ChannelRfqHandoffStatus.PENDING_REVIEW, 0, 10)).hasSize(1);
+    assertThat(handoffService.list(ChannelRfqHandoffStatus.CONVERTED, 0, 10)).isEmpty();
     assertThat(handoffRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, ChannelRfqHandoffStatus.PENDING_REVIEW)).hasSize(1);
   }
 
@@ -329,6 +365,29 @@ class ChannelRfqHandoffServiceTest {
   private UUID createHandoff(UUID tenantId, String externalEventId, String text) {
     InboundChannelEvent event = seedEvent(tenantId, externalEventId, text);
     return handoffService.createFromChannelEvent(commandFor(event)).id();
+  }
+
+  private void seedDirectHandoffs(UUID tenantId, int count, String prefix) {
+    List<ChannelRfqHandoff> handoffs = new ArrayList<>();
+    Instant base = Instant.parse("2026-06-04T00:00:00Z");
+    for (int index = 0; index < count; index++) {
+      InboundChannelEvent event =
+          seedEvent(tenantId, prefix + "-" + index, "rfq " + index);
+      handoffs.add(
+          new ChannelRfqHandoff(
+              tenantId,
+              event.getId(),
+              event.getChannelConnectionId(),
+              "TELEGRAM",
+              event.getExternalEventId(),
+              event.getSourceActorExternalId(),
+              null,
+              null,
+              event.getNormalizedText(),
+              "RFQ_REQUEST",
+              base.plusSeconds(index)));
+    }
+    handoffRepository.saveAllAndFlush(handoffs);
   }
 
   private UUID seedTenant() {

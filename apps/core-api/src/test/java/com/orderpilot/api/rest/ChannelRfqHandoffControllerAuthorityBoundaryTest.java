@@ -5,17 +5,22 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orderpilot.application.services.channel.ChannelRfqHandoffService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.common.tenant.TenantContextFilter;
+import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiPermissionGuard;
 import com.orderpilot.security.ApiPermissionInterceptor;
 import com.orderpilot.security.ApiSecurityWebConfig;
 import com.orderpilot.security.RequestActorResolver;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,6 +44,44 @@ import org.springframework.test.web.servlet.MockMvc;
 class ChannelRfqHandoffControllerAuthorityBoundaryTest {
   @Autowired private MockMvc mockMvc;
   @MockBean private ChannelRfqHandoffService handoffService;
+
+  @Test
+  void listPassesSafeFiltersAndPagingToBoundedService() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    when(handoffService.list(ChannelRfqHandoffStatus.PENDING_REVIEW, 2, 25))
+        .thenReturn(List.of());
+
+    mockMvc
+        .perform(
+            get("/api/v1/channels/rfq-handoffs")
+                .header("X-Tenant-Id", tenant.toString())
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_READ")
+                .param("status", "PENDING_REVIEW")
+                .param("page", "2")
+                .param("size", "25"))
+        .andExpect(status().isOk());
+
+    verify(handoffService).list(ChannelRfqHandoffStatus.PENDING_REVIEW, 2, 25);
+  }
+
+  @Test
+  void listWithoutChannelReadPermissionIsDeniedBeforeServiceInvocation() throws Exception {
+    for (String unrelatedPermission :
+        List.of(
+            "AUTHENTICATED_PROBE",
+            "REVIEW_READ",
+            "QUOTE_READ",
+            "STAFF_SUPPORT_READ")) {
+      mockMvc
+          .perform(
+              get("/api/v1/channels/rfq-handoffs")
+                  .header("X-Tenant-Id", UUID.randomUUID().toString())
+                  .header(ApiPermissionGuard.PERMISSIONS_HEADER, unrelatedPermission))
+          .andExpect(status().isForbidden());
+    }
+
+    verifyNoInteractions(handoffService);
+  }
 
   @Test
   void startReviewUsesTrustedActorAndIgnoresClientReviewerField() throws Exception {

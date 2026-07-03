@@ -58,8 +58,12 @@ public class DraftQuoteController {
   }
 
   @GetMapping
-  public List<DraftQuoteResponse> list(@RequestParam(required = false) String status, @RequestParam(required = false) String sourceType) {
-    return service.list(status, sourceType);
+  public List<DraftQuoteResponse> list(
+      @RequestParam(required = false) String status,
+      @RequestParam(required = false) String sourceType,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size) {
+    return service.list(status, sourceType, page, size);
   }
 
   @PostMapping("/{id}/lines/{lineId}/substitute/approve")
