@@ -115,8 +115,8 @@ public class ChannelRfqHandoffService {
     UUID tenantId = TenantContext.requireTenantId();
     Pageable pageable = boundedPage(page, size);
     List<ChannelRfqHandoff> handoffs = status == null
-        ? handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable)
-        : handoffRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
+        ? handoffRepository.findByTenantIdOrderByCreatedAtDescIdDesc(tenantId, pageable)
+        : handoffRepository.findByTenantIdAndStatusOrderByCreatedAtDescIdDesc(
             tenantId, status, pageable);
     return handoffs.stream().map(ChannelRfqHandoffService::toResponse).toList();
   }

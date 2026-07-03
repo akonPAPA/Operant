@@ -106,10 +106,46 @@ npm run dev
 - the backend clamps requested sizes above `100` to `100`;
 - negative pages and non-positive sizes are rejected with `400`;
 - tenant, status, and draft `sourceType` filtering remain backend-enforced in bounded repository
-  queries.
+  queries;
+- bounded list queries order by `createdAt desc, id desc` (PR #236). The secondary `id` key gives a
+  deterministic total order so records sharing the same `createdAt` cannot overlap or reorder across
+  pages;
+- the draft-quote list enriches each row from two grouped tenant-scoped bulk reads (lines and
+  validation issues loaded once for the whole page) instead of per-quote loads, and does not
+  recompute dynamic substitute suggestions per row — list rows carry empty `substitutionCandidates`.
+  Full substitute candidates remain a detail-view concern surfaced by `GET /api/v1/quotes/drafts/{id}`
+  and by draft creation.
 
 These bounds protect the visible dashboard list paths from full-tenant reads. They do not prove
-production-scale readiness, cursor stability under concurrent writes, or end-to-end load capacity.
+production-scale readiness, cursor pagination under concurrent writes, or end-to-end load capacity.
+
+## PR #236 — list stability and enrichment proof
+
+Same-scope residual close-out from the PR #235 review. No public JSON response shape change; no
+tenant/security boundary change.
+
+- Root cause closed:
+  - bounded pages existed but ordering was not tie-stable (equal `createdAt` could overlap/reorder
+    across pages);
+  - the draft-quote list was bounded but its per-row enrichment could still scale as bounded N+1
+    (per-quote line/issue loads plus per-line dynamic substitute recompute);
+  - PR evidence discipline was needed so the PR body/report is not empty.
+- Fix:
+  - tie-stable `createdAt desc, id desc` repository ordering for both list APIs;
+  - `RfqToDraftQuoteService` list-read mapper bulk-loads lines/issues by `draftQuoteId IN (:ids)`
+    and omits per-line substitute recompute; `get(id)` and create keep full detail;
+  - this evidence section.
+- Targeted verification (backend, from `apps/core-api`):
+
+```powershell
+mvn -f pom.xml "-Dtest=ChannelRfqHandoffServiceTest,RfqToDraftQuoteServiceTest,DraftQuoteListControllerSecurityTest,ChannelRfqHandoffControllerAuthorityBoundaryTest" test
+mvn -f pom.xml "-Dtest=RfqHandoffDraftQuoteServiceTest,RfqHandoffDraftQuoteControllerTest,RfqTextLineExtractorTest" test
+mvn -f pom.xml -DskipITs test
+```
+
+Results: primary `Tests run: 51`, regression `Tests run: 11`, stable backend `Tests run: 2266`,
+all `Failures: 0, Errors: 0` (37 skipped), `BUILD SUCCESS`. No frontend contract file changed, so
+the frontend build/lint/typecheck were not required and were not run.
 
 ## Targeted tests
 

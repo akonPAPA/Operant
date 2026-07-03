@@ -142,6 +142,33 @@ class ChannelRfqHandoffServiceTest {
         .hasMessageContaining("size");
   }
 
+  @Test
+  void listPaginationIsTieStableWhenCreatedAtCollides() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    // All rows share the same createdAt so ordering must fall back to the id desc tiebreaker.
+    seedHandoffsWithSharedCreatedAt(tenantId, 20, "tie", Instant.parse("2026-06-10T00:00:00Z"));
+
+    List<ChannelRfqHandoffResponse> fullOrder = handoffService.list(null, 0, 20);
+    List<ChannelRfqHandoffResponse> firstPage = handoffService.list(null, 0, 7);
+    List<ChannelRfqHandoffResponse> secondPage = handoffService.list(null, 1, 7);
+
+    assertThat(fullOrder).hasSize(20);
+    // Pages are stable, non-overlapping slices of a single deterministic total order.
+    assertThat(idsOf(firstPage)).isEqualTo(idsOf(fullOrder.subList(0, 7)));
+    assertThat(idsOf(secondPage)).isEqualTo(idsOf(fullOrder.subList(7, 14)));
+    assertThat(idsOf(firstPage)).doesNotContainAnyElementsOf(idsOf(secondPage));
+    // Re-fetching the same page yields the identical order (no reordering across equal createdAt).
+    assertThat(idsOf(handoffService.list(null, 0, 7))).isEqualTo(idsOf(firstPage));
+    // createdAt remains the non-increasing primary key across the full ordered page.
+    assertThat(fullOrder).extracting(ChannelRfqHandoffResponse::createdAt)
+        .isSortedAccordingTo(java.util.Comparator.reverseOrder());
+  }
+
+  private static List<UUID> idsOf(List<ChannelRfqHandoffResponse> responses) {
+    return responses.stream().map(ChannelRfqHandoffResponse::id).toList();
+  }
+
   @Test void auditEventIsEmittedWhenHandoffIsCreated() {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
@@ -386,6 +413,28 @@ class ChannelRfqHandoffServiceTest {
               event.getNormalizedText(),
               "RFQ_REQUEST",
               base.plusSeconds(index)));
+    }
+    handoffRepository.saveAllAndFlush(handoffs);
+  }
+
+  private void seedHandoffsWithSharedCreatedAt(
+      UUID tenantId, int count, String prefix, Instant sharedCreatedAt) {
+    List<ChannelRfqHandoff> handoffs = new ArrayList<>();
+    for (int index = 0; index < count; index++) {
+      InboundChannelEvent event = seedEvent(tenantId, prefix + "-" + index, "rfq " + index);
+      handoffs.add(
+          new ChannelRfqHandoff(
+              tenantId,
+              event.getId(),
+              event.getChannelConnectionId(),
+              "TELEGRAM",
+              event.getExternalEventId(),
+              event.getSourceActorExternalId(),
+              null,
+              null,
+              event.getNormalizedText(),
+              "RFQ_REQUEST",
+              sharedCreatedAt));
     }
     handoffRepository.saveAllAndFlush(handoffs);
   }

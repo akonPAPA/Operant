@@ -348,6 +348,103 @@ class RfqToDraftQuoteServiceTest {
         .hasMessageContaining("size");
   }
 
+  @Test
+  void listPaginationIsTieStableWhenCreatedAtCollides() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    // All rows share the same createdAt so ordering must fall back to the id desc tiebreaker.
+    seedDraftQuotesWithSharedCreatedAt(
+        tenantId, 20, "NEEDS_REVIEW", "API", "tie", Instant.parse("2026-05-20T00:00:00Z"));
+
+    List<DraftQuoteResponse> fullOrder = service.list(null, null, 0, 20);
+    List<DraftQuoteResponse> firstPage = service.list(null, null, 0, 7);
+    List<DraftQuoteResponse> secondPage = service.list(null, null, 1, 7);
+
+    assertThat(fullOrder).hasSize(20);
+    // Pages are stable, non-overlapping slices of a single deterministic total order.
+    assertThat(quoteIdsOf(firstPage)).isEqualTo(quoteIdsOf(fullOrder.subList(0, 7)));
+    assertThat(quoteIdsOf(secondPage)).isEqualTo(quoteIdsOf(fullOrder.subList(7, 14)));
+    assertThat(quoteIdsOf(firstPage)).doesNotContainAnyElementsOf(quoteIdsOf(secondPage));
+    // Re-fetching the same page yields the identical order (no reordering across equal createdAt).
+    assertThat(quoteIdsOf(service.list(null, null, 0, 7))).isEqualTo(quoteIdsOf(firstPage));
+    // createdAt remains the non-increasing primary key across the full ordered page.
+    assertThat(fullOrder).extracting(DraftQuoteResponse::createdAt)
+        .isSortedAccordingTo(java.util.Comparator.reverseOrder());
+  }
+
+  @Test
+  void listBulkReadPopulatesLinesAndIssuesButOmitsPerLineSubstituteCandidatesWhileGetKeepsThem() {
+    TenantContext.setTenantId(UUID.randomUUID());
+    customer();
+    Product original = product("TOY-CAM-2018-BPAD-OE", "Original brake pads for Toyota Camry 2018");
+    Product substitute = product("AFT-CAM-2018-BPAD-A", "Aftermarket compatible substitute A");
+    price(original.getId(), new BigDecimal("260.00"));
+    price(substitute.getId(), new BigDecimal("190.00"));
+    inventory(original.getId(), BigDecimal.ZERO);
+    inventory(substitute.getId(), new BigDecimal("75"));
+    substituteRepository.save(new ProductSubstitute(TenantContext.requireTenantId(), original.getId(), substitute.getId(), "COMPATIBLE_ALTERNATIVE", "LOW", false, "Verified aftermarket substitute", Instant.parse("2026-05-20T00:00:00Z")));
+    compatibilityRepository.save(new ProductCompatibility(TenantContext.requireTenantId(), substitute.getId(), "VEHICLE", "Toyota", "Camry", 2018, 2018, null, "Verified Camry 2018 fitment", "LOW", Instant.parse("2026-05-20T00:00:00Z")));
+
+    DraftQuoteResponse created = service.createFromRfq(command(UUID.randomUUID(), "OPERATOR", "ACME", List.of(new RfqLineInput("Need brake pads for Toyota Camry 2018", "TOY-CAM-2018-BPAD-OE", new BigDecimal("20"), "pcs", null))));
+
+    // Detail path still recomputes and exposes dynamic substitute candidates.
+    DraftQuoteResponse detail = service.get(created.id());
+    assertThat(detail.lines().get(0).substitutionCandidates()).hasSize(1);
+
+    // List path bulk-loads lines and issues but intentionally omits per-line substitute candidates.
+    List<DraftQuoteResponse> listed = service.list(null, null, 0, 10);
+    assertThat(listed).extracting(DraftQuoteResponse::id).containsExactly(created.id());
+    DraftQuoteResponse row = listed.get(0);
+    assertThat(row.lines()).hasSize(1);
+    assertThat(row.lines().get(0).productId()).isEqualTo(original.getId());
+    assertThat(row.lines().get(0).substitutionCandidates()).isEmpty();
+    assertThat(row.issues()).extracting("issueCode").contains("PRODUCT_OUT_OF_STOCK_SUBSTITUTE_AVAILABLE");
+  }
+
+  @Test
+  void listBulkEnrichmentIsTenantScopedAndGroupsLinesPerQuote() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+
+    TenantContext.setTenantId(tenantB);
+    customer();
+    Product bProduct = product("B-FLT-001", "Tenant B Filter");
+    price(bProduct.getId(), new BigDecimal("10.00"));
+    inventory(bProduct.getId(), new BigDecimal("100"));
+    DraftQuoteResponse bQuote = service.createFromRfq(command(UUID.randomUUID(), "OPERATOR", "ACME", List.of(new RfqLineInput("Tenant B filter", "B-FLT-001", BigDecimal.ONE, "pcs", null))));
+
+    TenantContext.setTenantId(tenantA);
+    customer();
+    Product aBrake = product("A-BRK-001", "Tenant A Brake pads");
+    Product aFilter = product("A-FLT-001", "Tenant A Filter");
+    price(aBrake.getId(), new BigDecimal("50.00"));
+    price(aFilter.getId(), new BigDecimal("20.00"));
+    inventory(aBrake.getId(), new BigDecimal("100"));
+    inventory(aFilter.getId(), new BigDecimal("100"));
+    DraftQuoteResponse aBrakeQuote = service.createFromRfq(command(UUID.randomUUID(), "OPERATOR", "ACME", List.of(new RfqLineInput("Tenant A brake pads", "A-BRK-001", BigDecimal.ONE, "pcs", null))));
+    DraftQuoteResponse aFilterQuote = service.createFromRfq(command(UUID.randomUUID(), "OPERATOR", "ACME", List.of(new RfqLineInput("Tenant A filter", "A-FLT-001", BigDecimal.ONE, "pcs", null))));
+
+    List<DraftQuoteResponse> aList = service.list(null, null, 0, 10);
+
+    // Only tenant A's quotes are visible; tenant B's quote never leaks into tenant A's list.
+    assertThat(aList).extracting(DraftQuoteResponse::id)
+        .containsExactlyInAnyOrder(aBrakeQuote.id(), aFilterQuote.id())
+        .doesNotContain(bQuote.id());
+    // Bulk-loaded lines are grouped to the correct quote — no cross-quote or cross-tenant merge.
+    assertThat(rowById(aList, aBrakeQuote.id()).lines()).extracting(DraftQuoteLineResponse::productId)
+        .containsExactly(aBrake.getId());
+    assertThat(rowById(aList, aFilterQuote.id()).lines()).extracting(DraftQuoteLineResponse::productId)
+        .containsExactly(aFilter.getId());
+  }
+
+  private static List<UUID> quoteIdsOf(List<DraftQuoteResponse> responses) {
+    return responses.stream().map(DraftQuoteResponse::id).toList();
+  }
+
+  private static DraftQuoteResponse rowById(List<DraftQuoteResponse> rows, UUID id) {
+    return rows.stream().filter(r -> r.id().equals(id)).findFirst().orElseThrow();
+  }
+
   private CreateDraftQuoteFromRfqRequest command(UUID actorId, String role, String customerHint, List<RfqLineInput> lines) {
     return new CreateDraftQuoteFromRfqRequest(actorId, role, "API", null, null, customerHint, null, lines);
   }
@@ -389,6 +486,30 @@ class RfqToDraftQuoteServiceTest {
               UUID.randomUUID(),
               UUID.randomUUID(),
               base.plusSeconds(index)));
+    }
+    quoteRepository.saveAllAndFlush(quotes);
+  }
+
+  private void seedDraftQuotesWithSharedCreatedAt(
+      UUID tenantId, int count, String status, String sourceType, String quotePrefix, Instant sharedCreatedAt) {
+    List<DraftQuote> quotes = new java.util.ArrayList<>();
+    for (int index = 0; index < count; index++) {
+      quotes.add(
+          new DraftQuote(
+              tenantId,
+              quotePrefix + "-" + index,
+              sourceType,
+              null,
+              null,
+              null,
+              "Customer",
+              status,
+              "NEEDS_REVIEW",
+              true,
+              "USD",
+              UUID.randomUUID(),
+              UUID.randomUUID(),
+              sharedCreatedAt));
     }
     quoteRepository.saveAllAndFlush(quotes);
   }
