@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const api = readFileSync(join(root, "lib", "rfq-handoff-api.ts"), "utf8");
 const workspace = readFileSync(join(root, "components", "rfq-handoff-workspace.tsx"), "utf8");
 const page = readFileSync(join(root, "app", "(dashboard)", "channels", "rfq-handoffs", "page.tsx"), "utf8");
@@ -28,8 +29,10 @@ test("api client exposes read and the three transition functions", () => {
   assert.match(api, /markConvertedRfqHandoff/);
   assert.match(api, /generateRfqHandoffAiSuggestion/);
   assert.match(api, /createDraftQuoteFromRfqHandoff/);
+  assert.match(api, /decideRfqHandoffDraft/);
   assert.match(api, /RfqHandoffDraftQuoteLine/);
   assert.match(api, /RfqHandoffDraftQuoteIssue/);
+  assert.match(api, /RfqHandoffDecisionResult/);
 });
 
 test("draft quote API contract mirrors backend line and issue fields", () => {
@@ -200,12 +203,48 @@ test("draft quote action sends only the safe route handle and an empty intent bo
   assert.match(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
   const action = api.slice(
     api.indexOf("export function createDraftQuoteFromRfqHandoff"),
-    api.indexOf("// --- Display helpers ---")
+    api.indexOf("export function decideRfqHandoffDraft")
   );
   assert.match(action, /body:\s*JSON\.stringify\(\{\}\)/);
   assert.doesNotMatch(
     action,
     /tenantId|actorId|userId|createdBy|approvedBy|decidedBy|status|approvalStatus|executionStatus|riskLevel|margin|stock|rawPayload|idempotencyKey/
+  );
+});
+
+test("operator decision submits business intent and idempotency header only", () => {
+  assert.match(
+    api,
+    /\/api\/v1\/quotes\/drafts\/from-rfq-handoff\/\$\{id\}\/decision/
+  );
+  const action = api.slice(
+    api.indexOf("export function decideRfqHandoffDraft"),
+    api.indexOf("// --- Display helpers ---")
+  );
+  assert.match(action, /"Idempotency-Key": idempotencyKey/);
+  assert.match(action, /body:\s*JSON\.stringify\(\{ decision, note \}\)/);
+  assert.doesNotMatch(
+    action,
+    /JSON\.stringify\(\{[^}]*tenantId|JSON\.stringify\(\{[^}]*actorId|JSON\.stringify\(\{[^}]*status|JSON\.stringify\(\{[^}]*approval|JSON\.stringify\(\{[^}]*execution|JSON\.stringify\(\{[^}]*risk|JSON\.stringify\(\{[^}]*margin|JSON\.stringify\(\{[^}]*stock/
+  );
+});
+
+test("workspace displays terminal decision, audit, and disabled external execution state", () => {
+  assert.match(workspace, /submitDraftDecision/);
+  assert.match(workspace, /COMPLETE_DEMO/);
+  assert.match(workspace, /DECLINE_DEMO/);
+  assert.match(workspace, /decisionResult\.decision/);
+  assert.match(workspace, /decisionResult\.quoteState/);
+  assert.match(workspace, /decisionResult\.terminalState/);
+  assert.match(workspace, /decisionResult\.auditStatus/);
+  assert.match(workspace, /decisionResult\.safetySummary/);
+  assert.match(workspace, /decisionResult\.externalExecution/);
+  assert.match(workspace, /decisionResult\.connectorAction/);
+  assert.match(workspace, /externalExecution = DISABLED/);
+  assert.match(workspace, /connector call = NOT_INVOKED/);
+  assert.doesNotMatch(
+    workspace,
+    /decisionResult\.(tenantId|actorId|idempotencyKey|auditEventId|rawAiPayload|connectorCredentials)/
   );
 });
 

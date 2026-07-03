@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.api.dto.AiWorkDtos.AiWorkSuggestionResponse;
 import com.orderpilot.api.dto.ChannelRfqHandoffDtos.ChannelRfqHandoffResponse;
+import com.orderpilot.api.dto.RfqHandoffDraftQuoteDtos.RfqHandoffDecisionRequest;
+import com.orderpilot.api.dto.RfqHandoffDraftQuoteDtos.RfqHandoffDecisionResponse;
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.ProductCatalogMatchingService;
 import com.orderpilot.application.services.ProductSubstitutionService;
@@ -18,6 +20,7 @@ import com.orderpilot.application.services.runtime.RateLimitService;
 import com.orderpilot.application.services.runtime.RuntimeGuardService;
 import com.orderpilot.application.services.runtime.UsageMeterService;
 import com.orderpilot.application.services.workspace.RfqToDraftQuoteService;
+import com.orderpilot.common.idempotency.IdempotencyService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
@@ -72,6 +75,7 @@ import org.springframework.test.context.ActiveProfiles;
   RateLimitService.class,
   FeatureEntitlementGuard.class,
   UsageMeterService.class,
+  IdempotencyService.class,
   AuditEventService.class,
   ObjectMapper.class,
   CoreConfiguration.class
@@ -81,6 +85,7 @@ class RfqHandoffDraftQuoteServiceTest {
       "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.";
 
   @Autowired private RfqHandoffDraftQuoteService bridgeService;
+  @Autowired private IdempotencyService idempotencyService;
   @Autowired private ChannelRfqHandoffService handoffService;
   @Autowired private AiWorkService aiWorkService;
   @Autowired private AiWorkPublicResponseMapper aiWorkMapper;
@@ -220,6 +225,189 @@ class RfqHandoffDraftQuoteServiceTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("must be in review");
     assertThat(draftQuoteRepository.countByTenantId(tenantId)).isZero();
+    assertNoExternalWriteState();
+  }
+
+  @Test
+  void validOperatorDecisionCreatesAuditBackedSafeTerminalStateAndRetryIsStable() {
+    UUID tenantId = seedTenant();
+    UUID actorId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelRfqHandoffResponse handoff = createHandoff(tenantId, "decision-success", DEMO_RFQ);
+    handoffService.startReview(handoff.id(), actorId);
+    var draft =
+        bridgeService.createDraftQuote(
+            handoff.id(), actorId, ActorRole.SALES_QUOTE_MANAGER);
+    RfqHandoffDecisionRequest request =
+        new RfqHandoffDecisionRequest(
+            "COMPLETE_DEMO", "Operator completed the safe local demo review.");
+
+    RfqHandoffDecisionResponse first =
+        idempotencyService.execute(
+            tenantId,
+            actorId,
+            "decision-success-key",
+            "RFQ_HANDOFF_DEMO_DECISION",
+            "DRAFT_QUOTE",
+            handoff.id().toString(),
+            request,
+            RfqHandoffDecisionResponse.class,
+            () ->
+                RfqHandoffDecisionResponse.from(
+                    bridgeService.decide(
+                        handoff.id(),
+                        actorId,
+                        ActorRole.SALES_QUOTE_MANAGER,
+                        request.decision(),
+                        request.note())));
+    RfqHandoffDecisionResponse retry =
+        idempotencyService.execute(
+            tenantId,
+            actorId,
+            "decision-success-key",
+            "RFQ_HANDOFF_DEMO_DECISION",
+            "DRAFT_QUOTE",
+            handoff.id().toString(),
+            request,
+            RfqHandoffDecisionResponse.class,
+            () ->
+                RfqHandoffDecisionResponse.from(
+                    bridgeService.decide(
+                        handoff.id(),
+                        actorId,
+                        ActorRole.SALES_QUOTE_MANAGER,
+                        request.decision(),
+                        request.note())));
+
+    assertThat(first).isEqualTo(retry);
+    assertThat(first.decision()).isEqualTo("COMPLETE_DEMO");
+    assertThat(first.quoteState()).isEqualTo("DEMO_COMPLETED");
+    assertThat(first.terminalState()).isEqualTo("SAFE_DEMO_TERMINAL");
+    assertThat(first.auditStatus()).isEqualTo("RECORDED");
+    assertThat(first.externalExecution()).isEqualTo("DISABLED");
+    assertThat(first.connectorAction()).isEqualTo("NOT_INVOKED");
+    assertThat(first.outboxStatus()).isEqualTo("NOT_REQUESTED");
+    var persistedQuote =
+        draftQuoteRepository
+            .findByIdAndTenantId(draft.draftQuote().id(), tenantId)
+            .orElseThrow();
+    assertThat(persistedQuote.getStatus()).isEqualTo("DEMO_COMPLETED");
+    assertThat(persistedQuote.isRequiresHumanReview()).isTrue();
+    assertThat(
+            auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId).stream()
+                .filter(
+                    event ->
+                        "RFQ_HANDOFF_DEMO_DECISION_RECORDED".equals(event.getAction()))
+                .count())
+        .isEqualTo(1);
+    assertNoExternalWriteState();
+  }
+
+  @Test
+  void tenantCannotDecideAnotherTenantsRfqDraft() {
+    UUID tenantA = seedTenant();
+    UUID actorA = UUID.randomUUID();
+    TenantContext.setTenantId(tenantA);
+    ChannelRfqHandoffResponse handoff = createHandoff(tenantA, "decision-tenant-a", DEMO_RFQ);
+    handoffService.startReview(handoff.id(), actorA);
+    var draft =
+        bridgeService.createDraftQuote(
+            handoff.id(), actorA, ActorRole.SALES_QUOTE_MANAGER);
+
+    UUID tenantB = seedTenant();
+    TenantContext.setTenantId(tenantB);
+    assertThatThrownBy(
+            () ->
+                bridgeService.decide(
+                    handoff.id(),
+                    UUID.randomUUID(),
+                    ActorRole.SALES_QUOTE_MANAGER,
+                    "COMPLETE_DEMO",
+                    "Cross-tenant attempt"))
+        .isInstanceOf(NotFoundException.class);
+    assertThat(draftQuoteRepository.countByTenantId(tenantB)).isZero();
+
+    TenantContext.setTenantId(tenantA);
+    assertThat(
+            draftQuoteRepository
+                .findByIdAndTenantId(draft.draftQuote().id(), tenantA)
+                .orElseThrow()
+                .getStatus())
+        .isNotIn("DEMO_COMPLETED", "DEMO_DECLINED");
+    assertNoExternalWriteState();
+  }
+
+  @Test
+  void terminalDecisionCannotBeChangedByAnInvalidSecondTransition() {
+    UUID tenantId = seedTenant();
+    UUID actorId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelRfqHandoffResponse handoff =
+        createHandoff(tenantId, "decision-invalid-transition", DEMO_RFQ);
+    handoffService.startReview(handoff.id(), actorId);
+    var draft =
+        bridgeService.createDraftQuote(
+            handoff.id(), actorId, ActorRole.SALES_QUOTE_MANAGER);
+    bridgeService.decide(
+        handoff.id(),
+        actorId,
+        ActorRole.SALES_QUOTE_MANAGER,
+        "COMPLETE_DEMO",
+        "First terminal decision");
+
+    assertThatThrownBy(
+            () ->
+                bridgeService.decide(
+                    handoff.id(),
+                    actorId,
+                    ActorRole.SALES_QUOTE_MANAGER,
+                    "DECLINE_DEMO",
+                    "Conflicting second decision"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("not in a valid state");
+    assertThat(
+            draftQuoteRepository
+                .findByIdAndTenantId(draft.draftQuote().id(), tenantId)
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo("DEMO_COMPLETED");
+    assertThat(
+            auditEventRepository.findByTenantIdOrderByOccurredAtDesc(tenantId).stream()
+                .filter(
+                    event ->
+                        "RFQ_HANDOFF_DEMO_DECISION_RECORDED".equals(event.getAction()))
+                .count())
+        .isEqualTo(1);
+    assertNoExternalWriteState();
+  }
+
+  @Test
+  void nonQuoteRoleCannotMakeDecisionOrMutateState() {
+    UUID tenantId = seedTenant();
+    UUID actorId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    ChannelRfqHandoffResponse handoff =
+        createHandoff(tenantId, "decision-wrong-role", DEMO_RFQ);
+    handoffService.startReview(handoff.id(), actorId);
+    var draft =
+        bridgeService.createDraftQuote(
+            handoff.id(), actorId, ActorRole.SALES_QUOTE_MANAGER);
+
+    assertThatThrownBy(
+            () ->
+                bridgeService.decide(
+                    handoff.id(),
+                    actorId,
+                    ActorRole.READ_ONLY_VIEWER,
+                    "COMPLETE_DEMO",
+                    "Wrong role"))
+        .isInstanceOf(com.orderpilot.security.policy.TenantPolicyException.class);
+    assertThat(
+            draftQuoteRepository
+                .findByIdAndTenantId(draft.draftQuote().id(), tenantId)
+                .orElseThrow()
+                .getStatus())
+        .isNotIn("DEMO_COMPLETED", "DEMO_DECLINED");
     assertNoExternalWriteState();
   }
 
