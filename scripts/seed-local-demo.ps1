@@ -14,6 +14,10 @@ function Write-Step([string]$Message) {
 }
 
 $DemoTenantId = "11111111-1111-4111-8111-111111111111"
+$DemoOperatorUserId = "00000000-0000-4000-8000-000000000002"
+$DemoChannelConnectionId = "99999999-9999-4999-8999-999999999901"
+$DemoInboundChannelEventId = "99999999-9999-4999-8999-999999999902"
+$DemoRfqHandoffId = "99999999-9999-4999-8999-999999999903"
 $DemoCustomerId = "22222222-2222-4222-8222-222222222222"
 $DemoCustomerBId = "22222222-2222-4222-8222-222222222223"
 $DemoLocationId = "33333333-3333-4333-8333-333333333333"
@@ -136,6 +140,102 @@ ON CONFLICT (id) DO UPDATE SET
   legal_name = EXCLUDED.legal_name,
   status = EXCLUDED.status,
   updated_at = now();
+
+INSERT INTO user_account (id, tenant_id, email, display_name, status)
+VALUES (
+  '$DemoOperatorUserId',
+  '$DemoTenantId',
+  'local-demo-operator@operant.invalid',
+  'Local Demo Operator',
+  'ACTIVE'
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO channel_connection (
+  id,
+  tenant_id,
+  provider_type,
+  display_name,
+  status,
+  mode,
+  external_account_id,
+  webhook_verification_mode
+)
+VALUES (
+  '$DemoChannelConnectionId',
+  '$DemoTenantId',
+  'TELEGRAM',
+  'Deterministic local demo RFQ source',
+  'ACTIVE',
+  'READ_ONLY',
+  'operant-local-demo',
+  'DISABLED_FOR_LOCAL_DEV'
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO inbound_channel_event (
+  id,
+  tenant_id,
+  channel_connection_id,
+  provider_type,
+  external_event_id,
+  source_actor_type,
+  source_actor_external_id,
+  normalized_text,
+  payload_hash,
+  status,
+  received_at,
+  processed_at,
+  verification_status,
+  verification_reason
+)
+VALUES (
+  '$DemoInboundChannelEventId',
+  '$DemoTenantId',
+  '$DemoChannelConnectionId',
+  'TELEGRAM',
+  'operant-local-demo-rfq-1',
+  'CUSTOMER',
+  'steppe-logistics-demo',
+  'Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.',
+  'operant-local-demo-rfq-1',
+  'NORMALIZED',
+  '2026-07-03T00:00:00Z',
+  '2026-07-03T00:00:00Z',
+  'SKIPPED_LOCAL_DEV',
+  'Deterministic local demo seed'
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO channel_rfq_handoff (
+  id,
+  tenant_id,
+  inbound_channel_event_id,
+  channel_connection_id,
+  source_channel,
+  source_external_event_id,
+  source_actor_external_id,
+  request_text,
+  detected_intent,
+  status,
+  created_at,
+  updated_at
+)
+VALUES (
+  '$DemoRfqHandoffId',
+  '$DemoTenantId',
+  '$DemoInboundChannelEventId',
+  '$DemoChannelConnectionId',
+  'TELEGRAM',
+  'operant-local-demo-rfq-1',
+  'steppe-logistics-demo',
+  'Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.',
+  'RFQ_REQUEST',
+  'PENDING_REVIEW',
+  '2026-07-03T00:00:00Z',
+  '2026-07-03T00:00:00Z'
+)
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO location (id, tenant_id, code, name, type, city, country, active)
 VALUES ('$DemoLocationId', '$DemoTenantId', 'WH-ALM', 'Almaty Main Warehouse', 'WAREHOUSE', 'Almaty', 'KZ', true)
@@ -386,6 +486,31 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Demo seed verification failed: warehouse WH-ALM is missing';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM user_account
+    WHERE tenant_id = '$DemoTenantId'
+      AND id = '$DemoOperatorUserId'
+      AND status = 'ACTIVE'
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: backend-owned local demo operator is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM channel_rfq_handoff
+    WHERE tenant_id = '$DemoTenantId'
+      AND id = '$DemoRfqHandoffId'
+      AND source_channel = 'TELEGRAM'
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: deterministic RFQ handoff is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM channel_connection
+    WHERE tenant_id = '$DemoTenantId'
+      AND id = '$DemoChannelConnectionId'
+      AND provider_type = 'TELEGRAM'
+      AND status = 'ACTIVE'
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: deterministic Telegram connection is missing';
+  END IF;
 END
 `$`$;
 
@@ -437,3 +562,4 @@ Write-Host "OK: Local demo seed is present."
 Write-Host "Demo tenant id:   $DemoTenantId"
 Write-Host "Demo product id:  $DemoPrimaryProductId"
 Write-Host "Demo location id: $DemoLocationId"
+Write-Host "Demo RFQ handoff: $DemoRfqHandoffId"

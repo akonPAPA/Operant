@@ -222,6 +222,89 @@ class AiWorkControllerAuthorityBoundaryTest {
   }
 
   @Test
+  void headerlessLocalDemoRfqAdvisoryUsesBackendOwnedOperator() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID handoffId = UUID.randomUUID();
+    ChannelRfqHandoff handoff = new ChannelRfqHandoff(
+        tenant,
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "TELEGRAM",
+        "external-local-demo",
+        "sender-local-demo",
+        null,
+        null,
+        "Need a safe RFQ advisory",
+        "RFQ",
+        NOW);
+    when(handoffRepository.findByIdAndTenantId(handoffId, tenant)).thenReturn(Optional.of(handoff));
+    when(service.createSuggestion(any(), any(), any(), any(), any(), any()))
+        .thenReturn(new AiWorkSuggestion(
+            tenant,
+            AiWorkType.NEXT_ACTION_SUGGESTION,
+            AiWorkSourceType.RFQ_HANDOFF,
+            handoffId,
+            "deterministic-v1",
+            "LOW",
+            new BigDecimal("0.75"),
+            "Review the RFQ (advisory only)",
+            "{}",
+            "[]",
+            "local-demo-rfq-advisory",
+            RequestActorResolver.LOCAL_DEMO_OPERATOR_ACTOR,
+            NOW));
+
+    mockMvc
+        .perform(
+            post("/api/v1/ai-work/rfq-handoffs/{handoffId}/suggestions", handoffId)
+                .header(TENANT_HEADER, tenant.toString())
+                .header("Idempotency-Key", "local-demo-rfq-advisory")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isOk());
+
+    verify(service)
+        .createSuggestion(
+            eq(AiWorkType.NEXT_ACTION_SUGGESTION),
+            eq(AiWorkSourceType.RFQ_HANDOFF),
+            eq(handoffId),
+            any(),
+            eq("local-demo-rfq-advisory"),
+            eq(RequestActorResolver.LOCAL_DEMO_OPERATOR_ACTOR));
+  }
+
+  @Test
+  void explicitSystemActorCannotGenerateRfqAdvisory() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID handoffId = UUID.randomUUID();
+    ChannelRfqHandoff handoff = new ChannelRfqHandoff(
+        tenant,
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "TELEGRAM",
+        "external-system",
+        "sender-system",
+        null,
+        null,
+        "System actor attempt",
+        "RFQ",
+        NOW);
+    when(handoffRepository.findByIdAndTenantId(handoffId, tenant)).thenReturn(Optional.of(handoff));
+
+    mockMvc
+        .perform(
+            post("/api/v1/ai-work/rfq-handoffs/{handoffId}/suggestions", handoffId)
+                .header(TENANT_HEADER, tenant.toString())
+                .header(ACTOR_HEADER, RequestActorResolver.SYSTEM_ACTOR.toString())
+                .header("Idempotency-Key", "system-rfq-advisory")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isForbidden());
+
+    verify(service, never()).createSuggestion(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
   void createForRfqHandoffRejectsTerminalSourceBeforeServiceInvocation() throws Exception {
     UUID tenant = UUID.randomUUID();
     UUID handoffId = UUID.randomUUID();
