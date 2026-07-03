@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
+  createDraftQuoteFromRfqHandoff,
   dismissRfqHandoff,
   generateRfqHandoffAiSuggestion,
   getRfqHandoff,
@@ -11,6 +13,7 @@ import {
   startReviewRfqHandoff,
   statusClass,
   statusLabel,
+  type RfqHandoffDraftQuote,
   type RfqHandoff,
   type RfqHandoffStatus
 } from "@/lib/rfq-handoff-api";
@@ -52,6 +55,7 @@ export function RfqHandoffWorkspace({
   const [conversionNote, setConversionNote] = useState("");
   const [showConvert, setShowConvert] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiWorkSuggestion | null>(null);
+  const [draftResult, setDraftResult] = useState<RfqHandoffDraftQuote | null>(null);
 
   const [action, setAction] = useState<ActionState>({
     status: initialError ? "error" : "idle",
@@ -82,6 +86,7 @@ export function RfqHandoffWorkspace({
     setDismissReason("");
     setConversionNote("");
     setAiSuggestion(null);
+    setDraftResult(null);
     setAction({ status: "idle", message: "" });
     setIsLoadingDetail(true);
     const result = await getRfqHandoff(id);
@@ -155,8 +160,29 @@ export function RfqHandoffWorkspace({
     setAction({ status: "success", message: "Advisory suggestion generated. No business state was changed." });
   }
 
+  async function submitCreateDraftQuote() {
+    if (!detail) return;
+    setIsMutating(true);
+    setAction({ status: "loading", message: "Creating a review-required draft quote..." });
+    const result = await createDraftQuoteFromRfqHandoff(detail.id);
+    setIsMutating(false);
+    if (result.error || !result.data) {
+      setAction({
+        status: "error",
+        message: result.error ?? "Draft quote creation was not accepted by the backend."
+      });
+      return;
+    }
+    setDraftResult(result.data);
+    applyUpdated(
+      result.data.handoff,
+      `Draft quote ${result.data.draftQuote.quoteNumber} created for operator review.`
+    );
+  }
+
   const canStartReview = detail?.status === "PENDING_REVIEW";
   const canAct = detail ? !isTerminal(detail.status) : false;
+  const canCreateDraftQuote = detail?.status === "IN_REVIEW";
 
   return (
     <div className="review-workspace">
@@ -176,6 +202,7 @@ export function RfqHandoffWorkspace({
       <section className="panel table-panel">
         <div className="button-row">
           <h2>RFQ handoffs</h2>
+          <Link className="button" href="/demo">Send deterministic demo RFQ</Link>
           <label htmlFor="rfq-status-filter" className="field-label">Filter by status</label>
           <select
             id="rfq-status-filter"
@@ -295,6 +322,14 @@ export function RfqHandoffWorkspace({
               >
                 Generate suggestion
               </button>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || !canCreateDraftQuote}
+                onClick={() => void submitCreateDraftQuote()}
+              >
+                Create draft quote
+              </button>
             </div>
           )}
 
@@ -305,7 +340,54 @@ export function RfqHandoffWorkspace({
               <div className="tag-row">
                 <span className="status-pill">Advisory only</span>
                 <span className="status-pill warning">Risk: {aiSuggestion.riskLevel}</span>
+                <span className="status-pill">
+                  Confidence: {aiSuggestion.confidence == null ? "n/a" : `${Math.round(aiSuggestion.confidence * 100)}%`}
+                </span>
               </div>
+              {aiSuggestion.displayFields.length > 0 ? (
+                <dl className="detail-list">
+                  {aiSuggestion.displayFields.map((field) => (
+                    <div key={`${field.label}-${field.value}`}>
+                      <dt>{field.label}</dt>
+                      <dd>{field.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+              {aiSuggestion.nextActionCandidates.length > 0 ? (
+                <div>
+                  <h4>Next action candidates</h4>
+                  <ul>
+                    {aiSuggestion.nextActionCandidates.map((candidate) => (
+                      <li key={candidate.actionCode}>
+                        {candidate.label}
+                        {candidate.requiresHumanApproval ? " — human approval required" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {aiSuggestion.riskFlags.length > 0 ? (
+                <p className="risk-note">Risk flags: {aiSuggestion.riskFlags.join(", ")}</p>
+              ) : null}
+              <p className="muted-copy">
+                This suggestion is advisory. The operator can create or decline the draft independently.
+              </p>
+            </div>
+          ) : null}
+
+          {draftResult ? (
+            <div className="control-grid">
+              <h3>Draft quote created</h3>
+              <dl className="detail-list">
+                <div><dt>Quote</dt><dd>{draftResult.draftQuote.quoteNumber}</dd></div>
+                <div><dt>Status</dt><dd>{draftResult.draftQuote.status}</dd></div>
+                <div><dt>Validation</dt><dd>{draftResult.draftQuote.validationStatus}</dd></div>
+                <div><dt>Human review</dt><dd>{draftResult.draftQuote.requiresHumanReview ? "Required" : "Not required"}</dd></div>
+                <div><dt>Audit</dt><dd>{draftResult.auditStatus}</dd></div>
+                <div><dt>Outbox</dt><dd>{draftResult.outboxStatus}</dd></div>
+                <div><dt>External write safety</dt><dd>{draftResult.externalWriteSafety}</dd></div>
+              </dl>
             </div>
           ) : null}
 
@@ -352,10 +434,9 @@ export function RfqHandoffWorkspace({
           ) : null}
 
           <p className="risk-note">
-            Mark converted records that the operator review is complete and the request is ready for a later,
-            separately-gated quote/order workflow. It does not create a quote or order, approve anything,
-            update inventory/price/customer data, or trigger any ERP/external write. All transitions are
-            tenant-scoped and audited by the backend command service.
+            Draft creation produces an internal, review-required quote only. It does not approve anything,
+            update inventory/price/customer data, create an outbox command, or trigger any ERP/external write.
+            All transitions are tenant-scoped, idempotent, and audited by backend services.
           </p>
         </section>
       ) : null}

@@ -27,6 +27,7 @@ test("api client exposes read and the three transition functions", () => {
   assert.match(api, /dismissRfqHandoff/);
   assert.match(api, /markConvertedRfqHandoff/);
   assert.match(api, /generateRfqHandoffAiSuggestion/);
+  assert.match(api, /createDraftQuoteFromRfqHandoff/);
 });
 
 test("api client targets the OP-CAP-06B/06C channel routes", () => {
@@ -58,14 +59,21 @@ test("api client contextual AI payload does not send source ids or context text"
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*contextText/s);
 });
 
-test("workspace renders AI suggestion summary field not raw generatedText", () => {
+test("workspace renders safe AI suggestion fields, candidates, risk, and confidence", () => {
   assert.match(workspace, /aiSuggestion\.summary/);
+  assert.match(workspace, /aiSuggestion\.nextActionCandidates/);
+  assert.match(workspace, /aiSuggestion\.displayFields/);
+  assert.match(workspace, /aiSuggestion\.riskFlags/);
+  assert.match(workspace, /aiSuggestion\.riskLevel/);
+  assert.match(workspace, /aiSuggestion\.confidence/);
+  assert.match(workspace, /Advisory only/);
   assert.doesNotMatch(workspace, /aiSuggestion\.generatedText/);
+  assert.doesNotMatch(workspace, /structuredPayloadJson|evidenceRefsJson/);
 });
 
-test("api client has no manual create function and no quote/order/erp action", () => {
+test("api client has no manual handoff create or ERP action", () => {
   assert.doesNotMatch(api, /createRfqHandoff|createHandoff/);
-  assert.doesNotMatch(api, /createQuote|createOrder|approve|erpSync|inventory|priceUpdate/i);
+  assert.doesNotMatch(api, /createOrder|approveQuote|approveOrder|erpSync|updateInventory|priceUpdate/i);
 });
 
 test("api client type exposes no secret or raw payload fields", () => {
@@ -102,6 +110,8 @@ test("workspace is a client component with status filter and actions", () => {
   assert.match(workspace, /Dismiss/);
   assert.match(workspace, /Mark converted/);
   assert.match(workspace, /Generate suggestion/);
+  assert.match(workspace, /Create draft quote/);
+  assert.match(workspace, /Send deterministic demo RFQ/);
 });
 
 test("workspace requires a dismiss reason before enabling confirm", () => {
@@ -128,16 +138,41 @@ test("workspace detail does not render low-level source or internal actor identi
   assert.doesNotMatch(workspace, /detail\.reviewerUserId/);
 });
 
-test("workspace wires only the three safe transitions, no quote/order/ERP action calls", () => {
-  // Only the three controlled transition submitters exist.
+test("workspace wires the existing transitions and the safe reviewed-handoff draft action", () => {
   assert.match(workspace, /submitStartReview/);
   assert.match(workspace, /submitDismiss/);
   assert.match(workspace, /submitMarkConverted/);
-  // No dangerous mutation is invoked (function-call form, so safety-copy prose is not matched).
+  assert.match(workspace, /submitCreateDraftQuote/);
+  assert.match(workspace, /canCreateDraftQuote/);
+  assert.match(workspace, /status === "IN_REVIEW"/);
+  assert.match(workspace, /draftResult\.draftQuote\.status/);
+  assert.match(workspace, /draftResult\.auditStatus/);
+  assert.match(workspace, /draftResult\.outboxStatus/);
+  assert.match(workspace, /draftResult\.externalWriteSafety/);
   assert.doesNotMatch(
     workspace,
-    /(createQuote|createOrder|approveQuote|approveOrder|syncErp|erpSync|updateInventory|updatePrice|updateCustomer)\s*\(/i
+    /(createOrder|approveQuote|approveOrder|syncErp|erpSync|updateInventory|updatePrice|updateCustomer)\s*\(/i
   );
+});
+
+test("draft quote action sends only the safe route handle and an empty intent body", () => {
+  assert.match(api, /\/api\/v1\/quotes\/drafts\/from-rfq-handoff\/\$\{id\}/);
+  assert.match(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
+  const action = api.slice(
+    api.indexOf("export function createDraftQuoteFromRfqHandoff"),
+    api.indexOf("// --- Display helpers ---")
+  );
+  assert.match(action, /body:\s*JSON\.stringify\(\{\}\)/);
+  assert.doesNotMatch(
+    action,
+    /tenantId|actorId|userId|createdBy|approvedBy|decidedBy|status|approvalStatus|executionStatus|riskLevel|margin|stock|rawPayload|idempotencyKey/
+  );
+});
+
+test("RFQ client maps failures to safe messages without exposing raw backend bodies", () => {
+  assert.match(api, /rfqHandoffStatusMessage/);
+  assert.doesNotMatch(api, /"message"\s+in\s+data/);
+  assert.doesNotMatch(api, /error instanceof Error \? error\.message/);
 });
 
 // --- Page + navigation ---
