@@ -28,6 +28,28 @@ test("api client exposes read and the three transition functions", () => {
   assert.match(api, /markConvertedRfqHandoff/);
   assert.match(api, /generateRfqHandoffAiSuggestion/);
   assert.match(api, /createDraftQuoteFromRfqHandoff/);
+  assert.match(api, /RfqHandoffDraftQuoteLine/);
+  assert.match(api, /RfqHandoffDraftQuoteIssue/);
+});
+
+test("draft quote API contract mirrors backend line and issue fields", () => {
+  const lineType = api.slice(
+    api.indexOf("export type RfqHandoffDraftQuoteLine"),
+    api.indexOf("export type RfqHandoffDraftQuoteIssue")
+  );
+  const issueType = api.slice(
+    api.indexOf("export type RfqHandoffDraftQuoteIssue"),
+    api.indexOf("export type RfqHandoffDraftQuote =")
+  );
+  assert.match(lineType, /rawSku: string \| null/);
+  assert.match(lineType, /normalizedSku: string \| null/);
+  assert.match(lineType, /quantity: number/);
+  assert.match(lineType, /validationStatus: string/);
+  assert.match(lineType, /issueCodes: string/);
+  assert.match(issueType, /draftQuoteLineId: string \| null/);
+  assert.match(issueType, /issueCode: string/);
+  assert.match(issueType, /blocking: boolean/);
+  assert.doesNotMatch(issueType, /\bcode\??:/);
 });
 
 test("api client targets the OP-CAP-06B/06C channel routes", () => {
@@ -108,7 +130,7 @@ test("workspace is a client component with status filter and actions", () => {
   assert.match(workspace, /STATUS_FILTERS/);
   assert.match(workspace, /Start review/);
   assert.match(workspace, /Dismiss/);
-  assert.match(workspace, /Mark converted/);
+  assert.match(workspace, /Close without draft/);
   assert.match(workspace, /Generate suggestion/);
   assert.match(workspace, /Create draft quote/);
   assert.match(workspace, /Send deterministic demo RFQ/);
@@ -117,6 +139,14 @@ test("workspace is a client component with status filter and actions", () => {
 test("workspace requires a dismiss reason before enabling confirm", () => {
   assert.match(workspace, /dismissReason/);
   assert.match(workspace, /!dismissReason\.trim\(\)/);
+});
+
+test("manual close is secondary, explicit, and requires a non-blank note", () => {
+  assert.match(workspace, /Close without draft/);
+  assert.match(workspace, /closes the handoff without creating a draft quote/);
+  assert.match(workspace, /!conversionNote\.trim\(\)/);
+  assert.match(workspace, /button secondary-button/);
+  assert.doesNotMatch(workspace, />Mark converted/);
 });
 
 test("workspace gates start review to PENDING_REVIEW and blocks terminal transitions", () => {
@@ -149,6 +179,16 @@ test("workspace wires the existing transitions and the safe reviewed-handoff dra
   assert.match(workspace, /draftResult\.auditStatus/);
   assert.match(workspace, /draftResult\.outboxStatus/);
   assert.match(workspace, /draftResult\.externalWriteSafety/);
+  assert.match(workspace, /draftResult\.draftQuote\.lines/);
+  assert.match(workspace, /draftResult\.draftQuote\.issues/);
+  assert.match(workspace, /Validation issues/);
+  assert.match(workspace, /line\.rawSku/);
+  assert.match(workspace, /line\.normalizedSku/);
+  assert.match(workspace, /line\.quantity/);
+  assert.match(workspace, /line\.uom/);
+  assert.match(workspace, /line\.validationStatus/);
+  assert.match(workspace, /formatIssueCodes\(line\.issueCodes\)/);
+  assert.match(workspace, /issue\.issueCode/);
   assert.doesNotMatch(
     workspace,
     /(createOrder|approveQuote|approveOrder|syncErp|erpSync|updateInventory|updatePrice|updateCustomer)\s*\(/i

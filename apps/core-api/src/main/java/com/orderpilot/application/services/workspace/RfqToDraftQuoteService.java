@@ -28,15 +28,11 @@ import com.orderpilot.security.policy.*;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RfqToDraftQuoteService {
-  private static final Pattern QUANTITY_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(pcs|pc|units|unit|шт|ea)\\b");
-
   private final DraftQuoteRepository quoteRepository;
   private final DraftQuoteLineRepository lineRepository;
   private final QuoteValidationIssueRepository issueRepository;
@@ -353,17 +349,7 @@ public class RfqToDraftQuoteService {
     if (command.lineItems() != null && !command.lineItems().isEmpty()) {
       return command.lineItems();
     }
-    if (isBlank(command.rawMessageText())) {
-      return List.of();
-    }
-    Matcher matcher = QUANTITY_PATTERN.matcher(command.rawMessageText());
-    BigDecimal quantity = BigDecimal.ONE;
-    String uom = "EA";
-    if (matcher.find()) {
-      quantity = new BigDecimal(matcher.group(1).replace(',', '.'));
-      uom = matcher.group(2);
-    }
-    return List.of(new RfqLineInput(command.rawMessageText(), null, quantity, uom, null));
+    return RfqTextLineExtractor.extractSingleLine(command.rawMessageText());
   }
 
   private ActorRole parseRole(String role) {

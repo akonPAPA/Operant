@@ -37,6 +37,31 @@ export type RfqHandoffApiResult<T> = {
   error?: string;
 };
 
+export type RfqHandoffDraftQuoteLine = {
+  id: string;
+  lineNumber: number;
+  rawSku: string | null;
+  rawText: string | null;
+  normalizedSku: string | null;
+  productName: string | null;
+  quantity: number;
+  uom: string;
+  unitPrice: number | null;
+  availableStock: number | null;
+  validationStatus: string;
+  issueCodes: string;
+};
+
+export type RfqHandoffDraftQuoteIssue = {
+  id: string;
+  draftQuoteLineId: string | null;
+  issueCode: string;
+  message: string;
+  severity: string;
+  blocking: boolean;
+  status: string;
+};
+
 export type RfqHandoffDraftQuote = {
   handoff: RfqHandoff;
   draftQuote: {
@@ -52,6 +77,8 @@ export type RfqHandoffDraftQuote = {
     discountAmount: number;
     totalAmount: number;
     createdAt: string;
+    lines: RfqHandoffDraftQuoteLine[];
+    issues: RfqHandoffDraftQuoteIssue[];
   };
   auditStatus: "RECORDED";
   outboxStatus: "NOT_REQUESTED";
@@ -155,11 +182,11 @@ export function dismissRfqHandoff(id: string, reason: string) {
   );
 }
 
-/** Mark a handoff converted (workflow complete). Does NOT create any quote/order. */
-export function markConvertedRfqHandoff(id: string, conversionNote?: string) {
+/** Close a handoff without a draft. The backend requires a non-blank operator note. */
+export function markConvertedRfqHandoff(id: string, conversionNote: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/mark-converted`,
-    { method: "POST", body: JSON.stringify({ conversionNote: conversionNote ?? null }) },
+    { method: "POST", body: JSON.stringify({ conversionNote }) },
     null
   );
 }

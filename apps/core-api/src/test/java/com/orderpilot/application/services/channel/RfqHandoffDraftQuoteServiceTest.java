@@ -31,12 +31,19 @@ import com.orderpilot.domain.integration.CompensationPlanRepository;
 import com.orderpilot.domain.integration.ConnectorCommandRepository;
 import com.orderpilot.domain.integration.ConnectorSandboxExecutionRepository;
 import com.orderpilot.domain.integration.OutboxEventRepository;
+import com.orderpilot.domain.inventory.InventorySnapshot;
+import com.orderpilot.domain.inventory.InventorySnapshotRepository;
+import com.orderpilot.domain.pricing.PriceRule;
+import com.orderpilot.domain.pricing.PriceRuleRepository;
+import com.orderpilot.domain.product.Product;
+import com.orderpilot.domain.product.ProductRepository;
 import com.orderpilot.domain.tenant.Tenant;
 import com.orderpilot.domain.tenant.TenantRepository;
 import com.orderpilot.domain.workspace.DraftQuoteRepository;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.policy.ActorRole;
 import com.orderpilot.security.policy.TenantPolicyService;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -86,6 +93,9 @@ class RfqHandoffDraftQuoteServiceTest {
   @Autowired private CompensationPlanRepository compensationPlanRepository;
   @Autowired private ChangeRequestRepository changeRequestRepository;
   @Autowired private OutboxEventRepository outboxEventRepository;
+  @Autowired private ProductRepository productRepository;
+  @Autowired private PriceRuleRepository priceRuleRepository;
+  @Autowired private InventorySnapshotRepository inventoryRepository;
 
   @AfterEach
   void clearTenant() {
@@ -97,6 +107,7 @@ class RfqHandoffDraftQuoteServiceTest {
     UUID tenantId = seedTenant();
     UUID actorId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
+    seedDemoProduct();
     ChannelRfqHandoffResponse handoff = createHandoff(tenantId, "demo-flow", DEMO_RFQ);
     handoffService.startReview(handoff.id(), actorId);
 
@@ -117,6 +128,20 @@ class RfqHandoffDraftQuoteServiceTest {
     assertThat(suggestion.advisoryOnly()).isTrue();
     assertThat(result.handoff().status()).isEqualTo("CONVERTED");
     assertThat(result.draftQuote().sourceType()).isEqualTo("RFQ_HANDOFF");
+    assertThat(result.draftQuote().lines()).hasSize(1);
+    var line = result.draftQuote().lines().get(0);
+    assertThat(line.rawSku()).isEqualTo("PAD-OE-04465");
+    assertThat(line.normalizedSku()).isEqualTo("PADOE04465");
+    assertThat(line.productName()).isEqualTo("Toyota Camry 2018 OEM Front Brake Pad Set");
+    assertThat(line.quantity()).isEqualByComparingTo("2");
+    assertThat(line.uom()).isEqualTo("EA");
+    assertThat(line.unitPrice()).isEqualByComparingTo("65.00");
+    assertThat(line.availableStock()).isEqualByComparingTo("100");
+    assertThat(line.validationStatus()).isEqualTo("VALIDATED");
+    assertThat(line.issueCodes()).doesNotContain("PRODUCT_NOT_RESOLVED");
+    assertThat(result.draftQuote().issues())
+        .extracting("issueCode")
+        .doesNotContain("PRODUCT_NOT_RESOLVED");
     assertThat(result.draftQuote().requiresHumanReview()).isTrue();
     assertThat(result.draftQuote().status()).isIn("NEEDS_REVIEW", "SUBSTITUTION_REVIEW");
     assertThat(draftQuoteRepository.findByIdAndTenantId(result.draftQuote().id(), tenantId))
@@ -235,6 +260,53 @@ class RfqHandoffDraftQuoteServiceTest {
                 "ACTIVE",
                 Instant.parse("2026-07-03T00:00:00Z")))
         .getId();
+  }
+
+  private void seedDemoProduct() {
+    UUID tenantId = TenantContext.requireTenantId();
+    Instant seededAt = Instant.parse("2026-07-03T00:00:00Z");
+    Product product =
+        productRepository.save(
+            new Product(
+                tenantId,
+                "PAD-OE-04465",
+                "Toyota Camry 2018 OEM Front Brake Pad Set",
+                null,
+                "Brake Pads",
+                "Toyota",
+                "Toyota",
+                "EA",
+                "ACTIVE",
+                new BigDecimal("42.00"),
+                "USD",
+                seededAt));
+    priceRuleRepository.save(
+        new PriceRule(
+            tenantId,
+            product.getId(),
+            null,
+            null,
+            null,
+            BigDecimal.ONE,
+            "EA",
+            new BigDecimal("65.00"),
+            "USD",
+            Instant.parse("2026-01-01T00:00:00Z"),
+            null,
+            10,
+            seededAt));
+    inventoryRepository.save(
+        new InventorySnapshot(
+            tenantId,
+            product.getId(),
+            UUID.randomUUID(),
+            new BigDecimal("100"),
+            new BigDecimal("100"),
+            BigDecimal.ZERO,
+            seededAt,
+            "TEST",
+            null,
+            seededAt));
   }
 
   private void assertNoExternalWriteState() {

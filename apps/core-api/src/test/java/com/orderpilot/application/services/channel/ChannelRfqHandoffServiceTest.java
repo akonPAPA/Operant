@@ -184,7 +184,7 @@ class ChannelRfqHandoffServiceTest {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
     UUID id = createHandoff(tenantId, "evt-src", "rfq");
-    handoffService.markConverted(id, null, null);
+    handoffService.markConverted(id, "handled outside Operant", null);
 
     assertThatThrownBy(() -> handoffService.startReview(id, null)).isInstanceOf(IllegalArgumentException.class);
   }
@@ -239,16 +239,30 @@ class ChannelRfqHandoffServiceTest {
     assertThat(response.customerContactId()).isNull();
   }
 
+  @Test void markConvertedWithBlankNoteFailsWithoutChangingState() {
+    UUID tenantId = seedTenant();
+    TenantContext.setTenantId(tenantId);
+    UUID id = createHandoff(tenantId, "evt-mcb", "rfq");
+
+    assertThatThrownBy(() -> handoffService.markConverted(id, "   ", null))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("non-blank conversion note");
+    assertThatThrownBy(() -> handoffService.markConverted(id, null, null))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(handoffService.get(id).status()).isEqualTo("PENDING_REVIEW");
+  }
+
   @Test void markConvertedFromInReviewSucceeds() {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
     UUID id = createHandoff(tenantId, "evt-mcir", "rfq");
     handoffService.startReview(id, UUID.randomUUID());
 
-    ChannelRfqHandoffResponse response = handoffService.markConverted(id, null, null);
+    ChannelRfqHandoffResponse response =
+        handoffService.markConverted(id, "  handled outside Operant  ", null);
 
     assertThat(response.status()).isEqualTo("CONVERTED");
-    assertThat(response.conversionNote()).isNull();
+    assertThat(response.conversionNote()).isEqualTo("handled outside Operant");
   }
 
   @Test void markConvertedFromDismissedFails() {
@@ -257,7 +271,8 @@ class ChannelRfqHandoffServiceTest {
     UUID id = createHandoff(tenantId, "evt-mcd", "rfq");
     handoffService.dismiss(id, "invalid", null);
 
-    assertThatThrownBy(() -> handoffService.markConverted(id, null, null)).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> handoffService.markConverted(id, "already handled", null))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test void crossTenantTransitionIsRejected() {
@@ -269,7 +284,8 @@ class ChannelRfqHandoffServiceTest {
     TenantContext.setTenantId(tenantB);
     assertThatThrownBy(() -> handoffService.startReview(idA, null)).isInstanceOf(NotFoundException.class);
     assertThatThrownBy(() -> handoffService.dismiss(idA, "x", null)).isInstanceOf(NotFoundException.class);
-    assertThatThrownBy(() -> handoffService.markConverted(idA, null, null)).isInstanceOf(NotFoundException.class);
+    assertThatThrownBy(() -> handoffService.markConverted(idA, "handled elsewhere", null))
+        .isInstanceOf(NotFoundException.class);
 
     // Tenant A's handoff is untouched.
     TenantContext.setTenantId(tenantA);

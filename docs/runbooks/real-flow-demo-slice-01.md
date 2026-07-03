@@ -40,6 +40,21 @@ cd C:\OrderPilot\OrderPilot-Core\apps\core-api
 mvn spring-boot:run
 ```
 
+After the backend migrations are ready, seed the deterministic local catalog and update the
+frontend environment:
+
+```powershell
+cd C:\OrderPilot\OrderPilot-Core
+.\scripts\seed-local-demo.ps1 -UpdateFrontendEnv
+```
+
+Expected local demo seed facts:
+
+- product `PAD-OE-04465` and normalized/alias code `PADOE04465` exist;
+- an inventory snapshot and price rules exist;
+- substitute candidates exist;
+- no Telegram, LLM, ERP/1C, external connector network, or production seeder is required.
+
 Configure `apps\web-dashboard\.env.local` from `.env.local.example`:
 
 ```dotenv
@@ -66,13 +81,16 @@ npm run dev
    next-action candidates are visible.
 6. Click **Start review**.
 7. Click **Create draft quote**.
-8. Confirm the UI shows the quote number, review/validation status, `Audit: RECORDED`,
+8. Confirm the UI shows exactly one line with `PAD-OE-04465`, normalized SKU `PADOE04465`,
+   quantity `2`, UOM `EA`, the resolved product name, validation status, and any issue codes.
+9. Confirm the quote header shows the quote number, review/validation status, `Audit: RECORDED`,
    `Outbox: NOT_REQUESTED`, and `External write safety: NO_EXTERNAL_WRITE`.
 
 ## Expected backend state
 
 - the handoff transitions `PENDING_REVIEW -> IN_REVIEW -> CONVERTED`;
 - one tenant-scoped draft quote is created with source type `RFQ_HANDOFF`;
+- the draft contains one parsed line resolved to the seeded `PAD-OE-04465` product;
 - the quote remains review-required and is not approved;
 - retries return the same quote through a backend-derived idempotency key;
 - AI Work remains a separate advisory record;

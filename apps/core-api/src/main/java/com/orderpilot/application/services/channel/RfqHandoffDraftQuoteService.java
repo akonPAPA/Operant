@@ -4,13 +4,13 @@ import com.orderpilot.api.dto.ChannelRfqHandoffDtos.ChannelRfqHandoffResponse;
 import com.orderpilot.api.dto.Stage11ADtos.CreateDraftQuoteFromRfqRequest;
 import com.orderpilot.api.dto.Stage11ADtos.DraftQuoteResponse;
 import com.orderpilot.application.services.workspace.RfqToDraftQuoteService;
+import com.orderpilot.application.services.workspace.RfqTextLineExtractor;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelRfqHandoff;
 import com.orderpilot.domain.channel.ChannelRfqHandoffRepository;
 import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
 import com.orderpilot.security.policy.ActorRole;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,7 +76,7 @@ public class RfqHandoffDraftQuoteService {
                 null,
                 null,
                 handoff.getRequestText(),
-                List.of()),
+                RfqTextLineExtractor.extractSingleLine(handoff.getRequestText())),
             idempotencyKey);
     ChannelRfqHandoffResponse updatedHandoff =
         handoffService.markConverted(

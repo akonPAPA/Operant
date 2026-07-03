@@ -76,7 +76,10 @@ public class ChannelRfqHandoffController {
         trustedActor(http));
   }
 
-  /** Mark a handoff as converted (workflow complete). Does not create any quote/order. */
+  /**
+   * Close a handoff without creating a draft. Requires a non-blank operator note and does not create
+   * any quote/order.
+   */
   @PostMapping("/api/v1/channels/rfq-handoffs/{id}/mark-converted")
   public ChannelRfqHandoffResponse markConverted(
       @PathVariable UUID id,
