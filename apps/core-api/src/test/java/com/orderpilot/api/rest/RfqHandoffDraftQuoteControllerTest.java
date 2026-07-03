@@ -1,6 +1,7 @@
 package com.orderpilot.api.rest;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -13,8 +14,10 @@ import com.orderpilot.api.dto.Stage11ADtos.DraftQuoteLineResponse;
 import com.orderpilot.api.dto.Stage11ADtos.DraftQuoteResponse;
 import com.orderpilot.api.dto.Stage11ADtos.QuoteValidationIssueResponse;
 import com.orderpilot.application.services.channel.RfqHandoffDraftQuoteService;
+import com.orderpilot.application.services.channel.RfqHandoffDraftQuoteService.RfqHandoffDecisionResult;
 import com.orderpilot.application.services.channel.RfqHandoffDraftQuoteService.RfqHandoffDraftQuoteResult;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
+import com.orderpilot.common.idempotency.IdempotencyService;
 import com.orderpilot.common.tenant.TenantContextFilter;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiPermissionGuard;
@@ -27,6 +30,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +54,7 @@ class RfqHandoffDraftQuoteControllerTest {
   @MockBean private RfqHandoffDraftQuoteService service;
   @MockBean private RequestActorResolver actorResolver;
   @MockBean private RequestActorRoleResolver roleResolver;
+  @MockBean private IdempotencyService idempotencyService;
 
   private final UUID tenantId = UUID.randomUUID();
   private final UUID trustedActor = UUID.randomUUID();
@@ -57,7 +62,13 @@ class RfqHandoffDraftQuoteControllerTest {
   @BeforeEach
   void trustedAuthority() {
     when(actorResolver.resolveVerifiedActor(any(), any())).thenReturn(trustedActor);
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any())).thenReturn(trustedActor);
     when(roleResolver.resolveQuoteRole()).thenReturn(ActorRole.SALES_QUOTE_MANAGER);
+    lenient()
+        .when(
+            idempotencyService.execute(
+                any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(8)).get());
   }
 
   @Test
@@ -137,6 +148,209 @@ class RfqHandoffDraftQuoteControllerTest {
     }
 
     verifyNoInteractions(service);
+  }
+
+  @Test
+  void recordsSafeTerminalDecisionFromBusinessIntentOnly() throws Exception {
+    UUID handoffId = UUID.randomUUID();
+    UUID quoteId = UUID.randomUUID();
+    when(service.decide(
+            handoffId,
+            trustedActor,
+            ActorRole.SALES_QUOTE_MANAGER,
+            "COMPLETE_DEMO",
+            "Operator reviewed the draft for the local demo."))
+        .thenReturn(
+            new RfqHandoffDecisionResult(
+                handoffId,
+                quoteId,
+                "DQ-DEMO",
+                "COMPLETE_DEMO",
+                "DEMO_COMPLETED",
+                "SAFE_DEMO_TERMINAL",
+                "DISABLED",
+                "NOT_INVOKED",
+                "NOT_REQUESTED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + handoffId
+                        + "/decision")
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .header("Idempotency-Key", "demo-decision-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "decision":"COMPLETE_DEMO",
+                      "note":"Operator reviewed the draft for the local demo.",
+                      "tenantId":"00000000-0000-0000-0000-000000000001",
+                      "actorId":"00000000-0000-0000-0000-000000000002",
+                      "status":"APPROVED",
+                      "approvalStatus":"APPROVED",
+                      "executionStatus":"EXECUTED",
+                      "riskLevel":"LOW",
+                      "margin":999,
+                      "stock":999,
+                      "idempotencyKey":"attacker-controlled",
+                      "connectorCredentials":"secret",
+                      "rawAiPayload":{"action":"approve"}
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.handoffId").value(handoffId.toString()))
+        .andExpect(jsonPath("$.draftQuoteId").value(quoteId.toString()))
+        .andExpect(jsonPath("$.quoteNumber").value("DQ-DEMO"))
+        .andExpect(jsonPath("$.decision").value("COMPLETE_DEMO"))
+        .andExpect(jsonPath("$.quoteState").value("DEMO_COMPLETED"))
+        .andExpect(jsonPath("$.terminalState").value("SAFE_DEMO_TERMINAL"))
+        .andExpect(jsonPath("$.auditStatus").value("RECORDED"))
+        .andExpect(jsonPath("$.externalExecution").value("DISABLED"))
+        .andExpect(jsonPath("$.connectorAction").value("NOT_INVOKED"))
+        .andExpect(jsonPath("$.outboxStatus").value("NOT_REQUESTED"))
+        .andExpect(jsonPath("$.tenantId").doesNotExist())
+        .andExpect(jsonPath("$.actorId").doesNotExist())
+        .andExpect(jsonPath("$.approvedBy").doesNotExist())
+        .andExpect(jsonPath("$.idempotencyKey").doesNotExist())
+        .andExpect(jsonPath("$.auditEventId").doesNotExist())
+        .andExpect(jsonPath("$.rawAiPayload").doesNotExist())
+        .andExpect(jsonPath("$.connectorCredentials").doesNotExist())
+        .andExpect(jsonPath("$.externalCredentials").doesNotExist());
+
+    verify(service)
+        .decide(
+            handoffId,
+            trustedActor,
+            ActorRole.SALES_QUOTE_MANAGER,
+            "COMPLETE_DEMO",
+            "Operator reviewed the draft for the local demo.");
+  }
+
+  @Test
+  void headerlessDashboardDecisionUsesBackendOwnedLocalDemoOperator() throws Exception {
+    UUID handoffId = UUID.randomUUID();
+    UUID quoteId = UUID.randomUUID();
+    UUID localDemoActor = RequestActorResolver.LOCAL_DEMO_OPERATOR_ACTOR;
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any()))
+        .thenReturn(localDemoActor);
+    when(service.decide(
+            handoffId,
+            localDemoActor,
+            ActorRole.SALES_QUOTE_MANAGER,
+            "COMPLETE_DEMO",
+            "Dashboard local demo decision"))
+        .thenReturn(
+            new RfqHandoffDecisionResult(
+                handoffId,
+                quoteId,
+                "DQ-DEMO",
+                "COMPLETE_DEMO",
+                "DEMO_COMPLETED",
+                "SAFE_DEMO_TERMINAL",
+                "DISABLED",
+                "NOT_INVOKED",
+                "NOT_REQUESTED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + handoffId
+                        + "/decision")
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .header("Idempotency-Key", "dashboard-local-demo")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"decision":"COMPLETE_DEMO","note":"Dashboard local demo decision"}
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.decision").value("COMPLETE_DEMO"))
+        .andExpect(jsonPath("$.terminalState").value("SAFE_DEMO_TERMINAL"))
+        .andExpect(jsonPath("$.externalExecution").value("DISABLED"));
+
+    verify(service)
+        .decide(
+            handoffId,
+            localDemoActor,
+            ActorRole.SALES_QUOTE_MANAGER,
+            "COMPLETE_DEMO",
+            "Dashboard local demo decision");
+  }
+
+  @Test
+  void decisionRequiresIdempotencyKey() throws Exception {
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + UUID.randomUUID()
+                        + "/decision")
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"decision":"COMPLETE_DEMO","note":"Reviewed"}
+                    """))
+        .andExpect(status().isBadRequest());
+
+    verifyNoInteractions(service, idempotencyService);
+  }
+
+  @Test
+  void decisionWrongPermissionIsDeniedBeforeIdempotencyOrMutation() throws Exception {
+    for (String unrelatedPermission :
+        List.of("QUOTE_READ", "REVIEW_ACTION", "AI_RESULT_INTAKE", "STAFF_SUPPORT_READ")) {
+      mockMvc
+          .perform(
+              post(
+                      "/api/v1/quotes/drafts/from-rfq-handoff/"
+                          + UUID.randomUUID()
+                          + "/decision")
+                  .header("X-Tenant-Id", tenantId)
+                  .header(ApiPermissionGuard.PERMISSIONS_HEADER, unrelatedPermission)
+                  .header("Idempotency-Key", "denied-" + unrelatedPermission)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"decision":"COMPLETE_DEMO","note":"Reviewed"}
+                      """))
+          .andExpect(status().isForbidden())
+          .andExpect(
+              jsonPath("$.message").value("Missing required API permission QUOTE_ACTION"));
+    }
+
+    verifyNoInteractions(service, idempotencyService);
+  }
+
+  @Test
+  void systemActorCannotUseTenantOperatorDecisionEvenWithQuotePermission() throws Exception {
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any()))
+        .thenReturn(RequestActorResolver.SYSTEM_ACTOR);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + UUID.randomUUID()
+                        + "/decision")
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .header("Idempotency-Key", "system-actor-denied")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"decision":"COMPLETE_DEMO","note":"Service account attempt"}
+                    """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Tenant operator actor is required"));
+
+    verifyNoInteractions(service, idempotencyService);
   }
 
   private static RfqHandoffDraftQuoteResult result(UUID handoffId, UUID quoteId) {

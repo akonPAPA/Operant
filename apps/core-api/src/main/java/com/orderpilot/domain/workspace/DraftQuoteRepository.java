@@ -7,6 +7,7 @@ public interface DraftQuoteRepository extends JpaRepository<DraftQuote, UUID> {
   // OP-CAP-15J: bounded recent-window draft fetch (any source) for the recent remediation rollup tile.
   List<DraftQuote> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable pageable);
   @Lock(LockModeType.PESSIMISTIC_WRITE) Optional<DraftQuote> findWithLockByIdAndTenantId(UUID id, UUID tenantId);
+  @Lock(LockModeType.PESSIMISTIC_WRITE) Optional<DraftQuote> findWithLockByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
   Optional<DraftQuote> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
   Optional<DraftQuote> findFirstByTenantIdAndSourceExceptionCaseIdOrderByCreatedAtAsc(UUID tenantId, UUID sourceExceptionCaseId);
   Optional<DraftQuote> findFirstByTenantIdAndSourceValidationRunIdOrderByCreatedAtAsc(UUID tenantId, UUID sourceValidationRunId);

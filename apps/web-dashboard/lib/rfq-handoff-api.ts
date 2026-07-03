@@ -85,6 +85,22 @@ export type RfqHandoffDraftQuote = {
   externalWriteSafety: "NO_EXTERNAL_WRITE";
 };
 
+export type RfqHandoffDecision = "COMPLETE_DEMO" | "DECLINE_DEMO";
+
+export type RfqHandoffDecisionResult = {
+  handoffId: string;
+  draftQuoteId: string;
+  quoteNumber: string;
+  decision: RfqHandoffDecision;
+  quoteState: "DEMO_COMPLETED" | "DEMO_DECLINED";
+  terminalState: "SAFE_DEMO_TERMINAL";
+  auditStatus: "RECORDED";
+  safetySummary: string;
+  externalExecution: "DISABLED";
+  connectorAction: "NOT_INVOKED";
+  outboxStatus: "NOT_REQUESTED";
+};
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const rfqHandoffClient = {
@@ -222,6 +238,30 @@ export function createDraftQuoteFromRfqHandoff(id: string) {
       method: "POST",
       headers: { "X-OrderPilot-Permissions": QUOTE_ACTION },
       body: JSON.stringify({})
+    },
+    null
+  );
+}
+
+/**
+ * Record a terminal local-demo decision. The request carries business intent only; tenant, actor,
+ * current/next state, approval, audit, and execution authority are resolved by the backend.
+ */
+export function decideRfqHandoffDraft(
+  id: string,
+  decision: RfqHandoffDecision,
+  note: string
+) {
+  const idempotencyKey = `rfq-handoff-decision-${id}-${decision}`;
+  return request<RfqHandoffDecisionResult | null>(
+    `/api/v1/quotes/drafts/from-rfq-handoff/${id}/decision`,
+    {
+      method: "POST",
+      headers: {
+        "X-OrderPilot-Permissions": QUOTE_ACTION,
+        "Idempotency-Key": idempotencyKey
+      },
+      body: JSON.stringify({ decision, note })
     },
     null
   );

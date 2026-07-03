@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   createDraftQuoteFromRfqHandoff,
+  decideRfqHandoffDraft,
   dismissRfqHandoff,
   generateRfqHandoffAiSuggestion,
   getRfqHandoff,
@@ -14,6 +15,8 @@ import {
   statusClass,
   statusLabel,
   type RfqHandoffDraftQuote,
+  type RfqHandoffDecision,
+  type RfqHandoffDecisionResult,
   type RfqHandoff,
   type RfqHandoffStatus
 } from "@/lib/rfq-handoff-api";
@@ -75,6 +78,8 @@ export function RfqHandoffWorkspace({
   const [showConvert, setShowConvert] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiWorkSuggestion | null>(null);
   const [draftResult, setDraftResult] = useState<RfqHandoffDraftQuote | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
+  const [decisionResult, setDecisionResult] = useState<RfqHandoffDecisionResult | null>(null);
 
   const [action, setAction] = useState<ActionState>({
     status: initialError ? "error" : "idle",
@@ -106,6 +111,8 @@ export function RfqHandoffWorkspace({
     setConversionNote("");
     setAiSuggestion(null);
     setDraftResult(null);
+    setDecisionNote("");
+    setDecisionResult(null);
     setAction({ status: "idle", message: "" });
     setIsLoadingDetail(true);
     const result = await getRfqHandoff(id);
@@ -201,6 +208,27 @@ export function RfqHandoffWorkspace({
       result.data.handoff,
       `Draft quote ${result.data.draftQuote.quoteNumber} created for operator review.`
     );
+  }
+
+  async function submitDraftDecision(decision: RfqHandoffDecision) {
+    const note = decisionNote.trim();
+    if (!detail || !draftResult || !note || decisionResult) return;
+    setIsMutating(true);
+    setAction({ status: "loading", message: "Recording safe terminal demo decision..." });
+    const result = await decideRfqHandoffDraft(detail.id, decision, note);
+    setIsMutating(false);
+    if (result.error || !result.data) {
+      setAction({
+        status: "error",
+        message: result.error ?? "Operator decision was not accepted by the backend."
+      });
+      return;
+    }
+    setDecisionResult(result.data);
+    setAction({
+      status: "success",
+      message: `Decision ${result.data.decision} recorded. External execution remains disabled.`
+    });
   }
 
   const canStartReview = detail?.status === "PENDING_REVIEW";
@@ -472,6 +500,68 @@ export function RfqHandoffWorkspace({
                   </ul>
                 </div>
               ) : null}
+
+              {decisionResult ? (
+                <div className="control-grid">
+                  <h4>Operator decision completed</h4>
+                  <dl className="detail-list">
+                    <div><dt>Decision state</dt><dd>{decisionResult.decision}</dd></div>
+                    <div><dt>Quote state</dt><dd>{decisionResult.quoteState}</dd></div>
+                    <div><dt>Safe terminal state</dt><dd>{decisionResult.terminalState}</dd></div>
+                    <div><dt>Audit</dt><dd>{decisionResult.auditStatus}</dd></div>
+                    <div><dt>External execution</dt><dd>{decisionResult.externalExecution}</dd></div>
+                    <div><dt>Connector call</dt><dd>{decisionResult.connectorAction}</dd></div>
+                    <div><dt>Outbox</dt><dd>{decisionResult.outboxStatus}</dd></div>
+                    <div><dt>Safety summary</dt><dd>{decisionResult.safetySummary}</dd></div>
+                  </dl>
+                  <p className="risk-note">
+                    This is a safe demo terminal state, not quote approval. No ERP, 1C, accounting,
+                    connector, inventory, pricing, or customer-master write was requested.
+                  </p>
+                </div>
+              ) : (
+                <div className="control-grid">
+                  <h4>Operator decision</h4>
+                  <p className="risk-note">
+                    Complete or decline this local demo flow. Neither choice approves the quote or
+                    enables external execution.
+                  </p>
+                  <label className="field-label" htmlFor="rfq-decision-note">
+                    Decision note (required)
+                  </label>
+                  <input
+                    id="rfq-decision-note"
+                    className="form-input"
+                    type="text"
+                    maxLength={500}
+                    placeholder="e.g. reviewed for demo; no external action requested"
+                    value={decisionNote}
+                    disabled={busy}
+                    onChange={(e) => setDecisionNote(e.target.value)}
+                  />
+                  <div className="button-row">
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy || !decisionNote.trim()}
+                      onClick={() => void submitDraftDecision("COMPLETE_DEMO")}
+                    >
+                      Complete safe demo
+                    </button>
+                    <button
+                      className="button secondary-button"
+                      type="button"
+                      disabled={busy || !decisionNote.trim()}
+                      onClick={() => void submitDraftDecision("DECLINE_DEMO")}
+                    >
+                      Decline demo draft
+                    </button>
+                  </div>
+                  <p className="muted-copy">
+                    externalExecution = DISABLED · connector call = NOT_INVOKED
+                  </p>
+                </div>
+              )}
 
             </div>
           ) : null}
