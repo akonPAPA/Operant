@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
+  createDraftQuoteFromRfqHandoff,
   dismissRfqHandoff,
   generateRfqHandoffAiSuggestion,
   getRfqHandoff,
@@ -11,6 +13,7 @@ import {
   startReviewRfqHandoff,
   statusClass,
   statusLabel,
+  type RfqHandoffDraftQuote,
   type RfqHandoff,
   type RfqHandoffStatus
 } from "@/lib/rfq-handoff-api";
@@ -30,6 +33,25 @@ function formatTimestamp(ts?: string): string {
   } catch {
     return ts;
   }
+}
+
+function formatMaybeNumber(value?: number | string | null): string {
+  if (value == null || value === "") return "—";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "—";
+  return value;
+}
+
+function formatIssueCodes(value?: string | null): string {
+  if (!value) return "";
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string").join(", ");
+    }
+  } catch {
+    // Preserve the backend-provided display value without exposing parser details.
+  }
+  return value;
 }
 
 export function RfqHandoffWorkspace({
@@ -52,6 +74,7 @@ export function RfqHandoffWorkspace({
   const [conversionNote, setConversionNote] = useState("");
   const [showConvert, setShowConvert] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiWorkSuggestion | null>(null);
+  const [draftResult, setDraftResult] = useState<RfqHandoffDraftQuote | null>(null);
 
   const [action, setAction] = useState<ActionState>({
     status: initialError ? "error" : "idle",
@@ -82,6 +105,7 @@ export function RfqHandoffWorkspace({
     setDismissReason("");
     setConversionNote("");
     setAiSuggestion(null);
+    setDraftResult(null);
     setAction({ status: "idle", message: "" });
     setIsLoadingDetail(true);
     const result = await getRfqHandoff(id);
@@ -129,16 +153,20 @@ export function RfqHandoffWorkspace({
   }
 
   async function submitMarkConverted() {
-    if (!detail) return;
-    setIsMutating(true);
-    setAction({ status: "loading", message: "Marking handoff converted…" });
-    const result = await markConvertedRfqHandoff(detail.id, conversionNote.trim() || undefined);
-    setIsMutating(false);
-    if (result.error || !result.data) {
-      setAction({ status: "error", message: result.error ?? "Mark converted was not accepted by the backend." });
+    const note = conversionNote.trim();
+    if (!detail || !note) {
+      setAction({ status: "error", message: "A close note is required." });
       return;
     }
-    applyUpdated(result.data, "Handoff marked converted (ready for a later, separately-gated quote workflow).");
+    setIsMutating(true);
+    setAction({ status: "loading", message: "Closing handoff without draft…" });
+    const result = await markConvertedRfqHandoff(detail.id, note);
+    setIsMutating(false);
+    if (result.error || !result.data) {
+      setAction({ status: "error", message: result.error ?? "Close without draft was not accepted by the backend." });
+      return;
+    }
+    applyUpdated(result.data, "Handoff closed without draft.");
   }
 
   async function submitGenerateAiSuggestion() {
@@ -155,8 +183,29 @@ export function RfqHandoffWorkspace({
     setAction({ status: "success", message: "Advisory suggestion generated. No business state was changed." });
   }
 
+  async function submitCreateDraftQuote() {
+    if (!detail) return;
+    setIsMutating(true);
+    setAction({ status: "loading", message: "Creating a review-required draft quote..." });
+    const result = await createDraftQuoteFromRfqHandoff(detail.id);
+    setIsMutating(false);
+    if (result.error || !result.data) {
+      setAction({
+        status: "error",
+        message: result.error ?? "Draft quote creation was not accepted by the backend."
+      });
+      return;
+    }
+    setDraftResult(result.data);
+    applyUpdated(
+      result.data.handoff,
+      `Draft quote ${result.data.draftQuote.quoteNumber} created for operator review.`
+    );
+  }
+
   const canStartReview = detail?.status === "PENDING_REVIEW";
   const canAct = detail ? !isTerminal(detail.status) : false;
+  const canCreateDraftQuote = detail?.status === "IN_REVIEW";
 
   return (
     <div className="review-workspace">
@@ -176,6 +225,7 @@ export function RfqHandoffWorkspace({
       <section className="panel table-panel">
         <div className="button-row">
           <h2>RFQ handoffs</h2>
+          <Link className="button" href="/demo">Send deterministic demo RFQ</Link>
           <label htmlFor="rfq-status-filter" className="field-label">Filter by status</label>
           <select
             id="rfq-status-filter"
@@ -283,17 +333,25 @@ export function RfqHandoffWorkspace({
                 className="button"
                 type="button"
                 disabled={busy || !canAct}
-                onClick={() => { setShowConvert(true); setShowDismiss(false); }}
+                onClick={() => void submitGenerateAiSuggestion()}
               >
-                Mark converted…
+                Generate suggestion
               </button>
               <button
                 className="button"
                 type="button"
-                disabled={busy || !canAct}
-                onClick={() => void submitGenerateAiSuggestion()}
+                disabled={busy || !canCreateDraftQuote}
+                onClick={() => void submitCreateDraftQuote()}
               >
-                Generate suggestion
+                Create draft quote
+              </button>
+              <button
+                className="button secondary-button"
+                type="button"
+                disabled={busy || !canAct}
+                onClick={() => { setShowConvert(true); setShowDismiss(false); }}
+              >
+                Close without draft…
               </button>
             </div>
           )}
@@ -305,7 +363,116 @@ export function RfqHandoffWorkspace({
               <div className="tag-row">
                 <span className="status-pill">Advisory only</span>
                 <span className="status-pill warning">Risk: {aiSuggestion.riskLevel}</span>
+                <span className="status-pill">
+                  Confidence: {aiSuggestion.confidence == null ? "n/a" : `${Math.round(aiSuggestion.confidence * 100)}%`}
+                </span>
               </div>
+              {aiSuggestion.displayFields.length > 0 ? (
+                <dl className="detail-list">
+                  {aiSuggestion.displayFields.map((field) => (
+                    <div key={`${field.label}-${field.value}`}>
+                      <dt>{field.label}</dt>
+                      <dd>{field.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+              {aiSuggestion.nextActionCandidates.length > 0 ? (
+                <div>
+                  <h4>Next action candidates</h4>
+                  <ul>
+                    {aiSuggestion.nextActionCandidates.map((candidate) => (
+                      <li key={candidate.actionCode}>
+                        {candidate.label}
+                        {candidate.requiresHumanApproval ? " — human approval required" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {aiSuggestion.riskFlags.length > 0 ? (
+                <p className="risk-note">Risk flags: {aiSuggestion.riskFlags.join(", ")}</p>
+              ) : null}
+              <p className="muted-copy">
+                This suggestion is advisory. The operator can create or decline the draft independently.
+              </p>
+            </div>
+          ) : null}
+
+          {draftResult ? (
+            <div className="control-grid">
+              <h3>Draft quote created</h3>
+              <dl className="detail-list">
+                <div><dt>Quote</dt><dd>{draftResult.draftQuote.quoteNumber}</dd></div>
+                <div><dt>Status</dt><dd>{draftResult.draftQuote.status}</dd></div>
+                <div><dt>Validation</dt><dd>{draftResult.draftQuote.validationStatus}</dd></div>
+                <div><dt>Human review</dt><dd>{draftResult.draftQuote.requiresHumanReview ? "Required" : "Not required"}</dd></div>
+                <div><dt>Audit</dt><dd>{draftResult.auditStatus}</dd></div>
+                <div><dt>Outbox</dt><dd>{draftResult.outboxStatus}</dd></div>
+                <div><dt>External write safety</dt><dd>{draftResult.externalWriteSafety}</dd></div>
+              </dl>
+              {draftResult.draftQuote.lines.length ? (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>SKU / raw text</th>
+                      <th>Product</th>
+                      <th>Qty</th>
+                      <th>UOM</th>
+                      <th>Unit price</th>
+                      <th>Stock</th>
+                      <th>Validation</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftResult.draftQuote.lines.map((line) => (
+                      <tr key={line.id}>
+                        <td>{line.lineNumber}</td>
+                        <td>
+                          {line.rawSku ?? "—"}
+                          {line.rawText && line.rawText !== line.rawSku ? (
+                            <span className="muted-copy"> · {line.rawText}</span>
+                          ) : null}
+                        </td>
+                        <td>
+                          {line.productName ?? "Unresolved"}
+                          {line.normalizedSku ? (
+                            <span className="muted-copy"> · {line.normalizedSku}</span>
+                          ) : null}
+                        </td>
+                        <td>{formatMaybeNumber(line.quantity)}</td>
+                        <td>{line.uom}</td>
+                        <td>{formatMaybeNumber(line.unitPrice)}</td>
+                        <td>{formatMaybeNumber(line.availableStock)}</td>
+                        <td>
+                          {line.validationStatus}
+                          {formatIssueCodes(line.issueCodes) ? (
+                            <span className="muted-copy"> · {formatIssueCodes(line.issueCodes)}</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="risk-note">No quote lines were returned. Treat this draft as not business-meaningful until reviewed.</p>
+              )}
+
+              {draftResult.draftQuote.issues.length ? (
+                <div>
+                  <h4>Validation issues</h4>
+                  <ul>
+                    {draftResult.draftQuote.issues.map((issue) => (
+                      <li key={issue.id}>
+                        {issue.issueCode}: {issue.message}
+                        {issue.blocking ? " — blocking" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
             </div>
           ) : null}
 
@@ -332,19 +499,23 @@ export function RfqHandoffWorkspace({
 
           {showConvert ? (
             <div className="control-grid">
-              <label className="field-label" htmlFor="rfq-conversion-note">Conversion note (optional)</label>
+              <p className="risk-note">
+                This closes the handoff without creating a draft quote. It is not equivalent to the
+                Create draft quote action.
+              </p>
+              <label className="field-label" htmlFor="rfq-conversion-note">Close note (required)</label>
               <input
                 id="rfq-conversion-note"
                 className="form-input"
                 type="text"
-                placeholder="e.g. validated, ready for manual quote"
+                placeholder="e.g. handled outside Operant / duplicate / manual quote already created"
                 value={conversionNote}
                 disabled={busy}
                 onChange={(e) => setConversionNote(e.target.value)}
               />
               <div className="button-row">
-                <button className="button" type="button" disabled={busy} onClick={() => void submitMarkConverted()}>
-                  {isMutating ? "Working…" : "Confirm mark converted"}
+                <button className="button secondary-button" type="button" disabled={busy || !conversionNote.trim()} onClick={() => void submitMarkConverted()}>
+                  {isMutating ? "Working…" : "Confirm close without draft"}
                 </button>
                 <button className="button" type="button" disabled={busy} onClick={() => { setShowConvert(false); setConversionNote(""); }}>Cancel</button>
               </div>
@@ -352,10 +523,9 @@ export function RfqHandoffWorkspace({
           ) : null}
 
           <p className="risk-note">
-            Mark converted records that the operator review is complete and the request is ready for a later,
-            separately-gated quote/order workflow. It does not create a quote or order, approve anything,
-            update inventory/price/customer data, or trigger any ERP/external write. All transitions are
-            tenant-scoped and audited by the backend command service.
+            Draft creation produces an internal, review-required quote only. It does not approve anything,
+            update inventory/price/customer data, create an outbox command, or trigger any ERP/external write.
+            All transitions are tenant-scoped, idempotent, and audited by backend services.
           </p>
         </section>
       ) : null}

@@ -37,6 +37,54 @@ export type RfqHandoffApiResult<T> = {
   error?: string;
 };
 
+export type RfqHandoffDraftQuoteLine = {
+  id: string;
+  lineNumber: number;
+  rawSku: string | null;
+  rawText: string | null;
+  normalizedSku: string | null;
+  productName: string | null;
+  quantity: number;
+  uom: string;
+  unitPrice: number | null;
+  availableStock: number | null;
+  validationStatus: string;
+  issueCodes: string;
+};
+
+export type RfqHandoffDraftQuoteIssue = {
+  id: string;
+  draftQuoteLineId: string | null;
+  issueCode: string;
+  message: string;
+  severity: string;
+  blocking: boolean;
+  status: string;
+};
+
+export type RfqHandoffDraftQuote = {
+  handoff: RfqHandoff;
+  draftQuote: {
+    id: string;
+    quoteNumber: string;
+    sourceType: string;
+    customerDisplayName?: string;
+    status: string;
+    validationStatus: string;
+    requiresHumanReview: boolean;
+    currency: string;
+    subtotalAmount: number;
+    discountAmount: number;
+    totalAmount: number;
+    createdAt: string;
+    lines: RfqHandoffDraftQuoteLine[];
+    issues: RfqHandoffDraftQuoteIssue[];
+  };
+  auditStatus: "RECORDED";
+  outboxStatus: "NOT_REQUESTED";
+  externalWriteSafety: "NO_EXTERNAL_WRITE";
+};
+
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const rfqHandoffClient = {
@@ -49,6 +97,23 @@ export const rfqHandoffClient = {
 // This is an operator-only surface; the bot/channel path can never reach these transition endpoints.
 const CHANNELS_PERMISSION = "ADMIN_SETTINGS_READ";
 const AI_WORK_ACTION = "AI_WORK_ACTION";
+const QUOTE_ACTION = "QUOTE_ACTION";
+
+function rfqHandoffStatusMessage(status: number): string {
+  switch (status) {
+    case 400:
+    case 422:
+      return "This RFQ action is not available in its current state.";
+    case 403:
+      return "You do not have access to this RFQ workspace.";
+    case 404:
+      return "This RFQ handoff is not found or no longer available.";
+    case 409:
+      return "This RFQ action conflicts with a newer workflow update.";
+    default:
+      return "The RFQ action could not be completed.";
+  }
+}
 
 function baseHeaders(): Record<string, string> {
   const h: Record<string, string> = {
@@ -74,18 +139,15 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
       ...init,
       headers: { ...baseHeaders(), ...((init.headers as Record<string, string>) ?? {}) }
     });
+    if (!response.ok) {
+      // Never surface raw backend bodies; they can contain internal resource or policy details.
+      return { data: fallback, error: rfqHandoffStatusMessage(response.status) };
+    }
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : fallback;
-    if (!response.ok) {
-      const message =
-        typeof data === "object" && data && "message" in data
-          ? String((data as { message?: string }).message)
-          : "";
-      return { data: fallback, error: message || `Core API returned ${response.status}.` };
-    }
     return { data };
-  } catch (error) {
-    return { data: fallback, error: error instanceof Error ? error.message : "Core API is not reachable." };
+  } catch {
+    return { data: fallback, error: "Core API is not reachable." };
   }
 }
 
@@ -120,11 +182,11 @@ export function dismissRfqHandoff(id: string, reason: string) {
   );
 }
 
-/** Mark a handoff converted (workflow complete). Does NOT create any quote/order. */
-export function markConvertedRfqHandoff(id: string, conversionNote?: string) {
+/** Close a handoff without a draft. The backend requires a non-blank operator note. */
+export function markConvertedRfqHandoff(id: string, conversionNote: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/mark-converted`,
-    { method: "POST", body: JSON.stringify({ conversionNote: conversionNote ?? null }) },
+    { method: "POST", body: JSON.stringify({ conversionNote }) },
     null
   );
 }
@@ -144,6 +206,22 @@ export function generateRfqHandoffAiSuggestion(
         "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({ workType })
+    },
+    null
+  );
+}
+
+/**
+ * Convert an operator-reviewed handoff into a review-required draft quote.
+ * The body is empty: source context, actor, role, tenant, status, and idempotency are backend-owned.
+ */
+export function createDraftQuoteFromRfqHandoff(id: string) {
+  return request<RfqHandoffDraftQuote | null>(
+    `/api/v1/quotes/drafts/from-rfq-handoff/${id}`,
+    {
+      method: "POST",
+      headers: { "X-OrderPilot-Permissions": QUOTE_ACTION },
+      body: JSON.stringify({})
     },
     null
   );

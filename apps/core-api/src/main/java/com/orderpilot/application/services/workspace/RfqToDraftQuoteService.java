@@ -28,15 +28,11 @@ import com.orderpilot.security.policy.*;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RfqToDraftQuoteService {
-  private static final Pattern QUANTITY_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(pcs|pc|units|unit|шт|ea)\\b");
-
   private final DraftQuoteRepository quoteRepository;
   private final DraftQuoteLineRepository lineRepository;
   private final QuoteValidationIssueRepository issueRepository;
@@ -97,6 +93,16 @@ public class RfqToDraftQuoteService {
 
   @Transactional
   public DraftQuoteResponse createFromRfq(CreateDraftQuoteFromRfqRequest request) {
+    return createFromRfq(request, null);
+  }
+
+  /**
+   * Internal retry-safe draft creation. The idempotency key is derived by a trusted backend bridge;
+   * it is never accepted from a public request body and is never exposed in the response.
+   */
+  @Transactional
+  public DraftQuoteResponse createFromRfq(
+      CreateDraftQuoteFromRfqRequest request, String idempotencyKey) {
     UUID tenantId = TenantContext.requireTenantId();
     CreateDraftQuoteFromRfqRequest command = request == null ? new CreateDraftQuoteFromRfqRequest(null, null, null, null, null, null, null, List.of()) : request;
     ActorRole role = parseRole(command.actorRole());
@@ -114,13 +120,24 @@ public class RfqToDraftQuoteService {
       throw new TenantPolicyException(decision.message());
     }
 
+    String normalizedIdempotencyKey = blankToNull(idempotencyKey);
+    if (normalizedIdempotencyKey != null) {
+      Optional<DraftQuote> existing =
+          quoteRepository.findByTenantIdAndIdempotencyKey(tenantId, normalizedIdempotencyKey);
+      if (existing.isPresent()) {
+        return response(existing.get());
+      }
+    }
+
     validateSource(tenantId, command.sourceMessageId(), command.sourceDocumentId());
     auditEventService.record("DRAFT_QUOTE_CREATION_REQUESTED", "DRAFT_QUOTE", "pending", command.actorId(), "{\"sourceType\":\"" + escape(sourceType(command.sourceType())) + "\"}");
 
     CustomerAccount customer = resolveCustomer(tenantId, command.customerHint()).orElse(null);
     String customerDisplay = customer == null ? blankToNull(command.customerHint()) : customer.getDisplayName();
     UUID correlationId = UUID.randomUUID();
-    DraftQuote quote = quoteRepository.save(new DraftQuote(tenantId, "DQ-" + clock.instant().toEpochMilli(), sourceType(command.sourceType()), command.sourceMessageId(), command.sourceDocumentId(), customer == null ? null : customer.getId(), customerDisplay, "NEEDS_REVIEW", "PENDING_VALIDATION", true, customer == null ? "USD" : customer.getDefaultCurrency(), command.actorId(), correlationId, clock.instant()));
+    DraftQuote quote = new DraftQuote(tenantId, "DQ-" + clock.instant().toEpochMilli(), sourceType(command.sourceType()), command.sourceMessageId(), command.sourceDocumentId(), customer == null ? null : customer.getId(), customerDisplay, "NEEDS_REVIEW", "PENDING_VALIDATION", true, customer == null ? "USD" : customer.getDefaultCurrency(), command.actorId(), correlationId, clock.instant());
+    quote.setIdempotencyKey(normalizedIdempotencyKey);
+    quote = quoteRepository.save(quote);
 
     List<PendingIssue> pendingIssues = new ArrayList<>();
     if (customer == null) {
@@ -170,6 +187,18 @@ public class RfqToDraftQuoteService {
     auditEventService.record("DRAFT_QUOTE_CREATED", "DRAFT_QUOTE", quote.getId().toString(), command.actorId(), "{\"sourceType\":\"" + escape(quote.getSourceType()) + "\",\"externalExecution\":\"DISABLED\"}");
     auditEventService.record("DRAFT_QUOTE_VALIDATION_COMPLETED", "DRAFT_QUOTE", quote.getId().toString(), command.actorId(), "{\"issueCount\":" + pendingIssues.size() + ",\"blockingIssueCount\":" + blocking + ",\"status\":\"" + nextStatus + "\"}");
     return response(quote);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<DraftQuoteResponse> findByIdempotencyKey(String idempotencyKey) {
+    String normalizedIdempotencyKey = blankToNull(idempotencyKey);
+    if (normalizedIdempotencyKey == null) {
+      return Optional.empty();
+    }
+    return quoteRepository
+        .findByTenantIdAndIdempotencyKey(
+            TenantContext.requireTenantId(), normalizedIdempotencyKey)
+        .map(this::response);
   }
 
   @Transactional(readOnly = true)
@@ -320,17 +349,7 @@ public class RfqToDraftQuoteService {
     if (command.lineItems() != null && !command.lineItems().isEmpty()) {
       return command.lineItems();
     }
-    if (isBlank(command.rawMessageText())) {
-      return List.of();
-    }
-    Matcher matcher = QUANTITY_PATTERN.matcher(command.rawMessageText());
-    BigDecimal quantity = BigDecimal.ONE;
-    String uom = "EA";
-    if (matcher.find()) {
-      quantity = new BigDecimal(matcher.group(1).replace(',', '.'));
-      uom = matcher.group(2);
-    }
-    return List.of(new RfqLineInput(command.rawMessageText(), null, quantity, uom, null));
+    return RfqTextLineExtractor.extractSingleLine(command.rawMessageText());
   }
 
   private ActorRole parseRole(String role) {

@@ -156,14 +156,17 @@ public class ChannelRfqHandoffService {
    * and it is ready for a later, separately-gated quote/order workflow
    * (PENDING_REVIEW|IN_REVIEW -&gt; CONVERTED). This is a safe internal placeholder state only: it does
    * NOT create any quote/order, approve anything, mutate business data, or trigger an external write.
-   */
+  */
   @Transactional
   public ChannelRfqHandoffResponse markConverted(UUID id, String conversionNote, UUID actorUserId) {
+    if (conversionNote == null || conversionNote.isBlank()) {
+      throw new IllegalArgumentException("A non-blank conversion note is required");
+    }
     ChannelRfqHandoff handoff = getForMutation(id);
     requireTransitionAllowed(handoff, ChannelRfqHandoffStatus.CONVERTED,
         ChannelRfqHandoffStatus.PENDING_REVIEW, ChannelRfqHandoffStatus.IN_REVIEW);
     String previousStatus = handoff.getStatus().name();
-    String trimmedNote = conversionNote == null || conversionNote.isBlank() ? null : conversionNote.trim();
+    String trimmedNote = conversionNote.trim();
     handoff.markConverted(trimmedNote, actorUserId, clock.instant());
     handoff = handoffRepository.save(handoff);
     auditTransition("CHANNEL_RFQ_HANDOFF_CONVERTED", handoff, previousStatus, trimmedNote, actorUserId);
