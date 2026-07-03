@@ -15,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,8 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * OP-CAP-06B controlled Bot Runtime RFQ Handoff command/query service.
  *
  * <p>Creates and reads reviewable internal RFQ handoff records produced from verified channel/bot
- * events. This is the single command path; controllers and the bridge never touch the repository
- * directly.
+ * events. Normal handoff commands go through this service. The trusted draft-quote bridge is the
+ * narrow internal exception: it uses the repository directly for a tenant-scoped locked lookup
+ * before idempotent conversion.
  *
  * <p>Safety invariants:
  * <ul>
@@ -39,6 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ChannelRfqHandoffService {
   private static final String ENTITY_TYPE = "CHANNEL_RFQ_HANDOFF";
+  static final int DEFAULT_PAGE_SIZE = 50;
+  static final int MAX_PAGE_SIZE = 100;
 
   private final ChannelRfqHandoffRepository handoffRepository;
   private final InboundChannelEventRepository eventRepository;
@@ -101,10 +106,18 @@ public class ChannelRfqHandoffService {
 
   @Transactional(readOnly = true)
   public List<ChannelRfqHandoffResponse> list(ChannelRfqHandoffStatus status) {
+    return list(status, null, null);
+  }
+
+  @Transactional(readOnly = true)
+  public List<ChannelRfqHandoffResponse> list(
+      ChannelRfqHandoffStatus status, Integer page, Integer size) {
     UUID tenantId = TenantContext.requireTenantId();
+    Pageable pageable = boundedPage(page, size);
     List<ChannelRfqHandoff> handoffs = status == null
-        ? handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)
-        : handoffRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, status);
+        ? handoffRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable)
+        : handoffRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
+            tenantId, status, pageable);
     return handoffs.stream().map(ChannelRfqHandoffService::toResponse).toList();
   }
 
@@ -244,6 +257,18 @@ public class ChannelRfqHandoffService {
         handoff.getConversionNote(),
         handoff.getCreatedAt(),
         handoff.getUpdatedAt());
+  }
+
+  private static Pageable boundedPage(Integer requestedPage, Integer requestedSize) {
+    int page = requestedPage == null ? 0 : requestedPage;
+    int size = requestedSize == null ? DEFAULT_PAGE_SIZE : requestedSize;
+    if (page < 0) {
+      throw new IllegalArgumentException("page must be greater than or equal to zero");
+    }
+    if (size <= 0) {
+      throw new IllegalArgumentException("size must be greater than zero");
+    }
+    return PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE));
   }
 
   /** Short, single-line request preview for list views. */

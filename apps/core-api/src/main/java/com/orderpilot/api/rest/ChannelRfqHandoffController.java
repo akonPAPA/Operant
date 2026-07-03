@@ -45,8 +45,10 @@ public class ChannelRfqHandoffController {
   /** List tenant-scoped RFQ handoffs, optionally filtered by status. */
   @GetMapping("/api/v1/channels/rfq-handoffs")
   public List<ChannelRfqHandoffResponse> list(
-      @RequestParam(name = "status", required = false) String status) {
-    return handoffService.list(parseStatus(status));
+      @RequestParam(name = "status", required = false) String status,
+      @RequestParam(name = "page", required = false) Integer page,
+      @RequestParam(name = "size", required = false) Integer size) {
+    return handoffService.list(parseStatus(status), page, size);
   }
 
   /** Get one tenant-scoped RFQ handoff by id. */

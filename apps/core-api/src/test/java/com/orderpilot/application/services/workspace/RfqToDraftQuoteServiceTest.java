@@ -294,6 +294,60 @@ class RfqToDraftQuoteServiceTest {
     assertThatThrownBy(() -> service.get(bQuote.id())).isInstanceOf(NotFoundException.class);
   }
 
+  @Test
+  void listAppliesDefaultCustomPageAndMaximumBounds() {
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedDraftQuotes(tenantId, 105, "NEEDS_REVIEW", "API", "bounded");
+
+    List<DraftQuoteResponse> defaultPage = service.list(null, null, null, null);
+    List<DraftQuoteResponse> customFirstPage = service.list(null, null, 0, 7);
+    List<DraftQuoteResponse> customSecondPage = service.list(null, null, 1, 7);
+    List<DraftQuoteResponse> clampedPage = service.list(null, null, 0, 1_000);
+
+    assertThat(defaultPage).hasSize(RfqToDraftQuoteService.DEFAULT_PAGE_SIZE);
+    assertThat(customFirstPage).hasSize(7);
+    assertThat(customSecondPage).hasSize(7);
+    assertThat(customFirstPage)
+        .extracting(DraftQuoteResponse::id)
+        .doesNotContainAnyElementsOf(
+            customSecondPage.stream().map(DraftQuoteResponse::id).toList());
+    assertThat(clampedPage).hasSize(RfqToDraftQuoteService.MAX_PAGE_SIZE);
+  }
+
+  @Test
+  void listPreservesTenantStatusAndSourceTypeFilters() {
+    UUID tenantA = UUID.randomUUID();
+    UUID tenantB = UUID.randomUUID();
+    seedDraftQuotes(tenantA, 1, "NEEDS_REVIEW", "API", "tenant-a-api");
+    seedDraftQuotes(tenantA, 1, "NEEDS_REVIEW", "RFQ_HANDOFF", "tenant-a-rfq");
+    seedDraftQuotes(tenantA, 1, "READY_FOR_APPROVAL", "RFQ_HANDOFF", "tenant-a-ready");
+    seedDraftQuotes(tenantB, 1, "NEEDS_REVIEW", "RFQ_HANDOFF", "tenant-b-rfq");
+    TenantContext.setTenantId(tenantA);
+
+    assertThat(service.list("NEEDS_REVIEW", null, 0, 10))
+        .extracting(DraftQuoteResponse::quoteNumber)
+        .containsExactlyInAnyOrder("tenant-a-api-0", "tenant-a-rfq-0");
+    assertThat(service.list(null, "RFQ_HANDOFF", 0, 10))
+        .extracting(DraftQuoteResponse::quoteNumber)
+        .containsExactlyInAnyOrder("tenant-a-rfq-0", "tenant-a-ready-0");
+    assertThat(service.list("NEEDS_REVIEW", "RFQ_HANDOFF", 0, 10))
+        .extracting(DraftQuoteResponse::quoteNumber)
+        .containsExactly("tenant-a-rfq-0");
+  }
+
+  @Test
+  void listRejectsNegativePageAndNonPositiveSize() {
+    TenantContext.setTenantId(UUID.randomUUID());
+
+    assertThatThrownBy(() -> service.list(null, null, -1, 10))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("page");
+    assertThatThrownBy(() -> service.list(null, null, 0, 0))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("size");
+  }
+
   private CreateDraftQuoteFromRfqRequest command(UUID actorId, String role, String customerHint, List<RfqLineInput> lines) {
     return new CreateDraftQuoteFromRfqRequest(actorId, role, "API", null, null, customerHint, null, lines);
   }
@@ -312,5 +366,30 @@ class RfqToDraftQuoteServiceTest {
 
   private InventorySnapshot inventory(UUID productId, BigDecimal available) {
     return inventoryRepository.save(new InventorySnapshot(TenantContext.requireTenantId(), productId, UUID.randomUUID(), available, available, BigDecimal.ZERO, Instant.parse("2026-05-20T00:00:00Z"), "TEST", null, Instant.parse("2026-05-20T00:00:00Z")));
+  }
+
+  private void seedDraftQuotes(
+      UUID tenantId, int count, String status, String sourceType, String quotePrefix) {
+    Instant base = Instant.parse("2026-05-20T00:00:00Z");
+    List<DraftQuote> quotes = new java.util.ArrayList<>();
+    for (int index = 0; index < count; index++) {
+      quotes.add(
+          new DraftQuote(
+              tenantId,
+              quotePrefix + "-" + index,
+              sourceType,
+              null,
+              null,
+              null,
+              "Customer",
+              status,
+              "NEEDS_REVIEW",
+              true,
+              "USD",
+              UUID.randomUUID(),
+              UUID.randomUUID(),
+              base.plusSeconds(index)));
+    }
+    quoteRepository.saveAllAndFlush(quotes);
   }
 }

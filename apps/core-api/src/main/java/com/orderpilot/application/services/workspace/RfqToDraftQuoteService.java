@@ -28,11 +28,16 @@ import com.orderpilot.security.policy.*;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RfqToDraftQuoteService {
+  static final int DEFAULT_PAGE_SIZE = 50;
+  static final int MAX_PAGE_SIZE = 100;
+
   private final DraftQuoteRepository quoteRepository;
   private final DraftQuoteLineRepository lineRepository;
   private final QuoteValidationIssueRepository issueRepository;
@@ -209,16 +214,29 @@ public class RfqToDraftQuoteService {
 
   @Transactional(readOnly = true)
   public List<DraftQuoteResponse> list(String status, String sourceType) {
+    return list(status, sourceType, null, null);
+  }
+
+  @Transactional(readOnly = true)
+  public List<DraftQuoteResponse> list(
+      String status, String sourceType, Integer page, Integer size) {
     UUID tenantId = TenantContext.requireTenantId();
+    Pageable pageable = boundedPage(page, size);
     List<DraftQuote> quotes;
     if (!isBlank(status) && !isBlank(sourceType)) {
-      quotes = quoteRepository.findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDesc(tenantId, status, sourceType);
+      quotes =
+          quoteRepository.findByTenantIdAndStatusAndSourceTypeOrderByCreatedAtDesc(
+              tenantId, status, sourceType, pageable);
     } else if (!isBlank(status)) {
-      quotes = quoteRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, status);
+      quotes =
+          quoteRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
+              tenantId, status, pageable);
     } else if (!isBlank(sourceType)) {
-      quotes = quoteRepository.findByTenantIdAndSourceTypeOrderByCreatedAtDesc(tenantId, sourceType);
+      quotes =
+          quoteRepository.findByTenantIdAndSourceTypeOrderByCreatedAtDesc(
+              tenantId, sourceType, pageable);
     } else {
-      quotes = quoteRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+      quotes = quoteRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable);
     }
     return quotes.stream().map(this::response).toList();
   }
@@ -427,6 +445,18 @@ public class RfqToDraftQuoteService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  private static Pageable boundedPage(Integer requestedPage, Integer requestedSize) {
+    int page = requestedPage == null ? 0 : requestedPage;
+    int size = requestedSize == null ? DEFAULT_PAGE_SIZE : requestedSize;
+    if (page < 0) {
+      throw new IllegalArgumentException("page must be greater than or equal to zero");
+    }
+    if (size <= 0) {
+      throw new IllegalArgumentException("size must be greater than zero");
+    }
+    return PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE));
   }
 
   private static String escape(String value) {
