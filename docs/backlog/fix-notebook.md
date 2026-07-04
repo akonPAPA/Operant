@@ -1,5 +1,32 @@
 # Fix Notebook
 
+## P2 — AI Work generic/heuristic public schema
+
+- Status: PARTIAL (2026-07-05, PR #243) — the V1 public projection is CLOSED. Four exact schema
+  identifiers, schema-specific validation, bounded/redacted allowlisted DTOs, fail-closed malformed
+  output, typed frontend rendering, and RFQ advisory safety markers are implemented and covered by
+  targeted backend/frontend tests.
+- Severity: P2 / Contract Stability and Data Boundary
+- Files:
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/aiwork/AiWorkPublicResponseMapper.java`
+  - `apps/core-api/src/main/java/com/orderpilot/api/dto/AiWorkDtos.java`
+  - `apps/web-dashboard/lib/ai-work-api.ts`
+  - `apps/web-dashboard/components/ai-work-schema-v1-view.tsx`
+  - `docs/api/ai-work-schema-v1.md`
+- Root cause: the prior public projection inferred optional fields from unversioned provider JSON.
+  Malformed structured output could still leave generic generated text available as the summary,
+  so consumers lacked a stable schema discriminator and a strict fail-closed contract.
+- Risk closed in PR #243: frontend consumers no longer depend on unversioned/heuristic shapes, raw
+  provider output is never a fallback, and unknown or secret-like provider fields are not emitted.
+- Residual tasks (not required for V1 public safety):
+  - provider-specific structured-output versions behind the internal provider interface;
+  - a richer evidence model after product/API review;
+  - an optional evaluation corpus for future provider conformance;
+  - future model-provider integration under a separate security/runtime review.
+- Required future proof/tests: provider contract tests per provider/version, evidence compatibility
+  tests, evaluation thresholds, and provider-specific timeout/error/redaction tests.
+- Owner/target week: Product/API and AI runtime owners; unscheduled.
+
 ## P2 Product Decision — unify the legacy demo RFQ entrypoint with the channel handoff workspace
 
 - Status: CLOSED (2026-07-04, PR #242) — implementation and bounded H2/frontend proof already passed;

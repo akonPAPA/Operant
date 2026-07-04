@@ -1,5 +1,6 @@
 package com.orderpilot.application.services.aiwork;
 
+import com.orderpilot.domain.aiwork.AiWorkSchemaVersion;
 import com.orderpilot.domain.aiwork.AiWorkType;
 import java.math.BigDecimal;
 import java.util.Locale;
@@ -32,17 +33,20 @@ public class DeterministicAiWorkProvider implements AiWorkProvider {
           "Summary (advisory): " + (context.isBlank()
               ? "No inbound context was provided for this source."
               : "Customer request context indicates: " + contextSnippet),
-          "{\"highlights\":[" + jsonStr(contextSnippet) + "]}",
+          schemaPrefix(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_REQUEST_SUMMARY)
+              + "\"highlights\":[" + jsonStr(contextSnippet) + "]}",
           "LOW", new BigDecimal("0.60"));
       case VALIDATION_EXPLANATION -> result(
           "Validation explanation (advisory): review the flagged validation issues against the "
               + "source context before acting. " + (context.isBlank() ? "" : "Context: " + contextSnippet),
-          "{\"explanationBasis\":\"VALIDATION_AND_SOURCE_CONTEXT\"}",
+          schemaPrefix(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_VALIDATION_EXPLANATION)
+              + "\"explanationBasis\":\"VALIDATION_AND_SOURCE_CONTEXT\"}",
           "LOW", new BigDecimal("0.55"));
       case CUSTOMER_REPLY_DRAFT -> result(
           "Draft only — not sent. Suggested customer reply: \"Thank you for your message. We are "
               + "reviewing your request and will follow up shortly with confirmed details.\"",
-          "{\"channelSafe\":true,\"containsCommitments\":false}",
+          schemaPrefix(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_CUSTOMER_REPLY_DRAFT)
+              + "\"channelSafe\":true,\"containsCommitments\":false}",
           // Customer-facing text is higher risk: it must be operator-reviewed before any send path.
           "MEDIUM", new BigDecimal("0.50"));
       case NEXT_ACTION_SUGGESTION -> result(
@@ -53,21 +57,26 @@ public class DeterministicAiWorkProvider implements AiWorkProvider {
           "Source context digest (advisory): " + (context.isBlank()
               ? "No structured source context available."
               : contextSnippet),
-          "{\"digest\":" + jsonStr(contextSnippet) + ",\"fieldsConsidered\":[\"sourceType\",\"sourceId\",\"context\"]}",
+          schemaPrefix(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_REQUEST_SUMMARY)
+              + "\"digest\":" + jsonStr(contextSnippet) + "}",
           "LOW", new BigDecimal("0.60"));
     };
   }
 
   private AiWorkGenerationResult result(String text, String payloadJson, String risk, BigDecimal confidence) {
     // Evidence always anchors back to the source object this suggestion was generated for.
-    String evidence = "[{\"type\":\"SOURCE_OBJECT\",\"note\":\"Anchored to the requested source_type/source_id.\"}]";
+    String evidence =
+        "[{\"sourceType\":\"SOURCE_OBJECT\",\"sourceLabel\":\"Source object\","
+            + "\"excerpt\":\"Anchored to backend-resolved source context.\"}]";
     return new AiWorkGenerationResult(text, payloadJson, evidence, risk, confidence, STRATEGY_VERSION);
   }
 
   /** Candidate internal next actions. All are advisory and flagged as requiring human approval. */
   private String nextActionPayload(String context) {
     String lower = context.toLowerCase(Locale.ROOT);
-    StringBuilder sb = new StringBuilder("{\"candidates\":[");
+    StringBuilder sb = new StringBuilder(
+        schemaPrefix(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_NEXT_ACTION_SUGGESTION))
+        .append("\"candidates\":[");
     sb.append(candidate("ASK_CUSTOMER_FOR_INFO", "Ask customer for missing information"));
     sb.append(",").append(candidate("ROUTE_TO_REVIEW", "Route to operator review"));
     if (lower.contains("alias") || lower.contains("part") || lower.contains("sku")) {
@@ -87,8 +96,12 @@ public class DeterministicAiWorkProvider implements AiWorkProvider {
 
   private String candidate(String actionCode, String label) {
     // requiresHumanApproval is always true: this layer never auto-executes a business action.
-    return "{\"actionCode\":" + jsonStr(actionCode) + ",\"label\":" + jsonStr(label)
+    return "{\"actionType\":" + jsonStr(actionCode) + ",\"label\":" + jsonStr(label)
         + ",\"requiresHumanApproval\":true}";
+  }
+
+  private static String schemaPrefix(AiWorkSchemaVersion schema) {
+    return "{\"schemaVersion\":" + jsonStr(schema.name()) + ",";
   }
 
   private String riskForNextActions(String context) {

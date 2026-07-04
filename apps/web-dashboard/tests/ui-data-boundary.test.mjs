@@ -5,6 +5,7 @@ import test from "node:test";
 
 const root = process.cwd();
 const aiWorkWorkspace = readFileSync(join(root, "components", "ai-work-assistant-workspace.tsx"), "utf8");
+const aiWorkSchemaView = readFileSync(join(root, "components", "ai-work-schema-v1-view.tsx"), "utf8");
 const conversionReviewCockpit = readFileSync(join(root, "components", "conversion-review-cockpit.tsx"), "utf8");
 const intakeUploadForm = readFileSync(join(root, "components", "intake-upload-form.tsx"), "utf8");
 const quoteReviewCockpit = readFileSync(join(root, "components", "quote-review-cockpit.tsx"), "utf8");
@@ -77,8 +78,20 @@ test("frontend command payloads do not expose client-supplied authority or calcu
   assert.doesNotMatch(aiWorkApi, /evidenceRefsJson/);
   assert.doesNotMatch(aiWorkApi, /idempotencyKey/);
   const aiSuggestion = typeBlock(aiWorkApi, "AiWorkSuggestion");
+  assert.match(aiSuggestion, /\bschemaVersion:/);
   assert.match(aiSuggestion, /\bsummary:/);
   assert.match(aiSuggestion, /\bnextActionCandidates:/);
+  assert.match(aiSuggestion, /\bsafety:/);
+  assert.doesNotMatch(
+    aiSuggestion,
+    /\b(strategyVersion|tenantId|actorId|rawPayload|payloadJson|prompt|apiKey|credential|auditEventId|stackTrace)\??:/
+  );
+  assert.match(aiWorkSchemaView, /AI_WORK_SCHEMA_V1_NEXT_ACTION_SUGGESTION/);
+  assert.doesNotMatch(
+    aiWorkSchemaView,
+    /generatedText|structuredPayloadJson|evidenceRefsJson|strategyVersion/
+  );
+  assert.doesNotMatch(aiWorkApi, /error instanceof Error \? error\.message/);
   assert.doesNotMatch(aiWorkApi, /\b(createdByUserId|decidedByUserId)\??:/);
   assert.doesNotMatch(quoteReviewApi, /auditTimeline: Array<\{[^}]*\b(id|entityId|actorId)\??:/);
   assert.doesNotMatch(quoteReviewApi, /auditTimeline: Array<\{[^}]*\bmetadata\??:/);

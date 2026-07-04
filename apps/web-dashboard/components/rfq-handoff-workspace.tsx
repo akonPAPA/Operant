@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { AiWorkSchemaV1View } from "@/components/ai-work-schema-v1-view";
 import {
   createDraftQuoteFromRfqHandoff,
   decideRfqHandoffDraft,
@@ -387,40 +388,7 @@ export function RfqHandoffWorkspace({
           {aiSuggestion ? (
             <div className="control-grid">
               <h3>Advisory suggestion</h3>
-              <p className="generated-text">{aiSuggestion.summary}</p>
-              <div className="tag-row">
-                <span className="status-pill">Advisory only</span>
-                <span className="status-pill warning">Risk: {aiSuggestion.riskLevel}</span>
-                <span className="status-pill">
-                  Confidence: {aiSuggestion.confidence == null ? "n/a" : `${Math.round(aiSuggestion.confidence * 100)}%`}
-                </span>
-              </div>
-              {aiSuggestion.displayFields.length > 0 ? (
-                <dl className="detail-list">
-                  {aiSuggestion.displayFields.map((field) => (
-                    <div key={`${field.label}-${field.value}`}>
-                      <dt>{field.label}</dt>
-                      <dd>{field.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
-              {aiSuggestion.nextActionCandidates.length > 0 ? (
-                <div>
-                  <h4>Next action candidates</h4>
-                  <ul>
-                    {aiSuggestion.nextActionCandidates.map((candidate) => (
-                      <li key={candidate.actionCode}>
-                        {candidate.label}
-                        {candidate.requiresHumanApproval ? " — human approval required" : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {aiSuggestion.riskFlags.length > 0 ? (
-                <p className="risk-note">Risk flags: {aiSuggestion.riskFlags.join(", ")}</p>
-              ) : null}
+              <AiWorkSchemaV1View suggestion={aiSuggestion} />
               <p className="muted-copy">
                 This suggestion is advisory. The operator can create or decline the draft independently.
               </p>

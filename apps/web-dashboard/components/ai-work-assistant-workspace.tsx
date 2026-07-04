@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AiWorkSchemaV1View } from "@/components/ai-work-schema-v1-view";
 import {
   acceptAiWorkSuggestion,
   listRecentAiWork,
@@ -141,8 +142,6 @@ function AiWorkDetail({
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
 }>) {
-  const nextActions = suggestion.nextActionCandidates ?? [];
-  const isDraft = suggestion.workType === "CUSTOMER_REPLY_DRAFT";
   const decided = suggestion.status !== "GENERATED";
 
   return (
@@ -150,36 +149,14 @@ function AiWorkDetail({
       <div className="tag-row">
         <span className={`status-pill ${statusClass(suggestion.status)}`}>{suggestion.status}</span>
         <span className={`status-pill ${riskClass(suggestion.riskLevel)}`}>Risk: {suggestion.riskLevel}</span>
-        <span className="status-pill">Advisory only</span>
-        {isDraft && <span className="status-pill warning">Draft only — not sent</span>}
       </div>
 
       <h3>{workTypeLabel(suggestion.workType)}</h3>
-      <p className="generated-text">{suggestion.summary}</p>
-
-      {nextActions.length > 0 && (
-        <div>
-          <h4>Next-action candidates</h4>
-          <ul className="record-list">
-            {nextActions.map((a) => (
-              <li key={a.actionCode} className="record-item">
-                <span className="record-title">{a.label}</span>
-                <span className="muted">{a.actionCode}</span>
-                {a.requiresHumanApproval && <span className="status-pill warning">Requires human approval</span>}
-              </li>
-            ))}
-          </ul>
-          <p className="risk-note">
-            These candidates are suggestions only. Selecting one does not execute it. Any real action
-            (creating a quote draft, reviewing a discount, etc.) must be performed through its own
-            workflow with its own validation and approval.
-          </p>
-        </div>
-      )}
+      <AiWorkSchemaV1View suggestion={suggestion} />
 
       <dl className="detail-grid">
         <dt>Source</dt><dd>{suggestion.sourceType}</dd>
-        <dt>Strategy version</dt><dd>{suggestion.strategyVersion}</dd>
+        <dt>Schema</dt><dd>{suggestion.schemaVersion}</dd>
         {typeof suggestion.confidence === "number" && (
           <>
             <dt>Confidence</dt><dd>{suggestion.confidence.toFixed(2)}</dd>

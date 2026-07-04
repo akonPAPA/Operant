@@ -29,26 +29,46 @@ public final class AiWorkDtos {
   public record AiWorkDecisionRequest(String reason) {}
 
   public record AiWorkDisplayField(
-      String label, String value, BigDecimal confidence, String sourceLabel) {}
+      String key,
+      String label,
+      String value,
+      String kind,
+      BigDecimal confidence,
+      String evidenceRef) {}
 
-  public record AiWorkEvidenceItem(String label, String excerpt, Integer page, String field) {}
+  public record AiWorkEvidenceItem(
+      String sourceType, String sourceLabel, String excerpt, BigDecimal confidence) {}
 
   public record AiWorkNextActionCandidate(
-      String actionCode, String label, boolean requiresHumanApproval) {}
+      String actionType,
+      String label,
+      String description,
+      boolean requiresHumanApproval,
+      String disabledReason) {}
+
+  public record AiWorkRiskFlag(String code, String severity, String message) {}
+
+  public record AiWorkSafety(
+      boolean advisoryOnly,
+      String externalExecution,
+      String connectorCall,
+      String outbox,
+      boolean humanApprovalRequired) {}
 
   public record AiWorkSuggestionResponse(
       UUID id,
       String workType,
       String sourceType,
       String status,
-      String strategyVersion,
+      String schemaVersion,
       String riskLevel,
       BigDecimal confidence,
       String summary,
       List<AiWorkDisplayField> displayFields,
       List<AiWorkEvidenceItem> evidence,
       List<AiWorkNextActionCandidate> nextActionCandidates,
-      List<String> riskFlags,
+      List<AiWorkRiskFlag> riskFlags,
+      AiWorkSafety safety,
       boolean advisoryOnly,
       Instant createdAt,
       Instant updatedAt,
