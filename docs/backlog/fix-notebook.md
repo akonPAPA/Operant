@@ -2,8 +2,18 @@
 
 ## P2 Product Decision — unify the legacy demo RFQ entrypoint with the channel handoff workspace
 
-- Status: PARTIAL — implementation and bounded H2/frontend proof pass; live browser + PostgreSQL
-  proof remains pending because the local PostgreSQL listener was unavailable.
+- Status: CLOSED (2026-07-04, PR #242) — implementation and bounded H2/frontend proof already passed;
+  the residual live browser + PostgreSQL proof is now complete. A disposable PostgreSQL database
+  (`operant_post_pr239_proof` on `localhost:15432`) was started, the two-test PostgreSQL integration
+  command passed (4 tests), and a real headless browser drove the full `/demo` double-click ->
+  `/channels/rfq-handoffs` walkthrough to `SAFE_DEMO_TERMINAL`. Tenant-scoped PostgreSQL queries
+  confirmed exactly one `PENDING_REVIEW` handoff after repeated clicks, terminal `draft_quote`
+  `DEMO_COMPLETED` with `requires_human_review=true`, one decision audit, one SUCCEEDED idempotency
+  row, and zero connector/sandbox/change_request/outbox rows. Full evidence:
+  `docs/runbooks/post-pr239-real-demo-proof.md` section 14A. One bounded UX defect found and fixed in
+  the same PR: the `/demo` "Last demo calls" list used a non-unique React key (`label-message`) that
+  collided on repeated identical calls — now keyed on a monotonic id
+  (`apps/web-dashboard/components/demo-dashboard.tsx`) with a regression test.
 - Severity: P2 / Product Decision
 - Files:
   - `apps/web-dashboard/lib/demo-api.ts`
@@ -39,10 +49,10 @@
     tenant/permission injection, managed core path, bounded response contract, and redacted errors.
   - `RfqHandoffRealDemoPostgresIntegrationTest` contains the connection-only PostgreSQL creation and
     replay case; execution remains pending (`localhost:15432` refused the integration connection).
-- Residual proof to close: start the documented disposable PostgreSQL instance, pass the two-test
-  integration command, then perform the documented double-click browser walkthrough and confirm
-  exactly one `PENDING_REVIEW` row.
-- Owner/target week: Product/API owner; target week not assigned.
+- Residual proof to close: DONE (2026-07-04, PR #242) — disposable PostgreSQL started, two-test
+  integration command passed, live double-click browser walkthrough confirmed exactly one
+  `PENDING_REVIEW` row and a safe terminal decision. See runbook section 14A.
+- Owner/target week: Product/API owner; closed 2026-07-04.
 - docs/api/quote-transactions.md:13
 - commit b16b993db1c944555a356c7c77725292d6608dd6
 - RuleID: generic-api-key

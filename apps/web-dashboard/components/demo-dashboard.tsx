@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   type ApiResult,
   type BotWebhookResponse,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/demo-api";
 
 type DemoActionState = {
+  id: number;
   label: string;
   result?: ApiResult<unknown>;
 };
@@ -45,6 +46,7 @@ const trustBullets = [
 export function DemoDashboard() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actions, setActions] = useState<DemoActionState[]>([]);
+  const nextActionId = useRef(0);
   const [rfqResult, setRfqResult] = useState<DemoRfqHandoffResponse | null>(null);
   const [unknownResult, setUnknownResult] = useState<BotWebhookResponse | null>(null);
   const [reconciliationResult, setReconciliationResult] = useState<ReconciliationRunResponse | null>(null);
@@ -69,7 +71,7 @@ export function DemoDashboard() {
     if (result.ok) {
       onSuccess?.(result.data);
     }
-    setActions((current) => [{ label, result }, ...current].slice(0, 5));
+    setActions((current) => [{ id: nextActionId.current++, label, result }, ...current].slice(0, 5));
     setBusyAction(null);
   }
 
@@ -139,7 +141,7 @@ export function DemoDashboard() {
         </div>
         <div className="debug-panel">
           <strong>Last demo calls</strong>
-          {actions.length === 0 ? <p>No calls made yet.</p> : actions.map((action) => <p key={`${action.label}-${action.result?.message}`}>{action.label}: {action.result?.message}</p>)}
+          {actions.length === 0 ? <p>No calls made yet.</p> : actions.map((action) => <p key={action.id}>{action.label}: {action.result?.message}</p>)}
         </div>
       </section>
 
