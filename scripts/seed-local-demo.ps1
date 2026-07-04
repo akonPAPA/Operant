@@ -18,6 +18,7 @@ $DemoOperatorUserId = "00000000-0000-4000-8000-000000000002"
 $DemoChannelConnectionId = "99999999-9999-4999-8999-999999999901"
 $DemoInboundChannelEventId = "99999999-9999-4999-8999-999999999902"
 $DemoRfqHandoffId = "99999999-9999-4999-8999-999999999903"
+$DemoRfqDraftIdempotencyKey = "rfq-handoff-draft-quote:$DemoRfqHandoffId"
 $DemoCustomerId = "22222222-2222-4222-8222-222222222222"
 $DemoCustomerBId = "22222222-2222-4222-8222-222222222223"
 $DemoLocationId = "33333333-3333-4333-8333-333333333333"
@@ -151,6 +152,46 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- Reset only the deterministic PR239 RFQ walkthrough artifacts. The draft quote idempotency key is
+-- backend-derived from the fixed handoff id; capturing those quote ids keeps every dependent delete
+-- tenant/id scoped. Any unexpected downstream quote workflow FK causes this transaction to fail
+-- closed instead of deleting broader business data.
+CREATE TEMP TABLE demo_pr239_rfq_draft_quote_ids ON COMMIT DROP AS
+SELECT id
+FROM draft_quote
+WHERE tenant_id = '$DemoTenantId'
+  AND source_type = 'RFQ_HANDOFF'
+  AND idempotency_key = '$DemoRfqDraftIdempotencyKey';
+
+DELETE FROM audit_event
+WHERE tenant_id = '$DemoTenantId'
+  AND action = 'RFQ_HANDOFF_DEMO_DECISION_RECORDED'
+  AND entity_type = 'DRAFT_QUOTE'
+  AND entity_id IN (SELECT id::text FROM demo_pr239_rfq_draft_quote_ids);
+
+DELETE FROM quote_validation_issue
+WHERE tenant_id = '$DemoTenantId'
+  AND draft_quote_id IN (SELECT id FROM demo_pr239_rfq_draft_quote_ids);
+
+DELETE FROM draft_quote_line
+WHERE tenant_id = '$DemoTenantId'
+  AND draft_quote_id IN (SELECT id FROM demo_pr239_rfq_draft_quote_ids);
+
+DELETE FROM draft_quote
+WHERE tenant_id = '$DemoTenantId'
+  AND id IN (SELECT id FROM demo_pr239_rfq_draft_quote_ids);
+
+DELETE FROM ai_work_suggestion
+WHERE tenant_id = '$DemoTenantId'
+  AND source_type = 'RFQ_HANDOFF'
+  AND source_id = '$DemoRfqHandoffId';
+
+DELETE FROM idempotency_key
+WHERE tenant_id = '$DemoTenantId'
+  AND command_type = 'RFQ_HANDOFF_DEMO_DECISION'
+  AND target_resource_type = 'DRAFT_QUOTE'
+  AND target_resource_id = '$DemoRfqHandoffId';
+
 INSERT INTO channel_connection (
   id,
   tenant_id,
@@ -235,7 +276,26 @@ VALUES (
   '2026-07-03T00:00:00Z',
   '2026-07-03T00:00:00Z'
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  inbound_channel_event_id = EXCLUDED.inbound_channel_event_id,
+  channel_connection_id = EXCLUDED.channel_connection_id,
+  source_channel = EXCLUDED.source_channel,
+  source_external_event_id = EXCLUDED.source_external_event_id,
+  source_actor_external_id = EXCLUDED.source_actor_external_id,
+  customer_account_id = EXCLUDED.customer_account_id,
+  customer_contact_id = EXCLUDED.customer_contact_id,
+  request_text = EXCLUDED.request_text,
+  detected_intent = EXCLUDED.detected_intent,
+  status = 'PENDING_REVIEW',
+  reviewer_user_id = NULL,
+  review_started_at = NULL,
+  dismissed_at = NULL,
+  dismiss_reason = NULL,
+  converted_at = NULL,
+  conversion_note = NULL,
+  created_at = EXCLUDED.created_at,
+  updated_at = EXCLUDED.updated_at
+WHERE channel_rfq_handoff.tenant_id = EXCLUDED.tenant_id;
 
 INSERT INTO location (id, tenant_id, code, name, type, city, country, active)
 VALUES ('$DemoLocationId', '$DemoTenantId', 'WH-ALM', 'Almaty Main Warehouse', 'WAREHOUSE', 'Almaty', 'KZ', true)
@@ -499,8 +559,40 @@ BEGIN
     WHERE tenant_id = '$DemoTenantId'
       AND id = '$DemoRfqHandoffId'
       AND source_channel = 'TELEGRAM'
+      AND status = 'PENDING_REVIEW'
+      AND reviewer_user_id IS NULL
+      AND review_started_at IS NULL
+      AND dismissed_at IS NULL
+      AND dismiss_reason IS NULL
+      AND converted_at IS NULL
+      AND conversion_note IS NULL
   ) THEN
-    RAISE EXCEPTION 'Demo seed verification failed: deterministic RFQ handoff is missing';
+    RAISE EXCEPTION 'Demo seed verification failed: deterministic RFQ handoff is not fresh PENDING_REVIEW';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM draft_quote
+    WHERE tenant_id = '$DemoTenantId'
+      AND source_type = 'RFQ_HANDOFF'
+      AND idempotency_key = '$DemoRfqDraftIdempotencyKey'
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: stale deterministic RFQ draft quote remains';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM ai_work_suggestion
+    WHERE tenant_id = '$DemoTenantId'
+      AND source_type = 'RFQ_HANDOFF'
+      AND source_id = '$DemoRfqHandoffId'
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: stale deterministic RFQ AI suggestion remains';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM idempotency_key
+    WHERE tenant_id = '$DemoTenantId'
+      AND command_type = 'RFQ_HANDOFF_DEMO_DECISION'
+      AND target_resource_type = 'DRAFT_QUOTE'
+      AND target_resource_id = '$DemoRfqHandoffId'
+  ) THEN
+    RAISE EXCEPTION 'Demo seed verification failed: stale deterministic RFQ decision remains';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM channel_connection
@@ -510,6 +602,18 @@ BEGIN
       AND status = 'ACTIVE'
   ) THEN
     RAISE EXCEPTION 'Demo seed verification failed: deterministic Telegram connection is missing';
+  END IF;
+  IF EXISTS (SELECT 1 FROM connector_command WHERE tenant_id = '$DemoTenantId') THEN
+    RAISE EXCEPTION 'Demo seed verification failed: connector command exists for the isolated demo tenant';
+  END IF;
+  IF EXISTS (SELECT 1 FROM connector_sandbox_execution WHERE tenant_id = '$DemoTenantId') THEN
+    RAISE EXCEPTION 'Demo seed verification failed: connector sandbox execution exists for the isolated demo tenant';
+  END IF;
+  IF EXISTS (SELECT 1 FROM change_request WHERE tenant_id = '$DemoTenantId') THEN
+    RAISE EXCEPTION 'Demo seed verification failed: ChangeRequest exists for the isolated demo tenant';
+  END IF;
+  IF EXISTS (SELECT 1 FROM outbox_event WHERE tenant_id = '$DemoTenantId') THEN
+    RAISE EXCEPTION 'Demo seed verification failed: outbox event exists for the isolated demo tenant';
   END IF;
 END
 `$`$;
