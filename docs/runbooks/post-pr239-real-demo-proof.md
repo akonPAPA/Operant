@@ -3,10 +3,12 @@
 
 ## 1. Purpose
 
-Prove the PR #239 RFQ demo flow against a real PostgreSQL database and the shipped dashboard:
+Prove the PR #239/#241 RFQ demo flow against a real PostgreSQL database and the shipped dashboard:
 
 ```text
-seeded Telegram RFQ handoff
+browser /demo RFQ action
+-> server-side demo BFF
+-> managed inbound channel event + RFQ handoff
 -> advisory AI suggestion
 -> operator review
 -> review-required draft quote
@@ -41,6 +43,7 @@ $env:ORDERPILOT_GATEWAY_HEADER_AUTH_ENABLED = "true"
 $env:ORDERPILOT_GATEWAY_HEADER_AUTH_SIGNATURE_REQUIRED = "false"
 $env:ORDERPILOT_CORS_ALLOWED_ORIGINS = "http://localhost:3000"
 $env:ORDERPILOT_ACTOR_SIGNING_SECRET = ""
+$env:ORDERPILOT_DEMO_RFQ_HANDOFF_ENABLED = "true"
 ```
 
 These gateway settings are local/demo-only. Production and signed modes must not use unsigned
@@ -49,15 +52,19 @@ gateway headers.
 Frontend PowerShell session:
 
 ```powershell
-$env:NEXT_PUBLIC_CORE_API_URL = "http://localhost:8080"
 $env:CORE_API_BASE_URL = "http://localhost:8080"
+$env:ORDERPILOT_DEMO_MODE = "true"
+$env:ORDERPILOT_DEMO_TENANT_ID = "11111111-1111-4111-8111-111111111111"
+$env:NEXT_PUBLIC_CORE_API_URL = "http://localhost:8080"
 $env:NEXT_PUBLIC_ORDERPILOT_DEMO_MODE = "true"
 $env:NEXT_PUBLIC_DEMO_TENANT_ID = "11111111-1111-4111-8111-111111111111"
 $env:NEXT_PUBLIC_DEMO_PRODUCT_ID = "44444444-4444-4444-8444-444444444444"
 $env:NEXT_PUBLIC_DEMO_LOCATION_ID = "33333333-3333-4333-8333-333333333333"
 ```
 
-The frontend does not receive or send an actor ID. The backend resolves the local demo operator.
+`ORDERPILOT_DEMO_MODE` and `ORDERPILOT_DEMO_TENANT_ID` are server-only inputs to the PR #241 BFF.
+The browser RFQ action sends no tenant, actor, source, connection, status, audit, provider payload,
+or idempotency field. Core resolves the local demo operator and all channel authority.
 
 ## 4. Local PostgreSQL startup
 
@@ -126,14 +133,23 @@ The seed does not call Telegram, an LLM, ERP/1C, accounting, or a connector.
 
 ## 8. Browser walkthrough
 
-1. Open `http://localhost:3000/channels/rfq-handoffs`.
-2. Open the pending Telegram request for `PAD-OE-04465`.
-3. Click **Generate suggestion**.
-4. Confirm the advisory summary and **Advisory only** marker.
-5. Click **Start review**.
-6. Click **Create draft quote**.
-7. Inspect the quote number, quote/validation status, human-review marker, line, and safety summary.
-8. Leave the decision note empty and confirm both terminal actions remain disabled.
+1. Open `http://localhost:3000/demo`.
+2. Click **Send demo Telegram RFQ** twice.
+3. Open `http://localhost:3000/channels/rfq-handoffs`.
+4. Confirm exactly one Telegram request for `PAD-OE-04465` is `PENDING_REVIEW`.
+5. Open the pending request and click **Generate suggestion**.
+6. Confirm the advisory summary and **Advisory only** marker.
+7. Click **Start review**.
+8. Click **Create draft quote**.
+9. Inspect the quote number, quote/validation status, human-review marker, line, and safety summary.
+10. Leave the decision note empty and confirm both terminal actions remain disabled.
+
+The PR #240 seed already contains the same stable provider event and handoff. In that standard
+walkthrough, the first browser click enters the managed bridge and deduplicates against the seeded
+source, so the workspace remains at exactly one handoff. The connection-only automated test
+`RfqHandoffRealDemoPostgresIntegrationTest.browserStartedManagedIntakeIsTenantScopedAndReplaySafeOnPostgres`
+is the PostgreSQL creation-from-absence proof case; `LocalDemoRfqIntakeServiceTest` proves the same
+path with the normal test database.
 9. Enter `Reviewed for local demo; no external action requested`.
 10. Click **Complete safe demo**. Use **Decline demo draft** only for the alternate path.
 11. Confirm the terminal and safety fields in section 9.
@@ -303,5 +319,7 @@ not attach full logs if they contain internal stack traces.
 - Full backend suite and full CI: not run.
 - Production SSO/signed gateway deployment: not part of this local/demo proof.
 - Worker/connector runtime: not run; database assertions prove no external work was requested.
-- The legacy `/demo` **Send demo Telegram RFQ** button creates a legacy bot RFQ record, not the
-  `channel_rfq_handoff` consumed by this workspace. See `docs/backlog/fix-notebook.md`.
+- Live production Telegram delivery is not part of this local/demo proof; production webhook
+  verification was not changed.
+- PR #241 PostgreSQL execution on this host: not proven. The integration command reached Flyway but
+  `localhost:15432` refused the connection; start the disposable database from section 4 and rerun.

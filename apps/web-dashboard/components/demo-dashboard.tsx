@@ -5,10 +5,11 @@ import {
   type ApiResult,
   type BotWebhookResponse,
   type CommerceAnalyticsSummaryResponse,
+  type DemoRfqHandoffResponse,
   type ReconciliationCasesResponse,
   type ReconciliationRunResponse,
   demoConfig,
-  demoTelegramRfqPayload,
+  demoTelegramRfqText,
   reconciliationFixture,
   refreshCommerceAnalytics,
   runInventoryReconciliation,
@@ -44,7 +45,7 @@ const trustBullets = [
 export function DemoDashboard() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actions, setActions] = useState<DemoActionState[]>([]);
-  const [rfqResult, setRfqResult] = useState<BotWebhookResponse | null>(null);
+  const [rfqResult, setRfqResult] = useState<DemoRfqHandoffResponse | null>(null);
   const [unknownResult, setUnknownResult] = useState<BotWebhookResponse | null>(null);
   const [reconciliationResult, setReconciliationResult] = useState<ReconciliationRunResponse | null>(null);
   const [casesResult, setCasesResult] = useState<ReconciliationCasesResponse | null>(null);
@@ -86,8 +87,8 @@ export function DemoDashboard() {
         <div className="demo-context">
           <strong>Core API</strong>
           <span>{demoConfig.baseUrl}</span>
-          <strong>Tenant header</strong>
-          <span>{demoConfig.tenantId || "not configured"}</span>
+          <strong>Tenant scope</strong>
+          <span>Resolved by the demo gateway</span>
         </div>
       </section>
 
@@ -145,13 +146,14 @@ export function DemoDashboard() {
       <div className="two-column">
         <section className="panel">
           <h2>Telegram RFQ panel</h2>
-          <blockquote>{demoTelegramRfqPayload.message.text}</blockquote>
+          <blockquote>{demoTelegramRfqText}</blockquote>
           <dl className="detail-list">
-            <div><dt>Detected intent</dt><dd>{rfqResult?.intent ?? "RFQ_REQUEST fixture"}</dd></div>
+            <div><dt>Detected intent</dt><dd>RFQ_REQUEST</dd></div>
             <div><dt>Policy route</dt><dd>Operator review required before quote/order action</dd></div>
-            <div><dt>Requires human review</dt><dd>{String(rfqResult?.requiresHumanReview ?? true)}</dd></div>
-            <div><dt>RFQ draft/request ID</dt><dd>{rfqResult?.createdRfqDraftId ?? "Available after backend seed and button run"}</dd></div>
-            <div><dt>Audit status</dt><dd>BOT_RFQ_DRAFT_CREATED when backend flow succeeds</dd></div>
+            <div><dt>Requires human review</dt><dd>true</dd></div>
+            <div><dt>RFQ handoff handle</dt><dd>{rfqResult?.handoffId ?? "Available after backend seed and button run"}</dd></div>
+            <div><dt>Handoff status</dt><dd>{rfqResult?.status ?? "PENDING_REVIEW fixture"}</dd></div>
+            <div><dt>Audit status</dt><dd>Recorded by the managed channel handoff path</dd></div>
             <div><dt>External execution</dt><dd>DISABLED</dd></div>
           </dl>
         </section>

@@ -9,6 +9,12 @@ const api = readFileSync(join(root, "lib", "rfq-handoff-api.ts"), "utf8");
 const workspace = readFileSync(join(root, "components", "rfq-handoff-workspace.tsx"), "utf8");
 const page = readFileSync(join(root, "app", "(dashboard)", "channels", "rfq-handoffs", "page.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const demoApi = readFileSync(join(root, "lib", "demo-api.ts"), "utf8");
+const demoDashboard = readFileSync(join(root, "components", "demo-dashboard.tsx"), "utf8");
+const demoBff = readFileSync(
+  join(root, "app", "api", "demo", "rfq-handoff", "route.ts"),
+  "utf8"
+);
 
 // --- API client ---
 
@@ -113,6 +119,57 @@ test("workspace renders safe AI suggestion fields, candidates, risk, and confide
 test("api client has no manual handoff create or ERP action", () => {
   assert.doesNotMatch(api, /createRfqHandoff|createHandoff/);
   assert.doesNotMatch(api, /createOrder|approveQuote|approveOrder|erpSync|updateInventory|priceUpdate/i);
+});
+
+test("demo RFQ browser action targets the same-origin BFF with no authority payload", () => {
+  const start = demoApi.indexOf("export function sendDemoTelegramRfq");
+  const end = demoApi.indexOf("\n}", start);
+  const action = demoApi.slice(start, end);
+
+  assert.match(action, /requestDashboardJson<DemoRfqHandoffResponse>\("\/api\/demo\/rfq-handoff"\)/);
+  assert.doesNotMatch(action, /\/api\/v1\/bot\/telegram\/webhook/);
+  assert.doesNotMatch(action, /JSON\.stringify|body:|headers:/);
+  assert.doesNotMatch(action, /update_id|message_id|chat:/);
+  assert.doesNotMatch(
+    action,
+    /tenantId|actorId|sourceId|channelConnectionId|status|approvalStatus|executionStatus|audit|idempotency|rawPayload/
+  );
+});
+
+test("demo RFQ BFF resolves authority server-side and calls the managed core path", () => {
+  assert.match(demoBff, /CORE_PATH = "\/api\/v1\/demo\/rfq-handoff"/);
+  assert.match(demoBff, /process\.env\.ORDERPILOT_DEMO_TENANT_ID/);
+  assert.match(demoBff, /process\.env\.ORDERPILOT_DEMO_MODE === "true"/);
+  assert.doesNotMatch(demoBff, /NEXT_PUBLIC_/);
+  assert.match(demoBff, /"X-OrderPilot-Permissions": DEMO_ACTION_PERMISSION/);
+  assert.match(demoBff, /DEMO_ACTION_PERMISSION = "ADMIN_SETTINGS_MANAGE"/);
+  assert.match(demoBff, /submittedBody && submittedBody !== "\{\}"/);
+  assert.doesNotMatch(demoBff, /request\.json\(\)/);
+});
+
+test("demo RFQ public contract exposes only the opaque handoff workflow result", () => {
+  const start = demoApi.indexOf("export type DemoRfqHandoffResponse");
+  const end = demoApi.indexOf("\n};", start);
+  const contract = demoApi.slice(start, end);
+
+  assert.match(contract, /handoffId: string/);
+  assert.match(contract, /status: string/);
+  assert.match(contract, /message: string/);
+  assert.doesNotMatch(
+    contract,
+    /tenantId|actorId|sourceId|channelConnectionId|eventId|auditId|idempotency|rawPayload|credentials/
+  );
+  assert.match(demoDashboard, /rfqResult\?\.handoffId/);
+  assert.doesNotMatch(
+    demoDashboard,
+    /rfqResult\?\.(tenantId|actorId|sourceId|channelConnectionId|eventId|auditId|rawPayload)/
+  );
+});
+
+test("demo RFQ BFF and client map failures without returning raw backend errors", () => {
+  assert.match(demoBff, /SAFE_FAILURE_MESSAGE/);
+  assert.doesNotMatch(demoBff, /NextResponse\.json\([^)]*text/s);
+  assert.doesNotMatch(demoApi, /error instanceof Error \? error\.message/);
 });
 
 test("api client type exposes no secret or raw payload fields", () => {

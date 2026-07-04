@@ -14,6 +14,12 @@ export type BotWebhookResponse = {
   createdRfqDraftId?: string;
 };
 
+export type DemoRfqHandoffResponse = {
+  handoffId: string;
+  status: string;
+  message: string;
+};
+
 export type ReconciliationRunResponse = {
   expectedStock?: number | string;
   actualStock?: number | string;
@@ -58,14 +64,7 @@ export const demoConfig = {
   locationId: process.env.NEXT_PUBLIC_DEMO_LOCATION_ID ?? ""
 };
 
-export const demoTelegramRfqPayload = {
-  update_id: 91001,
-  message: {
-    message_id: 7001,
-    chat: { id: 450001 },
-    text: DEMO_RFQ_TEXT
-  }
-};
+export const demoTelegramRfqText = DEMO_RFQ_TEXT;
 
 export const demoTelegramUnknownPayload = {
   update_id: 91002,
@@ -116,19 +115,16 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<ApiResu
     }
 
     return { ok: true, data, message: "Backend call completed." };
-  } catch (error) {
+  } catch {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Core API is not reachable from the browser."
+      message: "Core API is not reachable from the browser."
     };
   }
 }
 
 export function sendDemoTelegramRfq() {
-  return requestJson<BotWebhookResponse>("/api/v1/bot/telegram/webhook", {
-    method: "POST",
-    body: JSON.stringify(demoTelegramRfqPayload)
-  });
+  return requestDashboardJson<DemoRfqHandoffResponse>("/api/demo/rfq-handoff");
 }
 
 export function sendUnknownTelegramMessage() {
@@ -161,4 +157,25 @@ export function refreshCommerceAnalytics() {
 
 export function viewReconciliationCases() {
   return requestJson<ReconciliationCasesResponse>("/api/v1/reconciliation/cases", { method: "GET" });
+}
+
+async function requestDashboardJson<T>(path: string): Promise<ApiResult<T>> {
+  try {
+    const response = await fetch(path, { method: "POST" });
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        message: `Demo action returned ${response.status}.`
+      };
+    }
+    return {
+      ok: true,
+      data: (text ? JSON.parse(text) : {}) as T,
+      message: "Backend call completed."
+    };
+  } catch {
+    return { ok: false, message: "Demo action is unavailable." };
+  }
 }
