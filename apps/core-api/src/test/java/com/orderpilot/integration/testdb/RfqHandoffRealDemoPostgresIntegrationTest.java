@@ -21,6 +21,7 @@ import com.orderpilot.application.services.aiwork.AiWorkPublicResponseMapper;
 import com.orderpilot.application.services.aiwork.AiWorkService;
 import com.orderpilot.application.services.channel.ChannelRfqHandoffService;
 import com.orderpilot.application.services.channel.CreateChannelRfqHandoffCommand;
+import com.orderpilot.application.services.channel.LocalDemoRfqIntakeService;
 import com.orderpilot.application.services.channel.RfqHandoffDraftQuoteService;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.idempotency.IdempotencyService;
@@ -28,9 +29,11 @@ import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkType;
 import com.orderpilot.domain.audit.AuditEventRepository;
+import com.orderpilot.domain.bot.BotRfqRequestRepository;
 import com.orderpilot.domain.channel.ChannelConnection;
 import com.orderpilot.domain.channel.ChannelConnectionRepository;
 import com.orderpilot.domain.channel.ChannelProviderType;
+import com.orderpilot.domain.channel.ChannelRfqHandoffRepository;
 import com.orderpilot.domain.channel.InboundChannelEvent;
 import com.orderpilot.domain.channel.InboundChannelEventRepository;
 import com.orderpilot.domain.integration.ChangeRequestRepository;
@@ -55,12 +58,15 @@ class RfqHandoffRealDemoPostgresIntegrationTest extends DatabaseIntegrationTestB
   private static final String DEMO_RFQ = "Need 2 EA BRK-001 brake pads for a safe demo.";
 
   @Autowired private RfqHandoffDraftQuoteService bridgeService;
+  @Autowired private LocalDemoRfqIntakeService localDemoRfqIntakeService;
   @Autowired private ChannelRfqHandoffService handoffService;
   @Autowired private AiWorkService aiWorkService;
   @Autowired private AiWorkPublicResponseMapper aiWorkMapper;
   @Autowired private IdempotencyService idempotencyService;
   @Autowired private ChannelConnectionRepository connectionRepository;
+  @Autowired private ChannelRfqHandoffRepository channelRfqHandoffRepository;
   @Autowired private InboundChannelEventRepository eventRepository;
+  @Autowired private BotRfqRequestRepository botRfqRequestRepository;
   @Autowired private DraftQuoteRepository draftQuoteRepository;
   @Autowired private AuditEventRepository auditEventRepository;
   @Autowired private ConnectorCommandRepository connectorCommandRepository;
@@ -181,6 +187,44 @@ class RfqHandoffRealDemoPostgresIntegrationTest extends DatabaseIntegrationTestB
         .isNotIn("DEMO_COMPLETED", "DEMO_DECLINED");
     assertThat(decisionAuditCount(TENANT_A)).isZero();
     assertThat(draftQuoteRepository.countByTenantId(TENANT_B)).isZero();
+    assertNoExternalWriteState();
+  }
+
+  @Test
+  void browserStartedManagedIntakeIsTenantScopedAndReplaySafeOnPostgres() {
+    Instant now = Instant.parse("2026-07-04T00:00:00Z");
+    TenantContext.setTenantId(TENANT_A);
+    ChannelConnection connection =
+        new ChannelConnection(
+            TENANT_A,
+            ChannelProviderType.TELEGRAM,
+            "Deterministic local demo RFQ source",
+            "operant-local-demo",
+            null,
+            null,
+            now);
+    connection.activate(now);
+    connectionRepository.save(connection);
+
+    var first = localDemoRfqIntakeService.createOrGet(USER_A);
+    var replay = localDemoRfqIntakeService.createOrGet(USER_A);
+
+    assertThat(first.handoffId()).isEqualTo(replay.handoffId());
+    assertThat(first.status()).isEqualTo("PENDING_REVIEW");
+    assertThat(eventRepository.findByTenantIdOrderByReceivedAtDesc(TENANT_A))
+        .hasSize(1);
+    assertThat(channelRfqHandoffRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_A))
+        .hasSize(1);
+    assertThat(botRfqRequestRepository.findAll()).hasSize(1);
+
+    TenantContext.setTenantId(TENANT_B);
+    assertThatThrownBy(
+            () -> localDemoRfqIntakeService.createOrGet(UUID.randomUUID()))
+        .isInstanceOf(NotFoundException.class);
+    assertThat(eventRepository.findByTenantIdOrderByReceivedAtDesc(TENANT_B))
+        .isEmpty();
+    assertThat(channelRfqHandoffRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_B))
+        .isEmpty();
     assertNoExternalWriteState();
   }
 

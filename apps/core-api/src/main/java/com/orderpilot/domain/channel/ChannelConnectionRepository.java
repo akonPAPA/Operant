@@ -6,4 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ChannelConnectionRepository extends JpaRepository<ChannelConnection, UUID> {
   List<ChannelConnection> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
   Optional<ChannelConnection> findByIdAndTenantId(UUID id, UUID tenantId);
+  Optional<ChannelConnection>
+      findFirstByTenantIdAndProviderTypeAndExternalAccountIdOrderByCreatedAtDesc(
+          UUID tenantId, ChannelProviderType providerType, String externalAccountId);
 }

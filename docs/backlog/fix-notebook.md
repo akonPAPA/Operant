@@ -2,26 +2,46 @@
 
 ## P2 Product Decision — unify the legacy demo RFQ entrypoint with the channel handoff workspace
 
+- Status: PARTIAL — implementation and bounded H2/frontend proof pass; live browser + PostgreSQL
+  proof remains pending because the local PostgreSQL listener was unavailable.
 - Severity: P2 / Product Decision
 - Files:
   - `apps/web-dashboard/lib/demo-api.ts`
-  - `apps/core-api/src/main/java/com/orderpilot/api/rest/BotTelegramWebhookController.java`
-  - `apps/core-api/src/main/java/com/orderpilot/application/services/channel/ChannelBotRuntimeBridgeService.java`
+  - `apps/web-dashboard/app/api/demo/rfq-handoff/route.ts`
+  - `apps/core-api/src/main/java/com/orderpilot/api/rest/DemoRfqHandoffController.java`
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/channel/LocalDemoRfqIntakeService.java`
 - Root cause: the `/demo` button posts to `/api/v1/bot/telegram/webhook`, which creates the legacy
   bot RFQ/review records. The RFQ handoff workspace reads `channel_rfq_handoff`, which is created by
   the managed channel/bot bridge path. The two visible surfaces are not connected.
 - Risk: a user can receive a successful “RFQ requires human review” response on `/demo`, then see no
   pending item in `/channels/rfq-handoffs`.
-- Suggested fix: make one backend-owned, verified intake path create the workspace handoff. Do not
-  expose a channel connection/source ID to the browser and do not add a client-owned tenant, actor,
-  source, status, or execution field. Decide whether the legacy demo route should delegate to a
-  local-only backend resolver or be retired in favor of an approved BFF/gateway route.
+- Resolution: the browser now posts an empty request to a same-origin demo BFF. The BFF resolves the
+  local demo tenant from server-only configuration; core resolves the operator, fixed demo Telegram
+  connection, stable provider event identity, handoff state, deduplication, and audit, then delegates
+  to the managed channel/bot bridge. The production Telegram webhook controller was not changed.
 - Required proof/tests:
   - browser click on **Send demo Telegram RFQ** creates exactly one tenant-scoped handoff;
   - replay creates no duplicate event, bot RFQ, or handoff;
   - cross-tenant and spoofed source/connection attempts are denied;
   - no raw provider payload or internal connection ID is returned;
   - no quote approval, connector command, ChangeRequest, or outbox event is created.
+- Proof:
+  - `LocalDemoRfqIntakeServiceTest` proves one event, one bot RFQ, one `PENDING_REVIEW` handoff,
+    stable replay, cross-tenant denial, and zero connector command/sandbox execution/ChangeRequest/
+    outbox rows.
+  - `DemoRfqHandoffControllerAuthorityBoundaryTest` proves `ADMIN_SETTINGS_MANAGE`, backend-owned
+    actor resolution, spoofed body authority ignored, safe response fields, `STAFF_SUPPORT_READ`
+    denial, and no service invocation on denial.
+  - `DemoRfqHandoffControllerProductionGateTest.productionLikeRuntimeDeniesBeforeIntakeAndLeavesRfqTablesUntouched`
+    proves a production-like profile is denied even when the endpoint flag is enabled, with no
+    intake-service or inbound-event/bot-RFQ/channel-handoff repository interaction.
+  - `apps/web-dashboard/tests/rfq-handoffs.test.mjs` proves the empty browser request, server-side
+    tenant/permission injection, managed core path, bounded response contract, and redacted errors.
+  - `RfqHandoffRealDemoPostgresIntegrationTest` contains the connection-only PostgreSQL creation and
+    replay case; execution remains pending (`localhost:15432` refused the integration connection).
+- Residual proof to close: start the documented disposable PostgreSQL instance, pass the two-test
+  integration command, then perform the documented double-click browser walkthrough and confirm
+  exactly one `PENDING_REVIEW` row.
 - Owner/target week: Product/API owner; target week not assigned.
 - docs/api/quote-transactions.md:13
 - commit b16b993db1c944555a356c7c77725292d6608dd6

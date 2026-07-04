@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const demoPage = readFileSync(join(root, "components", "demo-dashboard.tsx"), "utf8");
 const demoRoute = readFileSync(join(root, "app", "(dashboard)", "demo", "page.tsx"), "utf8");
 const apiClient = readFileSync(join(root, "lib", "demo-api.ts"), "utf8");
@@ -28,7 +29,7 @@ test("demo page renders KPI cards and Telegram RFQ panel", () => {
 
 test("Stage 13D investor demo keeps frozen RFQ payload and seeded defaults", () => {
   assert.match(apiClient, /const DEMO_RFQ_TEXT = "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty\."/);
-  assert.match(apiClient, /text: DEMO_RFQ_TEXT/);
+  assert.match(apiClient, /demoTelegramRfqText = DEMO_RFQ_TEXT/);
   assert.match(demoPage, /externalExecution=DISABLED remains visible/);
   assert.match(demoPage, /External execution<\/dt><dd>DISABLED/);
 
@@ -42,6 +43,7 @@ test("Stage 13D investor demo keeps frozen RFQ payload and seeded defaults", () 
 
 test("Stage 13E final preflight keeps frozen demo safe and reproducible", () => {
   assert.match(apiClient, /Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty\./);
+  assert.doesNotMatch(apiClient, /demoTelegramRfqPayload|update_id: 91001|message_id: 7001/);
   assert.match(demoPage, /externalExecution=DISABLED/);
   assert.match(quoteReviewCockpit, /externalExecution=DISABLED/);
   assert.match(quoteWorkspace, /External ERP write: disabled \/ not executed/);
