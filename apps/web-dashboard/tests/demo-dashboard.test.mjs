@@ -72,6 +72,16 @@ test("demo page renders canonical reconciliation mismatch values", () => {
   assert.match(apiClient, /severity: "HIGH"/);
 });
 
+test("last demo calls list uses a stable unique key so repeated calls do not collide", () => {
+  // Regression: clicking the same demo action twice previously produced duplicate
+  // React keys (`label-message`), triggering a duplicate-key warning and risking
+  // dropped/duplicated rows. Each recorded call now carries a monotonic id.
+  assert.match(demoPage, /nextActionId = useRef\(0\)/);
+  assert.match(demoPage, /id: nextActionId\.current\+\+, label, result/);
+  assert.match(demoPage, /actions\.map\(\(action\) => <p key=\{action\.id\}>/);
+  assert.doesNotMatch(demoPage, /key=\{`\$\{action\.label\}-\$\{action\.result\?\.message\}`\}/);
+});
+
 test("demo page renders security and trust controls", () => {
   assert.match(demoPage, /Security and trust panel/);
   assert.match(demoPage, /AI\/bot cannot approve a quote/);

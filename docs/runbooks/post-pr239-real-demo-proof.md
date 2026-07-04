@@ -295,6 +295,75 @@ The first PostgreSQL proof attempt failed because its test fixture used a random
 the real `audit_event.actor_id -> user_account` foreign key. The fixture was corrected to use the
 seeded tenant user; no constraint or production check was weakened.
 
+## 14A. PR #242 browser + PostgreSQL proof (2026-07-04)
+
+Live disposable database `operant_post_pr239_proof` on `localhost:15432` (Docker `postgres:16-alpine`),
+Core API on `:8080` (profile `demo`, `orderpilot.demo.rfq-handoff.enabled=true`, unsigned local gateway
+header auth), dashboard on `:3000`.
+
+```text
+mvn -f apps/core-api/pom.xml "-Dspring.profiles.active=integration-test" \
+  "-Dorderpilot.postgres.integration.enabled=true" \
+  "-Dtest=PostgresMigrationSmokeIntegrationTest,RfqHandoffRealDemoPostgresIntegrationTest" test
+PASS: 4 tests, 0 failures, 0 errors, 0 skipped; Flyway 65 migrations validated; PostgreSQL 16.14
+
+mvn -f apps/core-api/pom.xml "-Dtest=*DemoRfqHandoff*Test,*LocalDemo*Test,*Bot*Test,*RfqHandoff*Test" test
+PASS: 138 tests, 0 failures, 3 skipped (the Postgres-only integration tests skip under H2)
+
+mvn -f apps/core-api/pom.xml \
+  "-Dtest=RfqHandoffDraftQuoteControllerTest,RfqHandoffDraftQuoteServiceTest,RequestActorResolverLocalDemoTest,ChannelRfqHandoffControllerAuthorityBoundaryTest,AiWorkControllerAuthorityBoundaryTest" test
+PASS: 37 tests, 0 failures, 0 errors, 0 skipped
+
+node --test apps/web-dashboard/tests/rfq-handoffs.test.mjs      PASS: 30 tests, 0 failures
+node --test apps/web-dashboard/tests/demo-dashboard.test.mjs    PASS: 9 tests, 0 failures (was 8; +1 regression)
+npm --prefix apps/web-dashboard run lint       PASS
+npm --prefix apps/web-dashboard run typecheck  PASS
+npm --prefix apps/web-dashboard run build      PASS: compiled, typechecked, generated 52/52 static pages
+git diff --check                               PASS (clean)
+```
+
+Live browser walkthrough (dashboard driven through a real headless browser attached to `:3000`;
+each step is a genuine in-page button click routed through the same-origin BFF and Core):
+
+```text
+/demo "Send demo Telegram RFQ" clicked (twice)
+  POST /api/demo/rfq-handoff -> 200; body { handoffId=...903, status=PENDING_REVIEW, message=... }
+  DB after repeated clicks: channel_rfq_handoff PENDING_REVIEW = 1; inbound_channel_event = 1 (replay-safe)
+/channels/rfq-handoffs
+  Generate suggestion  -> "ADVISORY ONLY", RISK MEDIUM, CONFIDENCE 50%, every next action "human approval required"
+  Start review         -> POST .../start-review 200
+  Create draft quote   -> POST .../from-rfq-handoff 200; draft DQ-... Status NEEDS_REVIEW, Validation NEEDS_REVIEW,
+                          Human review Required, Audit RECORDED, Outbox NOT_REQUESTED, External write safety NO_EXTERNAL_WRITE,
+                          line PAD-OE-04465 qty 2 EA, blocking issues CUSTOMER_NOT_RESOLVED / PRICE_NOT_RESOLVED
+  Empty decision note  -> Complete/Decline both disabled (required-note gate)
+  Note entered + Complete safe demo:
+    Decision state = COMPLETE_DEMO; Quote state = DEMO_COMPLETED; Safe terminal state = SAFE_DEMO_TERMINAL;
+    Audit = RECORDED; External execution = DISABLED; Connector call = NOT_INVOKED; Outbox = NOT_REQUESTED
+
+DB after terminal decision (tenant-scoped):
+  draft_quote status=DEMO_COMPLETED requires_human_review=true; handoff=CONVERTED
+  audit RFQ_HANDOFF_DEMO_DECISION_RECORDED count = 1
+  idempotency_key RFQ_HANDOFF_DEMO_DECISION rows = 1 / SUCCEEDED
+  connector_command=0; connector_sandbox_execution=0; change_request=0; outbox_event=0
+```
+
+No `actorId`, `tenantId`, idempotency key, raw AI payload, audit event id, connector credential, or raw
+backend error was rendered anywhere in the walked pages (verified via the accessibility tree and the BFF
+response body). The one redacted failure observed was a `503 { "message": "The demo RFQ could not be
+created." }` when the dashboard process was started without the server-only `ORDERPILOT_DEMO_MODE` /
+`ORDERPILOT_DEMO_TENANT_ID` env (section 3) — the BFF failed closed with a safe message and made no Core
+call. Re-running with the section-3 env produced the 200 flow above.
+
+One bounded UX defect was found and fixed during this walkthrough: the `/demo` "Last demo calls" list
+keyed rows on `label-message`, so clicking the same demo button twice produced duplicate React keys (a
+console error and potential row duplication/omission). Each recorded call now carries a monotonic id
+(`components/demo-dashboard.tsx`), with a regression assertion in `tests/demo-dashboard.test.mjs`.
+
+Screenshots: not captured. Static-frame screenshot capture timed out repeatedly on this Windows host
+(the same UI-runtime limitation noted in section 16). Evidence was instead captured from the live
+accessibility tree, the browser network log, the BFF response body, and tenant-scoped PostgreSQL queries
+— all reproduced above.
+
 ## 15. Screenshot and log evidence
 
 Capture screenshots after:
@@ -312,14 +381,18 @@ not attach full logs if they contain internal stack traces.
 
 ## 16. What remains not proven
 
-- Automated visible browser click-through: not proven. The repository has no Playwright/Cypress
-  setup, and both available UI-control runtimes were blocked on this Windows host by an ACL sandbox
-  failure. The manual walkthrough remains required.
-- Screenshots: not captured because automated browser control was unavailable.
-- Full backend suite and full CI: not run.
+- PR #241 PostgreSQL execution: **proven (2026-07-04, PR #242)** — see section 14A. The disposable
+  database started, the two-test integration command passed, and the double-click browser walkthrough
+  reached `SAFE_DEMO_TERMINAL` with exactly one `PENDING_REVIEW` row and zero external-write rows.
+- Browser click-through: **proven live (2026-07-04, PR #242)** via a real headless browser attached to
+  the running dashboard on `:3000`; every step was a genuine in-page click routed through the BFF and
+  Core (section 14A).
+- Static-frame screenshots: not captured. Image capture timed out repeatedly on this Windows host, so
+  evidence was taken from the live accessibility tree, network log, BFF response body, and PostgreSQL
+  queries instead (section 14A). A future run on a host with working screenshot capture can attach the
+  four images listed in section 15.
+- Full backend suite and full CI: not run (targeted suites only).
 - Production SSO/signed gateway deployment: not part of this local/demo proof.
 - Worker/connector runtime: not run; database assertions prove no external work was requested.
 - Live production Telegram delivery is not part of this local/demo proof; production webhook
   verification was not changed.
-- PR #241 PostgreSQL execution on this host: not proven. The integration command reached Flyway but
-  `localhost:15432` refused the connection; start the disposable database from section 4 and rerun.
