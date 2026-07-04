@@ -3,7 +3,7 @@ import { demoTenantId } from "./frontend-authority.mjs";
 // OP-CAP-06C RFQ Handoff Operator Workflow client.
 // Surfaces the controlled channel/bot RFQ handoff review workflow (OP-CAP-06B record + OP-CAP-06C
 // operator transitions). A handoff is a reviewable draft request only — never a quote/order.
-// Read and transition endpoints live under /api/v1/channels and require ADMIN_SETTINGS_READ.
+// Reads require ADMIN_SETTINGS_READ; operator transitions require ADMIN_SETTINGS_MANAGE.
 // No secrets, raw tokens, or raw provider payloads are requested. No quote/order/ERP action exists.
 
 import type { AiWorkSuggestion, AiWorkType } from "./ai-work-api";
@@ -108,10 +108,10 @@ export const rfqHandoffClient = {
   tenantId: demoTenantId()
 };
 
-// All /api/v1/channels endpoints (reads and the OP-CAP-06C transition POSTs) are guarded by
-// ADMIN_SETTINGS_READ in the backend ApiPermissionInterceptor, which re-validates on every request.
+// The backend re-validates read and mutation permissions on every request.
 // This is an operator-only surface; the bot/channel path can never reach these transition endpoints.
-const CHANNELS_PERMISSION = "ADMIN_SETTINGS_READ";
+const CHANNELS_READ_PERMISSION = "ADMIN_SETTINGS_READ";
+const CHANNELS_MANAGE_PERMISSION = "ADMIN_SETTINGS_MANAGE";
 const AI_WORK_ACTION = "AI_WORK_ACTION";
 const QUOTE_ACTION = "QUOTE_ACTION";
 
@@ -134,7 +134,7 @@ function rfqHandoffStatusMessage(status: number): string {
 function baseHeaders(): Record<string, string> {
   const h: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-OrderPilot-Permissions": CHANNELS_PERMISSION
+    "X-OrderPilot-Permissions": CHANNELS_READ_PERMISSION
   };
   if (rfqHandoffClient.tenantId) {
     h["X-Tenant-Id"] = rfqHandoffClient.tenantId;
@@ -184,7 +184,11 @@ export function getRfqHandoff(id: string) {
 export function startReviewRfqHandoff(id: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/start-review`,
-    { method: "POST", body: JSON.stringify({}) },
+    {
+      method: "POST",
+      headers: { "X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION },
+      body: JSON.stringify({})
+    },
     null
   );
 }
@@ -193,7 +197,11 @@ export function startReviewRfqHandoff(id: string) {
 export function dismissRfqHandoff(id: string, reason: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/dismiss`,
-    { method: "POST", body: JSON.stringify({ reason }) },
+    {
+      method: "POST",
+      headers: { "X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION },
+      body: JSON.stringify({ reason })
+    },
     null
   );
 }
@@ -202,7 +210,11 @@ export function dismissRfqHandoff(id: string, reason: string) {
 export function markConvertedRfqHandoff(id: string, conversionNote: string) {
   return request<RfqHandoff | null>(
     `/api/v1/channels/rfq-handoffs/${id}/mark-converted`,
-    { method: "POST", body: JSON.stringify({ conversionNote }) },
+    {
+      method: "POST",
+      headers: { "X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION },
+      body: JSON.stringify({ conversionNote })
+    },
     null
   );
 }

@@ -7,6 +7,7 @@ import com.orderpilot.application.services.channel.ChannelRfqHandoffService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelRfqHandoffStatus;
 import com.orderpilot.security.RequestActorResolver;
+import com.orderpilot.security.policy.TenantPolicyException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
@@ -94,8 +95,13 @@ public class ChannelRfqHandoffController {
   }
 
   private UUID trustedActor(HttpServletRequest http) {
-    UUID actorId = actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
-    return RequestActorResolver.SYSTEM_ACTOR.equals(actorId) ? null : actorId;
+    UUID actorId =
+        actorResolver.resolveVerifiedLocalDemoOperator(
+            http, TenantContext.requireTenantId());
+    if (RequestActorResolver.SYSTEM_ACTOR.equals(actorId)) {
+      throw new TenantPolicyException("Tenant operator actor is required");
+    }
+    return actorId;
   }
 
   private ChannelRfqHandoffStatus parseStatus(String status) {

@@ -129,6 +129,7 @@ class RfqHandoffDraftQuoteControllerTest {
 
     verify(service)
         .createDraftQuote(handoffId, trustedActor, ActorRole.SALES_QUOTE_MANAGER);
+    verify(actorResolver).resolveVerifiedLocalDemoOperator(any(), any());
   }
 
   @Test
@@ -347,6 +348,26 @@ class RfqHandoffDraftQuoteControllerTest {
                     """
                     {"decision":"COMPLETE_DEMO","note":"Service account attempt"}
                     """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("Tenant operator actor is required"));
+
+    verifyNoInteractions(service, idempotencyService);
+  }
+
+  @Test
+  void systemActorCannotCreateRfqDraftEvenWithQuotePermission() throws Exception {
+    when(actorResolver.resolveVerifiedLocalDemoOperator(any(), any()))
+        .thenReturn(RequestActorResolver.SYSTEM_ACTOR);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/quotes/drafts/from-rfq-handoff/"
+                        + UUID.randomUUID())
+                .header("X-Tenant-Id", tenantId)
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "QUOTE_ACTION")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.message").value("Tenant operator actor is required"));
 

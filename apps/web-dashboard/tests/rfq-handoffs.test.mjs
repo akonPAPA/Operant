@@ -62,10 +62,24 @@ test("api client targets the OP-CAP-06B/06C channel routes", () => {
   assert.match(api, /mark-converted/);
 });
 
-test("api client sends tenant and ADMIN_SETTINGS_READ permission headers", () => {
+test("api client separates channel read and mutation permissions", () => {
   assert.match(api, /X-Tenant-Id/);
   assert.match(api, /X-OrderPilot-Permissions/);
-  assert.match(api, /ADMIN_SETTINGS_READ/);
+  assert.match(api, /CHANNELS_READ_PERMISSION = "ADMIN_SETTINGS_READ"/);
+  assert.match(api, /CHANNELS_MANAGE_PERMISSION = "ADMIN_SETTINGS_MANAGE"/);
+  for (const functionName of [
+    "startReviewRfqHandoff",
+    "dismissRfqHandoff",
+    "markConvertedRfqHandoff"
+  ]) {
+    const start = api.indexOf(`export function ${functionName}`);
+    const end = api.indexOf("\n}\n", start);
+    const action = api.slice(start, end);
+    assert.match(
+      action,
+      /"X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION/
+    );
+  }
 });
 
 test("api client transition payloads do not send backend-owned actor fields", () => {

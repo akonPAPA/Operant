@@ -16,6 +16,7 @@ import com.orderpilot.domain.aiwork.AiWorkSourceType;
 import com.orderpilot.domain.aiwork.AiWorkSuggestion;
 import com.orderpilot.domain.aiwork.AiWorkType;
 import com.orderpilot.security.RequestActorResolver;
+import com.orderpilot.security.policy.TenantPolicyException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
@@ -94,7 +95,7 @@ public class AiWorkController {
         handoffId,
         rfqHandoffContext(handoff),
         ClientIdempotencyKey.normalize(idempotencyKey),
-        trustedActor(http));
+        trustedRfqOperator(http, tenantId));
     return responseMapper.toResponse(saved);
   }
 
@@ -130,6 +131,14 @@ public class AiWorkController {
 
   private UUID trustedActor(HttpServletRequest http) {
     return actorResolver.resolveVerifiedActor(http, TenantContext.requireTenantId());
+  }
+
+  private UUID trustedRfqOperator(HttpServletRequest http, UUID tenantId) {
+    UUID actorId = actorResolver.resolveVerifiedLocalDemoOperator(http, tenantId);
+    if (RequestActorResolver.SYSTEM_ACTOR.equals(actorId)) {
+      throw new TenantPolicyException("Tenant operator actor is required");
+    }
+    return actorId;
   }
 
   private static String rfqHandoffContext(ChannelRfqHandoff handoff) {

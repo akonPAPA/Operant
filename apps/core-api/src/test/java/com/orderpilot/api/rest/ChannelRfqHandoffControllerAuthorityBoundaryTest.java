@@ -104,6 +104,44 @@ class ChannelRfqHandoffControllerAuthorityBoundaryTest {
   }
 
   @Test
+  void headerlessLocalDemoStartReviewUsesBackendOwnedOperator() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID handoffId = UUID.randomUUID();
+
+    mockMvc
+        .perform(
+            post("/api/v1/channels/rfq-handoffs/{id}/start-review", handoffId)
+                .header("X-Tenant-Id", tenant.toString())
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isOk());
+
+    verify(handoffService)
+        .startReview(handoffId, RequestActorResolver.LOCAL_DEMO_OPERATOR_ACTOR);
+  }
+
+  @Test
+  void explicitSystemActorCannotMutateRfqHandoff() throws Exception {
+    UUID tenant = UUID.randomUUID();
+    UUID handoffId = UUID.randomUUID();
+
+    mockMvc
+        .perform(
+            post("/api/v1/channels/rfq-handoffs/{id}/start-review", handoffId)
+                .header("X-Tenant-Id", tenant.toString())
+                .header(
+                    RequestActorResolver.ACTOR_HEADER,
+                    RequestActorResolver.SYSTEM_ACTOR.toString())
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ADMIN_SETTINGS_MANAGE")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isForbidden());
+
+    verifyNoInteractions(handoffService);
+  }
+
+  @Test
   void dismissUsesTrustedActorAndIgnoresClientActorField() throws Exception {
     UUID tenant = UUID.randomUUID();
     UUID handoffId = UUID.randomUUID();

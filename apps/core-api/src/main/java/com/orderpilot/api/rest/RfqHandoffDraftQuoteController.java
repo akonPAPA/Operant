@@ -48,7 +48,7 @@ public class RfqHandoffDraftQuoteController {
     return RfqHandoffDraftQuoteResponse.from(
         service.createDraftQuote(
             handoffId,
-            actorResolver.resolveVerifiedActor(http, tenantId),
+            resolveTenantOperator(http, tenantId),
             roleResolver.resolveQuoteRole()));
   }
 
@@ -64,10 +64,7 @@ public class RfqHandoffDraftQuoteController {
     }
     UUID tenantId = TenantContext.requireTenantId();
     var role = roleResolver.resolveQuoteRole();
-    UUID actorId = actorResolver.resolveVerifiedLocalDemoOperator(http, tenantId);
-    if (RequestActorResolver.SYSTEM_ACTOR.equals(actorId)) {
-      throw new TenantPolicyException("Tenant operator actor is required");
-    }
+    UUID actorId = resolveTenantOperator(http, tenantId);
     RfqHandoffDecisionRequest businessIntent =
         request == null ? new RfqHandoffDecisionRequest(null, null) : request;
     return idempotencyService.execute(
@@ -87,5 +84,13 @@ public class RfqHandoffDraftQuoteController {
                     role,
                     businessIntent.decision(),
                     businessIntent.note())));
+  }
+
+  private UUID resolveTenantOperator(HttpServletRequest http, UUID tenantId) {
+    UUID actorId = actorResolver.resolveVerifiedLocalDemoOperator(http, tenantId);
+    if (RequestActorResolver.SYSTEM_ACTOR.equals(actorId)) {
+      throw new TenantPolicyException("Tenant operator actor is required");
+    }
+    return actorId;
   }
 }
