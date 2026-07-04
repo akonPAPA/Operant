@@ -3,6 +3,7 @@ package com.orderpilot.application.services.aiwork;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.orderpilot.domain.aiwork.AiWorkSourceType;
+import com.orderpilot.domain.aiwork.AiWorkSchemaVersion;
 import com.orderpilot.domain.aiwork.AiWorkType;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,8 @@ class DeterministicAiWorkProviderTest {
     assertThat(first.generatedText()).isEqualTo(second.generatedText());
     assertThat(first.strategyVersion()).isEqualTo(DeterministicAiWorkProvider.STRATEGY_VERSION);
     assertThat(first.generatedText()).contains("Summary (advisory)");
+    assertThat(first.structuredPayloadJson())
+        .contains(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_REQUEST_SUMMARY.name());
   }
 
   @Test
@@ -35,6 +38,8 @@ class DeterministicAiWorkProviderTest {
 
     assertThat(result.generatedText()).contains("Draft only");
     assertThat(result.riskLevel()).isEqualTo("MEDIUM");
+    assertThat(result.structuredPayloadJson())
+        .contains(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_CUSTOMER_REPLY_DRAFT.name());
     assertThat(result.structuredPayloadJson()).contains("\"containsCommitments\":false");
   }
 
@@ -47,6 +52,9 @@ class DeterministicAiWorkProviderTest {
     var result = provider.generate(request);
 
     assertThat(result.structuredPayloadJson()).contains("\"requiresHumanApproval\":true");
+    assertThat(result.structuredPayloadJson()).contains("\"actionType\"");
+    assertThat(result.structuredPayloadJson())
+        .contains(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_NEXT_ACTION_SUGGESTION.name());
     assertThat(result.structuredPayloadJson()).contains("REVIEW_MARGIN_DISCOUNT");
     assertThat(result.structuredPayloadJson()).doesNotContain("\"requiresHumanApproval\":false");
     assertThat(result.riskLevel()).isEqualTo("HIGH");
@@ -61,5 +69,7 @@ class DeterministicAiWorkProviderTest {
     var result = provider.generate(request);
 
     assertThat(result.evidenceRefsJson()).contains("SOURCE_OBJECT");
+    assertThat(result.structuredPayloadJson())
+        .contains(AiWorkSchemaVersion.AI_WORK_SCHEMA_V1_REQUEST_SUMMARY.name());
   }
 }

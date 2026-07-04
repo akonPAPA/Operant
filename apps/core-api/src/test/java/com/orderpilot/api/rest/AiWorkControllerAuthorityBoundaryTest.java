@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orderpilot.application.services.aiwork.AiWorkPublicResponseMapper;
@@ -200,6 +201,12 @@ class AiWorkControllerAuthorityBoundaryTest {
                 }
                 """.formatted(spoofSourceId)))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.schemaVersion")
+            .value("AI_WORK_SCHEMA_V1_NEXT_ACTION_SUGGESTION"))
+        .andExpect(jsonPath("$.safety.advisoryOnly").value(true))
+        .andExpect(jsonPath("$.safety.externalExecution").value("DISABLED"))
+        .andExpect(jsonPath("$.safety.connectorCall").value("NOT_INVOKED"))
+        .andExpect(jsonPath("$.safety.outbox").value("NOT_REQUESTED"))
         .andExpect(content().string(not(containsString(spoofSourceId.toString()))))
         .andExpect(content().string(not(containsString("client supplied context"))));
 
@@ -373,7 +380,7 @@ class AiWorkControllerAuthorityBoundaryTest {
     mockMvc.perform(get("/api/v1/ai-work/suggestions/{id}", suggestionId)
             .header(TENANT_HEADER, tenant.toString()))
         .andExpect(status().isOk())
-        .andExpect(content().string(containsString("Advisory output withheld by safety filter.")))
+        .andExpect(content().string(containsString("AI suggestion could not be safely rendered.")))
         .andExpect(content().string(not(containsString("objectStorageKey"))))
         .andExpect(content().string(not(containsString("tenant/raw/private.txt"))))
         .andExpect(content().string(not(containsString("promptText"))))

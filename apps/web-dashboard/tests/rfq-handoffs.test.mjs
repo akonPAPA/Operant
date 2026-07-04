@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const api = readFileSync(join(root, "lib", "rfq-handoff-api.ts"), "utf8");
+const aiWorkApi = readFileSync(join(root, "lib", "ai-work-api.ts"), "utf8");
 const workspace = readFileSync(join(root, "components", "rfq-handoff-workspace.tsx"), "utf8");
+const aiWorkSchemaView = readFileSync(
+  join(root, "components", "ai-work-schema-v1-view.tsx"),
+  "utf8"
+);
 const page = readFileSync(join(root, "app", "(dashboard)", "channels", "rfq-handoffs", "page.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
 const demoApi = readFileSync(join(root, "lib", "demo-api.ts"), "utf8");
@@ -104,16 +109,41 @@ test("api client contextual AI payload does not send source ids or context text"
   assert.doesNotMatch(api, /JSON\.stringify\(\{[^}]*contextText/s);
 });
 
-test("workspace renders safe AI suggestion fields, candidates, risk, and confidence", () => {
-  assert.match(workspace, /aiSuggestion\.summary/);
-  assert.match(workspace, /aiSuggestion\.nextActionCandidates/);
-  assert.match(workspace, /aiSuggestion\.displayFields/);
-  assert.match(workspace, /aiSuggestion\.riskFlags/);
-  assert.match(workspace, /aiSuggestion\.riskLevel/);
-  assert.match(workspace, /aiSuggestion\.confidence/);
-  assert.match(workspace, /Advisory only/);
-  assert.doesNotMatch(workspace, /aiSuggestion\.generatedText/);
-  assert.doesNotMatch(workspace, /structuredPayloadJson|evidenceRefsJson/);
+test("workspace renders the schema-specific safe AI Work V1 projection", () => {
+  assert.match(workspace, /AiWorkSchemaV1View suggestion=\{aiSuggestion\}/);
+  assert.match(aiWorkApi, /AI_WORK_SCHEMA_V1_REQUEST_SUMMARY/);
+  assert.match(aiWorkApi, /AI_WORK_SCHEMA_V1_NEXT_ACTION_SUGGESTION/);
+  assert.match(aiWorkApi, /AI_WORK_SCHEMA_V1_CUSTOMER_REPLY_DRAFT/);
+  assert.match(aiWorkApi, /AI_WORK_SCHEMA_V1_VALIDATION_EXPLANATION/);
+  assert.match(aiWorkSchemaView, /switch \(suggestion\.schemaVersion\)/);
+  assert.match(aiWorkSchemaView, /suggestion\.summary/);
+  assert.match(aiWorkSchemaView, /suggestion\.nextActionCandidates/);
+  assert.match(aiWorkSchemaView, /suggestion\.displayFields/);
+  assert.match(aiWorkSchemaView, /suggestion\.riskFlags/);
+  assert.match(aiWorkSchemaView, /suggestion\.evidence/);
+  assert.match(aiWorkSchemaView, /ADVISORY ONLY/);
+  assert.match(aiWorkSchemaView, /Human approval required/);
+  assert.match(aiWorkSchemaView, /safety\.externalExecution/);
+  assert.match(aiWorkSchemaView, /safety\.connectorCall/);
+  assert.match(aiWorkSchemaView, /safety\.outbox/);
+  assert.doesNotMatch(
+    aiWorkSchemaView,
+    /generatedText|structuredPayloadJson|evidenceRefsJson|strategyVersion/
+  );
+});
+
+test("AI Work client and renderer expose no forbidden provider or authority fields", () => {
+  const suggestionType = aiWorkApi.slice(
+    aiWorkApi.indexOf("export type AiWorkSuggestion ="),
+    aiWorkApi.indexOf("export type AiWorkDecisionRequest")
+  );
+  assert.match(suggestionType, /schemaVersion: AiWorkSchemaVersion/);
+  assert.match(suggestionType, /safety: AiWorkSafety/);
+  assert.doesNotMatch(
+    suggestionType,
+    /tenantId|actorId|idempotencyKey|rawPayload|payloadJson|prompt|apiKey|credential|auditEventId|stackTrace|strategyVersion/
+  );
+  assert.doesNotMatch(aiWorkApi, /error instanceof Error \? error\.message/);
 });
 
 test("api client has no manual handoff create or ERP action", () => {

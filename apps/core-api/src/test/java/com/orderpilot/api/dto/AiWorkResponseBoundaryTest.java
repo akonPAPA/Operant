@@ -21,6 +21,7 @@ class AiWorkResponseBoundaryTest {
       "rawJson",
       "suggestionJson",
       "generatedText",
+      "strategyVersion",
       "createdByUserId",
       "decidedByUserId",
       "actorId",
@@ -36,7 +37,14 @@ class AiWorkResponseBoundaryTest {
         .map(RecordComponent::getName)
         .collect(Collectors.toSet());
     assertThat(names).doesNotContainAnyElementsOf(FORBIDDEN_RESPONSE_FIELDS);
-    assertThat(names).contains("summary", "displayFields", "nextActionCandidates", "evidence", "riskFlags");
+    assertThat(names).contains(
+        "schemaVersion",
+        "summary",
+        "displayFields",
+        "nextActionCandidates",
+        "evidence",
+        "riskFlags",
+        "safety");
   }
 
   @Test

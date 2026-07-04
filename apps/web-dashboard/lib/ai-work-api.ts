@@ -25,24 +25,48 @@ export type AiWorkSourceType =
 
 export type AiWorkStatus = "GENERATED" | "ACCEPTED" | "REJECTED";
 
+export type AiWorkSchemaVersion =
+  | "AI_WORK_SCHEMA_V1_REQUEST_SUMMARY"
+  | "AI_WORK_SCHEMA_V1_NEXT_ACTION_SUGGESTION"
+  | "AI_WORK_SCHEMA_V1_CUSTOMER_REPLY_DRAFT"
+  | "AI_WORK_SCHEMA_V1_VALIDATION_EXPLANATION";
+
 export type AiWorkDisplayField = {
+  key: string;
   label: string;
   value: string;
+  kind: "TEXT" | "BOOLEAN";
   confidence?: number;
-  sourceLabel?: string;
+  evidenceRef?: string;
 };
 
 export type AiWorkEvidenceItem = {
-  label: string;
+  sourceType: "SOURCE_OBJECT" | "VALIDATION_RESULT" | "OPERATOR_CONTEXT" | "SOURCE_CONTEXT";
+  sourceLabel: string;
   excerpt?: string;
-  page?: number;
-  field?: string;
+  confidence?: number;
 };
 
 export type AiWorkNextActionCandidate = {
-  actionCode: string;
+  actionType: string;
   label: string;
+  description?: string;
   requiresHumanApproval: boolean;
+  disabledReason?: string;
+};
+
+export type AiWorkRiskFlag = {
+  code: string;
+  severity: "LOW" | "MEDIUM" | "HIGH";
+  message: string;
+};
+
+export type AiWorkSafety = {
+  advisoryOnly: true;
+  externalExecution: "DISABLED";
+  connectorCall: "NOT_INVOKED";
+  outbox: "NOT_REQUESTED";
+  humanApprovalRequired: boolean;
 };
 
 export type AiWorkSuggestion = {
@@ -50,7 +74,7 @@ export type AiWorkSuggestion = {
   workType: AiWorkType;
   sourceType: AiWorkSourceType;
   status: AiWorkStatus;
-  strategyVersion: string;
+  schemaVersion: AiWorkSchemaVersion;
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
   confidence?: number;
   /** Operator-safe advisory text (not raw provider output). */
@@ -58,7 +82,8 @@ export type AiWorkSuggestion = {
   displayFields: AiWorkDisplayField[];
   evidence: AiWorkEvidenceItem[];
   nextActionCandidates: AiWorkNextActionCandidate[];
-  riskFlags: string[];
+  riskFlags: AiWorkRiskFlag[];
+  safety: AiWorkSafety;
   advisoryOnly: boolean;
   createdAt: string;
   updatedAt: string;
@@ -133,10 +158,10 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : fallback;
     return { data };
-  } catch (error) {
+  } catch {
     return {
       data: fallback,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: "AI work suggestions are temporarily unavailable."
     };
   }
 }
