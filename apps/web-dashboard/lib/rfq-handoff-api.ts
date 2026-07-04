@@ -126,6 +126,10 @@ function rfqHandoffStatusMessage(status: number): string {
       return "This RFQ handoff is not found or no longer available.";
     case 409:
       return "This RFQ action conflicts with a newer workflow update.";
+    case 429:
+    case 503:
+      // OP-CAP-27B runtime control: rate-limit / backpressure denial. Bounded, safe, no internals.
+      return "Runtime capacity is busy right now. Please retry this RFQ action in a moment.";
     default:
       return "The RFQ action could not be completed.";
   }

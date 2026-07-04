@@ -17,5 +17,14 @@ public enum RuntimeOperationType {
   REPORT_GENERATED,
   // OP-CAP-16G: gated at the advisory AI explanation/summary generation boundary
   // (AiWorkService.createSuggestion, immediately before the provider call).
-  AI_VALIDATION_EXPLANATION
+  AI_VALIDATION_EXPLANATION,
+  // OP-CAP-27B: RFQ/AI/demo path runtime-control checkpoints. Each is a distinct, deterministic,
+  // operator-initiated boundary on the visible demo flow (deterministic demo RFQ handoff creation ->
+  // review-required draft quote creation -> safe terminal demo decision). They are rate/backpressure
+  // gated only (no quota metric, no entitlement/plan coupling) so the demo path is denial-safe without
+  // introducing billing semantics. The AI advisory suggestion boundary on this same path is already
+  // gated by AI_VALIDATION_EXPLANATION (the shared advisory-generation guard) and is not duplicated.
+  DEMO_RFQ_HANDOFF_CREATE,
+  RFQ_HANDOFF_DRAFT_QUOTE_CREATE,
+  RFQ_HANDOFF_DEMO_DECISION
 }

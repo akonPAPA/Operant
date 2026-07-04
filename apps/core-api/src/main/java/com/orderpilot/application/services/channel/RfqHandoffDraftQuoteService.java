@@ -4,6 +4,9 @@ import com.orderpilot.api.dto.ChannelRfqHandoffDtos.ChannelRfqHandoffResponse;
 import com.orderpilot.api.dto.Stage11ADtos.CreateDraftQuoteFromRfqRequest;
 import com.orderpilot.api.dto.Stage11ADtos.DraftQuoteResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.application.services.workspace.RfqToDraftQuoteService;
 import com.orderpilot.application.services.workspace.RfqTextLineExtractor;
 import com.orderpilot.common.errors.NotFoundException;
@@ -45,6 +48,7 @@ public class RfqHandoffDraftQuoteService {
   private final RfqToDraftQuoteService draftQuoteService;
   private final DraftQuoteRepository draftQuoteRepository;
   private final AuditEventService auditEventService;
+  private final RuntimeGuardService runtimeGuardService;
   private final Clock clock;
 
   public RfqHandoffDraftQuoteService(
@@ -53,12 +57,14 @@ public class RfqHandoffDraftQuoteService {
       RfqToDraftQuoteService draftQuoteService,
       DraftQuoteRepository draftQuoteRepository,
       AuditEventService auditEventService,
+      RuntimeGuardService runtimeGuardService,
       Clock clock) {
     this.handoffRepository = handoffRepository;
     this.handoffService = handoffService;
     this.draftQuoteService = draftQuoteService;
     this.draftQuoteRepository = draftQuoteRepository;
     this.auditEventService = auditEventService;
+    this.runtimeGuardService = runtimeGuardService;
     this.clock = clock;
   }
 
@@ -87,6 +93,14 @@ public class RfqHandoffDraftQuoteService {
       throw new IllegalArgumentException(
           "RFQ handoff must be in review before a draft quote can be created");
     }
+
+    // OP-CAP-27B runtime-control checkpoint: rate/backpressure guard BEFORE the draft quote, its
+    // lines, validation issues, audit event, or the handoff CONVERTED transition are written. Runs
+    // after the idempotency short-circuit above, so a retried request that returns the existing draft
+    // consumes no guard budget. A denial throws a stable mapped exception (429/403) and fails closed —
+    // no draft is created and the handoff stays IN_REVIEW.
+    runtimeGuardService.enforce(
+        RuntimeGuardRequest.of(tenantId, RuntimeOperationType.RFQ_HANDOFF_DRAFT_QUOTE_CREATE, 1));
 
     DraftQuoteResponse draftQuote =
         draftQuoteService.createFromRfq(
@@ -155,6 +169,15 @@ public class RfqHandoffDraftQuoteService {
       throw new IllegalArgumentException(
           "Draft quote is not in a valid state for an operator demo decision");
     }
+
+    // OP-CAP-27B runtime-control checkpoint: rate/backpressure guard BEFORE the quote status
+    // transition, handoff terminal state, and decision audit record. The controller wraps this call in
+    // IdempotencyService.execute, so a replayed decision returns the stored result without re-invoking
+    // decide() and therefore consumes no guard budget. A denial throws a stable mapped exception
+    // (429/403) and fails closed — the whole transaction (including the reserved idempotency row)
+    // rolls back, so no terminal state, audit, or fake-success replay is persisted.
+    runtimeGuardService.enforce(
+        RuntimeGuardRequest.of(tenantId, RuntimeOperationType.RFQ_HANDOFF_DEMO_DECISION, 1));
 
     String previousState = quote.getStatus();
     quote.transition(

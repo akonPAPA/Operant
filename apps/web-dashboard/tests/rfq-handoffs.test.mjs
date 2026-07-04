@@ -363,6 +363,15 @@ test("RFQ client maps failures to safe messages without exposing raw backend bod
   assert.doesNotMatch(api, /error instanceof Error \? error\.message/);
 });
 
+test("RFQ client maps runtime rate-limit/backpressure denial to a bounded safe message", () => {
+  // OP-CAP-27B: 429/503 runtime-control denial renders a safe, retry-oriented message and leaks no
+  // quota bucket, redis key, retry-after threshold, or raw guard state.
+  assert.match(api, /case 429:/);
+  assert.match(api, /case 503:/);
+  assert.match(api, /Runtime capacity is busy right now\. Please retry this RFQ action in a moment\./);
+  assert.doesNotMatch(api, /quotaBucket|redisKey|retryAfterSeconds|jti|nonce/);
+});
+
 // --- Page + navigation ---
 
 test("page is a server loader that pre-fetches pending handoffs", () => {

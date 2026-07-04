@@ -110,6 +110,25 @@ class AiWorkExplanationGuardStage16GTest {
   }
 
   @Test
+  void rfqHandoffAdvisoryDenialDeniesBeforeProvider() {
+    // OP-CAP-27B: the RFQ/AI/demo path's AI advisory suggestion boundary (source RFQ_HANDOFF) flows
+    // through the same shared createSuggestion guard — proving the demo path's AI generation is
+    // gated before the provider and no advisory row is written on denial.
+    UUID tenantId = UUID.randomUUID();
+    TenantContext.setTenantId(tenantId);
+    seedDisabledEntitlement(tenantId);
+    long before = repository.count();
+
+    assertThatThrownBy(() -> service.createSuggestion(
+        AiWorkType.NEXT_ACTION_SUGGESTION, AiWorkSourceType.RFQ_HANDOFF, UUID.randomUUID(),
+        "source: RFQ_HANDOFF\nstatus: IN_REVIEW\nrequest: need brake pads", null, UUID.randomUUID()))
+        .isInstanceOf(RuntimeFeatureNotAvailableException.class);
+
+    assertThat(provider.calls.get()).isZero();
+    assertThat(repository.count()).isEqualTo(before);
+  }
+
+  @Test
   void quotaDenialDeniesBeforeProvider() {
     UUID tenantId = UUID.randomUUID();
     TenantContext.setTenantId(tenantId);
