@@ -1,5 +1,39 @@
 # Fix Notebook
 
+## P2 — Commerce Intelligence visible demo-flow read model (OP-CAP-27C)
+
+- Status: PARTIAL (2026-07-05, PR #245) — the tenant-operator visible demo-flow read-model item is
+  CLOSED. The endpoint and dashboard present tenant-scoped RFQ, AI advisory, review-required draft,
+  blocker, safe-terminal, safety, and PR #244 runtime-posture facts without creating business state.
+  Production analytics capabilities remain deferred below.
+- Severity: P2 / Product Visibility and Data Boundary
+- Path:
+  - `GET /api/v1/commerce-intelligence/demo-flow` (`ANALYTICS_READ`)
+  - `/commerce-intelligence`
+- Root cause addressed: the guarded RFQ/AI/demo flow existed, but operators had to infer its product
+  value across `/demo`, the RFQ handoff workspace, AI Work, draft quotes, and audit evidence.
+- Risk closed: the visible projection is tenant-scoped, read-only, bounded, and uses a dedicated safe
+  DTO. It does not expose authority/source/audit/idempotency/provider/runtime internals and does not
+  infer production conversion, revenue, customer commitment, or measured external-row zeros.
+- Safety decision: external execution / connector / outbox markers describe the existing demo
+  contract. Connector-command, change-request, and outbox-execution row counts remain `NOT_MEASURED`
+  rather than fake zero.
+- Runtime decision: the response exposes only stable PR #244 posture labels. Runtime denial
+  telemetry is `NOT_MEASURED`; no plan, quota bucket, Redis key, threshold, nonce/jti, retry-after,
+  entitlement, or raw guard state is exposed.
+- Residual / deferred items:
+  - real analytics warehouse / OLAP and advanced KPI model;
+  - production-grade bounded time-range filters and export;
+  - real revenue/conversion/revenue-recognition metrics;
+  - cross-channel non-demo intelligence;
+  - a separate staff/support intelligence plane, if product policy later requires one;
+  - live PostgreSQL/browser proof for the Commerce Intelligence route;
+  - runtime denial telemetry dashboard and distributed runtime-guard telemetry;
+  - provider-specific runtime accounting.
+- Suggested future proof: disposable PostgreSQL tenant-isolation fixture plus browser verification of
+  `/commerce-intelligence`, followed by dedicated telemetry design before any denial-rate surface.
+- Owner/target week: Product/API and runtime owners; unscheduled.
+
 ## P2 — Runtime-control foundation for the RFQ/AI/demo path (OP-CAP-27B)
 
 - Status: PARTIAL (2026-07-05, PR #244) — the runtime-control **foundation** is CLOSED. All four
