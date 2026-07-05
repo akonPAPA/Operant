@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.Lock;
 public interface AiWorkSuggestionRepository extends JpaRepository<AiWorkSuggestion, UUID> {
   Optional<AiWorkSuggestion> findByIdAndTenantId(UUID id, UUID tenantId);
 
+  long countByTenantIdAndSourceType(UUID tenantId, String sourceType);
+
   Optional<AiWorkSuggestion> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 
   List<AiWorkSuggestion> findByTenantIdAndSourceTypeAndSourceIdOrderByCreatedAtDesc(
@@ -20,6 +22,9 @@ public interface AiWorkSuggestionRepository extends JpaRepository<AiWorkSuggesti
       UUID tenantId, String sourceType, UUID sourceId);
 
   List<AiWorkSuggestion> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable pageable);
+
+  List<AiWorkSuggestion> findByTenantIdAndSourceTypeAndSourceIdInOrderByCreatedAtDesc(
+      UUID tenantId, String sourceType, java.util.Collection<UUID> sourceIds, Pageable pageable);
 
   /** Pessimistic write lock for operator accept/reject commands — prevents concurrent decisions. */
   @Lock(LockModeType.PESSIMISTIC_WRITE)

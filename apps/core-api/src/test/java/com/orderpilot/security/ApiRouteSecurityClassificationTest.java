@@ -199,6 +199,11 @@ class ApiRouteSecurityClassificationTest {
             ApiPermission.ANALYTICS_READ),
         new RouteExpectation(
             "GET",
+            "/api/v1/commerce-intelligence/demo-flow",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.ANALYTICS_READ),
+        new RouteExpectation(
+            "GET",
             "/api/stage8/reconciliation/summary",
             SecurityClassification.PROTECTED_READ,
             ApiPermission.ANALYTICS_READ),

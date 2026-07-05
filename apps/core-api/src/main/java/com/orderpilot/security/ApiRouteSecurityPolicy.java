@@ -13,6 +13,7 @@ public class ApiRouteSecurityPolicy {
 
   private static final List<PrefixRule> PREFIX_RULES = List.of(
       rule("/api/v1/analytics", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),
+      rule("/api/v1/commerce-intelligence", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),
       rule("/api/v1/command-center", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),
       rule("/api/v1/order-journeys", ApiPermission.ANALYTICS_READ, ApiPermission.REVIEW_ACTION),
       rule("/api/stage8/analytics", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),

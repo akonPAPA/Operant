@@ -12,6 +12,10 @@ public interface ChannelRfqHandoffRepository extends JpaRepository<ChannelRfqHan
 
   Optional<ChannelRfqHandoff> findByIdAndTenantId(UUID id, UUID tenantId);
 
+  long countByTenantId(UUID tenantId);
+
+  long countByTenantIdAndStatus(UUID tenantId, ChannelRfqHandoffStatus status);
+
   /**
    * OP-CAP-06C: pessimistic write lock for operator transition commands — prevents two concurrent
    * operators from racing a status change (e.g. dismiss vs. mark-converted) on the same handoff.

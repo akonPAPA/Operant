@@ -11,6 +11,14 @@ const intakeUploadForm = readFileSync(join(root, "components", "intake-upload-fo
 const quoteReviewCockpit = readFileSync(join(root, "components", "quote-review-cockpit.tsx"), "utf8");
 const aiWorkApi = readFileSync(join(root, "lib", "ai-work-api.ts"), "utf8");
 const quoteReviewApi = readFileSync(join(root, "lib", "quote-review-api.ts"), "utf8");
+const commerceIntelligenceApi = readFileSync(
+  join(root, "lib", "commerce-intelligence-api.ts"),
+  "utf8"
+);
+const commerceIntelligenceView = readFileSync(
+  join(root, "components", "commerce-intelligence-demo-flow.tsx"),
+  "utf8"
+);
 
 const editableInternalIdInput =
   /<label>[\s\S]*?<span>\s*(Tenant ID|Actor ID|User ID|Source ID|Source id|Validation run id|Document ID|Connector ID|Correlation ID|Audit ID|Margin|Available stock|Model name|Prompt version|External write mode)\s*<\/span>[\s\S]*?<input/i;
@@ -47,6 +55,20 @@ test("AI advisory workspace does not require manually entered source ids", () =>
   assert.doesNotMatch(aiWorkWorkspace, /sourceId\.trim\(\)/);
   assert.doesNotMatch(aiWorkWorkspace, /Source ID is required/);
   assert.doesNotMatch(aiWorkWorkspace, /suggestion\.sourceId/);
+});
+
+test("Commerce Intelligence is a read-only public projection with no internal field rendering", () => {
+  const recentFlow = typeBlock(commerceIntelligenceApi, "CommerceIntelligenceRecentFlow");
+  assert.doesNotMatch(
+    recentFlow,
+    /\b(tenantId|actorId|reviewerUserId|createdByUserId|decidedByUserId|inboundChannelEventId|channelConnectionId|auditId|idempotencyKey|correlationId|rawPayload|payloadJson|prompt|token|secret|credential|stackTrace|quotaBucket|redisKey|jti|nonce|retryAfterSeconds)\??:/
+  );
+  assert.doesNotMatch(commerceIntelligenceApi, /body\s*:/);
+  assert.doesNotMatch(commerceIntelligenceView, /JSON\.stringify|<pre/);
+  assert.doesNotMatch(
+    commerceIntelligenceView,
+    /\.(tenantId|actorId|reviewerUserId|auditId|idempotencyKey|correlationId|rawPayload|payloadJson|prompt|token|secret|credential|stackTrace|quotaBucket|redisKey|jti|nonce)\b/
+  );
 });
 
 test("frontend command payloads do not expose client-supplied authority or calculated fields", () => {
