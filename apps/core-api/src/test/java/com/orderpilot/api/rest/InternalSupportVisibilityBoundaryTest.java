@@ -13,11 +13,14 @@ import com.orderpilot.application.services.analytics.CommerceAnalyticsService;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
 import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
+import com.orderpilot.application.services.support.ResolvedStaffPrincipal;
+import com.orderpilot.application.services.support.StaffIdentityResolver;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
 import com.orderpilot.application.services.support.SupportOperationsService;
 import com.orderpilot.application.services.support.SupportTenantLocatorService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
+import com.orderpilot.domain.support.StaffRole;
 import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiPermission;
@@ -68,6 +71,7 @@ class InternalSupportVisibilityBoundaryTest {
   @MockBean private SupportOperationsService supportOperationsService;
   @MockBean private SupportTenantLocatorService supportTenantLocatorService;
   @MockBean private RequestActorResolver requestActorResolver;
+  @MockBean private StaffIdentityResolver staffIdentityResolver;
   @MockBean private CommerceAnalyticsService commerceAnalyticsService;
 
   @Test
@@ -96,9 +100,10 @@ class InternalSupportVisibilityBoundaryTest {
 
   @Test
   void validStaffReadWithMatchingTenantReturnsOnlySafeDiagnostics() throws Exception {
-    when(requestActorResolver.resolveVerifiedActor(
-            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(TENANT)))
-        .thenReturn(ACTOR);
+    when(staffIdentityResolver.resolveRequired(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(new ResolvedStaffPrincipal(
+            ACTOR, StaffRole.SUPPORT_VIEWER, "ops@operant",
+            ResolvedStaffPrincipal.Source.TRUSTED_GATEWAY_HEADER));
     when(supportDiagnosticsService.diagnose(TENANT))
         .thenReturn(new SupportTenantDiagnosticsResponse(
             TENANT,

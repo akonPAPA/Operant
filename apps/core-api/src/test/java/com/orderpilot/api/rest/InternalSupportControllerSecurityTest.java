@@ -4,14 +4,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.orderpilot.api.dto.SupportInternalDtos.SupportTenantDiagnosticsResponse;
 import com.orderpilot.api.dto.SupportOperationsDtos.SupportOperationsSummaryResponse;
+import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.support.DataRepairService;
 import com.orderpilot.application.services.support.MaintenanceActionService;
 import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
+import com.orderpilot.application.services.support.ResolvedStaffPrincipal;
+import com.orderpilot.application.services.support.StaffIdentityResolver;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
 import com.orderpilot.application.services.support.SupportOperationsService;
@@ -20,6 +26,7 @@ import com.orderpilot.api.dto.SupportTenantLocatorDtos.SupportTenantContextRespo
 import com.orderpilot.api.dto.SupportTenantLocatorDtos.SupportTenantSearchResponse;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
+import com.orderpilot.domain.support.StaffRole;
 import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.security.ApiPermissionGuard;
 import com.orderpilot.security.ApiPermissionInterceptor;
@@ -27,6 +34,7 @@ import com.orderpilot.security.ApiRouteSecurityPolicy;
 import com.orderpilot.security.ApiSecurityWebConfig;
 import com.orderpilot.security.RequestActorResolver;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -90,6 +98,12 @@ class InternalSupportControllerSecurityTest {
   @MockBean private SupportOperationsService supportOperationsService;
   @MockBean private SupportTenantLocatorService supportTenantLocatorService;
   @MockBean private RequestActorResolver requestActorResolver;
+  @MockBean private StaffIdentityResolver staffIdentityResolver;
+
+  private static ResolvedStaffPrincipal staffPrincipal(UUID staffUserId) {
+    return new ResolvedStaffPrincipal(
+        staffUserId, StaffRole.SUPPORT_VIEWER, "ops@operant", ResolvedStaffPrincipal.Source.TRUSTED_GATEWAY_HEADER);
+  }
 
   @Test
   void diagnosticsRouteIsNotPublic_unauthenticatedReturns401() throws Exception {
@@ -104,6 +118,58 @@ class InternalSupportControllerSecurityTest {
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"))
         .andExpect(jsonPath("$.message").value("Missing required API permission STAFF_SUPPORT_READ"));
+  }
+
+  @Test
+  void diagnosticsAllowsValidStaffIdentityWithGrantAndStaffReadPermission() throws Exception {
+    // PR #247: a valid staff identity (resolved through the seam) + STAFF_SUPPORT_READ + a valid grant
+    // (authorize succeeds) reaches the read-only diagnostics service and returns a safe summary.
+    when(staffIdentityResolver.resolveRequired(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(staffPrincipal(ACTOR_ID));
+    when(supportDiagnosticsService.diagnose(TENANT_ID))
+        .thenReturn(new SupportTenantDiagnosticsResponse(
+            TENANT_ID,
+            "HEALTHY",
+            Map.of("COMPLETED", 3L),
+            3,
+            Instant.parse("2026-06-30T12:00:00Z"),
+            Instant.parse("2026-06-30T12:00:01Z"),
+            "DISABLED",
+            "TENANT_SAFE_DIAGNOSTICS"));
+
+    mockMvc.perform(get(DIAGNOSTICS)
+            .header("X-Tenant-Id", TENANT_ID.toString())
+            .header(RequestActorResolver.ACTOR_HEADER, ACTOR_ID.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_SUPPORT_READ"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.health").value("HEALTHY"))
+        .andExpect(jsonPath("$.externalExecution").value("DISABLED"))
+        .andExpect(jsonPath("$.staffUserId").doesNotExist())
+        .andExpect(jsonPath("$.supportGrantId").doesNotExist());
+
+    verify(supportAccessService).authorize(ACTOR_ID, TENANT_ID, StaffSupportScope.DIAGNOSTICS);
+    verify(supportDiagnosticsService).diagnose(TENANT_ID);
+  }
+
+  @Test
+  void diagnosticsDeniesValidStaffIdentityWithoutGrantAndDoesNotInvokeDiagnosticsService() throws Exception {
+    // PR #247: a valid staff identity with STAFF_SUPPORT_READ but NO active grant is denied by
+    // authorize(); the read-only diagnostics service is never reached (no read on denial).
+    when(staffIdentityResolver.resolveRequired(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(staffPrincipal(ACTOR_ID));
+    doThrow(new SupportAccessDeniedException("Support access denied"))
+        .when(supportAccessService)
+        .authorize(ACTOR_ID, TENANT_ID, StaffSupportScope.DIAGNOSTICS);
+
+    mockMvc.perform(get(DIAGNOSTICS)
+            .header("X-Tenant-Id", TENANT_ID.toString())
+            .header(RequestActorResolver.ACTOR_HEADER, ACTOR_ID.toString())
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, "STAFF_SUPPORT_READ"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("SUPPORT_ACCESS_DENIED"));
+
+    verify(supportAccessService).authorize(ACTOR_ID, TENANT_ID, StaffSupportScope.DIAGNOSTICS);
+    verify(supportDiagnosticsService, never()).diagnose(org.mockito.ArgumentMatchers.any());
   }
 
   @Test
@@ -247,8 +313,8 @@ class InternalSupportControllerSecurityTest {
 
   @Test
   void operationsSummaryWithStaffReadAndDiagnosticsGrantReturnsSafeSummary() throws Exception {
-    when(requestActorResolver.resolveVerifiedActor(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(TENANT_ID)))
-        .thenReturn(ACTOR_ID);
+    when(staffIdentityResolver.resolveRequired(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(staffPrincipal(ACTOR_ID));
     when(supportOperationsService.summary(TENANT_ID, ACTOR_ID))
         .thenReturn(new SupportOperationsSummaryResponse(
             TENANT_ID,
@@ -309,8 +375,8 @@ class InternalSupportControllerSecurityTest {
 
   @Test
   void tenantLocatorSearchWithStaffReadReturnsBoundedSafeResults() throws Exception {
-    when(requestActorResolver.resolveVerifiedActor(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
-        .thenReturn(ACTOR_ID);
+    when(staffIdentityResolver.resolveRequired(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(staffPrincipal(ACTOR_ID));
     when(supportTenantLocatorService.search(ACTOR_ID, "acme", 0, 20))
         .thenReturn(new SupportTenantSearchResponse(
             "acme", 0, 20, 0, false, java.util.List.of(), Instant.parse("2026-06-26T12:00:01Z")));
@@ -355,8 +421,8 @@ class InternalSupportControllerSecurityTest {
 
   @Test
   void supportContextWithStaffReadAndMatchingTenantReturnsSafeContext() throws Exception {
-    when(requestActorResolver.resolveVerifiedActor(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(TENANT_ID)))
-        .thenReturn(ACTOR_ID);
+    when(staffIdentityResolver.resolveRequired(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(staffPrincipal(ACTOR_ID));
     when(supportTenantLocatorService.supportContext(ACTOR_ID, TENANT_ID))
         .thenReturn(new SupportTenantContextResponse(
             TENANT_ID,

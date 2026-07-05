@@ -24,12 +24,12 @@ import com.orderpilot.application.services.support.ProcessingJobRepairExecutor;
 import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.support.SupportAccessService;
 import com.orderpilot.application.services.support.SupportDiagnosticsService;
+import com.orderpilot.application.services.support.StaffIdentityResolver;
 import com.orderpilot.application.services.support.SupportOperationsService;
 import com.orderpilot.application.services.support.SupportTenantLocatorService;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.support.StaffSupportScope;
 import com.orderpilot.domain.support.SupportAccessGrant;
-import com.orderpilot.security.RequestActorResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.util.List;
@@ -50,8 +50,9 @@ import org.springframework.web.bind.annotation.RestController;
  * validated by {@link SupportAccessService} (second layer).
  *
  * <p>The target tenant is the trusted {@code X-Tenant-Id} context, and the acting staff actor is resolved
- * from the trusted actor header — never from a request body. Where a {@code {tenantId}} path variable is
- * present it must equal the trusted tenant context; a mismatch fails closed (cross-tenant denial).
+ * through the {@link StaffIdentityResolver} seam (PR #247) from the trusted actor header — never from a
+ * request body. Where a {@code {tenantId}} path variable is present it must equal the trusted tenant
+ * context; a mismatch fails closed (cross-tenant denial).
  */
 @RestController
 public class InternalSupportController {
@@ -64,7 +65,7 @@ public class InternalSupportController {
   private final ProcessingJobRepairExecutor processingJobRepairExecutor;
   private final SupportOperationsService supportOperationsService;
   private final SupportTenantLocatorService supportTenantLocatorService;
-  private final RequestActorResolver actorResolver;
+  private final StaffIdentityResolver staffIdentityResolver;
 
   public InternalSupportController(
       SupportAccessService supportAccessService,
@@ -74,7 +75,7 @@ public class InternalSupportController {
       ProcessingJobRepairExecutor processingJobRepairExecutor,
       SupportOperationsService supportOperationsService,
       SupportTenantLocatorService supportTenantLocatorService,
-      RequestActorResolver actorResolver) {
+      StaffIdentityResolver staffIdentityResolver) {
     this.supportAccessService = supportAccessService;
     this.diagnosticsService = diagnosticsService;
     this.maintenanceActionService = maintenanceActionService;
@@ -82,7 +83,7 @@ public class InternalSupportController {
     this.processingJobRepairExecutor = processingJobRepairExecutor;
     this.supportOperationsService = supportOperationsService;
     this.supportTenantLocatorService = supportTenantLocatorService;
-    this.actorResolver = actorResolver;
+    this.staffIdentityResolver = staffIdentityResolver;
   }
 
   // --- support access grants (STAFF_SUPPORT_GRANT_MANAGE / STAFF_SUPPORT_READ) ---
@@ -91,7 +92,7 @@ public class InternalSupportController {
   public SupportAccessGrantResponse createGrant(
       @RequestBody CreateSupportAccessGrantRequest request, HttpServletRequest http) {
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actor = actorResolver.resolveVerifiedActor(http, tenantId);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     SupportAccessGrant grant = supportAccessService.createGrant(
         request.granteeStaffUserId(),
         tenantId,
@@ -105,7 +106,7 @@ public class InternalSupportController {
   @PostMapping(BASE + "/access-grants/{grantId}/revoke")
   public SupportAccessGrantResponse revokeGrant(@PathVariable UUID grantId, HttpServletRequest http) {
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actor = actorResolver.resolveVerifiedActor(http, tenantId);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return toGrantResponse(supportAccessService.revokeGrant(grantId, tenantId, actor));
   }
 
@@ -117,7 +118,7 @@ public class InternalSupportController {
       @RequestBody(required = false) SupportGrantApprovalDecisionRequest request,
       HttpServletRequest http) {
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actor = actorResolver.resolveVerifiedActor(http, tenantId);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return toGrantResponse(supportAccessService.approveGrant(grantId, tenantId, actor, note(request)));
   }
 
@@ -127,7 +128,7 @@ public class InternalSupportController {
       @RequestBody(required = false) SupportGrantApprovalDecisionRequest request,
       HttpServletRequest http) {
     UUID tenantId = TenantContext.requireTenantId();
-    UUID actor = actorResolver.resolveVerifiedActor(http, tenantId);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return toGrantResponse(supportAccessService.rejectGrant(grantId, tenantId, actor, note(request)));
   }
 
@@ -142,7 +143,7 @@ public class InternalSupportController {
   @GetMapping(BASE + "/tenants/{tenantId}/diagnostics")
   public SupportTenantDiagnosticsResponse diagnostics(@PathVariable UUID tenantId, HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return diagnosticsService.diagnose(contextTenant);
   }
@@ -159,7 +160,7 @@ public class InternalSupportController {
       @RequestParam(name = "page", defaultValue = "0") int page,
       @RequestParam(name = "size", defaultValue = "20") int size,
       HttpServletRequest http) {
-    UUID actor = actorResolver.resolveVerifiedActor(http, TenantContext.getTenantId().orElse(null));
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return supportTenantLocatorService.search(actor, query, page, size);
   }
 
@@ -169,7 +170,7 @@ public class InternalSupportController {
   @GetMapping(BASE + "/tenants/{tenantId}/support-context")
   public SupportTenantContextResponse supportContext(@PathVariable UUID tenantId, HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return supportTenantLocatorService.supportContext(actor, contextTenant);
   }
 
@@ -178,7 +179,7 @@ public class InternalSupportController {
   @GetMapping(BASE + "/tenants/{tenantId}/operations/summary")
   public SupportOperationsSummaryResponse operationsSummary(@PathVariable UUID tenantId, HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return supportOperationsService.summary(contextTenant, actor);
   }
@@ -190,7 +191,7 @@ public class InternalSupportController {
       @RequestParam(defaultValue = "20") int size,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return supportOperationsService.timeline(contextTenant, actor, page, size);
   }
@@ -201,7 +202,7 @@ public class InternalSupportController {
       @PathVariable UUID requestId,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return supportOperationsService.dataRepairOperationsView(contextTenant, actor, requestId);
   }
@@ -214,7 +215,7 @@ public class InternalSupportController {
       @RequestBody MaintenanceActionRecordRequest request,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.MAINTENANCE);
     return maintenanceActionService.record(
         contextTenant, actor, request.actionType(), request.reason(), request.targetScope());
@@ -228,7 +229,7 @@ public class InternalSupportController {
       @RequestBody DataRepairDryRunRequest request,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     return dataRepairService.requestDryRun(contextTenant, actor, request.targetType(), request.reason());
   }
@@ -242,7 +243,7 @@ public class InternalSupportController {
       @RequestBody DataRepairApprovalRequest request,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     return dataRepairService.requestApproval(contextTenant, actor, requestId, request.affectedTargetSummary());
   }
@@ -254,7 +255,7 @@ public class InternalSupportController {
       @RequestBody(required = false) DataRepairApprovalDecisionRequest request,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     return dataRepairService.approve(contextTenant, actor, requestId, decisionNote(request));
   }
@@ -266,7 +267,7 @@ public class InternalSupportController {
       @RequestBody(required = false) DataRepairApprovalDecisionRequest request,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     return dataRepairService.reject(contextTenant, actor, requestId, decisionNote(request));
   }
@@ -279,7 +280,7 @@ public class InternalSupportController {
       @PathVariable UUID requestId,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     dataRepairService.attemptExecution(contextTenant, actor, requestId);
   }
@@ -297,7 +298,7 @@ public class InternalSupportController {
       @RequestBody ProcessingJobRepairExecuteRequest request,
       HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
-    UUID actor = actorResolver.resolveVerifiedActor(http, contextTenant);
+    UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     return processingJobRepairExecutor.execute(
         contextTenant,
