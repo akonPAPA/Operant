@@ -41,12 +41,13 @@ customer access, and **not** service-account access.
   - `MAINTENANCE_ENGINEER` → `{DIAGNOSTICS, MAINTENANCE}`
   - `SUPPORT_ENGINEER` → `{DIAGNOSTICS, MAINTENANCE, DATA_REPAIR}`
 - **Runtime identity source.** At runtime the acting staff id is carried by the **trusted gateway actor
-  header** and resolved by `RequestActorResolver.resolveVerifiedActor(...)` — the same trusted-gateway
+  header** and resolved through the **`StaffIdentityResolver` seam** (PR #247, see §12), whose only
+  implementation today wraps `RequestActorResolver.resolveVerifiedActor(...)` — the same trusted-gateway
   boundary described in [`TRUSTED_GATEWAY_HEADER_BOUNDARY.md`](TRUSTED_GATEWAY_HEADER_BOUNDARY.md). The
-  staff id is **never** read from a request body. There is intentionally **no** separate `StaffIdentityResolver`
-  interface today; the staff row exists so the actor can be validated (`exists + ACTIVE`) and so the role
-  bounds which scopes may be granted. This is a deliberate seam: a future SSO/OIDC/BFF-backed staff identity
-  swaps in behind the same actor-resolution point.
+  staff id is **never** read from a request body or query parameter. The staff row exists so the actor can
+  be validated (`exists + ACTIVE`) and so the role bounds which scopes may be granted. A future
+  SSO/OIDC/BFF-backed staff identity swaps in behind the resolver seam without changing support
+  authorization semantics.
 
 > The staff identity model is a **validation + scoping** layer over the trusted actor header. It is **not**
 > an identity provider and **not** an SSO/OIDC integration (see §9, Not Proven).
@@ -274,3 +275,47 @@ no explicit service-account→staff path by design.
 403; expired/wrong-tenant/wrong-scope grant → denied (`SupportAccessServiceTest`); denied requests do not
 invoke diagnostics/mutation services (`InternalSupportVisibilityBoundaryTest`); allowed action emits
 `SUPPORT_ACCESS_GRANTED` audit. Not proven: real SSO/BFF/session, production gateway identity, full console.
+
+---
+
+## 12. Staff Identity Resolver Seam (PR #247)
+
+`InternalSupportController` no longer resolves the acting staff actor through the generic tenant/operator
+actor path directly. It depends on a dedicated abstraction:
+
+- `application/services/support/StaffIdentityResolver` — `ResolvedStaffPrincipal resolveRequired(HttpServletRequest)`.
+- `application/services/support/ResolvedStaffPrincipal` — a minimal, backend-owned record
+  (`staffUserId`, `role`, `handle`, `source`). It is never built from a client body/query and carries no
+  secret, no tenant authority, and no support-grant id.
+- `application/services/support/TrustedGatewayStaffIdentityResolver` — the **only implementation today**.
+
+**Current implementation wraps trusted gateway actor resolution.** The resolver calls the existing
+`RequestActorResolver.resolveVerifiedActor(request, tenantContext)` (signed/verified trusted gateway actor
+header, bound to the current tenant context) and then validates the resolved actor against the
+`staff_user` registry. It adds **no** new trust source.
+
+**Fail-closed at the identity boundary.** The resolver denies (`SupportAccessDeniedException`, i.e. the
+same safe 403 `SUPPORT_ACCESS_DENIED`) when the trusted actor is the unauthenticated-fallback `SYSTEM`
+sentinel, is unknown to `staff_user`, or maps to a disabled staff user; a malformed/absent trusted actor
+still surfaces as the existing 400/401. A **tenant user/admin or a machine/service-account actor is not a
+staff identity** — it has no `staff_user` row, so it can never be resolved as staff.
+
+**Authorization semantics unchanged.** `SupportAccessService.authorize(...)` is untouched and still
+independently validates the staff principal, role→scope, and the tenant-scoped/approved/unexpired grant,
+and still emits the allow/deny audit. The seam only changes *where the staff actor comes from*, not the
+allow/deny outcome for the grant-backed routes. (Grant-management routes — create/approve/reject/revoke —
+now also resolve the acting actor through the seam, which strictly tightens them to real staff; it does
+not alter grant lifecycle logic.)
+
+**Staff identity is never accepted from the client request body.** The resolver reads only the trusted
+request context; the frontend cannot propose `staffUserId`, and request DTOs carry no staff/grant authority
+(proven by `SupportAccessContractTest`).
+
+**Not implemented / not proven (unchanged by this seam):** real SSO/OIDC/SAML, production BFF/server-side
+staff session, and production gateway identity integration all remain out of scope. The seam exists
+precisely to preserve authorization semantics during a future identity-provider migration — not to claim
+one is done.
+
+Proven by `StaffIdentityResolverTest` (missing/malformed/unknown/disabled/tenant-operator/tenant-admin/
+service-account all fail closed; a valid ACTIVE staff resolves to the expected principal) plus the
+regression-updated `InternalSupportControllerSecurityTest` and `InternalSupportVisibilityBoundaryTest`.
