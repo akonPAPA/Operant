@@ -69,6 +69,11 @@ import org.springframework.test.context.ActiveProfiles;
   IntakeValidationService.class,
   ProcessingJobService.class,
   AuditEventService.class,
+  com.orderpilot.application.services.runtime.RuntimeGuardService.class,
+  com.orderpilot.application.services.runtime.QuotaGuard.class,
+  com.orderpilot.application.services.runtime.RateLimitService.class,
+  com.orderpilot.application.services.runtime.FeatureEntitlementGuard.class,
+  com.orderpilot.application.services.runtime.UsageMeterService.class,
   JsonSupport.class,
   ObjectMapper.class,
   CoreConfiguration.class

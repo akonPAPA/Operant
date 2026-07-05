@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.orderpilot.api.dto.DemoRfqHandoffDtos.DemoRfqHandoffResponse;
 import com.orderpilot.application.services.AuditEventService;
+import com.orderpilot.application.services.runtime.RuntimeGuardRequest;
+import com.orderpilot.application.services.runtime.RuntimeGuardService;
+import com.orderpilot.application.services.runtime.RuntimeOperationType;
 import com.orderpilot.common.errors.NotFoundException;
 import com.orderpilot.common.tenant.TenantContext;
 import com.orderpilot.domain.channel.ChannelConnection;
@@ -36,6 +39,7 @@ public class LocalDemoRfqIntakeService {
   private final ChannelRfqHandoffRepository handoffRepository;
   private final ChannelBotRuntimeBridgeService bridgeService;
   private final AuditEventService auditEventService;
+  private final RuntimeGuardService runtimeGuardService;
   private final ObjectMapper objectMapper;
 
   public LocalDemoRfqIntakeService(
@@ -43,17 +47,28 @@ public class LocalDemoRfqIntakeService {
       ChannelRfqHandoffRepository handoffRepository,
       ChannelBotRuntimeBridgeService bridgeService,
       AuditEventService auditEventService,
+      RuntimeGuardService runtimeGuardService,
       ObjectMapper objectMapper) {
     this.connectionRepository = connectionRepository;
     this.handoffRepository = handoffRepository;
     this.bridgeService = bridgeService;
     this.auditEventService = auditEventService;
+    this.runtimeGuardService = runtimeGuardService;
     this.objectMapper = objectMapper;
   }
 
   @Transactional
   public DemoRfqHandoffResponse createOrGet(UUID actorId) {
     UUID tenantId = TenantContext.requireTenantId();
+
+    // OP-CAP-27B runtime-control checkpoint: rate/backpressure guard BEFORE any inbound event,
+    // channel handoff, bot conversation, or audit side effect is created. A denial throws a stable
+    // mapped exception (429 rate/backpressure; 403 quota) and fails closed — no state is mutated and
+    // no external write is attempted. Deterministic operator-initiated demo op → 1 unit; cost is
+    // governed by the fixed operation weight, not payload size (there is no quota metric here).
+    runtimeGuardService.enforce(
+        RuntimeGuardRequest.of(tenantId, RuntimeOperationType.DEMO_RFQ_HANDOFF_CREATE, 1));
+
     ChannelConnection connection =
         connectionRepository
             .findFirstByTenantIdAndProviderTypeAndExternalAccountIdOrderByCreatedAtDesc(

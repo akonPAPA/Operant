@@ -2,6 +2,7 @@ package com.orderpilot.application.services.runtime;
 
 import com.orderpilot.domain.usage.UsageMetricType;
 import java.util.Map;
+import static java.util.Map.entry;
 
 /**
  * OP-CAP-16C Quota + Rate Limit Enforcement — the deterministic, code-defined policy table mapping a
@@ -24,33 +25,43 @@ public final class EndpointWeightPolicy {
   private static final long DEFAULT_WINDOW_SECONDS = 60L;
 
   private static final Map<RuntimeOperationType, Integer> WEIGHTS =
-      Map.of(
-          RuntimeOperationType.SEARCH_QUERY, 1,
-          RuntimeOperationType.CHANNEL_MESSAGE_RECEIVED, 1,
-          RuntimeOperationType.AI_ROUTING_DECISION, 2,
-          RuntimeOperationType.REPORT_GENERATED, 4,
-          RuntimeOperationType.DOCUMENT_UPLOAD, 5,
-          RuntimeOperationType.RECONCILIATION_RUN, 6,
-          RuntimeOperationType.AI_DOCUMENT_EXTRACTION, 8,
-          RuntimeOperationType.BULK_IMPORT, 10,
+      Map.ofEntries(
+          entry(RuntimeOperationType.SEARCH_QUERY, 1),
+          entry(RuntimeOperationType.CHANNEL_MESSAGE_RECEIVED, 1),
+          entry(RuntimeOperationType.AI_ROUTING_DECISION, 2),
+          entry(RuntimeOperationType.REPORT_GENERATED, 4),
+          entry(RuntimeOperationType.DOCUMENT_UPLOAD, 5),
+          entry(RuntimeOperationType.RECONCILIATION_RUN, 6),
+          entry(RuntimeOperationType.AI_DOCUMENT_EXTRACTION, 8),
+          entry(RuntimeOperationType.BULK_IMPORT, 10),
           // OP-CAP-16G: AI explanation/summary generation is an AI/provider call (heavier than a read,
           // lighter than full document extraction).
-          RuntimeOperationType.AI_VALIDATION_EXPLANATION, 4);
+          entry(RuntimeOperationType.AI_VALIDATION_EXPLANATION, 4),
+          // OP-CAP-27B: RFQ/AI/demo path operator-initiated boundaries — modest weights (deterministic
+          // work, not full document/AI extraction) so the demo flow is backpressure-gated but not
+          // throttled under normal operator use.
+          entry(RuntimeOperationType.DEMO_RFQ_HANDOFF_CREATE, 2),
+          entry(RuntimeOperationType.RFQ_HANDOFF_DRAFT_QUOTE_CREATE, 3),
+          entry(RuntimeOperationType.RFQ_HANDOFF_DEMO_DECISION, 2));
 
   // Per-window weighted budget per tenant+operation. Heavier operations carry a smaller budget so
   // their effective call allowance is stricter.
   private static final Map<RuntimeOperationType, Long> WINDOW_BUDGETS =
-      Map.of(
-          RuntimeOperationType.SEARCH_QUERY, 120L,
-          RuntimeOperationType.CHANNEL_MESSAGE_RECEIVED, 120L,
-          RuntimeOperationType.AI_ROUTING_DECISION, 120L,
-          RuntimeOperationType.REPORT_GENERATED, 60L,
-          RuntimeOperationType.DOCUMENT_UPLOAD, 50L,
-          RuntimeOperationType.RECONCILIATION_RUN, 60L,
-          RuntimeOperationType.AI_DOCUMENT_EXTRACTION, 40L,
-          RuntimeOperationType.BULK_IMPORT, 30L,
+      Map.ofEntries(
+          entry(RuntimeOperationType.SEARCH_QUERY, 120L),
+          entry(RuntimeOperationType.CHANNEL_MESSAGE_RECEIVED, 120L),
+          entry(RuntimeOperationType.AI_ROUTING_DECISION, 120L),
+          entry(RuntimeOperationType.REPORT_GENERATED, 60L),
+          entry(RuntimeOperationType.DOCUMENT_UPLOAD, 50L),
+          entry(RuntimeOperationType.RECONCILIATION_RUN, 60L),
+          entry(RuntimeOperationType.AI_DOCUMENT_EXTRACTION, 40L),
+          entry(RuntimeOperationType.BULK_IMPORT, 30L),
           // OP-CAP-16G: AI explanation budget.
-          RuntimeOperationType.AI_VALIDATION_EXPLANATION, 60L);
+          entry(RuntimeOperationType.AI_VALIDATION_EXPLANATION, 60L),
+          // OP-CAP-27B: RFQ/AI/demo path budgets.
+          entry(RuntimeOperationType.DEMO_RFQ_HANDOFF_CREATE, 60L),
+          entry(RuntimeOperationType.RFQ_HANDOFF_DRAFT_QUOTE_CREATE, 60L),
+          entry(RuntimeOperationType.RFQ_HANDOFF_DEMO_DECISION, 60L));
 
   // Default quota metric per operation. null → the operation has no quota dimension (allow by NO_POLICY).
   private static final Map<RuntimeOperationType, UsageMetricType> DEFAULT_METRICS =

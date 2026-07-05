@@ -1,5 +1,48 @@
 # Fix Notebook
 
+## P2 — Runtime-control foundation for the RFQ/AI/demo path (OP-CAP-27B)
+
+- Status: PARTIAL (2026-07-05, PR #244) — the runtime-control **foundation** is CLOSED. All four
+  RFQ/AI/demo checkpoints are guarded before side effects, denial fails closed with no business/audit/
+  external-write mutation, idempotency/replay remains correct, and safe 429/503 messaging is bounded.
+  A small set of production-grade items remain deferred (below).
+- Severity: P2 / Runtime Safety and Cost Control
+- Covered / files:
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/runtime/RuntimeOperationType.java`
+    (added `DEMO_RFQ_HANDOFF_CREATE`, `RFQ_HANDOFF_DRAFT_QUOTE_CREATE`, `RFQ_HANDOFF_DEMO_DECISION`)
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/runtime/EndpointWeightPolicy.java`
+    (weights/budgets for the three demo operations; no quota metric — rate/backpressure only)
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/channel/LocalDemoRfqIntakeService.java`
+    (guard before demo RFQ handoff creation)
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/channel/RfqHandoffDraftQuoteService.java`
+    (guard before draft quote creation and before the safe terminal decision)
+  - `apps/web-dashboard/lib/rfq-handoff-api.ts` (bounded 429/503 runtime-denial message)
+  - `docs/runbooks/rfq-ai-demo-runtime-control.md` (full guard/denial/idempotency/PR#245 doc)
+  - Tests: `LocalDemoRfqIntakeRuntimeGuardStage27BTest`, `RfqHandoffDraftQuoteRuntimeGuardStage27BTest`,
+    `AiWorkExplanationGuardStage16GTest#rfqHandoffAdvisoryDenialDeniesBeforeProvider`,
+    `apps/web-dashboard/tests/rfq-handoffs.test.mjs`
+- Root cause addressed: demo RFQ creation, draft-quote creation, and the terminal decision previously
+  ran with no runtime admission control — only the AI advisory boundary was guarded (OP-CAP-16G). An
+  expensive/abusive burst could drive the demo/quote writes without any backpressure gate.
+- Decisions documented: the AI suggestion boundary intentionally reuses the shared
+  `AI_VALIDATION_EXPLANATION` guard (not a parallel op); the three demo operations are rate/backpressure
+  gated only (no feature/quota/plan) to avoid billing coupling.
+- Residual / deferred items (each PARTIAL, not required for the foundation):
+  - Live PostgreSQL + browser proof of the **denial** path (the allowed path already has PostgreSQL/
+    browser proof in `post-pr239-real-demo-proof.md`). Risk: low — denial is unit/service proven and
+    fails closed within a rolled-back transaction. Suggested proof: exhaust the per-tenant rate window
+    against a disposable PostgreSQL demo DB and assert 429 + zero handoff/draft/decision/external rows.
+  - Production billing/plan model and per-tenant quota dimension for the demo operations. Risk: low —
+    intentionally excluded; must go through a separate pricing/security review.
+  - Global product workload taxonomy + operator-visible runtime analytics / quota dashboards. Risk:
+    low — deferred to Commerce Intelligence (PR #245); must read only safe runtime evidence.
+  - Distributed / multi-node runtime-guard proof (current rate store is per-instance in-memory by
+    default). Risk: medium at multi-node scale. Suggested fix: shared rate store + a multi-node
+    admission test before horizontal scale-out.
+  - Provider-specific runtime accounting (future model-provider integration). Risk: low; deferred to
+    the AI runtime owners under a separate review.
+- Owner/target week: Runtime/platform owners; unscheduled.
+
 ## P2 — AI Work generic/heuristic public schema
 
 - Status: PARTIAL (2026-07-05, PR #243) — the V1 public projection is CLOSED. Four exact schema
