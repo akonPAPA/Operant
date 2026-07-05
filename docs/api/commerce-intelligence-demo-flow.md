@@ -77,7 +77,7 @@ is inferred.
 
 The demo workflow contract states:
 
-- `externalExecutionStatus = DISABLED`
+- `externalWriteStatus = DISABLED`
 - `connectorCallStatus = NOT_INVOKED`
 - `outboxStatus = NOT_REQUESTED`
 
@@ -86,7 +86,7 @@ measurements. In this PR:
 
 - `observedConnectorCommandRows = null`
 - `observedChangeRequestRows = null`
-- `observedOutboxExternalExecutionRows = null`
+- `observedOutboxRows = null`
 - `measurementScope = NOT_MEASURED`
 
 The API deliberately returns `null`/`NOT_MEASURED`; it never invents a zero or labels all-tenant

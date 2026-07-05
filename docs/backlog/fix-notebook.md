@@ -15,7 +15,7 @@
 - Risk closed: the visible projection is tenant-scoped, read-only, bounded, and uses a dedicated safe
   DTO. It does not expose authority/source/audit/idempotency/provider/runtime internals and does not
   infer production conversion, revenue, customer commitment, or measured external-row zeros.
-- Safety decision: external execution / connector / outbox markers describe the existing demo
+- Safety decision: external writes / connector / outbox markers describe the existing demo
   contract. Connector-command, change-request, and outbox-execution row counts remain `NOT_MEASURED`
   rather than fake zero.
 - Runtime decision: the response exposes only stable PR #244 posture labels. Runtime denial

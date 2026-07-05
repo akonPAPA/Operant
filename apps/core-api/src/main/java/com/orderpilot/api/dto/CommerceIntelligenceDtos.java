@@ -36,12 +36,12 @@ public final class CommerceIntelligenceDtos {
       long demoDeclinedCount) {}
 
   public record Safety(
-      String externalExecutionStatus,
+      String externalWriteStatus,
       String connectorCallStatus,
       String outboxStatus,
       Long observedConnectorCommandRows,
       Long observedChangeRequestRows,
-      Long observedOutboxExternalExecutionRows,
+      Long observedOutboxRows,
       String measurementScope,
       String safetyStatement,
       List<String> notProven) {}

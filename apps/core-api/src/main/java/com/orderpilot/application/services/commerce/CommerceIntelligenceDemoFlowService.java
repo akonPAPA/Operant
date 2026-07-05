@@ -119,7 +119,7 @@ public class CommerceIntelligenceDemoFlowService {
         null,
         null,
         "NOT_MEASURED",
-        "The demo workflow contract disables external execution. External-row counts are not measured by this read model.",
+        "The demo workflow contract disables external writes. External-row counts are not measured by this read model.",
         List.of(
             "Connector command rows are not measured.",
             "Change request rows are not measured.",

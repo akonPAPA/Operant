@@ -17,12 +17,12 @@ export type CommerceIntelligenceSummary = {
 };
 
 export type CommerceIntelligenceSafety = {
-  externalExecutionStatus: "DISABLED";
+  externalWriteStatus: "DISABLED";
   connectorCallStatus: "NOT_INVOKED";
   outboxStatus: "NOT_REQUESTED";
   observedConnectorCommandRows: number | null;
   observedChangeRequestRows: number | null;
-  observedOutboxExternalExecutionRows: number | null;
+  observedOutboxRows: number | null;
   measurementScope: "DEMO_FLOW" | "TENANT_OBSERVED" | "NOT_MEASURED";
   safetyStatement: string;
   notProven: string[];

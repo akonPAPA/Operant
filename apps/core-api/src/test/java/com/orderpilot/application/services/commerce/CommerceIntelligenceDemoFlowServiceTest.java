@@ -144,7 +144,7 @@ class CommerceIntelligenceDemoFlowServiceTest {
     assertThat(response.summary().rfqHandoffsTotal()).isEqualTo(4);
     assertThat(response.summary().safeTerminalDemoDecisionsCount()).isEqualTo(1);
     assertThat(response.summary().demoCompletedCount()).isEqualTo(1);
-    assertThat(response.safety().externalExecutionStatus()).isEqualTo("DISABLED");
+    assertThat(response.safety().externalWriteStatus()).isEqualTo("DISABLED");
     assertThat(response.safety().observedConnectorCommandRows()).isNull();
     assertThat(response.safety().measurementScope()).isEqualTo("NOT_MEASURED");
     assertThat(response.runtimeControl().guarded()).isTrue();

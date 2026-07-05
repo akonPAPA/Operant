@@ -68,7 +68,7 @@ test("dashboard renders summary, safety, runtime posture, bottlenecks, and recen
     assert.match(component, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(component, /CUSTOMER_NOT_RESOLVED|item\.code/);
-  assert.match(component, /externalExecutionStatus/);
+  assert.match(component, /externalWriteStatus/);
   assert.match(component, /connectorCallStatus/);
   assert.match(component, /outboxStatus/);
   assert.match(component, /denialTelemetry/);

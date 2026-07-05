@@ -45,7 +45,7 @@ class CommerceIntelligenceControllerTest {
                 .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ANALYTICS_READ"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.summary.rfqHandoffsTotal").value(4))
-        .andExpect(jsonPath("$.safety.externalExecutionStatus").value("DISABLED"))
+        .andExpect(jsonPath("$.safety.externalWriteStatus").value("DISABLED"))
         .andExpect(jsonPath("$.runtimeControl.guarded").value(true))
         .andExpect(
             jsonPath("$.runtimeControl.denialTelemetry").value("NOT_MEASURED"));

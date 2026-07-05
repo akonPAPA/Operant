@@ -84,8 +84,8 @@ export function CommerceIntelligenceDemoFlowView({ data, error }: Props) {
           </thead>
           <tbody>
             <tr>
-              <td>External execution</td>
-              <td><span className="status-pill done">{safety.externalExecutionStatus}</span></td>
+              <td>External writes</td>
+              <td><span className="status-pill done">{safety.externalWriteStatus}</span></td>
               <td>Not a row-count metric</td>
             </tr>
             <tr>
@@ -101,7 +101,7 @@ export function CommerceIntelligenceDemoFlowView({ data, error }: Props) {
             <tr>
               <td>Outbox</td>
               <td><span className="status-pill done">{safety.outboxStatus}</span></td>
-              <td>{measured(safety.observedOutboxExternalExecutionRows, safety)}</td>
+              <td>{measured(safety.observedOutboxRows, safety)}</td>
             </tr>
           </tbody>
         </table>
