@@ -1,5 +1,169 @@
 # Fix Notebook
 
+## GH-249-01 — Admin role can bypass the `main` ruleset `always`
+
+- Status: OPEN (2026-07-06, opened by PR #249 governance proof). **P1.**
+- Severity: P1 / Repository Governance
+- Path / setting: repository ruleset `akonya tigr` (id `17327601`) →
+  `bypass_actors: [{ actor_type: RepositoryRole, actor_id: 5 (Admin), bypass_mode: always }]`;
+  `current_user_can_bypass: always`.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601` (see
+  `docs/security/github-repository-settings-proof.md` → Branch protection / rulesets).
+- Root cause: the ruleset grants the Admin repository role unconditional (`always`) bypass of
+  required review, required checks, signed commits, linear history, and force-push/deletion rules.
+- Risk: any admin (currently the repo owner) can merge unreviewed or check-failing code into `main`,
+  defeating the entire protection baseline; no per-merge bypass audit flag is exposed to detect this.
+- Suggested fix: change bypass mode from `Always` to `Pull requests` (bypass only outside PR flow) or
+  remove the Admin bypass actor entirely, so admins are subject to required review + strict checks.
+- Required proof/tests: re-read ruleset via `gh api .../rulesets/17327601`; confirm `bypass_actors`
+  removed/narrowed; open a test PR as admin and confirm merge is blocked until review + checks pass.
+- Owner/target week: Repo owner / DevSecOps; before next high-risk merge.
+- Why not fixed in PR #249: #249 is a proof/documentation PR and must not change settings without
+  separate explicit authorization.
+
+## GH-249-02 — Stale reviews are not dismissed on new pushes to `main` PRs
+
+- Status: OPEN (2026-07-06, PR #249). **P1.**
+- Severity: P1 / Repository Governance
+- Path / setting: ruleset `17327601` → `pull_request.dismiss_stale_reviews_on_push: false`.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`.
+- Root cause: an approval remains valid after further commits are pushed to the PR head.
+- Risk: reviewer approves version A; author (or admin) pushes version B and merges without re-review —
+  a classic approve-then-change bypass, especially dangerous on large PRs.
+- Suggested fix: enable `Dismiss stale pull request approvals when new commits are pushed`.
+- Required proof/tests: re-read ruleset; confirm `dismiss_stale_reviews_on_push: true`; verify a pushed
+  commit clears the prior approval on a test PR.
+- Owner/target week: Repo owner / DevSecOps; before next high-risk merge.
+- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+
+## GH-249-03 — Last-push / self-approval guard disabled on `main`
+
+- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Severity: P2 / Repository Governance
+- Path / setting: ruleset `17327601` → `pull_request.require_last_push_approval: false`.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`.
+- Root cause: the most recent push does not require approval from someone other than its pusher, so an
+  author who is also a reviewer can effectively self-approve their latest change.
+- Risk: single-actor merge path; weakens the "human approves if risky" boundary.
+- Suggested fix: enable `Require approval of the most recent reviewable push`.
+- Required proof/tests: re-read ruleset; confirm `require_last_push_approval: true`.
+- Owner/target week: Repo owner / DevSecOps; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+
+## GH-249-04 — Conversation resolution not required before merge
+
+- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Severity: P2 / Repository Governance
+- Path / setting: ruleset `17327601` → `pull_request.required_review_thread_resolution: false`.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`.
+- Root cause: open review threads do not block merge.
+- Risk: unresolved reviewer objections can be merged over, losing security/correctness feedback.
+- Suggested fix: enable `Require conversation resolution before merging`.
+- Required proof/tests: re-read ruleset; confirm `required_review_thread_resolution: true`.
+- Owner/target week: Repo owner / DevSecOps; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+
+## GH-249-05 — Frontend and AI Worker checks are not required on `main`
+
+- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Severity: P2 / CI Gating
+- Path / setting: ruleset `17327601` required checks = `Backend tests`, `Docker Compose config`,
+  `CodeQL` only. `.github/workflows/frontend.yml` (Frontend) and `.github/workflows/ai-worker.yml`
+  (AI Worker) run on PR but are path-filtered and not required.
+- Evidence: ruleset required_status_checks vs `#248` check-runs; workflow triggers.
+- Root cause: only backend/compose/CodeQL are enforced; frontend/worker regressions can merge when
+  their path-filtered checks are skipped or fail-without-blocking.
+- Risk: broken web-dashboard or ai-worker merged to `main` undetected by required gate.
+- Suggested fix: add `Frontend` and `AI Worker` to required checks using skip-safe status reporting
+  (e.g. a `changes`-gated required job that reports success when its paths are untouched) so docs-only
+  PRs are not deadlocked.
+- Required proof/tests: PR touching only backend + docs still mergeable; PR breaking frontend blocked.
+- Owner/target week: CI owner; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; no setting/CI changes without separate authorization.
+
+## GH-249-06 — `merge` commit method allowed while linear history is required
+
+- Status: OPEN (2026-07-06, PR #249). **P3.**
+- Severity: P3 / Policy Consistency
+- Path / setting: ruleset `17327601` → `pull_request.allowed_merge_methods: [merge, squash, rebase]`
+  while `required_linear_history: true`; repo default merge method is `SQUASH`.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`, `gh repo view --json viewerDefaultMergeMethod`.
+- Root cause: a true merge commit would be rejected by linear-history enforcement, so offering it is
+  misleading.
+- Risk: operator confusion / failed merge attempts; no security impact.
+- Suggested fix: drop `merge` from `allowed_merge_methods`, leaving `squash`/`rebase`.
+- Required proof/tests: re-read ruleset; confirm `merge` removed.
+- Owner/target week: Repo owner; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+
+## GH-249-07 — Semgrep runs and passes but is not a required check
+
+- Status: OPEN (2026-07-06, PR #249). **P1.**
+- Severity: P1 / Security Gating
+- Path / setting: `.github/workflows/semgrep.yml` ("Semgrep Security Scan", check
+  `Semgrep SAST / OP policy scan") runs on every PR and passed on `#248`, but is absent from ruleset
+  `17327601` required checks.
+- Evidence: `#248` check-runs show `Semgrep SAST / OP policy scan = success`; ruleset required checks
+  list only `Backend tests`, `Docker Compose config`, `CodeQL`.
+- Root cause: the SAST gate is advisory — a failing Semgrep scan does not block merge.
+- Risk: security findings in the blocking Semgrep policy (`.semgrep/op-security-blocking.yml`) can be
+  merged past, undermining the "Rules validate" safety layer.
+- Suggested fix: add `Semgrep SAST / OP policy scan` to the ruleset's required status checks (strict).
+- Required proof/tests: re-read ruleset; confirm Semgrep context present; PR with a seeded blocking
+  finding is blocked from merge.
+- Owner/target week: DevSecOps / CI owner; before next high-risk merge.
+- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+
+## GH-249-08 — Snyk runs only on schedule/dispatch, not on PRs, and is not required
+
+- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Severity: P2 / Dependency Scanning
+- Path / setting: `.github/workflows/snyk.yml` triggers = `schedule` + `workflow_dispatch` only (no
+  `pull_request`); not in ruleset required checks.
+- Evidence: `grep -nE '^on:|schedule|pull_request' .github/workflows/snyk.yml`; ruleset required checks.
+- Root cause: dependency vulnerability scanning does not run per-PR and does not gate merges; only a
+  periodic/manual sweep exists.
+- Risk: a PR introducing vulnerable dependencies (`pom.xml`, `web-dashboard` npm) merges without a Snyk
+  gate; the gap is only caught on the next scheduled run.
+- Suggested fix: add `pull_request` trigger to `snyk.yml` (with sensible severity threshold) and add its
+  check to the ruleset required checks. (Dependabot alerts already enabled provide partial coverage.)
+- Required proof/tests: PR adding a known-vulnerable dep blocked; re-read ruleset for Snyk context.
+- Owner/target week: DevSecOps / CI owner; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; no setting/CI changes without separate authorization.
+
+## GH-249-09 — Secret-scanning non-provider patterns and validity checks disabled
+
+- Status: OPEN (2026-07-06, PR #249). **P3.**
+- Severity: P3 / Hardening
+- Path / setting: repo `security_and_analysis` →
+  `secret_scanning_non_provider_patterns: disabled`, `secret_scanning_validity_checks: disabled`
+  (base secret scanning + push protection are enabled; 0 open alerts).
+- Evidence: `gh api repos/akonPAPA/Operant --jq '.security_and_analysis'`.
+- Root cause: only provider-recognized secret patterns are scanned, and detected secrets are not
+  validity-checked (active vs revoked).
+- Risk: custom/non-provider secret formats may go undetected; alerts lack active/inactive context.
+- Suggested fix: enable non-provider pattern scanning and validity checks in Code security settings.
+- Required proof/tests: re-read `security_and_analysis`; confirm both `enabled`.
+- Owner/target week: DevSecOps; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+
+## GH-249-10 — 386 open Codacy code-scanning alerts (code-quality hygiene)
+
+- Status: OPEN (2026-07-06, PR #249). **P3.**
+- Severity: P3 / Hygiene
+- Path / setting: code scanning alerts — 386 open, 362 `Pylint (Codacy)`, 24 `Remark-lint (Codacy)`;
+  0 CodeQL, 0 with a security-severity level.
+- Evidence: `gh api "repos/akonPAPA/Operant/code-scanning/alerts?state=open" --paginate` (counts only).
+- Root cause: Codacy code-quality tooling reports a large volume of non-security alerts that are not
+  being triaged.
+- Risk: no direct security impact (no security severity), but the volume can mask a future real finding
+  and dilutes the code-scanning dashboard.
+- Suggested fix: triage/dismiss or tune the Codacy Pylint/Remark-lint rulesets; keep security-severity
+  alerts (CodeQL/Bandit) as the enforced gate.
+- Required proof/tests: open-alert count reduced; CodeQL security alerts remain at 0.
+- Owner/target week: Backend / tooling owner; unscheduled.
+- Why not fixed in PR #249: proof/documentation PR; alert triage is out of scope and unauthorized here.
+
 ## P2 — Commerce Intelligence visible demo-flow read model (OP-CAP-27C)
 
 - Status: PARTIAL (2026-07-05, PR #245) — the tenant-operator visible demo-flow read-model item is
