@@ -256,9 +256,10 @@ Required proof/tests:
     characterization to the positive allow/deny assertions above.
   - Re-run the full `com.orderpilot.integration.testdb.*` Postgres suite.
 - Owner/target week: Core API / audit-boundary owner; unscheduled.
-- Why out of scope for PR #248: #248 is a bounded PostgreSQL integration-hardening proof. Changing an
-  audit table's referential-integrity model (or the support actor-identity model) is a production
-  data-boundary decision, not a proof-PR patch. #248 documents and proves the defect instead of forcing it.
+- Resolution in PR #248: the audit referential-integrity decision was taken and applied within #248 — the
+  overly-narrow FK was dropped (V66) and `actor_id` is now an opaque/polymorphic principal id. The fix has
+  minimal blast radius (one additive migration; no Java/main logic change) and is positively proven on real
+  PostgreSQL. Broader first-class actor-type provenance is the only piece intentionally deferred (PG-248-02).
 
 ## PG-248-02 — audit_event lacks an explicit actor principal type/source (forensic hardening)
 

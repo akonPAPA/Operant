@@ -62,8 +62,9 @@ data between tests with `@Sql(/db/testdata/clean.sql, ...)`.
 From `apps/core-api`:
 
 ```bash
-# Full Postgres integration suite
-mvn -Dorderpilot.postgres.integration.enabled=true -Dtest="com.orderpilot.integration.testdb.*" test
+# Full Postgres integration suite (the *Postgres* selector reliably matches all classes by simple name;
+# a trailing-package glob like com.orderpilot.integration.testdb.* can intermittently match nothing)
+mvn -Dorderpilot.postgres.integration.enabled=true -Dtest="*Postgres*" -Dsurefire.failIfNoSpecifiedTests=false test
 
 # A single area (example: the #248 support-grant persistence proof)
 mvn -Dorderpilot.postgres.integration.enabled=true -Dtest=SupportGrantPersistencePostgresIntegrationTest test
