@@ -13,13 +13,17 @@
 
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import ts from "typescript";
 import { renderToStaticMarkup } from "react-dom/server";
 
-const root = process.cwd();
+// Resolve the frontend app root relative to THIS test file, not process.cwd(), so the test reads the
+// real component from the same absolute path whether it is launched from the repo root
+// (`node --test apps/web-dashboard/tests/...`) or from `apps/web-dashboard` (`node --test tests/...`).
+const testDir = dirname(fileURLToPath(import.meta.url));
+const root = resolve(testDir, "..");
 
 function transpile(source, fileName) {
   return ts.transpileModule(source, {

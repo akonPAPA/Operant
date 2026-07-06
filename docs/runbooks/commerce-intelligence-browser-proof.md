@@ -32,10 +32,18 @@ procedure, and live-DB browser proof stays deferred (see section 6 and the fix-n
 Commands run:
 
 ```bash
-# Frontend — real component render proof (react-dom/server), no live backend needed
-node --test apps/web-dashboard/tests/commerce-intelligence.render.test.mjs        # 6/6 pass
-node --test apps/web-dashboard/tests/commerce-intelligence.test.mjs               # source contract
-node --test apps/web-dashboard/tests/ui-data-boundary.test.mjs                    # data-boundary
+# Frontend — real component render proof (react-dom/server), no live backend needed.
+# The render test resolves the app root from import.meta.url, so it runs from EITHER directory:
+node --test apps/web-dashboard/tests/commerce-intelligence.render.test.mjs        # 6/6 pass (repo root)
+( cd apps/web-dashboard && node --test tests/commerce-intelligence.render.test.mjs )  # 6/6 (app dir)
+
+# The source-contract and data-boundary tests read files relative to process.cwd(), so they must be
+# run from the app directory (they are NOT root-cwd resolvable). Run the combined suite there:
+cd apps/web-dashboard
+node --test tests/commerce-intelligence.render.test.mjs \
+            tests/commerce-intelligence.test.mjs \
+            tests/ui-data-boundary.test.mjs                                       # 17/17 pass
+cd ../..
 npm --prefix apps/web-dashboard run lint                                          # clean
 npm --prefix apps/web-dashboard run typecheck                                     # clean
 npm --prefix apps/web-dashboard run build                                         # /commerce-intelligence route built
@@ -50,7 +58,12 @@ ResponseDtoLeakContractTest,ApiPermissionRoleMatrixTest" test                   
 `components/commerce-intelligence-demo-flow.tsx`, stubs only `next/link`, then renders each
 operator-facing state with `react-dom/server` and asserts on the produced HTML — including that
 decoy internal/raw fields (`tenantId`, `actorId`, `idempotencyKey`, `rawPayload`, `prompt`, `secret`,
-`channelConnectionId`) never reach the DOM.
+`channelConnectionId`) never reach the DOM. It resolves the frontend app root from
+`import.meta.url` (not `process.cwd()`), so it is runnable from both the repo root and
+`apps/web-dashboard`. The existing `commerce-intelligence.test.mjs` and `ui-data-boundary.test.mjs`
+are `process.cwd()`-relative source-inspection tests and must be launched from `apps/web-dashboard`;
+a single root-level `node --test` that mixes all three will fail on those two (documented here, not
+faked).
 
 ## 2. Observed render states (proven by the render test)
 
