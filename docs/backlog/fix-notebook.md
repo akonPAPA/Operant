@@ -7,6 +7,19 @@
   distributed telemetry and denial-rate surfaces remain deferred (below). This closes the
   "runtime denial telemetry dashboard" item **only** for the demo path — it does not open a production
   telemetry plane.
+- Update (2026-07-06, PR #253) — three post-merge follow-ups CLOSED: (1) **route hardening** — non-GET
+  `/api/v1/runtime-control/**` is now fail-closed/default-denied and can no longer inherit the generic
+  `/api/v1/runtime` → `RUNTIME_ENTITLEMENT_MANAGE` write rule (`ApiRouteSecurityPolicy` carve-out ordered
+  before the generic runtime branch; proven by a dedicated policy test + controller POST tests asserting
+  zero service interaction). (2) **wording honesty** — the surface is now stated as a tenant-*gated* read
+  of the *default/static* runtime-control contract posture, **not** tenant-specific quota/rate/entitlement
+  or production denial-rate telemetry; new `NOT_MEASURED` codes `TENANT_SPECIFIC_RUNTIME_POLICY_NOT_MEASURED`
+  / `TENANT_RATE_BUCKET_STATE_NOT_MEASURED` / `TENANT_QUOTA_BUCKET_STATE_NOT_MEASURED` /
+  `RUNTIME_ADMISSION_DENIAL_COUNTERS_NOT_MEASURED` make the missing tenant-specific dimensions explicit.
+  (3) **frontend client hardening** — malformed JSON and response-contract drift now map to bounded
+  "response is invalid" / "contract is invalid" messages (minimal local type guards, no new dependency);
+  a raw backend body is never echoed. This does **not** add tenant-specific telemetry, persisted counters,
+  distributed telemetry, staff/support plane, or any write surface.
 - Severity: P2 / Runtime Visibility and Data Boundary
 - Path:
   - `GET /api/v1/runtime-control/demo-flow` (`ANALYTICS_READ`)

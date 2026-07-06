@@ -1,11 +1,17 @@
 # Runtime Control Telemetry — RFQ/AI/demo path (OP-CAP-27D)
 
-Read-only, tenant-scoped visibility into the PR #244 runtime-control posture that protects the
-RFQ/AI/demo flow. This surface answers a single operator question: **is the demo flow protected by
-runtime-control gates, and what is measured vs. not measured?**
+Read-only, tenant-gated visibility into the PR #244 runtime-control **default contract posture** that
+protects the RFQ/AI/demo flow. This surface answers a single operator question: **is the demo flow
+protected by runtime-control gates, and what is measured vs. not measured?**
 
 It is a *read model*. It never invokes the admission guard, never calls a connector, never performs an
 external write, and never fabricates a metric.
+
+> **What this is not (PR #253 honesty correction):** this is a tenant-*gated* read of the *default/static*
+> runtime-control contract posture (from `RuntimeControlProperties`). It is **not** tenant-*specific*
+> runtime telemetry — it does not read the tenant's runtime plan, feature entitlement, live rate-window
+> bucket, live quota-bucket, or any persisted admission/denial counters, and it is not production
+> denial-rate telemetry. Those dimensions are surfaced explicitly as `NOT_MEASURED`.
 
 ## Endpoint
 
@@ -14,6 +20,10 @@ external write, and never fabricates a metric.
   `/api/v1/runtime-control` route rule is deliberately ordered before the `/api/v1/runtime` entitlement
   rule so a telemetry reader can never inherit runtime-governance authority. No Operant staff/support
   permission satisfies it either.
+- Non-GET verbs (PR #253): there is no runtime-control write endpoint in this slice, so any
+  `POST/PUT/PATCH/DELETE /api/v1/runtime-control/**` is **fail-closed / default-denied** by the route
+  policy — it does **not** inherit the generic `/api/v1/runtime` → `RUNTIME_ENTITLEMENT_MANAGE` rule
+  despite the shared prefix.
 - Tenant scope: resolved server-side from `X-Tenant-Id` (`TenantContext`). The tenant id is **not**
   returned in the response.
 - Request contract: no `@RequestParam` / `@RequestBody`. A client cannot supply tenant, actor, source,
@@ -33,7 +43,10 @@ external write, and never fabricates a metric.
   `maxSyncCostUnits` / `backpressureQueueDepth` are `STATIC_CONTRACT` values read from
   `RuntimeControlProperties`; `admittedCount` / `deniedCount` are `NOT_MEASURED`.
 - `provenGuarantees[]` — which runtime-control guarantees hold for the demo path.
-- `notMeasured[]` — what is explicitly out of scope.
+- `notMeasured[]` — what is explicitly out of scope, including (PR #253) the tenant-specific dimensions:
+  `TENANT_SPECIFIC_RUNTIME_POLICY_NOT_MEASURED`, `TENANT_RATE_BUCKET_STATE_NOT_MEASURED`,
+  `TENANT_QUOTA_BUCKET_STATE_NOT_MEASURED`, `RUNTIME_ADMISSION_DENIAL_COUNTERS_NOT_MEASURED`, plus the
+  distributed-guard, provider-billing, all-channel-denial, and support/staff-plane exclusions.
 
 ### Measurement labels
 
@@ -58,6 +71,11 @@ imply "zero denials happened"), admitted/denied counts are honestly labelled `NO
   honest "Not measured" / "Not applicable" labels), the proven guarantees, and the not-measured section.
 - It never renders raw JSON, `<pre>` dumps, stack traces, tenant/actor/idempotency/prompt/payload/
   connector internals. Backend errors are mapped to bounded safe copy.
+- Client hardening (PR #253): `lib/runtime-control-telemetry-api.ts` separates failure modes into
+  bounded messages — network failure → "Core API is not reachable."; non-2xx → mapped status message
+  (raw body ignored); malformed JSON → "Runtime-control telemetry response is invalid."; shape/contract
+  drift or an unknown measurement kind → "Runtime-control telemetry contract is invalid." A raw backend
+  body is never echoed. Validation is minimal local type guards (no new dependency).
 
 ## Safety boundary
 

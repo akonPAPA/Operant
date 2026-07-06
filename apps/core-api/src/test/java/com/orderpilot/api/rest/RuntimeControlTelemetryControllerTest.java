@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -120,6 +121,22 @@ class RuntimeControlTelemetryControllerTest {
                   .header(ApiPermissionGuard.PERMISSIONS_HEADER, permission))
           .andExpect(status().isForbidden())
           .andExpect(jsonPath("$.message").value("Missing required API permission ANALYTICS_READ"));
+    }
+
+    verifyNoInteractions(service);
+  }
+
+  @Test
+  void nonGetVerbsNeverReachServiceRegardlessOfSuppliedPermission() throws Exception {
+    // PR #253: there is no runtime-control write endpoint. A POST — even carrying the platform
+    // runtime-governance permission, a staff permission, or the correct read permission — must never
+    // reach the service (no handler + fail-closed route policy). Proves the /runtime-control edge does
+    // not expose any mutation surface and cannot be reached by smuggling RUNTIME_ENTITLEMENT_MANAGE.
+    for (String permission :
+        List.of("RUNTIME_ENTITLEMENT_MANAGE", "STAFF_SUPPORT_READ", "ANALYTICS_READ")) {
+      mockMvc.perform(
+          post("/api/v1/runtime-control/demo-flow")
+              .header(ApiPermissionGuard.PERMISSIONS_HEADER, permission));
     }
 
     verifyNoInteractions(service);

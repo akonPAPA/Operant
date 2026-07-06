@@ -122,7 +122,18 @@ public class ApiRouteSecurityPolicy {
     if (path.equals(INTERNAL_SUPPORT_BASE) || path.startsWith(INTERNAL_SUPPORT_BASE + "/")) {
       return supportDecision(method, path);
     }
-    if (path.startsWith("/api/v1/runtime") && !HttpMethod.GET.matches(method)) {
+    // OP-CAP-27D follow-up (PR #253): the read-only runtime-control telemetry surface must never inherit
+    // the generic runtime-governance write rule below. "/api/v1/runtime-control" starts with
+    // "/api/v1/runtime", so without this guard a POST/PUT/PATCH/DELETE to a runtime-control path would
+    // classify as RUNTIME_ENTITLEMENT_MANAGE. There is no runtime-control write endpoint in this slice,
+    // so any non-GET is fail-closed (Optional.empty -> global default-deny). GET falls through to the
+    // "/api/v1/runtime-control" PREFIX_RULE (ANALYTICS_READ).
+    if (path.equals("/api/v1/runtime-control") || path.startsWith("/api/v1/runtime-control/")) {
+      if (!HttpMethod.GET.matches(method)) {
+        return Optional.empty();
+      }
+      // GET: defer to PREFIX_RULES ("/api/v1/runtime-control" -> ANALYTICS_READ).
+    } else if (path.startsWith("/api/v1/runtime") && !HttpMethod.GET.matches(method)) {
       return protectedRoute(SecurityClassification.PROTECTED_RUNTIME_MANAGE, ApiPermission.RUNTIME_ENTITLEMENT_MANAGE);
     }
     if (path.startsWith("/api/v1/change-requests") && !HttpMethod.GET.matches(method)) {

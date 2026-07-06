@@ -376,6 +376,34 @@ class ApiRouteSecurityClassificationTest {
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
   // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the
   // opaque expiring token, not by any request authority field.
+  // OP-CAP-27D follow-up (PR #253): the read-only runtime-control telemetry surface must not inherit the
+  // generic "/api/v1/runtime" governance write rule just because the paths share a prefix. GET is the
+  // operator read (ANALYTICS_READ); every non-GET verb fails closed (default-deny) rather than mapping to
+  // RUNTIME_ENTITLEMENT_MANAGE — there is no runtime-control write endpoint in this slice.
+  @Test
+  void runtimeControlNonGetIsDefaultDeniedAndNeverInheritsRuntimeEntitlementManage() {
+    assertThat(policy.classify("GET", "/api/v1/runtime-control/demo-flow"))
+        .hasValueSatisfying(decision -> {
+          assertThat(decision.classification()).isEqualTo(SecurityClassification.PROTECTED_READ);
+          assertThat(decision.requiredPermission()).isEqualTo(ApiPermission.ANALYTICS_READ);
+        });
+
+    for (String method : List.of("POST", "PUT", "PATCH", "DELETE")) {
+      assertThat(policy.classify(method, "/api/v1/runtime-control/demo-flow"))
+          .as("%s /api/v1/runtime-control/demo-flow must be default-denied (unclassified)", method)
+          .isEmpty();
+      assertThat(policy.classify(method, "/api/v1/runtime-control/anything-else"))
+          .as("%s /api/v1/runtime-control/anything-else must be default-denied (unclassified)", method)
+          .isEmpty();
+    }
+
+    // Control: the sibling "/api/v1/runtime" governance surface still maps non-GET to the manage
+    // permission, proving the runtime-control carve-out did not weaken the real runtime rule.
+    assertThat(policy.classify("POST", "/api/v1/runtime/plans"))
+        .hasValueSatisfying(decision ->
+            assertThat(decision.requiredPermission()).isEqualTo(ApiPermission.RUNTIME_ENTITLEMENT_MANAGE));
+  }
+
   @Test
   void secureTrackingLinkResolveRouteIsPublicWithToken() {
     RouteDecision decision = policy.classify(

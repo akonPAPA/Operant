@@ -80,8 +80,21 @@ class RuntimeControlDemoFlowTelemetryServiceTest {
     assertThat(response.admission().deniedCount().value()).isNull();
 
     assertThat(response.provenGuarantees()).isNotEmpty();
+
+    // PR #253 honesty: the wording must not claim tenant-observed telemetry, and the tenant-specific
+    // runtime dimensions must be explicitly labelled NOT_MEASURED.
+    assertThat(response.scopeLabel()).doesNotContainIgnoringCase("tenant-observed");
+    assertThat(response.safety().statement()).doesNotContainIgnoringCase("tenant-observed");
+    assertThat(response.scopeLabel()).containsIgnoringCase("tenant-gated");
+
     assertThat(response.notMeasured())
-        .anyMatch(item -> item.code().equals("SUPPORT_STAFF_TELEMETRY_PLANE_NOT_PROVEN"));
+        .extracting(item -> item.code())
+        .contains(
+            "TENANT_SPECIFIC_RUNTIME_POLICY_NOT_MEASURED",
+            "TENANT_RATE_BUCKET_STATE_NOT_MEASURED",
+            "TENANT_QUOTA_BUCKET_STATE_NOT_MEASURED",
+            "RUNTIME_ADMISSION_DENIAL_COUNTERS_NOT_MEASURED",
+            "SUPPORT_STAFF_TELEMETRY_PLANE_NOT_PROVEN");
   }
 
   @Test
