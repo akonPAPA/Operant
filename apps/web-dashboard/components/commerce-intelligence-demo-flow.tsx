@@ -77,6 +77,9 @@ export function CommerceIntelligenceDemoFlowView({ data, error }: Props) {
 
       <section className="panel table-panel">
         <h2>Safety state</h2>
+        <p className="status-pill done">
+          Read-only intelligence · external execution disabled · no connector invoked
+        </p>
         <p>{safety.safetyStatement}</p>
         <table className="data-table">
           <thead>
