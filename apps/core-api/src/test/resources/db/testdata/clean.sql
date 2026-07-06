@@ -83,6 +83,7 @@ TRUNCATE TABLE
   public.role_permission,
   public.shadow_run,
   public.source_evidence,
+  public.staff_user,
   public.substitute_candidate,
   public.suggested_fix,
   public.tenant,
