@@ -205,6 +205,16 @@
   CLOSED. The endpoint and dashboard present tenant-scoped RFQ, AI advisory, review-required draft,
   blocker, safe-terminal, safety, and PR #244 runtime-posture facts without creating business state.
   Production analytics capabilities remain deferred below.
+- Update (2026-07-06, PR #251) — rendered-page browser verification is now proven at the render level.
+  A real-component render-state proof (`apps/web-dashboard/tests/commerce-intelligence.render.test.mjs`,
+  6/6, react-dom/server) proves the populated, empty, unavailable, backend-error, and partial-error
+  states render safely with no internal/raw field leak, no raw JSON/`<pre>` dump, and no backend
+  stack/exception string; a backend test now proves the read endpoint ignores client-supplied
+  tenant/actor/source/status/runtime authority and body. A browser walkthrough runbook was added
+  (`docs/runbooks/commerce-intelligence-browser-proof.md`). This closes the PR #245 "rendered-page
+  browser verification" gap. **Live PostgreSQL + real-browser screenshot proof was not executed in
+  this environment and remains deferred** (see residual items). No production analytics scope added;
+  production is not complete.
 - Severity: P2 / Product Visibility and Data Boundary
 - Path:
   - `GET /api/v1/commerce-intelligence/demo-flow` (`ANALYTICS_READ`)
@@ -226,7 +236,8 @@
   - real revenue/conversion/revenue-recognition metrics;
   - cross-channel non-demo intelligence;
   - a separate staff/support intelligence plane, if product policy later requires one;
-  - live PostgreSQL/browser proof for the Commerce Intelligence route;
+  - live PostgreSQL + real-browser screenshot proof for the Commerce Intelligence route (render-state
+    browser proof and a documented walkthrough landed in PR #251; live-DB browser run still deferred);
   - runtime denial telemetry dashboard and distributed runtime-guard telemetry;
   - provider-specific runtime accounting.
 - Suggested future proof: disposable PostgreSQL tenant-isolation fixture plus browser verification of

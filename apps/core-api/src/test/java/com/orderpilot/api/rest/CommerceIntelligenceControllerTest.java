@@ -1,6 +1,8 @@
 package com.orderpilot.api.rest;
 
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,6 +51,36 @@ class CommerceIntelligenceControllerTest {
         .andExpect(jsonPath("$.runtimeControl.guarded").value(true))
         .andExpect(
             jsonPath("$.runtimeControl.denialTelemetry").value("NOT_MEASURED"));
+  }
+
+  @Test
+  void clientSuppliedAuthorityAndBodyAreIgnoredByTheReadEndpoint() throws Exception {
+    when(service.readDemoFlow()).thenReturn(response());
+
+    // The client attempts to smuggle tenant/actor/source/status/runtime authority via query params
+    // and a request body. The endpoint declares no @RequestParam/@RequestBody, so the extras are
+    // inert: the service still receives a no-argument, trusted-context-only read call.
+    mockMvc
+        .perform(
+            get("/api/v1/commerce-intelligence/demo-flow")
+                .header(ApiPermissionGuard.PERMISSIONS_HEADER, "ANALYTICS_READ")
+                .param("tenantId", "22222222-2222-2222-2222-222222222222")
+                .param("actorId", "33333333-3333-3333-3333-333333333333")
+                .param("sourceId", "44444444-4444-4444-4444-444444444444")
+                .param("status", "DEMO_COMPLETED")
+                .param("runtimeMode", "DISABLED")
+                .param("runtimeDecision", "ALLOW")
+                .param("approvalStatus", "APPROVED")
+                .param("executionStatus", "EXECUTED")
+                .contentType("application/json")
+                .content(
+                    "{\"tenantId\":\"22222222-2222-2222-2222-222222222222\","
+                        + "\"actorId\":\"33333333-3333-3333-3333-333333333333\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.summary.rfqHandoffsTotal").value(4));
+
+    verify(service).readDemoFlow();
+    verifyNoMoreInteractions(service);
   }
 
   @Test
