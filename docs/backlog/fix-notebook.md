@@ -199,3 +199,92 @@ Required proof/tests:
 - gitleaks current-tree scan clean.
 - gitleaks history finding classified.
 - No real secret present in current branch diff.
+
+## PG-248-01 — Support-plane audit writes fail on real PostgreSQL (staff actor violates audit FK)
+
+- Status: **RESOLVED IN PR #248** (2026-07-06). Product/architecture decision taken: `audit_event.actor_id`
+  is an opaque/polymorphic principal id, not an FK to `user_account`. Fixed by
+  `V66__audit_event_actor_id_polymorphic_principal.sql` (drops the FK, documents the column). Positively
+  proven on real PostgreSQL by `SupportGrantPersistencePostgresIntegrationTest`
+  (`supportServiceAuditWritesPersistForStaffActorsUnderPostgres`,
+  `auditActorIdFkToUserAccountIsDroppedAndAcceptsStaffAndTenantActors`) — allow AND deny support audits now
+  persist with a `staff_user` actor, tenant-user audit still works, and the FK is proven dropped. Follow-up
+  hardening tracked as PG-248-02 (below).
+- Severity: **P1 / Data & Audit Integrity (production-blocking on PostgreSQL, H2-hidden)** — now resolved.
+- Path:
+  - `apps/core-api/src/main/resources/db/migration/V1__platform_foundation.sql:55`
+    (`audit_event.actor_id UUID NULL REFERENCES user_account(id)`)
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/AuditEventService.java`
+    (`record(...)` inserts `actor_id` = caller-supplied actor)
+  - `apps/core-api/src/main/java/com/orderpilot/api/rest/InternalSupportController.java`
+    (every support action passes `actor = staffIdentityResolver.resolveRequired(http).staffUserId()`)
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/support/SupportAccessService.java`
+    (`authorize` / `createGrant` / `approveGrant` / `rejectGrant` / `revokeGrant` audit with the staff id)
+- Root cause: `audit_event.actor_id` has a Flyway foreign key to `user_account(id)`. The Operant support
+  plane is a **separate identity domain**: the acting principal is a `staff_user` id (resolved by the
+  `StaffIdentityResolver` seam), which is by design NOT a `user_account` row. Every support-plane audit
+  write therefore inserts an `actor_id` that is absent from `user_account` and fails
+  `audit_event_actor_id_fkey` (SQLSTATE 23503) on real PostgreSQL. The audit is written via
+  `@Transactional(REQUIRES_NEW)`, so the violation propagates as a `DataIntegrityViolationException` and
+  aborts the whole support action.
+- Why H2 hides it: the H2 test profile (`application-test.yml`) sets `spring.flyway.enabled: false` and
+  `jpa.hibernate.ddl-auto: create-drop`, so the schema is generated from JPA entities. `AuditEvent.actorId`
+  is mapped as a plain `UUID` column with no `@ManyToOne`/association, so H2 never creates the FK. All
+  support/incident unit + service tests are green on H2 while the real Postgres schema rejects the write.
+- Risk:
+  - The entire owner-company support & maintenance plane (OP-CAP-51..54: grant create/approve/reject/
+    revoke, `authorize`, diagnostics, maintenance records, data-repair dry-run/approval, processing-job
+    repair) is non-functional on PostgreSQL — actions fail and roll back.
+  - **Security-relevant:** even the fail-closed DENY audit (`SUPPORT_ACCESS_DENIED`) cannot be written,
+    so support-access denials are unauditable on PostgreSQL.
+  - `InternalIncidentController` is NOT affected: it audits via the tenant `RequestActorResolver`
+    (`resolveVerifiedActor`), which yields a `user_account` id.
+- Resolution in PR #248:
+  Dropped `audit_event_actor_id_fkey` through
+  `V66__audit_event_actor_id_polymorphic_principal.sql`.
+  `audit_event.actor_id` is now documented as an opaque/polymorphic principal id.
+  The column, existing data, and audit indexes are preserved.
+
+- Proof:
+  `SupportGrantPersistencePostgresIntegrationTest` proves:
+  - the FK is absent;
+  - support allow audit persists with `staff_user` actor;
+  - support deny audit persists with `staff_user` actor;
+  - tenant-user audit still persists;
+  - support audit remains tenant-scoped;
+  - denied support access does not create maintenance/data-repair side effects.
+
+- Residual:
+  `actor_principal_type` / `actor_source` remains deferred as PG-248-02.
+- Owner/target week: Core API / audit-boundary owner; unscheduled.
+- Resolution in PR #248: the audit referential-integrity decision was taken and applied within #248 — the
+  overly-narrow FK was dropped (V66) and `actor_id` is now an opaque/polymorphic principal id. The fix has
+  minimal blast radius (one additive migration; no Java/main logic change) and is positively proven on real
+  PostgreSQL. Broader first-class actor-type provenance is the only piece intentionally deferred (PG-248-02).
+
+## PG-248-02 — audit_event lacks an explicit actor principal type/source (forensic hardening)
+
+- Status: OPEN (2026-07-06, opened by PR #248 as the follow-up to PG-248-01). **Non-blocking / P2.**
+- Severity: P2 / Audit Forensics & Reporting
+- Path:
+  - `apps/core-api/src/main/resources/db/migration/V66__audit_event_actor_id_polymorphic_principal.sql`
+    (`actor_id` is now opaque/polymorphic)
+  - `apps/core-api/src/main/java/com/orderpilot/domain/audit/AuditEvent.java`
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/AuditEventService.java` (and callers)
+- Root cause: after PG-248-01, `audit_event.actor_id` is correctly polymorphic/opaque, but the actor's
+  identity domain is not encoded as a first-class column. A reader cannot tell from the row alone whether an
+  actor is a tenant user, an Operant staff user, a service account, a connector/bot/worker, or a
+  system/runtime job.
+- Risk: forensic/reporting ambiguity across identity domains; harder cross-domain audit queries; weaker
+  attribution if two domains ever mint colliding UUID namespaces (unlikely with random UUIDs, but not
+  guaranteed by the schema).
+- Suggested fix: add `actor_principal_type` (enum: `TENANT_USER`/`STAFF_USER`/`SERVICE_ACCOUNT`/`CONNECTOR`/
+  `SYSTEM`) and/or `actor_source` in a bounded future migration; set it in `AuditEventService` from the
+  resolving seam (`RequestActorResolver` → `TENANT_USER`, `StaffIdentityResolver` → `STAFF_USER`, etc.).
+  Keep it additive/nullable-with-default; do not rewrite existing rows.
+- Required proof/tests: a Postgres test asserting tenant-user, staff, system, and service-account audit rows
+  carry the correct `actor_principal_type`; existing audit read/query paths unaffected.
+- Owner/target week: Core API / audit-boundary owner; unscheduled.
+- Why not in PR #248: #248 fixed the production-blocking FK defect (PG-248-01) with minimal blast radius.
+  Adding a first-class actor-type column touches the audit write path and all audit callers — a separate,
+  bounded slice, not required to unblock the support plane on PostgreSQL.
