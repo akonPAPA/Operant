@@ -333,3 +333,155 @@ containing private UI data):
   checks, run Snyk on `pull_request` and require it, and restrict/remove the admin
   bypass — each change verified by re-reading the ruleset via the same API commands
   used here.
+
+---
+
+# Stage 30B — Production Delivery Governance Hardening (after-state)
+
+## Scope of Stage 30B
+
+Stage 30A (above) documented the current state and opened `GH-249-XX`. Stage 30B
+**applies** a bounded, authorized subset of those hardening controls to ruleset
+`17327601` on `akonPAPA/Operant`, then re-reads the live API to prove the new state.
+
+This stage is **settings + docs only**. No application code, workflow YAML, migration,
+DTO, connector, or payment/reconciliation code was touched. Repository visibility,
+secret scanning, push protection, Dependabot, and CodeQL enforcement were **not**
+weakened. No admin merge or protection bypass was exercised to make these changes; the
+ruleset was edited via the authenticated REST API (`PUT .../rulesets/17327601`) as an
+ADMIN user, which is a normal settings write, not a protection bypass.
+
+Evidence timestamps (UTC): before re-read `2026-07-06T15:18:05Z`; change applied
+`2026-07-06T20:21:36+05:00` (ruleset `updated_at`); after re-read `2026-07-06T15:22:57Z`.
+
+## Controls changed in Stage 30B
+
+Exactly three ruleset fields were changed. Everything else in the ruleset is
+byte-for-byte preserved (verified by diffing the before/after JSON snapshots).
+
+| # | Control | Before | After | Backlog item | API path |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Admin bypass mode | `always` | **`pull_request`** | GH-249-01 (partial) | `bypass_actors[0].bypass_mode` |
+| 2 | Dismiss stale approvals on push | `false` | **`true`** | GH-249-02 (resolved) | `rules[pull_request].dismiss_stale_reviews_on_push` |
+| 3 | Require conversation resolution | `false` | **`true`** | GH-249-04 (resolved) | `rules[pull_request].required_review_thread_resolution` |
+
+`current_user_can_bypass` correspondingly moved from `always` to **`pull_requests_only`**.
+
+## Before / after governance matrix
+
+| Control | Before (Stage 30A) | After (Stage 30B) | Status |
+| --- | --- | --- | --- |
+| `main` protected via ruleset `17327601` | YES | YES | unchanged |
+| Classic branch protection | DISABLED (404) | DISABLED (404) | unchanged |
+| Required approving reviews | 1 | 1 | unchanged |
+| Require code-owner review | true | true | unchanged |
+| **Dismiss stale reviews on push** | **false** ⚠ | **true** ✅ | **hardened (GH-249-02)** |
+| **Require conversation resolution** | **false** ⚠ | **true** ✅ | **hardened (GH-249-04)** |
+| Require last-push approval | false | false | deferred (GH-249-03) |
+| **Admin bypass mode** | **`always`** ⚠ | **`pull_request`** ✅ | **hardened (GH-249-01 partial)** |
+| Required status checks (strict) | `Backend tests`, `Docker Compose config`, `CodeQL` | same 3, still strict | unchanged (not weakened) |
+| Semgrep required | no | no | deferred (GH-249-07) |
+| Frontend / AI Worker required | no | no | deferred (GH-249-05) |
+| Snyk required / on PR | no | no | deferred (GH-249-08) |
+| Signed commits (`required_signatures`) | true | true | unchanged |
+| Linear history | true | true | unchanged |
+| Force push (`non_fast_forward`) | blocked | blocked | unchanged |
+| Branch deletion | blocked | blocked | unchanged |
+| `allowed_merge_methods` | `merge,squash,rebase` | `merge,squash,rebase` | deferred (GH-249-06) |
+| CodeQL / Codacy `code_scanning` thresholds | unchanged | unchanged | not weakened |
+| Secret scanning + push protection | enabled | enabled | not touched |
+| Dependabot alerts | enabled, 0 open | enabled | not touched |
+| Repository visibility | public | public | not changed |
+
+## What the three changes actually buy
+
+- **Admin bypass `always` → `pull_request`** — the Admin role can no longer bypass the
+  ruleset on a **direct push** to `main`; admin changes must now flow through a pull
+  request. This closes the "push straight to `main` bypassing everything" hole. It does
+  **not** fully close admin bypass *inside* the PR flow (see deferral GH-249-01 below).
+- **Dismiss stale approvals on push** — once a second reviewer exists, an approval of
+  version A is invalidated when version B is pushed, defeating approve-then-change.
+- **Require conversation resolution** — open review threads now block merge, so reviewer
+  objections cannot be silently merged over.
+
+## Controls intentionally deferred (and why)
+
+These were **not** applied in Stage 30B because doing so safely requires changes outside
+this stage's allowed scope (workflow YAML edits) or would create a no-recovery merge
+lockout for the current single-maintainer (solo-founder) workflow. Each remains OPEN in
+the fix-notebook with an explicit reason.
+
+- **GH-249-01 residual (full admin-bypass removal)** — required approvals = 1 +
+  code-owner review, with **no second reviewer** on the repo. A PR author cannot approve
+  their own PR, so *fully* removing admin bypass would make **every** PR unmergeable with
+  no recovery path (a hard stop condition). Bypass was therefore **restricted** to
+  `pull_request` rather than removed. Full removal is contingent on adding a second
+  approver/team.
+- **GH-249-03 (last-push approval)** — same single-maintainer constraint: last-push
+  approval demands approval from someone other than the pusher; with no second reviewer
+  this blocks all merges. Deferred until a second reviewer exists.
+- **GH-249-07 (Semgrep required)** — `.github/workflows/semgrep.yml` is **path-filtered**
+  (`apps/**`, `infra/**`, `scripts/**`, `.github/workflows/**`, `.semgrep/**`). It does
+  **not** run on docs-only PRs, so the `Semgrep SAST / OP policy scan` context never
+  reports on such PRs. A required non-skip-safe check would sit as "Expected — waiting for
+  status" and **deadlock docs-only PRs** (including this one). Making it skip-safe requires
+  a **workflow edit**, which is outside this stage's allowed paths. Deferred to a CI-scoped
+  stage. (Confirmed empirically: `Semgrep SAST / OP policy scan` appeared on code PRs #247
+  and #248 but was **absent** on docs-only PR #249.)
+- **GH-249-05 (Frontend / AI Worker required)** — same path-filter/skip-safety problem;
+  their real build jobs are conditional on a `changes` filter. Requires a workflow edit to
+  emit a skip-safe required status. Deferred.
+- **GH-249-08 (Snyk required)** — `snyk.yml` triggers are `schedule` + `workflow_dispatch`
+  only (no `pull_request`), so it can never report on a PR. Requiring it would deadlock all
+  PRs. Deferred until Snyk runs on PRs with a documented fail policy.
+- **GH-249-06 (drop `merge` method)** — P3 consistency only; left unchanged this stage.
+- **GH-249-09 / GH-249-10** — repo-security-setting and dashboard-triage hygiene items,
+  out of scope for a ruleset-focused change.
+
+## Stage 30B verification commands
+
+All read-only re-reads used to prove the after-state:
+
+```
+gh api repos/akonPAPA/Operant/rulesets/17327601
+gh api repos/akonPAPA/Operant/rules/branches/main
+gh api repos/akonPAPA/Operant/branches/main/protection    # -> 404, classic still disabled
+gh repo view akonPAPA/Operant --json nameWithOwner,visibility,defaultBranchRef,\
+  viewerPermission,viewerCanAdminister,viewerDefaultMergeMethod,mergeCommitAllowed,\
+  squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge
+```
+
+Change applied with (authorized settings write, not a bypass):
+
+```
+gh api --method PUT repos/akonPAPA/Operant/rulesets/17327601 --input <payload.json>
+# payload = before-snapshot with only bypass_mode->pull_request,
+# dismiss_stale_reviews_on_push->true, required_review_thread_resolution->true
+```
+
+After-state key fields (from the re-read):
+
+```
+bypass_actors            = [{actor_type: RepositoryRole, actor_id: 5, bypass_mode: pull_request}]
+current_user_can_bypass  = pull_requests_only
+dismiss_stale_reviews_on_push      = true
+required_review_thread_resolution  = true
+require_last_push_approval         = false   (deferred, GH-249-03)
+required_status_checks   = [Backend tests, Docker Compose config, CodeQL], strict = true
+required_signatures / required_linear_history / non_fast_forward / deletion = unchanged
+```
+
+## What remains not proven after Stage 30B
+
+- Whether a ruleset bypass was exercised on any historical merge — GitHub still exposes
+  no per-merge bypass flag.
+- The **effectiveness** of dismiss-stale-reviews and last-push-approval-style controls in
+  practice, because the repo currently has a single maintainer and no second-reviewer flow
+  to exercise them against. They are correctly *configured*; they are not yet *exercised*.
+- That admin bypass inside the PR flow is closed — it is **not**; `pull_request` bypass
+  mode still allows an admin to merge a PR that does not meet review/status requirements.
+  This is the unavoidable solo-founder residual tracked as GH-249-01.
+- Org-level policies, and Snyk/Codacy dashboard-side configuration, remain outside repo
+  API visibility (unchanged from Stage 30A).
+- No workflow was edited, so Semgrep/Frontend/AI-Worker/Snyk PR-gating remains unproven by
+  design this stage.

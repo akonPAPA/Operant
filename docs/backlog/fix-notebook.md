@@ -2,39 +2,49 @@
 
 ## GH-249-01 — Admin role can bypass the `main` ruleset `always`
 
-- Status: OPEN (2026-07-06, opened by PR #249 governance proof). **P1.**
+- Status: **PARTIALLY RESOLVED / RISK REDUCED IN STAGE 30B** (2026-07-06); residual (full removal)
+  remains **OPEN**. **P1.**
 - Severity: P1 / Repository Governance
 - Path / setting: repository ruleset `akonya tigr` (id `17327601`) →
-  `bypass_actors: [{ actor_type: RepositoryRole, actor_id: 5 (Admin), bypass_mode: always }]`;
-  `current_user_can_bypass: always`.
-- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601` (see
-  `docs/security/github-repository-settings-proof.md` → Branch protection / rulesets).
-- Root cause: the ruleset grants the Admin repository role unconditional (`always`) bypass of
+  `bypass_actors: [{ actor_type: RepositoryRole, actor_id: 5 (Admin), bypass_mode: always }]` →
+  **`bypass_mode: pull_request`**; `current_user_can_bypass: always` → **`pull_requests_only`**.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`. After-state re-read confirms
+  `bypass_actors=[{RepositoryRole,5,pull_request}]`, `current_user_can_bypass=pull_requests_only`
+  (see `docs/security/github-repository-settings-proof.md` → Stage 30B after-state).
+- Root cause: the ruleset granted the Admin repository role unconditional (`always`) bypass of
   required review, required checks, signed commits, linear history, and force-push/deletion rules.
-- Risk: any admin (currently the repo owner) can merge unreviewed or check-failing code into `main`,
-  defeating the entire protection baseline; no per-merge bypass audit flag is exposed to detect this.
-- Suggested fix: change bypass mode from `Always` to `Pull requests` (bypass only outside PR flow) or
-  remove the Admin bypass actor entirely, so admins are subject to required review + strict checks.
-- Required proof/tests: re-read ruleset via `gh api .../rulesets/17327601`; confirm `bypass_actors`
-  removed/narrowed; open a test PR as admin and confirm merge is blocked until review + checks pass.
-- Owner/target week: Repo owner / DevSecOps; before next high-risk merge.
-- Why not fixed in PR #249: #249 is a proof/documentation PR and must not change settings without
-  separate explicit authorization.
+- Risk (before): any admin could merge unreviewed/check-failing code into `main` — including via a
+  **direct push** to `main` — defeating the entire protection baseline.
+- Fix applied: restricted admin bypass from `always` to `pull_request`, so the Admin role can no longer
+  bypass the ruleset on a direct push; admin changes must go through a pull request.
+- Residual (still OPEN): `pull_request` bypass mode still allows an admin to merge a PR that does not
+  meet the review/status requirements. **Full removal is not currently safe**: required approvals = 1 +
+  code-owner review with **no second reviewer** on the repo means a PR author cannot self-approve, so
+  removing bypass entirely would make every PR unmergeable with no recovery path (hard stop condition).
+- Suggested completion: add a second approver / reviewer team, then remove the Admin bypass actor (or
+  narrow further) so admins are fully subject to required review + strict checks; re-read ruleset and
+  confirm a test PR is blocked until review + checks pass.
+- Owner/target week: Repo owner / DevSecOps; partial fix done 2026-07-06 (Stage 30B); full removal
+  contingent on a second reviewer.
 
 ## GH-249-02 — Stale reviews are not dismissed on new pushes to `main` PRs
 
-- Status: OPEN (2026-07-06, PR #249). **P1.**
+- Status: **RESOLVED IN STAGE 30B** (2026-07-06). Enabled `dismiss_stale_reviews_on_push` on ruleset
+  `17327601`. **P1.**
 - Severity: P1 / Repository Governance
-- Path / setting: ruleset `17327601` → `pull_request.dismiss_stale_reviews_on_push: false`.
-- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`.
-- Root cause: an approval remains valid after further commits are pushed to the PR head.
+- Path / setting: ruleset `17327601` → `pull_request.dismiss_stale_reviews_on_push: false` → **`true`**.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`. After-state re-read confirms
+  `dismiss_stale_reviews_on_push: true` (see
+  `docs/security/github-repository-settings-proof.md` → Stage 30B after-state).
+- Root cause: an approval remained valid after further commits were pushed to the PR head.
 - Risk: reviewer approves version A; author (or admin) pushes version B and merges without re-review —
   a classic approve-then-change bypass, especially dangerous on large PRs.
-- Suggested fix: enable `Dismiss stale pull request approvals when new commits are pushed`.
-- Required proof/tests: re-read ruleset; confirm `dismiss_stale_reviews_on_push: true`; verify a pushed
-  commit clears the prior approval on a test PR.
-- Owner/target week: Repo owner / DevSecOps; before next high-risk merge.
-- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+- Fix applied: enabled `Dismiss stale pull request approvals when new commits are pushed` via
+  `gh api --method PUT repos/akonPAPA/Operant/rulesets/17327601`.
+- Proof: after-state ruleset re-read shows `dismiss_stale_reviews_on_push: true`.
+- Residual: not yet *exercised* against a real second-reviewer flow (repo is single-maintainer); the
+  control is correctly configured but cannot be behaviourally demonstrated until a second approver exists.
+- Owner/target week: Repo owner / DevSecOps; done 2026-07-06 (Stage 30B).
 
 ## GH-249-03 — Last-push / self-approval guard disabled on `main`
 
@@ -49,19 +59,26 @@
 - Required proof/tests: re-read ruleset; confirm `require_last_push_approval: true`.
 - Owner/target week: Repo owner / DevSecOps; unscheduled.
 - Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+- Stage 30B decision: reviewed and **deferred**. Last-push approval requires approval from someone other
+  than the pusher; with the current single-maintainer (solo-founder) workflow and no second reviewer,
+  enabling it would block all merges with no recovery path. Contingent on adding a second approver.
+  Ruleset re-read confirms `require_last_push_approval: false` (unchanged).
 
 ## GH-249-04 — Conversation resolution not required before merge
 
-- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Status: **RESOLVED IN STAGE 30B** (2026-07-06). Enabled `required_review_thread_resolution` on ruleset
+  `17327601`. **P2.**
 - Severity: P2 / Repository Governance
-- Path / setting: ruleset `17327601` → `pull_request.required_review_thread_resolution: false`.
-- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`.
-- Root cause: open review threads do not block merge.
+- Path / setting: ruleset `17327601` → `pull_request.required_review_thread_resolution: false` → **`true`**.
+- Evidence: `gh api repos/akonPAPA/Operant/rulesets/17327601`. After-state re-read confirms
+  `required_review_thread_resolution: true` (see
+  `docs/security/github-repository-settings-proof.md` → Stage 30B after-state).
+- Root cause: open review threads did not block merge.
 - Risk: unresolved reviewer objections can be merged over, losing security/correctness feedback.
-- Suggested fix: enable `Require conversation resolution before merging`.
-- Required proof/tests: re-read ruleset; confirm `required_review_thread_resolution: true`.
-- Owner/target week: Repo owner / DevSecOps; unscheduled.
-- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+- Fix applied: enabled `Require conversation resolution before merging` via
+  `gh api --method PUT repos/akonPAPA/Operant/rulesets/17327601`.
+- Proof: after-state ruleset re-read shows `required_review_thread_resolution: true`.
+- Owner/target week: Repo owner / DevSecOps; done 2026-07-06 (Stage 30B).
 
 ## GH-249-05 — Frontend and AI Worker checks are not required on `main`
 
@@ -80,6 +97,11 @@
 - Required proof/tests: PR touching only backend + docs still mergeable; PR breaking frontend blocked.
 - Owner/target week: CI owner; unscheduled.
 - Why not fixed in PR #249: proof/documentation PR; no setting/CI changes without separate authorization.
+- Stage 30B decision: reviewed and **deferred**. `frontend.yml` and `ai-worker.yml` gate their real
+  build jobs behind a `changes` path filter, so the meaningful checks are conditional/skipped on
+  unrelated PRs. Requiring a non-skip-safe context would leave docs-only PRs waiting on a status that
+  never reports (merge deadlock). A skip-safe required job requires a **workflow YAML edit**, which is
+  outside Stage 30B's allowed paths (settings + docs only). Deferred to a CI-scoped stage.
 
 ## GH-249-06 — `merge` commit method allowed while linear history is required
 
@@ -95,6 +117,8 @@
 - Required proof/tests: re-read ruleset; confirm `merge` removed.
 - Owner/target week: Repo owner; unscheduled.
 - Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+- Stage 30B decision: reviewed; **left unchanged** (P3 consistency only, no security impact). After-state
+  re-read still shows `allowed_merge_methods: [merge, squash, rebase]`. Kept OPEN.
 
 ## GH-249-07 — Semgrep runs and passes but is not a required check
 
@@ -113,6 +137,13 @@
   finding is blocked from merge.
 - Owner/target week: DevSecOps / CI owner; before next high-risk merge.
 - Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
+- Stage 30B decision: reviewed and **deferred** (evidence-backed). `.github/workflows/semgrep.yml` is
+  **path-filtered** to `apps/**`, `infra/**`, `scripts/**`, `.github/workflows/**`, `.semgrep/**`, so the
+  `Semgrep SAST / OP policy scan` context does not run on docs-only PRs. Confirmed empirically: the check
+  was present on code PRs #247 and #248 but **absent** on docs-only PR #249. Making it a required check
+  now would leave docs-only PRs (including this Stage 30B PR) waiting on a status that never reports —
+  a merge deadlock. Making it skip-safe requires a **workflow YAML edit**, outside Stage 30B's allowed
+  paths. Deferred to a CI-scoped stage that can add a skip-safe required status. Kept OPEN.
 
 ## GH-249-08 — Snyk runs only on schedule/dispatch, not on PRs, and is not required
 
@@ -130,6 +161,10 @@
 - Required proof/tests: PR adding a known-vulnerable dep blocked; re-read ruleset for Snyk context.
 - Owner/target week: DevSecOps / CI owner; unscheduled.
 - Why not fixed in PR #249: proof/documentation PR; no setting/CI changes without separate authorization.
+- Stage 30B decision: reviewed and **deferred**. `snyk.yml` triggers are `schedule` + `workflow_dispatch`
+  only (no `pull_request`), so a Snyk check never reports on a PR; requiring it would deadlock all PRs.
+  Adding a `pull_request` trigger + documented fail policy is a **workflow YAML edit**, outside Stage 30B's
+  allowed paths. Kept OPEN until Snyk reliably runs on PRs with a documented fail policy.
 
 ## GH-249-09 — Secret-scanning non-provider patterns and validity checks disabled
 
