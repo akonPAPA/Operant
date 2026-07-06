@@ -39,6 +39,11 @@ public class ApiRouteSecurityPolicy {
       rule("/api/v1/channels", ApiPermission.ADMIN_SETTINGS_READ, ApiPermission.ADMIN_SETTINGS_MANAGE),
       rule("/api/v1/channel-identities", ApiPermission.ADMIN_SETTINGS_READ, ApiPermission.CHANNEL_IDENTITY_ACTION),
       rule("/api/v1/ai-work", ApiPermission.REVIEW_READ, ApiPermission.AI_WORK_ACTION),
+      // OP-CAP-27D: read-only runtime-control telemetry for the RFQ/AI/demo path is an operator-facing
+      // ANALYTICS_READ read. It MUST precede the "/api/v1/runtime" entitlement rule below: both are
+      // prefixes of "/api/v1/runtime-control", and the first match wins, so the more specific
+      // telemetry rule must be listed first (otherwise it would inherit RUNTIME_ENTITLEMENT_READ).
+      rule("/api/v1/runtime-control", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),
       rule("/api/v1/runtime", ApiPermission.RUNTIME_ENTITLEMENT_READ, ApiPermission.RUNTIME_ENTITLEMENT_MANAGE),
       rule("/api/v1/imports", ApiPermission.ADMIN_SETTINGS_READ, ApiPermission.ADMIN_SETTINGS_MANAGE),
       rule("/api/v1/import-jobs", ApiPermission.ADMIN_SETTINGS_READ, ApiPermission.ADMIN_SETTINGS_MANAGE),

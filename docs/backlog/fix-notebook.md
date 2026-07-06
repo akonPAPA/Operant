@@ -1,5 +1,55 @@
 # Fix Notebook
 
+## P2 — Runtime-control telemetry dashboard for the RFQ/AI/demo path (OP-CAP-27D)
+
+- Status: **PARTIALLY CLOSED for the RFQ/AI/demo path only** (2026-07-06, PR #252). The operator-facing
+  runtime-control telemetry read model + dashboard is CLOSED for the RFQ/AI/demo path; production
+  distributed telemetry and denial-rate surfaces remain deferred (below). This closes the
+  "runtime denial telemetry dashboard" item **only** for the demo path — it does not open a production
+  telemetry plane.
+- Severity: P2 / Runtime Visibility and Data Boundary
+- Path:
+  - `GET /api/v1/runtime-control/demo-flow` (`ANALYTICS_READ`)
+  - `/runtime-control` (nav: Intelligence → Runtime Control Telemetry)
+  - `apps/core-api/src/main/java/com/orderpilot/api/dto/RuntimeControlTelemetryDtos.java`
+  - `apps/core-api/src/main/java/com/orderpilot/application/services/runtime/RuntimeControlDemoFlowTelemetryService.java`
+  - `apps/core-api/src/main/java/com/orderpilot/api/rest/RuntimeControlTelemetryController.java`
+  - `apps/core-api/src/main/java/com/orderpilot/security/ApiRouteSecurityPolicy.java` (new
+    `/api/v1/runtime-control` rule ordered before `/api/v1/runtime`)
+  - `apps/web-dashboard/lib/runtime-control-telemetry-api.ts`,
+    `apps/web-dashboard/components/runtime-control-telemetry-panel.tsx`,
+    `apps/web-dashboard/app/(dashboard)/runtime-control/page.tsx`
+  - `docs/runbooks/runtime-control-telemetry-demo-flow.md`
+- Root cause addressed: PR #244 guards the RFQ/AI/demo checkpoints, but the runtime-control posture was
+  invisible — operators could not tell whether the demo flow was gated (workload type, sync/async, cheap
+  vs AI path, quota/rate/backpressure posture) or what was measured vs. not.
+- Risk closed: the projection is tenant-scoped, read-only, bounded, and uses a dedicated safe DTO. It
+  exposes only stable posture tokens and `STATIC_CONTRACT` thresholds from `RuntimeControlProperties`; it
+  never invokes the guard, calls a connector, performs an external write, or exposes tenant/actor/source/
+  audit/idempotency/provider/plan/quota-bucket/rate-window/raw-guard internals.
+- Honesty decision: every metric self-labels `MEASURED` / `STATIC_CONTRACT` / `NOT_MEASURED` /
+  `NOT_APPLICABLE`. Admission/denial counts are `NOT_MEASURED` (null value, never a fake zero) because
+  runtime-control admission is deterministic and records no counters.
+- Tests: `RuntimeControlTelemetryControllerTest` (4 — ANALYTICS_READ allowed; missing → 401 before
+  service; wrong/unrelated/`RUNTIME_ENTITLEMENT_READ`/`STAFF_SUPPORT_READ` → 403 before service;
+  client-supplied tenant/actor/source/status/runtime query+body ignored), `RuntimeControlDemoFlowTelemetryServiceTest`
+  (3 — tenant-scoped static posture + NOT_MEASURED counters; disabled-contract honesty; missing-tenant
+  fails closed), `ApiRouteSecurityClassificationTest` (+1 route expectation → 41), `ResponseDtoLeakContractTest`
+  (7, still green — new controller DTO scanned), `ControllerEntityReturnBanTest` (1), plus frontend
+  `runtime-control-telemetry.render.test.mjs` (7 render states) and unchanged
+  `commerce-intelligence.render.test.mjs` (6, still green).
+- Residual / deferred items (NOT proven by this slice):
+  - real production distributed runtime telemetry (multi-node runtime-guard behaviour);
+  - provider-specific runtime billing / accounting;
+  - runtime denial telemetry for all channels (only the RFQ/AI/demo path is described);
+  - a support/staff runtime telemetry plane;
+  - OLAP / warehouse metrics, export, or time-range scope;
+  - production SSO/auth;
+  - real ERP/1C/connector execution;
+  - live PostgreSQL + real-browser screenshot proof (render-state proof landed here; live-DB browser run
+    still deferred, as with the Commerce Intelligence route).
+- Owner/target week: Runtime/platform + Product/API owners; unscheduled.
+
 ## GH-249-01 — Admin role can bypass the `main` ruleset `always`
 
 - Status: **PARTIALLY RESOLVED / RISK REDUCED IN STAGE 30B** (2026-07-06); residual (full removal)
@@ -238,7 +288,10 @@
   - a separate staff/support intelligence plane, if product policy later requires one;
   - live PostgreSQL + real-browser screenshot proof for the Commerce Intelligence route (render-state
     browser proof and a documented walkthrough landed in PR #251; live-DB browser run still deferred);
-  - runtime denial telemetry dashboard and distributed runtime-guard telemetry;
+  - runtime denial telemetry dashboard and distributed runtime-guard telemetry (a read-only
+    runtime-control **posture** telemetry surface for the RFQ/AI/demo path landed in PR #252 with
+    denial/admission counts labelled `NOT_MEASURED`; production denial-rate + distributed telemetry
+    remain deferred — see the OP-CAP-27D entry above);
   - provider-specific runtime accounting.
 - Suggested future proof: disposable PostgreSQL tenant-isolation fixture plus browser verification of
   `/commerce-intelligence`, followed by dedicated telemetry design before any denial-rate surface.
@@ -279,7 +332,9 @@
   - Production billing/plan model and per-tenant quota dimension for the demo operations. Risk: low —
     intentionally excluded; must go through a separate pricing/security review.
   - Global product workload taxonomy + operator-visible runtime analytics / quota dashboards. Risk:
-    low — deferred to Commerce Intelligence (PR #245); must read only safe runtime evidence.
+    low — a safe read-only runtime-control **posture** surface for the RFQ/AI/demo path landed in
+    PR #252 (OP-CAP-27D); global taxonomy + quota dashboards remain deferred and must read only safe
+    runtime evidence.
   - Distributed / multi-node runtime-guard proof (current rate store is per-instance in-memory by
     default). Risk: medium at multi-node scale. Suggested fix: shared rate store + a multi-node
     admission test before horizontal scale-out.
