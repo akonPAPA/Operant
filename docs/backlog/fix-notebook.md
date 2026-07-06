@@ -239,22 +239,23 @@ Required proof/tests:
     so support-access denials are unauditable on PostgreSQL.
   - `InternalIncidentController` is NOT affected: it audits via the tenant `RequestActorResolver`
     (`resolveVerifiedActor`), which yields a `user_account` id.
-- Suggested fix (needs owner decision — pick one, do not guess in a proof PR):
-  1. Drop the `audit_event.actor_id → user_account(id)` FK (audit is an append-only provenance record;
-     `actor_id` is already nullable and non-authoritative; a unified principal namespace is not modeled).
-     Additive `ALTER TABLE audit_event DROP CONSTRAINT audit_event_actor_id_fkey`; OR
-  2. Add a dedicated `staff_actor_id`/`actor_kind` discriminator so staff-plane audits are stored without
-     colliding with the tenant `user_account` FK; OR
-  3. Record support-plane audits with `actor_id = NULL` and the staff id in safe metadata (weakens
-     first-class actor attribution — least preferred).
-- Required proof/tests:
-  - New Postgres integration test showing `SupportAccessService.authorize` (allow) returns a session and
-    persists a `SUPPORT_ACCESS_GRANTED` audit, and that a missing grant throws `SupportAccessDeniedException`
-    and persists a `SUPPORT_ACCESS_DENIED` audit.
-  - Flip `SupportGrantPersistencePostgresIntegrationTest
-    .supportServiceAuditWritesFailOnPostgresBecauseStaffActorViolatesAuditFk_DEFECT` from a defect
-    characterization to the positive allow/deny assertions above.
-  - Re-run the full `com.orderpilot.integration.testdb.*` Postgres suite.
+- Resolution in PR #248:
+  Dropped `audit_event_actor_id_fkey` through
+  `V66__audit_event_actor_id_polymorphic_principal.sql`.
+  `audit_event.actor_id` is now documented as an opaque/polymorphic principal id.
+  The column, existing data, and audit indexes are preserved.
+
+- Proof:
+  `SupportGrantPersistencePostgresIntegrationTest` proves:
+  - the FK is absent;
+  - support allow audit persists with `staff_user` actor;
+  - support deny audit persists with `staff_user` actor;
+  - tenant-user audit still persists;
+  - support audit remains tenant-scoped;
+  - denied support access does not create maintenance/data-repair side effects.
+
+- Residual:
+  `actor_principal_type` / `actor_source` remains deferred as PG-248-02.
 - Owner/target week: Core API / audit-boundary owner; unscheduled.
 - Resolution in PR #248: the audit referential-integrity decision was taken and applied within #248 — the
   overly-narrow FK was dropped (V66) and `actor_id` is now an opaque/polymorphic principal id. The fix has
