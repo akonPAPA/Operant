@@ -202,6 +202,15 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/commerce-intelligence/demo-flow",
             SecurityClassification.PROTECTED_READ,
             ApiPermission.ANALYTICS_READ),
+        // OP-CAP-27D: read-only runtime-control telemetry for the RFQ/AI/demo path is an operator read
+        // (ANALYTICS_READ), NOT the platform RUNTIME_ENTITLEMENT_READ. The "/api/v1/runtime-control"
+        // rule must win over the "/api/v1/runtime" entitlement prefix (proven here) so a demo-telemetry
+        // reader can never inherit runtime governance authority.
+        new RouteExpectation(
+            "GET",
+            "/api/v1/runtime-control/demo-flow",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.ANALYTICS_READ),
         new RouteExpectation(
             "GET",
             "/api/stage8/reconciliation/summary",

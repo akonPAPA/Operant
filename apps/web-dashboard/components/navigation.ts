@@ -81,6 +81,7 @@ export const navigationGroups: NavigationGroup[] = [
     code: "AI",
     items: [
       { label: "Commerce Intelligence", href: "/commerce-intelligence" },
+      { label: "Runtime Control Telemetry", href: "/runtime-control" },
       { label: "AI Work Assistant", href: "/ai-work" },
       { label: "Reconciliation", href: "/reconciliation" },
       { label: "Business Value", href: "/analytics" }
