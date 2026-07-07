@@ -13,14 +13,16 @@
 | Branch | `proof/runtime-control-and-commerce-live-browser-postgres-evidence` |
 | Base / head SHA | `17091d11fd78b8c75734cf855c9327b5616d8a17` (branched from current `origin/main`, PR #253) |
 | OS | Windows 11 Pro (10.0.22631); Git Bash + PowerShell |
-| Toolchain | OpenJDK 21.0.11, Node v24.17.0, PostgreSQL 18.4 (local install), Docker **unavailable** |
+| Toolchain | OpenJDK 21.0.11, Node v24.17.0, PostgreSQL 18.4 local install observed in pass 1; Docker-backed PostgreSQL container observed in passes 2–4; full Docker/Testcontainers suite not executed |
 | Evidence timestamp (UTC) | 2026-07-07 (endpoint `generatedAt` ≈ `2026-07-07T11:51:34Z`) |
 | Surfaces proven | `/runtime-control`, `/commerce-intelligence`, RFQ demo/handoff (`/demo`, `/channels/rfq-handoffs`) |
 
 **Important honesty note on process:** PostgreSQL (pid on `:15432`), core-api (`:8080`), and the
 web-dashboard (`:3000`) were **already running** when this task began (the web-dashboard is owned by a
 separate preview session). This proof therefore **verified** the live stack; it did not cold-start it.
-The repo-supported startup path is documented in §7 for reproducibility.
+The repo-supported startup path is documented in §10 for reproducibility.
+
+**DB topology note:** pass 1 observed a local PostgreSQL 18.4 install on :15432; passes 2–4 observed the restarted Docker-backed PostgreSQL container behind the same local port. The full Docker/Testcontainers integration-test path was not executed in this proof.
 
 ## 2. Environment / profile (secrets redacted)
 
@@ -248,7 +250,7 @@ inbound_event/handoff = 1, draft_quote = 0). All previously-blocked authenticate
 
 ## 7. Data-boundary / leak scan — PASS
 
-Scanned both raw API responses **and** all three rendered HTML pages for forbidden content:
+Scanned raw API responses and all rendered HTML pages used by the proof (three pages in pass 1; four pages in pass 4) for forbidden content:
 
 - **Not found (0 occurrences):** `actorId`, `idempotencyKey`, `rawPayload`, `"prompt"`, `X-OrderPilot-Permissions`, `api_key`/`apiKey`, `password`, `secret`, `token`, stack-trace markers (`at com.orderpilot`, `Exception`, "Internal Server Error", `NEXT_REDIRECT`).
 - **Demo tenant UUID (`1111…`): 0 occurrences** in any rendered page — the tenant id is not even leaked into demo HTML.
@@ -271,18 +273,21 @@ would display. This proves page load, safe content, absence of raw dumps/leaks, 
 NOT_INVOKED safety posture — but it is **not** a pixel screenshot and does not exercise client-side
 interactivity.
 
-### 8.2 Stack teardown (resolved) and restarted-stack auth-config gap
+### 8.2 Stack teardown and restarted-stack auth-config gap — RESOLVED; screenshots still blocked
 
-- **Mid-task teardown (resolved):** between pass 1 and pass 2 the whole stack was stopped; at that point
-  the PostgreSQL Windows service could not be restarted from this non-elevated session. The user then
-  **restarted the stack** (pass 2), and the **live seed executed successfully** (§6.4).
-- **Remaining gap (restarted-stack config):** the restarted core-api runs **without**
-  `ORDERPILOT_GATEWAY_HEADER_AUTH_ENABLED`, and the web-dashboard **without** `ORDERPILOT_DEMO_MODE`/
-  `ORDERPILOT_DEMO_TENANT_ID`. So authenticated API reads → `401` and the demo BFF → `503` (both
-  fail-closed, safe), which blocks the **live API/UI view** of the seeded handoff and the visible operator
-  flow (§6.5). The DB proof is unaffected and complete. To finish the visible/browser layer, restart with
-  the demo profile per `docs/runbooks/post-pr239-real-demo-proof.md` §3, and reconnect the Chrome extension.
-
+- **Mid-task teardown — RESOLVED:** between pass 1 and pass 2 the whole stack was stopped; at that point
+  the PostgreSQL Windows service could not be restarted from the non-elevated session. The user then
+  restarted the stack (pass 2), and the documented live seed executed successfully (§6.4).
+- **Restarted-stack auth-config gap — RESOLVED in pass 4:** passes 2–3 showed fail-closed `401`/`503`
+  because the demo/gateway-header-auth environment was not fully effective. Pass 4 restarted core-api with
+  `ORDERPILOT_GATEWAY_HEADER_AUTH_ENABLED=true` and
+  `ORDERPILOT_GATEWAY_HEADER_AUTH_SIGNATURE_REQUIRED=false`, and restarted the dashboard with demo BFF env.
+  After that, all authenticated read paths returned `200` and the seeded RFQ handoff was visible through
+  authenticated API + SSR pages (§6.6).
+- **Remaining environmental blocker:** scripted-browser screenshots are still blocked because the Chrome
+  extension was not connected. No screenshots were fabricated.
+- **Remaining out-of-scope proof:** write-side operator transition flow
+  (`start-review → draft quote → safe-terminal decision`) was not exercised in this pass.
 ## 9. What remains NOT proven
 
 - **Literal browser screenshots / client-side interactivity** — Chrome extension not connected across all passes; **still BLOCKED** (no fabrication). Authenticated API + SSR-render evidence (§6.6) substitutes for the static-image layer.
@@ -290,29 +295,85 @@ interactivity.
 - **Visible operator *transition* flow** (start-review → create draft quote → safe-terminal decision) — **not exercised** this run; the handoff remains at `PENDING_REVIEW` (draft_quote = 0). The read/view layer is proven; the write-transition walkthrough (which would create a `draft_quote` and a `SAFE_DEMO_TERMINAL` decision) was out of this pass's scope and is documented as prior evidence in `post-pr239-real-demo-proof.md` §14A.
 - **Runtime denial-rate / admission telemetry** — `NOT_MEASURED` by contract; not proven (and not in scope).
 - **Distributed/multi-node runtime guard**, provider billing, cross-channel telemetry — out of scope.
-- **Docker-based path** (Testcontainers lock/retry integration classes) — Docker unavailable on this host.
+- **Full Docker/Testcontainers integration suite** (Testcontainers lock/retry integration classes) — not executed/proven in this document. A Docker-backed PostgreSQL container was observed for passes 2–4, but that is not the same as proving the full Docker/Testcontainers test path.
 - No external ERP/1C/connector/ChangeRequest/outbox execution was attempted (by design).
 
 ## 10. Reproduction (repo-supported startup path)
 
-If starting cold:
+If starting cold, use the same local/demo environment that pass 4 proved. These commands intentionally keep
+gateway-header signatures disabled **only for local/demo proof**; production signed-gateway behavior is not
+changed by this document.
 
-```
-# 1. PostgreSQL (Docker path — preferred when Docker is up)
+```powershell
+cd C:\OrderPilot\OrderPilot-Core
+
+# 1. PostgreSQL
+# Preferred when Docker is available:
 docker compose -f infra/docker/docker-compose.yml up -d postgres
-#    …or local binaries: see docs/runbooks/postgres-integration-proof.md §Option 2
 
-# 2. core-api (Flyway migrates orderpilot_local on boot)
-mvn -f apps/core-api/pom.xml spring-boot:run        # serves :8080
+# If using the Docker test DB path instead, do not mix it with the default app profile unless
+# ORDERPILOT_DB_* points at the same database.
+# Alternative local-binary path is documented in docs/runbooks/postgres-integration-proof.md.
 
-# 3. web-dashboard (demo mode)
-npm --prefix apps/web-dashboard run dev              # serves :3000
+# 2. core-api datasource
+$env:ORDERPILOT_DB_HOST_PORT = "15432"
+$env:ORDERPILOT_DB_NAME = "orderpilot_local"
+$env:ORDERPILOT_DB_USER = "orderpilot_local_user"
+$env:ORDERPILOT_DB_PASSWORD = "change-me-local-dev-only"
 
-# 4. verify
-#    GET http://localhost:8080/actuator/health  -> {"status":"UP"}
-#    open http://localhost:3000/runtime-control , /commerce-intelligence , /demo
+# 3. local/demo trusted-header mode
+$env:ORDERPILOT_GATEWAY_HEADER_AUTH_ENABLED = "true"
+$env:ORDERPILOT_GATEWAY_HEADER_AUTH_SIGNATURE_REQUIRED = "false"   # local/demo proof only
+
+mvn -f apps/core-api/pom.xml spring-boot:run
 ```
 
+In a separate PowerShell session:
+
+```powershell
+cd C:\OrderPilot\OrderPilot-Core\apps\web-dashboard
+
+$env:ORDERPILOT_DEMO_MODE = "true"
+$env:ORDERPILOT_DEMO_TENANT_ID = "11111111-1111-4111-8111-111111111111"
+$env:ORDERPILOT_CORE_API_BASE_URL = "http://localhost:8080"
+
+npm run dev
+```
+
+Verification:
+
+```powershell
+$TenantId = "11111111-1111-4111-8111-111111111111"
+
+$AnalyticsHeaders = @{
+  "X-Tenant-Id" = $TenantId
+  "X-OrderPilot-Permissions" = "ANALYTICS_READ"
+  "X-OrderPilot-Actor-Id" = "00000000-0000-4000-8000-000000000001"
+}
+
+$AdminHeaders = @{
+  "X-Tenant-Id" = $TenantId
+  "X-OrderPilot-Permissions" = "ADMIN_SETTINGS_READ"
+  "X-OrderPilot-Actor-Id" = "00000000-0000-4000-8000-000000000001"
+}
+
+Invoke-WebRequest "http://localhost:8080/actuator/health" -UseBasicParsing
+Invoke-WebRequest "http://localhost:8080/api/v1/runtime-control/demo-flow" -Headers $AnalyticsHeaders -UseBasicParsing
+Invoke-WebRequest "http://localhost:8080/api/v1/commerce-intelligence/demo-flow" -Headers $AnalyticsHeaders -UseBasicParsing
+Invoke-WebRequest "http://localhost:8080/api/v1/channels/rfq-handoffs" -Headers $AdminHeaders -UseBasicParsing
+
+Invoke-WebRequest "http://localhost:3000/runtime-control" -UseBasicParsing
+Invoke-WebRequest "http://localhost:3000/commerce-intelligence" -UseBasicParsing
+Invoke-WebRequest "http://localhost:3000/channels/rfq-handoffs" -UseBasicParsing
+Invoke-WebRequest "http://localhost:3000/demo" -UseBasicParsing
+```
+
+Expected result:
+- health returns `UP`;
+- all three authenticated backend read paths return `200`, not `401`/`403`/`503`;
+- dashboard pages return `200`;
+- seeded RFQ handoff is visible through commerce read model, handoff-list API, and SSR pages;
+- external execution remains disabled/not invoked/not requested.
 ## 11. Result summary
 
 | Item | Result |
