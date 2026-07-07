@@ -1,5 +1,33 @@
 # Fix Notebook
 
+## P3 — Operator Cockpit v1 guided RFQ-to-quote: deferred proof + draft-quote detail route (GitHub PR #260 / Operator Cockpit v1 slice)
+
+- Status: OPEN (2026-07-07, GitHub PR #260 / Operator Cockpit v1 slice). **P3 / Product Visibility (non-blocking).**
+- Severity: P3 / Frontend Product Polish and Proof
+- Path:
+  - `apps/web-dashboard/components/rfq-cockpit-journey.tsx` (guided read/display-only journey panel)
+  - `apps/web-dashboard/components/rfq-handoff-workspace.tsx` (renders the journey above the raw detail)
+  - `apps/web-dashboard/tests/rfq-cockpit-journey.test.mjs`
+  - `docs/runbooks/operator-cockpit-guided-rfq-to-quote.md`
+- What landed: a coherent guided cockpit that shows source channel, detected intent, request text, handoff
+  status, AI advisory status, draft quote status, draft line count, safe terminal state, audit status, and
+  an explicit next-operator-action, plus honest `NOT_GENERATED`/`NOT_CREATED`/`NOT_RECORDED`/`NOT_MEASURED`
+  state tokens, the `externalExecution=DISABLED` safety posture, and links to `/commerce-intelligence` and
+  `/runtime-control`. Frontend-only; reuses the existing backend contracts unchanged.
+- Deferred item 1 — **live PostgreSQL + real-browser screenshot proof** of the guided cockpit journey was
+  not executed in this environment. Source-inspection tests prove the source contract and forbidden-field
+  absence (consistent with the existing `rfq-handoffs.test.mjs` convention), and the full frontend suite
+  passes; live browser rendering remains deferred. Suggested proof: seed one
+  handoff against a disposable PostgreSQL demo DB and capture the `/channels/rfq-handoffs` walkthrough to
+  `SAFE_DEMO_TERMINAL` with the cockpit visible.
+- Deferred item 2 — a **first-class draft-quote inspection route/detail view** from the cockpit. This slice
+  intentionally did not invent a new backend endpoint or a fragile draft-quote mutation. The cockpit shows
+  the draft summary the existing `create-draft-quote` response already returns. A dedicated draft-quote
+  detail navigation/inspection surface is deferred to a **follow-up live operator transition proof slice**
+  and must reuse an existing backend contract (no parallel business model, no new external-write path).
+- Risk: low — read/display-only; no backend, migration, or contract change; no external execution added.
+- Owner/target week: Product/Frontend owner; follow-up live operator transition proof slice (draft-quote inspection) unscheduled.
+
 ## P2 — Runtime-control telemetry dashboard for the RFQ/AI/demo path (OP-CAP-27D)
 
 - Status: **PARTIALLY CLOSED for the RFQ/AI/demo path only** (2026-07-06, PR #252). The operator-facing
