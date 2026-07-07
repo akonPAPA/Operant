@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AiWorkSchemaV1View } from "@/components/ai-work-schema-v1-view";
+import { RfqCockpitJourney } from "@/components/rfq-cockpit-journey";
 import {
   createDraftQuoteFromRfqHandoff,
   decideRfqHandoffDraft,
@@ -319,6 +320,13 @@ export function RfqHandoffWorkspace({
           <p className="muted-copy">Loading handoff detail…</p>
         </section>
       ) : detail ? (
+        <>
+        <RfqCockpitJourney
+          detail={detail}
+          aiSuggestion={aiSuggestion}
+          draftResult={draftResult}
+          decisionResult={decisionResult}
+        />
         <section className="panel action-panel">
           <h2>Handoff detail</h2>
           <dl className="detail-list">
@@ -586,6 +594,7 @@ export function RfqHandoffWorkspace({
             All transitions are tenant-scoped, idempotent, and audited by backend services.
           </p>
         </section>
+        </>
       ) : null}
     </div>
   );
