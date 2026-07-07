@@ -1,4 +1,4 @@
-# Operator Cockpit v1 — Guided RFQ-to-Quote Flow (PR #255)
+# Operator Cockpit v1 — Guided RFQ-to-Quote Flow (GitHub PR #260)
 
 Product-forward operator walkthrough for the demo RFQ-to-quote path. This slice adds a **guided cockpit
 journey** on top of the existing (PR #242/#244/#245/#252) RFQ handoff workspace so an operator can see the
@@ -28,7 +28,7 @@ decline the safe demo terminal / close without draft) are unchanged and still ow
 
 ## Honest, non-inflated state
 
-Steps that have not happened yet render an explicit placeholder instead of a fake number or an implied
+Steps that have not happened yet render an explicit state token instead of a fake number or an implied
 production commitment:
 
 - AI advisory status: `NOT_GENERATED` until an advisory suggestion exists.
@@ -72,7 +72,8 @@ npm run lint      # clean
 ## Not proven / deferred
 
 - Live PostgreSQL + real-browser screenshot walkthrough of the guided cockpit was not executed in this
-  environment (render is source-inspection proven, consistent with the existing RFQ tests). Deferred — see
+  environment. Source-inspection tests prove the source contract and forbidden-field absence (consistent
+  with the existing RFQ tests); live browser rendering is not proven and remains deferred — see
   `docs/backlog/fix-notebook.md`.
 - No backend action was added this slice. Any richer draft-quote inspection view or a first-class
-  draft-quote detail route is deferred to PR #256 (see fix-notebook).
+  draft-quote detail route is deferred to a follow-up live operator transition proof slice (see fix-notebook).

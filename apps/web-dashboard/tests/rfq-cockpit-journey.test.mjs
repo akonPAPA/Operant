@@ -35,7 +35,7 @@ test("cockpit renders advisory, draft, and safe terminal state", () => {
   assert.match(journey, /decisionResult\.terminalState/);
 });
 
-test("cockpit shows honest NOT_* placeholders and no fake counters", () => {
+test("cockpit shows honest NOT_* state tokens and no fake counters", () => {
   assert.match(journey, /NOT_GENERATED/);
   assert.match(journey, /NOT_CREATED/);
   assert.match(journey, /NOT_RECORDED/);
