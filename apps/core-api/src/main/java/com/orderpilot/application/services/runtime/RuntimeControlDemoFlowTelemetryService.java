@@ -25,7 +25,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class RuntimeControlDemoFlowTelemetryService {
   private static final String SCOPE_LABEL =
-      "Runtime-control posture for the RFQ/AI/demo path only (tenant-observed contract; partial telemetry)";
+      "Runtime-control default contract posture for the RFQ/AI/demo path (tenant-gated read; partial"
+          + " telemetry). Tenant-specific entitlement, quota-bucket, rate-window, and admission/denial"
+          + " counters are not measured in this slice.";
 
   private final RuntimeControlProperties properties;
   private final Clock clock;
@@ -55,9 +57,11 @@ public class RuntimeControlDemoFlowTelemetryService {
         "DISABLED",
         "NOT_INVOKED_BY_THIS_READ",
         "PARTIAL",
-        "Read-only runtime-control posture. This endpoint does not invoke the admission guard, call a"
-            + " connector, or perform any external execution. Telemetry is partial: contract posture is"
-            + " shown; live admission/denial counters are not measured in this slice.");
+        "Read-only, tenant-gated runtime-control posture. This endpoint does not invoke the admission"
+            + " guard, call a connector, or perform any external execution. It shows the default/static"
+            + " contract posture only: tenant-specific entitlement, quota-bucket, rate-window, and"
+            + " admission/denial counters are not measured in this slice — this is not production"
+            + " denial-rate telemetry.");
   }
 
   private static List<WorkloadPosture> workloadPostures() {
@@ -161,8 +165,21 @@ public class RuntimeControlDemoFlowTelemetryService {
   private static List<NotMeasured> notMeasured() {
     return List.of(
         new NotMeasured(
-            "RUNTIME_DENIAL_TELEMETRY_NOT_MEASURED",
-            "Runtime denial/admission counts",
+            "TENANT_SPECIFIC_RUNTIME_POLICY_NOT_MEASURED",
+            "Tenant-specific runtime policy",
+            "The posture shown is the default/static runtime-control contract; this slice does not read"
+                + " the tenant's specific runtime plan or feature-entitlement state."),
+        new NotMeasured(
+            "TENANT_RATE_BUCKET_STATE_NOT_MEASURED",
+            "Tenant rate-window state",
+            "The tenant's live rate-limit window/bucket state is not read or reported in this slice."),
+        new NotMeasured(
+            "TENANT_QUOTA_BUCKET_STATE_NOT_MEASURED",
+            "Tenant quota-bucket state",
+            "The tenant's live quota-bucket consumption is not read or reported in this slice."),
+        new NotMeasured(
+            "RUNTIME_ADMISSION_DENIAL_COUNTERS_NOT_MEASURED",
+            "Runtime admission/denial counts",
             "Admission and denial counts are not persisted or aggregated for the demo path in this"
                 + " slice; they are labelled NOT_MEASURED, never a fake zero."),
         new NotMeasured(

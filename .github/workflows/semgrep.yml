@@ -49,7 +49,7 @@ jobs:
           changed_files="$(git diff --name-only "$base" "$head")"
           printf '%s\n' "$changed_files"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/|apps/web-dashboard/|apps/ai-worker/|infra/|scripts/|\\.github/workflows/|\\.semgrep/)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/|apps/web-dashboard/|apps/ai-worker/|infra/|scripts/|\.github/workflows/|\.semgrep/)'; then
             echo "semgrep_relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "semgrep_relevant=false" >> "$GITHUB_OUTPUT"
@@ -160,6 +160,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
 
           if [[ "${{ needs.changes.outputs.semgrep_relevant }}" != "true" ]]; then
             echo "No Semgrep-relevant changes detected; Semgrep Gate satisfied (not applicable)."

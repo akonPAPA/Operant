@@ -246,9 +246,11 @@ test("STATE unavailable — null data shows safe fallback with links, no raw err
   const html = render({ data: null });
   assert.ok(html.includes("Runtime-control telemetry unavailable"));
   assert.ok(
-    html.includes("No tenant-observed runtime-control telemetry is available."),
+    html.includes("No runtime-control posture is available for this tenant."),
     "safe default copy when no error string is provided"
   );
+  // PR #253 honesty: the fallback copy must not claim tenant-observed telemetry.
+  assert.ok(!/tenant-observed/i.test(html), "must not claim tenant-observed telemetry");
   assert.ok(html.includes('href="/commerce-intelligence"'));
   assert.ok(html.includes('href="/channels/rfq-handoffs"'));
 });

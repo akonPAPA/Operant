@@ -49,7 +49,7 @@ jobs:
           changed_files="$(git diff --name-only "$base" "$head")"
           printf '%s\n' "$changed_files"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/pom\.xml$|apps/core-api/.*/pom\.xml$|apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$|apps/ai-worker/pyproject\.toml$|apps/ai-worker/requirements.*\.txt$|\.github/workflows/snyk\.yml$)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/pom\.xml$|apps/core-api/.*/pom\.xml$|apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$|\.github/workflows/snyk\.yml$)'; then
             echo "snyk_relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "snyk_relevant=false" >> "$GITHUB_OUTPUT"
@@ -198,6 +198,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
 
           if [[ "${{ needs.changes.outputs.snyk_relevant }}" != "true" ]]; then
             echo "No Snyk-relevant dependency changes detected; Snyk Gate satisfied (not applicable)."

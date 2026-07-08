@@ -44,7 +44,7 @@ export function RuntimeControlTelemetryPanel({ data, error }: Props) {
       <section className="panel">
         <h2>Runtime-control telemetry unavailable</h2>
         <p className="risk-note">
-          {error ?? "No tenant-observed runtime-control telemetry is available."}
+          {error ?? "No runtime-control posture is available for this tenant."}
         </p>
         <div className="button-row">
           <Link className="button secondary" href="/commerce-intelligence">

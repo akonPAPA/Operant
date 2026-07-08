@@ -8,8 +8,10 @@ import java.util.List;
  * path.
  *
  * <p>This read model makes the PR #244 runtime-control posture of the visible demo flow inspectable
- * without exposing any runtime internals. It never carries tenant, actor, source-event, audit,
- * idempotency, provider, connector, plan, quota-bucket, rate-window, or raw guard-state fields.
+ * without exposing any runtime internals. It is a tenant-gated read of the default/static contract
+ * posture — NOT tenant-specific entitlement/quota/rate-bucket telemetry or production denial-rate
+ * telemetry. It never carries tenant, actor, source-event, audit, idempotency, provider, connector,
+ * plan, quota-bucket, rate-window, or raw guard-state fields.
  *
  * <p>Every measurable metric is wrapped in a {@link TelemetryValue} that self-labels its
  * {@link MeasurementKind} so the UI can tell apart a really-observed measurement, a static contract

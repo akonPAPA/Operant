@@ -1,5 +1,33 @@
 # Fix Notebook
 
+## P3 — Operator Cockpit v1 guided RFQ-to-quote: deferred proof + draft-quote detail route (GitHub PR #260 / Operator Cockpit v1 slice)
+
+- Status: OPEN (2026-07-07, GitHub PR #260 / Operator Cockpit v1 slice). **P3 / Product Visibility (non-blocking).**
+- Severity: P3 / Frontend Product Polish and Proof
+- Path:
+  - `apps/web-dashboard/components/rfq-cockpit-journey.tsx` (guided read/display-only journey panel)
+  - `apps/web-dashboard/components/rfq-handoff-workspace.tsx` (renders the journey above the raw detail)
+  - `apps/web-dashboard/tests/rfq-cockpit-journey.test.mjs`
+  - `docs/runbooks/operator-cockpit-guided-rfq-to-quote.md`
+- What landed: a coherent guided cockpit that shows source channel, detected intent, request text, handoff
+  status, AI advisory status, draft quote status, draft line count, safe terminal state, audit status, and
+  an explicit next-operator-action, plus honest `NOT_GENERATED`/`NOT_CREATED`/`NOT_RECORDED`/`NOT_MEASURED`
+  state tokens, the `externalExecution=DISABLED` safety posture, and links to `/commerce-intelligence` and
+  `/runtime-control`. Frontend-only; reuses the existing backend contracts unchanged.
+- Deferred item 1 — **live PostgreSQL + real-browser screenshot proof** of the guided cockpit journey was
+  not executed in this environment. Source-inspection tests prove the source contract and forbidden-field
+  absence (consistent with the existing `rfq-handoffs.test.mjs` convention), and the full frontend suite
+  passes; live browser rendering remains deferred. Suggested proof: seed one
+  handoff against a disposable PostgreSQL demo DB and capture the `/channels/rfq-handoffs` walkthrough to
+  `SAFE_DEMO_TERMINAL` with the cockpit visible.
+- Deferred item 2 — a **first-class draft-quote inspection route/detail view** from the cockpit. This slice
+  intentionally did not invent a new backend endpoint or a fragile draft-quote mutation. The cockpit shows
+  the draft summary the existing `create-draft-quote` response already returns. A dedicated draft-quote
+  detail navigation/inspection surface is deferred to a **follow-up live operator transition proof slice**
+  and must reuse an existing backend contract (no parallel business model, no new external-write path).
+- Risk: low — read/display-only; no backend, migration, or contract change; no external execution added.
+- Owner/target week: Product/Frontend owner; follow-up live operator transition proof slice (draft-quote inspection) unscheduled.
+
 ## P2 — Runtime-control telemetry dashboard for the RFQ/AI/demo path (OP-CAP-27D)
 
 - Status: **PARTIALLY CLOSED for the RFQ/AI/demo path only** (2026-07-06, PR #252). The operator-facing
@@ -7,6 +35,19 @@
   distributed telemetry and denial-rate surfaces remain deferred (below). This closes the
   "runtime denial telemetry dashboard" item **only** for the demo path — it does not open a production
   telemetry plane.
+- Update (2026-07-06, PR #253) — three post-merge follow-ups CLOSED: (1) **route hardening** — non-GET
+  `/api/v1/runtime-control/**` is now fail-closed/default-denied and can no longer inherit the generic
+  `/api/v1/runtime` → `RUNTIME_ENTITLEMENT_MANAGE` write rule (`ApiRouteSecurityPolicy` carve-out ordered
+  before the generic runtime branch; proven by a dedicated policy test + controller POST tests asserting
+  zero service interaction). (2) **wording honesty** — the surface is now stated as a tenant-*gated* read
+  of the *default/static* runtime-control contract posture, **not** tenant-specific quota/rate/entitlement
+  or production denial-rate telemetry; new `NOT_MEASURED` codes `TENANT_SPECIFIC_RUNTIME_POLICY_NOT_MEASURED`
+  / `TENANT_RATE_BUCKET_STATE_NOT_MEASURED` / `TENANT_QUOTA_BUCKET_STATE_NOT_MEASURED` /
+  `RUNTIME_ADMISSION_DENIAL_COUNTERS_NOT_MEASURED` make the missing tenant-specific dimensions explicit.
+  (3) **frontend client hardening** — malformed JSON and response-contract drift now map to bounded
+  "response is invalid" / "contract is invalid" messages (minimal local type guards, no new dependency);
+  a raw backend body is never echoed. This does **not** add tenant-specific telemetry, persisted counters,
+  distributed telemetry, staff/support plane, or any write surface.
 - Severity: P2 / Runtime Visibility and Data Boundary
 - Path:
   - `GET /api/v1/runtime-control/demo-flow` (`ANALYTICS_READ`)
@@ -145,13 +186,15 @@
   merge when their path-filtered checks were skipped or failed without blocking.
 - Risk: broken web-dashboard or ai-worker merged to `main` undetected by a required gate.
 - Fix applied in PR #261: added skip-safe gates that:
+  - fail closed if the `changes` job itself did not succeed (no empty-output bypass);
   - report success as "not applicable" when no relevant paths change;
   - fail unless the real validation job (`build` / `test`) completed successfully when
     relevant paths change (including treating `failure`, `cancelled`, or `skipped` as failures).
 - Residual: the ruleset `17327601` still does **not** list
   `Frontend / Frontend Gate` and `AI Worker / AI Worker Gate` as required checks. Until that
   governance change lands and is re-proven, frontend and AI Worker remain non-required.
-  This item remains PARTIALLY RESOLVED.
+  This item remains PARTIALLY RESOLVED (workflow-level support added; governance required
+  check still deferred).
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
   the new contexts are present; PR touching only backend + docs still mergeable; PR breaking
   frontend/AI Worker blocked by the new gates.
@@ -190,10 +233,12 @@
 - Risk: security findings in the blocking Semgrep policy (`.semgrep/op-security-blocking.yml`) could be
   merged past, undermining the "Rules validate" safety layer.
 - Fix applied in PR #261: added `changes` job, made the real Semgrep job conditional on
-  `semgrep_relevant`, and added the always-running `Semgrep Gate` job.
+  `semgrep_relevant`, and added the always-running `Semgrep Gate` job. The gate fails closed
+  if the `changes` job itself did not succeed (no empty-output bypass).
 - Residual: the ruleset `17327601` still does **not** list `Semgrep Security Scan / Semgrep Gate`
   as a required check. Until that governance change lands and is re-proven, Semgrep remains
-  advisory-only. This item remains PARTIALLY RESOLVED.
+  advisory-only. This item remains PARTIALLY RESOLVED (workflow-level support added;
+  governance required check still deferred).
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
   the new context is present; seed a blocking Semgrep finding and confirm merge is blocked.
 
@@ -203,25 +248,33 @@
 - Severity: P2 / Dependency Scanning
 - Path / setting: `.github/workflows/snyk.yml` triggers now include `pull_request` on
   `main` as well as `schedule` + `workflow_dispatch`. An internal `changes` job detects
-  dependency- and workflow-relevant changes, two Snyk jobs run when relevant and secrets
-  are available, and a skip-safe gate `Snyk Dependency Scan / Snyk Gate` runs on every PR.
+  dependency- and workflow-relevant changes for **core-api** (`pom.xml`) and
+  **web-dashboard** (`package.json` / `package-lock.json`) plus the Snyk workflow itself.
+  Two Snyk jobs run when relevant and secrets are available, and a skip-safe gate
+  `Snyk Dependency Scan / Snyk Gate` runs on every PR.
 - Evidence: workflow diff in PR #261; local YAML validation.
 - Root cause: dependency vulnerability scanning did not run per-PR and did not gate merges;
   only a periodic/manual sweep existed.
-- Risk: a PR introducing vulnerable dependencies (`pom.xml`, `web-dashboard` npm, AI worker
-  Python deps) could merge without a Snyk gate; the gap would be caught only on the next
-  scheduled run.
+- Risk: a PR introducing vulnerable dependencies (`pom.xml`, `web-dashboard` npm) could merge
+  without a Snyk gate; the gap would be caught only on the next scheduled run.
 - Fix applied in PR #261: added `pull_request` trigger; added `changes` job; made
   `snyk-web-dashboard` and `snyk-core-api` conditional on `snyk_relevant` and non-fork PRs
   with secrets; added an always-running `Snyk Gate` job that:
+  - fails closed if the `changes` job itself did not succeed (no empty-output bypass);
   - reports success as "not applicable" when no relevant paths change;
   - fails unless both Snyk jobs succeed when relevant paths change;
   - fails closed with a bounded error on fork PRs with dependency changes and no secrets.
+- Coverage honesty: PR #261 adds Snyk PR gating for **web-dashboard and core-api only**.
+  AI Worker Python deps (`apps/ai-worker/pyproject.toml`, `requirements*.txt`) are **not**
+  claimed as Snyk-scanned; a reliable Snyk Open Source scan for that dependency format was
+  not added here and remains a separate follow-up residual.
 - Residual: the ruleset `17327601` still does **not** list `Snyk Dependency Scan / Snyk Gate`
   as a required check. Until that governance change lands and is re-proven, Snyk remains
-  non-required. This item remains PARTIALLY RESOLVED.
+  non-required. AI Worker Python dependency Snyk coverage also remains residual. This item
+  remains PARTIALLY RESOLVED.
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
-  the new context is present; seed a known-vulnerable dependency and confirm merge is blocked.
+  the new context is present; seed a known-vulnerable dependency and confirm merge is blocked;
+  optionally add a proven AI Worker Snyk scan job in a follow-up CI slice.
 
 ## GH-249-09 — Secret-scanning non-provider patterns and validity checks disabled
 

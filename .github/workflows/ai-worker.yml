@@ -85,6 +85,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
+
           if [[ "${{ needs.changes.outputs.ai_worker }}" != "true" ]]; then
             echo "No AI Worker changes detected; AI Worker Gate satisfied (not applicable)."
             exit 0

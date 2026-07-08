@@ -422,34 +422,38 @@ the CI/workflow side and leaves ruleset governance changes for a dedicated follo
   approval demands approval from someone other than the pusher; with no second reviewer
   this blocks all merges. Deferred until a second reviewer exists. **PR #261 does not
   change this; it remains deferred.**
-- **GH-249-07 (Semgrep required)** — **addressed by PR #261 at the workflow level.**
-  `.github/workflows/semgrep.yml` now runs an always-present skip-safe gate context
-  `Semgrep Security Scan / Semgrep Gate` on every PR. The gate depends on an internal
-  `changes` detector and the real `Semgrep SAST / OP policy scan` job: when no
-  Semgrep-relevant paths change it reports success as "not applicable"; when
-  Semgrep-relevant paths change it fails unless the real Semgrep job completed
-  successfully (including treating `failure`, `cancelled`, or `skipped` as failures).
-  The ruleset still needs to add `Semgrep Security Scan / Semgrep Gate` as a required
-  check; until then, Semgrep remains advisory-only.
-- **GH-249-05 (Frontend / AI Worker required)** — **addressed by PR #261 at the workflow
-  level.** `.github/workflows/frontend.yml` and `.github/workflows/ai-worker.yml` now
-  emit stable skip-safe gate contexts `Frontend / Frontend Gate` and
-  `AI Worker / AI Worker Gate` on every PR. Each gate depends on a `changes` detector
-  and the real validation jobs (`build` and `test` respectively): when no relevant paths
-  change they report success as "not applicable"; when relevant paths change they fail
-  unless the real validation job completed successfully. The ruleset still needs to add
-  these gate contexts as required checks; until then, frontend and AI Worker remain
-  non-required advisory checks.
-- **GH-249-08 (Snyk required)** — **partially addressed by PR #261 at the workflow
-  level.** `.github/workflows/snyk.yml` now runs on `pull_request` as well as schedule
-  and manual dispatch, with an internal `changes` detector and a skip-safe gate context
-  `Snyk Dependency Scan / Snyk Gate`. The gate reports success as "not applicable" when
-  no dependency/workflow files change; when they do change it fails unless both Snyk jobs
-  (`Snyk Open Source - web-dashboard`, `Snyk Open Source - core-api`) succeed. On fork
-  PRs with dependency changes and no `SNYK_TOKEN`, the gate fails closed with a bounded
-  error instead of pretending Snyk ran. The ruleset still needs to add
-  `Snyk Dependency Scan / Snyk Gate` as a required check; until then, Snyk remains
-  non-required.
+- **GH-249-07 (Semgrep required)** — **workflow-level support added by PR #261;
+  governance required check still deferred.** `.github/workflows/semgrep.yml` now
+  runs an always-present skip-safe gate context `Semgrep Security Scan / Semgrep Gate`
+  on every PR. The gate fail-closes if the `changes` job did not succeed, reports
+  success as "not applicable" when no Semgrep-relevant paths change, and otherwise
+  fails unless the real `Semgrep SAST / OP policy scan` job completed successfully
+  (including treating `failure`, `cancelled`, or `skipped` as failures). **Ruleset
+  `17327601` was NOT updated in this PR.** After merge, the repo owner must add
+  `Semgrep Security Scan / Semgrep Gate` as a required check and re-prove.
+- **GH-249-05 (Frontend / AI Worker required)** — **workflow-level support added by
+  PR #261; governance required check still deferred.** `.github/workflows/frontend.yml`
+  and `.github/workflows/ai-worker.yml` now emit stable skip-safe gate contexts
+  `Frontend / Frontend Gate` and `AI Worker / AI Worker Gate` on every PR. Each gate
+  fail-closes if its `changes` job did not succeed, reports success as "not applicable"
+  when no relevant paths change, and otherwise fails unless the real validation job
+  (`build` / `test`) completed successfully. **Ruleset `17327601` was NOT updated in
+  this PR.** After merge, the repo owner must add both gate contexts as required checks
+  and re-prove.
+- **GH-249-08 (Snyk required)** — **workflow-level support added by PR #261 for
+  core-api + web-dashboard only; governance required check still deferred.**
+  `.github/workflows/snyk.yml` now runs on `pull_request` as well as schedule and
+  manual dispatch, with an internal `changes` detector and a skip-safe gate context
+  `Snyk Dependency Scan / Snyk Gate`. Coverage is honest: Snyk scans
+  `apps/core-api` (`pom.xml`) and `apps/web-dashboard` (`package.json` /
+  `package-lock.json`) when those (or `.github/workflows/snyk.yml`) change. AI Worker
+  Python dependency scanning (`apps/ai-worker/pyproject.toml`, `requirements*.txt`) is
+  **not** claimed and remains a residual follow-up. The gate fail-closes if `changes`
+  did not succeed; reports success as "not applicable" when no relevant paths change;
+  fails unless both Snyk jobs succeed when relevant; and fails closed on fork PRs with
+  dependency changes and no `SNYK_TOKEN`. **Ruleset `17327601` was NOT updated in this
+  PR.** After merge, the repo owner must add `Snyk Dependency Scan / Snyk Gate` as a
+  required check and re-prove.
 - **GH-249-06 (drop `merge` method)** — P3 consistency only; left unchanged in Stage 30B
   and **not** modified by PR #261. The ruleset still reports
   `allowed_merge_methods: [merge, squash, rebase]` while linear history is required.
@@ -501,5 +505,74 @@ required_signatures / required_linear_history / non_fast_forward / deletion = un
   This is the unavoidable solo-founder residual tracked as GH-249-01.
 - Org-level policies, and Snyk/Codacy dashboard-side configuration, remain outside repo
   API visibility (unchanged from Stage 30A).
-- No workflow was edited, so Semgrep/Frontend/AI-Worker/Snyk PR-gating remains unproven by
-  design this stage.
+
+---
+
+# PR #261 — Pilot Release Gate (workflow-level skip-safe required checks)
+
+## Scope of PR #261
+
+PR #261 is **CI/workflow + documentation only**. It does **not** change repository
+ruleset `17327601`. No product/backend/frontend runtime-control behavior is changed by
+the final PR surface (any accidental runtime-control drift was reverted to `origin/main`).
+
+## Current required checks before PR #261 (ruleset unchanged)
+
+Ruleset `17327601` required status checks (strict):
+
+- `Backend tests`
+- `Docker Compose config`
+- `CodeQL`
+
+## New required-check candidates after PR #261 (workflow support only)
+
+Stable check contexts added by workflows (not yet in the ruleset):
+
+- `Frontend / Frontend Gate`
+- `AI Worker / AI Worker Gate`
+- `Semgrep Security Scan / Semgrep Gate`
+- `Snyk Dependency Scan / Snyk Gate`
+
+## Ruleset change status
+
+**No.** PR #261 does **not** update ruleset `17327601`. After this PR merges, the repo
+owner must add the four stable contexts above as required checks and re-prove via:
+
+```
+gh api repos/akonPAPA/Operant/rulesets/17327601
+gh api repos/akonPAPA/Operant/rules/branches/main
+```
+
+Expected after ruleset follow-up (not done here):
+`required_status_checks` includes the four gate contexts above, still `strict: true`.
+
+## Gate semantics (fail-closed)
+
+Each gate job:
+
+1. Fail-closes if its `changes` job result is not `success` (no empty-output bypass).
+2. Passes as "not applicable" when `changes` succeeds and relevant paths are untouched.
+3. Fails if relevant paths changed and the real validation job is not `success`
+   (`failure` / `cancelled` / `skipped` all fail the gate).
+
+## Snyk coverage honesty
+
+Snyk Gate covers:
+
+- `apps/core-api` (`pom.xml` and nested `pom.xml`)
+- `apps/web-dashboard` (`package.json`, `package-lock.json`)
+- `.github/workflows/snyk.yml`
+
+AI Worker Python dependency scanning (`apps/ai-worker/pyproject.toml`,
+`apps/ai-worker/requirements*.txt`) is **not** claimed as Snyk-covered and remains a
+residual follow-up unless another tool already covers it.
+
+## What remains not proven after PR #261
+
+- GitHub ruleset update adding the four gate contexts as required checks.
+- End-to-end fork-PR Snyk fail-closed behavior on GitHub (logic is in YAML; not exercised
+  here with a real fork PR).
+- Seeded failing Semgrep / Snyk findings blocking merge unless exercised on GitHub.
+- GH-249-01 full admin-bypass removal and GH-249-03 last-push approval (solo-maintainer
+  deferred).
+- GH-249-06 merge-method consistency (left OPEN; not changed).
