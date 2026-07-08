@@ -247,31 +247,40 @@
 - Status: **PARTIALLY RESOLVED (2026-07-08, PR #261).** **P2.**
 - Severity: P2 / Dependency Scanning
 - Path / setting: `.github/workflows/snyk.yml` triggers now include `pull_request` on
-  `main` as well as `schedule` + `workflow_dispatch`. An internal `changes` job detects
-  dependency- and workflow-relevant changes for **core-api** (`pom.xml`) and
-  **web-dashboard** (`package.json` / `package-lock.json`) plus the Snyk workflow itself.
-  Two Snyk jobs run when relevant and secrets are available, and a skip-safe gate
-  `Snyk Dependency Scan / Snyk Gate` runs on every PR.
+  `main` as well as `schedule` + `workflow_dispatch`. The PR gate is **bootstrap/honest**:
+  it separates dependency relevance vs workflow relevance so a CI/workflow-support PR
+  does not accidentally turn existing dependency debt into a blocking remediation PR.
+  - `snyk_dependency_relevant=true` only when dependency manifests/lockfiles change:
+    `apps/core-api/**/pom.xml`, `apps/web-dashboard/package.json`, `apps/web-dashboard/package-lock.json`
+  - `snyk_workflow_relevant=true` only when `.github/workflows/snyk.yml` changes.
+  When `snyk_dependency_relevant=false` and only the workflow changed, `Snyk Gate` reports
+  success as workflow-support-only and explicitly states that dependency enforcement is
+  not applicable for this PR.
 - Evidence: workflow diff in PR #261; local YAML validation.
 - Root cause: dependency vulnerability scanning did not run per-PR and did not gate merges;
   only a periodic/manual sweep existed.
 - Risk: a PR introducing vulnerable dependencies (`pom.xml`, `web-dashboard` npm) could merge
   without a Snyk gate; the gap would be caught only on the next scheduled run.
-- Fix applied in PR #261: added `pull_request` trigger; added `changes` job; made
-  `snyk-web-dashboard` and `snyk-core-api` conditional on `snyk_relevant` and non-fork PRs
-  with secrets; added an always-running `Snyk Gate` job that:
+- Fix applied in PR #261: added `pull_request` trigger; added `changes` job outputs for
+  `snyk_dependency_relevant`, `snyk_workflow_relevant`, and per-surface dependency-change
+  flags; runs `snyk-web-dashboard` only when web-dashboard manifests change and
+  `snyk-core-api` only when Maven manifests change (non-fork PRs with secrets); added an
+  always-running `Snyk Gate` job that:
   - fails closed if the `changes` job itself did not succeed (no empty-output bypass);
-  - reports success as "not applicable" when no relevant paths change;
-  - fails unless both Snyk jobs succeed when relevant paths change;
+  - reports success as workflow-support-only when only `.github/workflows/snyk.yml` changed
+    and no dependency manifests changed;
+  - reports success as "not applicable" when neither workflow nor dependency manifests changed;
+  - fails unless every required real scan for the touched dependency area succeeds;
   - fails closed with a bounded error on fork PRs with dependency changes and no secrets.
 - Coverage honesty: PR #261 adds Snyk PR gating for **web-dashboard and core-api only**.
   AI Worker Python deps (`apps/ai-worker/pyproject.toml`, `requirements*.txt`) are **not**
   claimed as Snyk-scanned; a reliable Snyk Open Source scan for that dependency format was
   not added here and remains a separate follow-up residual.
 - Residual: the ruleset `17327601` still does **not** list `Snyk Dependency Scan / Snyk Gate`
-  as a required check. Until that governance change lands and is re-proven, Snyk remains
-  non-required. AI Worker Python dependency Snyk coverage also remains residual. This item
-  remains PARTIALLY RESOLVED.
+  as a required check. **Do not add it as required** until the repo owner either:
+  (a) remediates the existing core-api Snyk high/critical baseline, or
+  (b) explicitly accepts a documented baseline/fail policy strategy.
+  AI Worker Python dependency Snyk coverage remains residual. This item remains PARTIALLY RESOLVED.
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
   the new context is present; seed a known-vulnerable dependency and confirm merge is blocked;
   optionally add a proven AI Worker Snyk scan job in a follow-up CI slice.

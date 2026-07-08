@@ -441,19 +441,30 @@ the CI/workflow side and leaves ruleset governance changes for a dedicated follo
   this PR.** After merge, the repo owner must add both gate contexts as required checks
   and re-prove.
 - **GH-249-08 (Snyk required)** — **workflow-level support added by PR #261 for
-  core-api + web-dashboard only; governance required check still deferred.**
-  `.github/workflows/snyk.yml` now runs on `pull_request` as well as schedule and
-  manual dispatch, with an internal `changes` detector and a skip-safe gate context
-  `Snyk Dependency Scan / Snyk Gate`. Coverage is honest: Snyk scans
-  `apps/core-api` (`pom.xml`) and `apps/web-dashboard` (`package.json` /
-  `package-lock.json`) when those (or `.github/workflows/snyk.yml`) change. AI Worker
-  Python dependency scanning (`apps/ai-worker/pyproject.toml`, `requirements*.txt`) is
-  **not** claimed and remains a residual follow-up. The gate fail-closes if `changes`
-  did not succeed; reports success as "not applicable" when no relevant paths change;
-  fails unless both Snyk jobs succeed when relevant; and fails closed on fork PRs with
-  dependency changes and no `SNYK_TOKEN`. **Ruleset `17327601` was NOT updated in this
-  PR.** After merge, the repo owner must add `Snyk Dependency Scan / Snyk Gate` as a
-  required check and re-prove.
+  core-api + web-dashboard dependency manifest changes only; governance required check
+  still deferred.** `.github/workflows/snyk.yml` now runs on `pull_request` as well as
+  schedule and manual dispatch, with an internal `changes` detector and a skip-safe gate
+  context `Snyk Dependency Scan / Snyk Gate`.
+  - PR gating is **bootstrap/honest**: it separates **dependency relevance**
+    (`snyk_dependency_relevant`) from **workflow relevance** (`snyk_workflow_relevant`).
+    A workflow-only change (this PR) does not automatically enforce the existing core-api
+    high/critical Snyk baseline.
+  - When dependency manifests change, it enforces only the touched surface:
+    `Snyk Open Source - core-api` runs only when `apps/core-api/**/pom.xml` changes, and
+    `Snyk Open Source - web-dashboard` runs only when `apps/web-dashboard/package*.json`
+    changes.
+  - When only `.github/workflows/snyk.yml` changes and no dependency manifests change, the
+    gate reports success as workflow-support-only and explicitly states dependency
+    enforcement is not applicable for that PR (scheduled/manual Snyk still covers baseline).
+  - AI Worker Python dependency scanning (`apps/ai-worker/pyproject.toml`,
+    `requirements*.txt`) is **not** claimed and remains a residual follow-up.
+  The gate fail-closes if `changes` did not succeed; fails closed on fork PRs with
+  dependency changes and no `SNYK_TOKEN`; and does not use `continue-on-error` for
+  high/critical enforcement. **Ruleset `17327601` was NOT updated in this PR.**
+  After merge, do not add `Snyk Dependency Scan / Snyk Gate` as required until the repo
+  owner either (a) remediates existing core-api high/critical Snyk findings, or (b)
+  explicitly accepts a documented baseline/fail policy strategy; then add the gate context
+  as required and re-prove.
 - **GH-249-06 (drop `merge` method)** — P3 consistency only; left unchanged in Stage 30B
   and **not** modified by PR #261. The ruleset still reports
   `allowed_merge_methods: [merge, squash, rebase]` while linear history is required.
