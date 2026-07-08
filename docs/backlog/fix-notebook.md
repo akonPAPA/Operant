@@ -20,6 +20,9 @@
   passes; live browser rendering remains deferred. Suggested proof: seed one
   handoff against a disposable PostgreSQL demo DB and capture the `/channels/rfq-handoffs` walkthrough to
   `SAFE_DEMO_TERMINAL` with the cockpit visible.
+- Update (2026-07-08, PR #262) — added a deterministic live operator transition runbook:
+  `docs/runbooks/live-operator-transition-cockpit-proof.md`. **Execution evidence must be attached**
+  (browser walkthrough + tenant-scoped PostgreSQL invariants) before this item can be marked CLOSED.
 - Deferred item 2 — a **first-class draft-quote inspection route/detail view** from the cockpit. This slice
   intentionally did not invent a new backend endpoint or a fragile draft-quote mutation. The cockpit shows
   the draft summary the existing `create-draft-quote` response already returns. A dedicated draft-quote
@@ -195,6 +198,8 @@
   governance change lands and is re-proven, frontend and AI Worker remain non-required.
   This item remains PARTIALLY RESOLVED (workflow-level support added; governance required
   check still deferred).
+- Update (2026-07-08, PR #262) — added `scripts/check-pilot-release-gates.ps1` to assert the skip-safe
+  gate markers remain present in workflow YAML (guard against accidental gate regression).
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
   the new contexts are present; PR touching only backend + docs still mergeable; PR breaking
   frontend/AI Worker blocked by the new gates.
@@ -239,6 +244,8 @@
   as a required check. Until that governance change lands and is re-proven, Semgrep remains
   advisory-only. This item remains PARTIALLY RESOLVED (workflow-level support added;
   governance required check still deferred).
+- Update (2026-07-08, PR #262) — added `scripts/check-pilot-release-gates.ps1` to assert the
+  `Semgrep Gate` job marker and `needs.changes.result` fail-closed check remain present in YAML.
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
   the new context is present; seed a blocking Semgrep finding and confirm merge is blocked.
 
@@ -281,6 +288,9 @@
   (a) remediates the existing core-api Snyk high/critical baseline, or
   (b) explicitly accepts a documented baseline/fail policy strategy.
   AI Worker Python dependency Snyk coverage remains residual. This item remains PARTIALLY RESOLVED.
+- Update (2026-07-08, PR #262) — added `docs/security/snyk-baseline-policy.md` to document the
+  baseline/required-check boundary honestly. This is a policy artifact only; it does not claim the
+  baseline is clean without attached scan output.
 - Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
   the new context is present; seed a known-vulnerable dependency and confirm merge is blocked;
   optionally add a proven AI Worker Snyk scan job in a follow-up CI slice.
