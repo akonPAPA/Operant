@@ -40,17 +40,15 @@ jobs:
           changed_files="$(git diff --name-only "$base" "$head")"
           printf '%s\n' "$changed_files"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web-dashboard/|\.github/workflows/frontend\.yml$)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web-dashboard/|apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$|\.github/workflows/frontend\.yml$)'; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
           else
             echo "frontend=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Required branch-protection check: "Frontend / build".
-  # This job MUST always run and reach a terminal success/failure conclusion so it is
-  # never reported as skipped/neutral. When there are no frontend changes it satisfies
-  # the required check with a no-op step; the real build runs only when frontend=true.
   build:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -59,9 +57,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
-      - name: No frontend changes (required check satisfied)
-        run: echo "No frontend changes detected; Frontend required check satisfied."
 
       - uses: actions/setup-node@v6
         with:
@@ -74,3 +69,41 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+  # Skip-safe required gate: "Frontend / Frontend Gate".
+  # This job MUST always run and reach a terminal success/failure conclusion so it is
+  # never reported as skipped/neutral. When there are no frontend changes it satisfies
+  # the required check with a no-op step; when frontend changes exist it fails unless
+  # the real build job completed successfully.
+  frontend-gate:
+    name: Frontend Gate
+    needs:
+      - changes
+      - build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide Frontend gate outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
+
+          if [[ "${{ needs.changes.outputs.frontend }}" != "true" ]]; then
+            echo "No frontend changes detected; Frontend Gate satisfied (not applicable)."
+            exit 0
+          fi
+
+          result="${{ needs.build.result }}"
+          echo "Frontend build job result: $result"
+
+          if [[ "$result" != "success" ]]; then
+            echo "::error::Frontend changes detected but build job did not succeed."
+            exit 1
+          fi
+
+          echo "Frontend changes detected and build job succeeded; Frontend Gate satisfied."

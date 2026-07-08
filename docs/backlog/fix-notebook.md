@@ -173,26 +173,31 @@
 
 ## GH-249-05 — Frontend and AI Worker checks are not required on `main`
 
-- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Status: **PARTIALLY RESOLVED (2026-07-08, PR #261).** **P2.**
 - Severity: P2 / CI Gating
-- Path / setting: ruleset `17327601` required checks = `Backend tests`, `Docker Compose config`,
-  `CodeQL` only. `.github/workflows/frontend.yml` (Frontend) and `.github/workflows/ai-worker.yml`
-  (AI Worker) run on PR but are path-filtered and not required.
-- Evidence: ruleset required_status_checks vs `#248` check-runs; workflow triggers.
-- Root cause: only backend/compose/CodeQL are enforced; frontend/worker regressions can merge when
-  their path-filtered checks are skipped or fail-without-blocking.
-- Risk: broken web-dashboard or ai-worker merged to `main` undetected by required gate.
-- Suggested fix: add `Frontend` and `AI Worker` to required checks using skip-safe status reporting
-  (e.g. a `changes`-gated required job that reports success when its paths are untouched) so docs-only
-  PRs are not deadlocked.
-- Required proof/tests: PR touching only backend + docs still mergeable; PR breaking frontend blocked.
-- Owner/target week: CI owner; unscheduled.
-- Why not fixed in PR #249: proof/documentation PR; no setting/CI changes without separate authorization.
-- Stage 30B decision: reviewed and **deferred**. `frontend.yml` and `ai-worker.yml` gate their real
-  build jobs behind a `changes` path filter, so the meaningful checks are conditional/skipped on
-  unrelated PRs. Requiring a non-skip-safe context would leave docs-only PRs waiting on a status that
-  never reports (merge deadlock). A skip-safe required job requires a **workflow YAML edit**, which is
-  outside Stage 30B's allowed paths (settings + docs only). Deferred to a CI-scoped stage.
+- Path / setting: ruleset `17327601` required checks still =
+  `Backend tests`, `Docker Compose config`, `CodeQL` only. `frontend.yml` and `ai-worker.yml`
+  now emit stable skip-safe gate contexts `Frontend / Frontend Gate` and
+  `AI Worker / AI Worker Gate` on every PR, in addition to their existing validation jobs.
+- Evidence: workflow diff in PR #261; local YAML validation; successful local frontend and
+  AI Worker test runs (`npm ci`, `npm run lint`, `npm run typecheck`, `npm test`,
+  `npm run build` in `apps/web-dashboard`; `python -m pytest` in `apps/ai-worker`).
+- Root cause: only backend/compose/CodeQL were enforced; frontend/worker regressions could
+  merge when their path-filtered checks were skipped or failed without blocking.
+- Risk: broken web-dashboard or ai-worker merged to `main` undetected by a required gate.
+- Fix applied in PR #261: added skip-safe gates that:
+  - fail closed if the `changes` job itself did not succeed (no empty-output bypass);
+  - report success as "not applicable" when no relevant paths change;
+  - fail unless the real validation job (`build` / `test`) completed successfully when
+    relevant paths change (including treating `failure`, `cancelled`, or `skipped` as failures).
+- Residual: the ruleset `17327601` still does **not** list
+  `Frontend / Frontend Gate` and `AI Worker / AI Worker Gate` as required checks. Until that
+  governance change lands and is re-proven, frontend and AI Worker remain non-required.
+  This item remains PARTIALLY RESOLVED (workflow-level support added; governance required
+  check still deferred).
+- Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
+  the new contexts are present; PR touching only backend + docs still mergeable; PR breaking
+  frontend/AI Worker blocked by the new gates.
 
 ## GH-249-06 — `merge` commit method allowed while linear history is required
 
@@ -213,49 +218,72 @@
 
 ## GH-249-07 — Semgrep runs and passes but is not a required check
 
-- Status: OPEN (2026-07-06, PR #249). **P1.**
+- Status: **PARTIALLY RESOLVED (2026-07-08, PR #261).** **P1.**
 - Severity: P1 / Security Gating
-- Path / setting: `.github/workflows/semgrep.yml` ("Semgrep Security Scan", check
-  `Semgrep SAST / OP policy scan") runs on every PR and passed on `#248`, but is absent from ruleset
-  `17327601` required checks.
-- Evidence: `#248` check-runs show `Semgrep SAST / OP policy scan = success`; ruleset required checks
-  list only `Backend tests`, `Docker Compose config`, `CodeQL`.
-- Root cause: the SAST gate is advisory — a failing Semgrep scan does not block merge.
-- Risk: security findings in the blocking Semgrep policy (`.semgrep/op-security-blocking.yml`) can be
+- Path / setting: `.github/workflows/semgrep.yml` ("Semgrep Security Scan") now emits a
+  skip-safe gate context `Semgrep Security Scan / Semgrep Gate` on every PR. The gate
+  depends on an internal `changes` detector and the real `Semgrep SAST / OP policy scan`
+  job: when no Semgrep-relevant paths change it reports success as "not applicable";
+  when relevant paths change it fails unless the real Semgrep job completed successfully
+  (treating `failure`, `cancelled`, or `skipped` as failures).
+- Evidence: workflow diff in PR #261; local YAML validation; CI should show a green
+  `Semgrep Security Scan / Semgrep Gate` check on docs-only PRs and a failed gate when
+  Semgrep fails.
+- Root cause: the SAST gate was advisory — a failing Semgrep scan did not block merge.
+- Risk: security findings in the blocking Semgrep policy (`.semgrep/op-security-blocking.yml`) could be
   merged past, undermining the "Rules validate" safety layer.
-- Suggested fix: add `Semgrep SAST / OP policy scan` to the ruleset's required status checks (strict).
-- Required proof/tests: re-read ruleset; confirm Semgrep context present; PR with a seeded blocking
-  finding is blocked from merge.
-- Owner/target week: DevSecOps / CI owner; before next high-risk merge.
-- Why not fixed in PR #249: proof/documentation PR; no setting changes without separate authorization.
-- Stage 30B decision: reviewed and **deferred** (evidence-backed). `.github/workflows/semgrep.yml` is
-  **path-filtered** to `apps/**`, `infra/**`, `scripts/**`, `.github/workflows/**`, `.semgrep/**`, so the
-  `Semgrep SAST / OP policy scan` context does not run on docs-only PRs. Confirmed empirically: the check
-  was present on code PRs #247 and #248 but **absent** on docs-only PR #249. Making it a required check
-  now would leave docs-only PRs (including this Stage 30B PR) waiting on a status that never reports —
-  a merge deadlock. Making it skip-safe requires a **workflow YAML edit**, outside Stage 30B's allowed
-  paths. Deferred to a CI-scoped stage that can add a skip-safe required status. Kept OPEN.
+- Fix applied in PR #261: added `changes` job, made the real Semgrep job conditional on
+  `semgrep_relevant`, and added the always-running `Semgrep Gate` job. The gate fails closed
+  if the `changes` job itself did not succeed (no empty-output bypass).
+- Residual: the ruleset `17327601` still does **not** list `Semgrep Security Scan / Semgrep Gate`
+  as a required check. Until that governance change lands and is re-proven, Semgrep remains
+  advisory-only. This item remains PARTIALLY RESOLVED (workflow-level support added;
+  governance required check still deferred).
+- Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
+  the new context is present; seed a blocking Semgrep finding and confirm merge is blocked.
 
 ## GH-249-08 — Snyk runs only on schedule/dispatch, not on PRs, and is not required
 
-- Status: OPEN (2026-07-06, PR #249). **P2.**
+- Status: **PARTIALLY RESOLVED (2026-07-08, PR #261).** **P2.**
 - Severity: P2 / Dependency Scanning
-- Path / setting: `.github/workflows/snyk.yml` triggers = `schedule` + `workflow_dispatch` only (no
-  `pull_request`); not in ruleset required checks.
-- Evidence: `grep -nE '^on:|schedule|pull_request' .github/workflows/snyk.yml`; ruleset required checks.
-- Root cause: dependency vulnerability scanning does not run per-PR and does not gate merges; only a
-  periodic/manual sweep exists.
-- Risk: a PR introducing vulnerable dependencies (`pom.xml`, `web-dashboard` npm) merges without a Snyk
-  gate; the gap is only caught on the next scheduled run.
-- Suggested fix: add `pull_request` trigger to `snyk.yml` (with sensible severity threshold) and add its
-  check to the ruleset required checks. (Dependabot alerts already enabled provide partial coverage.)
-- Required proof/tests: PR adding a known-vulnerable dep blocked; re-read ruleset for Snyk context.
-- Owner/target week: DevSecOps / CI owner; unscheduled.
-- Why not fixed in PR #249: proof/documentation PR; no setting/CI changes without separate authorization.
-- Stage 30B decision: reviewed and **deferred**. `snyk.yml` triggers are `schedule` + `workflow_dispatch`
-  only (no `pull_request`), so a Snyk check never reports on a PR; requiring it would deadlock all PRs.
-  Adding a `pull_request` trigger + documented fail policy is a **workflow YAML edit**, outside Stage 30B's
-  allowed paths. Kept OPEN until Snyk reliably runs on PRs with a documented fail policy.
+- Path / setting: `.github/workflows/snyk.yml` triggers now include `pull_request` on
+  `main` as well as `schedule` + `workflow_dispatch`. The PR gate is **bootstrap/honest**:
+  it separates dependency relevance vs workflow relevance so a CI/workflow-support PR
+  does not accidentally turn existing dependency debt into a blocking remediation PR.
+  - `snyk_dependency_relevant=true` only when dependency manifests/lockfiles change:
+    `apps/core-api/**/pom.xml`, `apps/web-dashboard/package.json`, `apps/web-dashboard/package-lock.json`
+  - `snyk_workflow_relevant=true` only when `.github/workflows/snyk.yml` changes.
+  When `snyk_dependency_relevant=false` and only the workflow changed, `Snyk Gate` reports
+  success as workflow-support-only and explicitly states that dependency enforcement is
+  not applicable for this PR.
+- Evidence: workflow diff in PR #261; local YAML validation.
+- Root cause: dependency vulnerability scanning did not run per-PR and did not gate merges;
+  only a periodic/manual sweep existed.
+- Risk: a PR introducing vulnerable dependencies (`pom.xml`, `web-dashboard` npm) could merge
+  without a Snyk gate; the gap would be caught only on the next scheduled run.
+- Fix applied in PR #261: added `pull_request` trigger; added `changes` job outputs for
+  `snyk_dependency_relevant`, `snyk_workflow_relevant`, and per-surface dependency-change
+  flags; runs `snyk-web-dashboard` only when web-dashboard manifests change and
+  `snyk-core-api` only when Maven manifests change (non-fork PRs with secrets); added an
+  always-running `Snyk Gate` job that:
+  - fails closed if the `changes` job itself did not succeed (no empty-output bypass);
+  - reports success as workflow-support-only when only `.github/workflows/snyk.yml` changed
+    and no dependency manifests changed;
+  - reports success as "not applicable" when neither workflow nor dependency manifests changed;
+  - fails unless every required real scan for the touched dependency area succeeds;
+  - fails closed with a bounded error on fork PRs with dependency changes and no secrets.
+- Coverage honesty: PR #261 adds Snyk PR gating for **web-dashboard and core-api only**.
+  AI Worker Python deps (`apps/ai-worker/pyproject.toml`, `requirements*.txt`) are **not**
+  claimed as Snyk-scanned; a reliable Snyk Open Source scan for that dependency format was
+  not added here and remains a separate follow-up residual.
+- Residual: the ruleset `17327601` still does **not** list `Snyk Dependency Scan / Snyk Gate`
+  as a required check. **Do not add it as required** until the repo owner either:
+  (a) remediates the existing core-api Snyk high/critical baseline, or
+  (b) explicitly accepts a documented baseline/fail policy strategy.
+  AI Worker Python dependency Snyk coverage remains residual. This item remains PARTIALLY RESOLVED.
+- Required proof/tests to close: update ruleset required checks; re-read ruleset to confirm
+  the new context is present; seed a known-vulnerable dependency and confirm merge is blocked;
+  optionally add a proven AI Worker Snyk scan job in a follow-up CI slice.
 
 ## GH-249-09 — Secret-scanning non-provider patterns and validity checks disabled
 

@@ -3,24 +3,8 @@ name: Semgrep Security Scan
 on:
   pull_request:
     branches: [ "main" ]
-    paths:
-      - "apps/core-api/**"
-      - "apps/web-dashboard/**"
-      - "apps/ai-worker/**"
-      - "infra/**"
-      - "scripts/**"
-      - ".github/workflows/**"
-      - ".semgrep/**"
   push:
     branches: [ "main" ]
-    paths:
-      - "apps/core-api/**"
-      - "apps/web-dashboard/**"
-      - "apps/ai-worker/**"
-      - "infra/**"
-      - "scripts/**"
-      - ".github/workflows/**"
-      - ".semgrep/**"
   schedule:
     # Weekly full scan. Use a non-round random-ish time to avoid global CI peaks.
     - cron: "37 3 * * 1"
@@ -34,8 +18,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      semgrep_relevant: ${{ steps.filter.outputs.semgrep_relevant }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            echo "semgrep_relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "$base" "$head")"
+          printf '%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/|apps/web-dashboard/|apps/ai-worker/|infra/|scripts/|\.github/workflows/|\.semgrep/)'; then
+            echo "semgrep_relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "semgrep_relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   semgrep:
     name: Semgrep SAST / OP policy scan
+    needs: changes
+    if: needs.changes.outputs.semgrep_relevant == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -119,3 +142,41 @@ jobs:
             --exclude "**/*.min.js" \
             --exclude "**/generated/**" \
             .
+
+  # Skip-safe required gate: "Semgrep Security Scan / Semgrep Gate".
+  # This job MUST always run and reach a terminal success/failure conclusion so it is
+  # never reported as skipped/neutral. When there are no Semgrep-relevant changes it
+  # satisfies the required check with a no-op step; when Semgrep-relevant changes exist
+  # it fails unless the real Semgrep job completed successfully.
+  semgrep-gate:
+    name: Semgrep Gate
+    needs:
+      - changes
+      - semgrep
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide Semgrep gate outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
+
+          if [[ "${{ needs.changes.outputs.semgrep_relevant }}" != "true" ]]; then
+            echo "No Semgrep-relevant changes detected; Semgrep Gate satisfied (not applicable)."
+            exit 0
+          fi
+
+          result="${{ needs.semgrep.result }}"
+          echo "Semgrep job result: $result"
+
+          if [[ "$result" != "success" ]]; then
+            echo "::error::Semgrep-relevant changes detected but Semgrep job did not succeed."
+            exit 1
+          fi
+
+          echo "Semgrep-relevant changes detected and Semgrep job succeeded; Semgrep Gate satisfied."

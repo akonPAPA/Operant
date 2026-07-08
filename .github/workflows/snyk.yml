@@ -1,9 +1,11 @@
-﻿name: Snyk Dependency Scan (scheduled/manual)
+﻿name: Snyk Dependency Scan
 
 on:
-  # Temporary policy:
-  # Run Snyk on a weekly schedule and manually until the dependency-remediation PR closes
-  # the current backend high/critical backlog. Do not run this on every PR yet.
+  # PRs: run a skip-safe dependency gate that only enforces Snyk when dependency
+  # files or the workflow itself change. Docs-only PRs succeed as not applicable.
+  pull_request:
+    branches: [ "main" ]
+  # Scheduled/manual: keep the existing weekly sweep + manual runs.
   schedule:
     - cron: "37 3 * * 1"
   workflow_dispatch:
@@ -16,8 +18,83 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      snyk_dependency_relevant: ${{ steps.filter.outputs.snyk_dependency_relevant }}
+      snyk_workflow_relevant: ${{ steps.filter.outputs.snyk_workflow_relevant }}
+      snyk_core_api_dependency_changed: ${{ steps.filter.outputs.snyk_core_api_dependency_changed }}
+      snyk_web_dashboard_dependency_changed: ${{ steps.filter.outputs.snyk_web_dashboard_dependency_changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Scheduled/manual runs are baseline scans by policy.
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "snyk_dependency_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "snyk_workflow_relevant=false" >> "$GITHUB_OUTPUT"
+            echo "snyk_core_api_dependency_changed=true" >> "$GITHUB_OUTPUT"
+            echo "snyk_web_dashboard_dependency_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            echo "snyk_dependency_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "snyk_workflow_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "snyk_core_api_dependency_changed=true" >> "$GITHUB_OUTPUT"
+            echo "snyk_web_dashboard_dependency_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "$base" "$head")"
+          printf '%s\n' "$changed_files"
+
+          # Dependency relevance: enforce only when dependency manifests/lockfiles change.
+          # NOTE: AI Worker Python dependencies are intentionally not claimed here (residual follow-up).
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/pom\.xml$|apps/core-api/.*/pom\.xml$|apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$)'; then
+            echo "snyk_dependency_relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "snyk_dependency_relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Workflow relevance: snyk workflow changed.
+          if printf '%s\n' "$changed_files" | grep -Eq '^\.github/workflows/snyk\.yml$'; then
+            echo "snyk_workflow_relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "snyk_workflow_relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/core-api/pom\.xml$|apps/core-api/.*/pom\.xml$)'; then
+            echo "snyk_core_api_dependency_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "snyk_core_api_dependency_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$)'; then
+            echo "snyk_web_dashboard_dependency_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "snyk_web_dashboard_dependency_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   snyk-web-dashboard:
     name: Snyk Open Source - web-dashboard
+    needs: changes
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_web_dashboard_dependency_changed == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -27,8 +104,7 @@ jobs:
         if: env.SNYK_TOKEN == ''
         shell: bash
         run: |
-          echo "::error::SNYK_TOKEN is required for scheduled/manual Snyk scans."
-          echo "This workflow is not a fork-PR workflow, so missing credentials must fail closed."
+          echo "::error::SNYK_TOKEN is required for Snyk dependency scans."
           exit 1
 
       - name: Checkout
@@ -71,13 +147,15 @@ jobs:
 
           exit "$snyk_exit"
 
-      - name: Fail scheduled/manual scan on high or critical dependency findings
+      - name: Fail scan on high or critical dependency findings
         if: env.SNYK_TOKEN != ''
         working-directory: apps/web-dashboard
         run: snyk test --severity-threshold=high
 
   snyk-core-api:
     name: Snyk Open Source - core-api
+    needs: changes
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_core_api_dependency_changed == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -87,8 +165,7 @@ jobs:
         if: env.SNYK_TOKEN == ''
         shell: bash
         run: |
-          echo "::error::SNYK_TOKEN is required for scheduled/manual Snyk scans."
-          echo "This workflow is not a fork-PR workflow, so missing credentials must fail closed."
+          echo "::error::SNYK_TOKEN is required for Snyk dependency scans."
           exit 1
 
       - name: Checkout
@@ -132,7 +209,70 @@ jobs:
 
           exit "$snyk_exit"
 
-      - name: Fail scheduled/manual scan on high or critical dependency findings
+      - name: Fail scan on high or critical dependency findings
         if: env.SNYK_TOKEN != ''
         working-directory: apps/core-api
         run: snyk test --file=pom.xml --severity-threshold=high
+
+  # Skip-safe required gate: "Snyk Dependency Scan / Snyk Gate".
+  # This job MUST always run and reach a terminal success/failure conclusion so it is
+  # never reported as skipped/neutral. When there are no Snyk-relevant changes it
+  # satisfies the required check with a no-op step; when Snyk-relevant changes exist
+  # it fails unless the real Snyk jobs completed successfully. On fork pull_request
+  # events with dependency changes and no secrets, it fails closed with an explicit
+  # message instead of pretending Snyk ran.
+  snyk-gate:
+    name: Snyk Gate
+    needs:
+      - changes
+      - snyk-web-dashboard
+      - snyk-core-api
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide Snyk gate outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
+
+          dep_relevant="${{ needs.changes.outputs.snyk_dependency_relevant }}"
+          wf_relevant="${{ needs.changes.outputs.snyk_workflow_relevant }}"
+          core_changed="${{ needs.changes.outputs.snyk_core_api_dependency_changed }}"
+          web_changed="${{ needs.changes.outputs.snyk_web_dashboard_dependency_changed }}"
+
+          if [[ "$dep_relevant" != "true" ]]; then
+            if [[ "$wf_relevant" == "true" ]]; then
+              echo "::notice::Snyk workflow changed, but no dependency manifests changed; dependency scan enforcement is not applicable in this PR. Scheduled/manual Snyk still covers full baseline."
+              exit 0
+            fi
+            echo "No Snyk-relevant dependency changes detected; Snyk Gate satisfied (not applicable)."
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.head.repo.fork }}" == "true" ]]; then
+            echo "::error::Snyk cannot run on fork PRs with dependency changes because secrets are unavailable; Snyk Gate fails closed."
+            exit 1
+          fi
+
+          web_result="${{ needs.snyk-web-dashboard.result }}"
+          core_result="${{ needs.snyk-core-api.result }}"
+
+          echo "Snyk web-dashboard job result: $web_result"
+          echo "Snyk core-api job result: $core_result"
+
+          if [[ "$web_changed" == "true" && "$web_result" != "success" ]]; then
+            echo "::error::Web-dashboard dependency files changed but Snyk web-dashboard scan did not succeed."
+            exit 1
+          fi
+
+          if [[ "$core_changed" == "true" && "$core_result" != "success" ]]; then
+            echo "::error::Core-api dependency files changed but Snyk core-api scan did not succeed."
+            exit 1
+          fi
+
+          echo "Snyk-relevant changes detected and all Snyk jobs succeeded; Snyk Gate satisfied."

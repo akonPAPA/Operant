@@ -40,17 +40,15 @@ jobs:
           changed_files="$(git diff --name-only "$base" "$head")"
           printf '%s\n' "$changed_files"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/ai-worker/|\.github/workflows/ai-worker\.yml$)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/ai-worker/|apps/ai-worker/pyproject\.toml$|apps/ai-worker/requirements.*\.txt$|\.github/workflows/ai-worker\.yml$)'; then
             echo "ai_worker=true" >> "$GITHUB_OUTPUT"
           else
             echo "ai_worker=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Required branch-protection check: "AI Worker / test".
-  # This job MUST always run and reach a terminal success/failure conclusion so it is
-  # never reported as skipped/neutral. When there are no AI Worker changes it satisfies
-  # the required check with a no-op step; pytest runs only when ai_worker=true.
   test:
+    needs: changes
+    if: needs.changes.outputs.ai_worker == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,9 +58,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: No AI Worker changes (required check satisfied)
-        run: echo "No AI Worker changes detected; AI Worker required check satisfied."
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -71,3 +66,41 @@ jobs:
 
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest
+
+  # Skip-safe required gate: "AI Worker / AI Worker Gate".
+  # This job MUST always run and reach a terminal success/failure conclusion so it is
+  # never reported as skipped/neutral. When there are no AI Worker changes it satisfies
+  # the required check with a no-op step; when AI Worker changes exist it fails unless
+  # the real pytest job completed successfully.
+  ai-worker-gate:
+    name: AI Worker Gate
+    needs:
+      - changes
+      - test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide AI Worker gate outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::changes job did not succeed; gate cannot determine path relevance safely."
+            exit 1
+          fi
+
+          if [[ "${{ needs.changes.outputs.ai_worker }}" != "true" ]]; then
+            echo "No AI Worker changes detected; AI Worker Gate satisfied (not applicable)."
+            exit 0
+          fi
+
+          result="${{ needs.test.result }}"
+          echo "AI Worker test job result: $result"
+
+          if [[ "$result" != "success" ]]; then
+            echo "::error::AI Worker changes detected but test job did not succeed."
+            exit 1
+          fi
+
+          echo "AI Worker changes detected and test job succeeded; AI Worker Gate satisfied."
