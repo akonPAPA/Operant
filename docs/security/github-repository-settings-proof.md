@@ -406,37 +406,55 @@ byte-for-byte preserved (verified by diffing the before/after JSON snapshots).
 
 ## Controls intentionally deferred (and why)
 
-These were **not** applied in Stage 30B because doing so safely requires changes outside
-this stage's allowed scope (workflow YAML edits) or would create a no-recovery merge
-lockout for the current single-maintainer (solo-founder) workflow. Each remains OPEN in
-the fix-notebook with an explicit reason.
+These were **not** fully applied in Stage 30B because doing so safely required changes
+outside that stage's allowed scope (workflow YAML edits) or would have created a
+no-recovery merge lockout for the current single-maintainer (solo-founder) workflow.
+Each remains tracked in the fix-notebook with an explicit reason; PR #261 updates only
+the CI/workflow side and leaves ruleset governance changes for a dedicated follow-up.
 
 - **GH-249-01 residual (full admin-bypass removal)** — required approvals = 1 +
   code-owner review, with **no second reviewer** on the repo. A PR author cannot approve
   their own PR, so *fully* removing admin bypass would make **every** PR unmergeable with
   no recovery path (a hard stop condition). Bypass was therefore **restricted** to
   `pull_request` rather than removed. Full removal is contingent on adding a second
-  approver/team.
+  approver/team. **PR #261 does not change this; it remains deferred.**
 - **GH-249-03 (last-push approval)** — same single-maintainer constraint: last-push
   approval demands approval from someone other than the pusher; with no second reviewer
-  this blocks all merges. Deferred until a second reviewer exists.
-- **GH-249-07 (Semgrep required)** — `.github/workflows/semgrep.yml` is **path-filtered**
-  (`apps/**`, `infra/**`, `scripts/**`, `.github/workflows/**`, `.semgrep/**`). It does
-  **not** run on docs-only PRs, so the `Semgrep SAST / OP policy scan` context never
-  reports on such PRs. A required non-skip-safe check would sit as "Expected — waiting for
-  status" and **deadlock docs-only PRs** (including this one). Making it skip-safe requires
-  a **workflow edit**, which is outside this stage's allowed paths. Deferred to a CI-scoped
-  stage. (Confirmed empirically: `Semgrep SAST / OP policy scan` appeared on code PRs #247
-  and #248 but was **absent** on docs-only PR #249.)
-- **GH-249-05 (Frontend / AI Worker required)** — same path-filter/skip-safety problem;
-  their real build jobs are conditional on a `changes` filter. Requires a workflow edit to
-  emit a skip-safe required status. Deferred.
-- **GH-249-08 (Snyk required)** — `snyk.yml` triggers are `schedule` + `workflow_dispatch`
-  only (no `pull_request`), so it can never report on a PR. Requiring it would deadlock all
-  PRs. Deferred until Snyk runs on PRs with a documented fail policy.
-- **GH-249-06 (drop `merge` method)** — P3 consistency only; left unchanged this stage.
+  this blocks all merges. Deferred until a second reviewer exists. **PR #261 does not
+  change this; it remains deferred.**
+- **GH-249-07 (Semgrep required)** — **addressed by PR #261 at the workflow level.**
+  `.github/workflows/semgrep.yml` now runs an always-present skip-safe gate context
+  `Semgrep Security Scan / Semgrep Gate` on every PR. The gate depends on an internal
+  `changes` detector and the real `Semgrep SAST / OP policy scan` job: when no
+  Semgrep-relevant paths change it reports success as "not applicable"; when
+  Semgrep-relevant paths change it fails unless the real Semgrep job completed
+  successfully (including treating `failure`, `cancelled`, or `skipped` as failures).
+  The ruleset still needs to add `Semgrep Security Scan / Semgrep Gate` as a required
+  check; until then, Semgrep remains advisory-only.
+- **GH-249-05 (Frontend / AI Worker required)** — **addressed by PR #261 at the workflow
+  level.** `.github/workflows/frontend.yml` and `.github/workflows/ai-worker.yml` now
+  emit stable skip-safe gate contexts `Frontend / Frontend Gate` and
+  `AI Worker / AI Worker Gate` on every PR. Each gate depends on a `changes` detector
+  and the real validation jobs (`build` and `test` respectively): when no relevant paths
+  change they report success as "not applicable"; when relevant paths change they fail
+  unless the real validation job completed successfully. The ruleset still needs to add
+  these gate contexts as required checks; until then, frontend and AI Worker remain
+  non-required advisory checks.
+- **GH-249-08 (Snyk required)** — **partially addressed by PR #261 at the workflow
+  level.** `.github/workflows/snyk.yml` now runs on `pull_request` as well as schedule
+  and manual dispatch, with an internal `changes` detector and a skip-safe gate context
+  `Snyk Dependency Scan / Snyk Gate`. The gate reports success as "not applicable" when
+  no dependency/workflow files change; when they do change it fails unless both Snyk jobs
+  (`Snyk Open Source - web-dashboard`, `Snyk Open Source - core-api`) succeed. On fork
+  PRs with dependency changes and no `SNYK_TOKEN`, the gate fails closed with a bounded
+  error instead of pretending Snyk ran. The ruleset still needs to add
+  `Snyk Dependency Scan / Snyk Gate` as a required check; until then, Snyk remains
+  non-required.
+- **GH-249-06 (drop `merge` method)** — P3 consistency only; left unchanged in Stage 30B
+  and **not** modified by PR #261. The ruleset still reports
+  `allowed_merge_methods: [merge, squash, rebase]` while linear history is required.
 - **GH-249-09 / GH-249-10** — repo-security-setting and dashboard-triage hygiene items,
-  out of scope for a ruleset-focused change.
+  out of scope for both Stage 30B and PR #261; they remain deferred.
 
 ## Stage 30B verification commands
 
