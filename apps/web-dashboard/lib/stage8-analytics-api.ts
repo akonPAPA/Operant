@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable, toProxiedCorePath, usesBffTransport } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type Stage8CommandCenterAnalytics = {
@@ -61,11 +61,14 @@ export const stage8AnalyticsConfig = {
 };
 
 export async function getStage8CommandCenterAnalytics(): Promise<Stage8CommandCenterAnalytics | null> {
-  if (!stage8AnalyticsConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage8AnalyticsConfig.tenantId)) return null;
   try {
-    const response = await fetch(`${stage8AnalyticsConfig.baseUrl}/api/stage8/analytics/command-center`, {
+    const path = "/api/stage8/analytics/command-center";
+    const response = await fetch(
+      usesBffTransport() ? toProxiedCorePath(path) : `${stage8AnalyticsConfig.baseUrl}${path}`,
+      {
       cache: "no-store",
-      headers: { "X-Tenant-Id": stage8AnalyticsConfig.tenantId }
+      headers: clientTenantHeaders(stage8AnalyticsConfig.tenantId)
     });
     if (!response.ok) return null;
     return (await response.json()) as Stage8CommandCenterAnalytics;
@@ -87,11 +90,13 @@ export async function getStage8ProductTimeline(productId: string): Promise<Stage
 }
 
 async function requestStage8<T>(path: string): Promise<T | null> {
-  if (!stage8AnalyticsConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage8AnalyticsConfig.tenantId)) return null;
   try {
-    const response = await fetch(`${stage8AnalyticsConfig.baseUrl}${path}`, {
+    const response = await fetch(
+      usesBffTransport() ? toProxiedCorePath(path) : `${stage8AnalyticsConfig.baseUrl}${path}`,
+      {
       cache: "no-store",
-      headers: { "X-Tenant-Id": stage8AnalyticsConfig.tenantId }
+      headers: clientTenantHeaders(stage8AnalyticsConfig.tenantId)
     });
     if (!response.ok) return null;
     return (await response.json()) as T;

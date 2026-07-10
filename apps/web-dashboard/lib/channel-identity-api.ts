@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06E Channel Identity operator control and read contract client.
@@ -96,14 +96,17 @@ async function request<T>(
     };
   }
   try {
-    const response = await fetch(`${channelIdentityClient.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: {
-        ...baseHeaders(),
-        ...((init.headers as Record<string, string>) ?? {})
-      }
-    });
+    const response = await fetch(
+      `${channelIdentityClient.baseUrl}${path}`,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: {
+          ...baseHeaders(),
+          ...((init.headers as Record<string, string>) ?? {})
+        }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : fallback;
     if (!response.ok) {

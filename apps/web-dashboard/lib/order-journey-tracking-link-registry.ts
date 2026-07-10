@@ -10,6 +10,7 @@
 // the raw token, its hash, the public tracking path, or the customer URL. Nothing here is ever written
 // to localStorage / sessionStorage, logged, or sent to analytics.
 
+import { enrichDashboardRequestInit } from "./api-transport";
 import { orderJourneyClient } from "@/lib/order-journey-api";
 
 const ANALYTICS_READ = "ANALYTICS_READ";
@@ -79,7 +80,7 @@ export async function revokeOrderJourneyTrackingLink(journeyId: string, linkId: 
     response = await fetch(
       `${orderJourneyClient.baseUrl}/api/v1/order-journeys/${encodeURIComponent(journeyId)}` +
         `/tracking-links/${encodeURIComponent(linkId)}/revoke`,
-      {
+      enrichDashboardRequestInit({
         method: "POST",
         cache: "no-store",
         headers: {
@@ -88,7 +89,7 @@ export async function revokeOrderJourneyTrackingLink(journeyId: string, linkId: 
           "X-Tenant-Id": orderJourneyClient.tenantId
         },
         body: JSON.stringify({})
-      }
+      })
     );
   } catch {
     throw Object.assign(new Error("Core API is not reachable."), { status: 0 });

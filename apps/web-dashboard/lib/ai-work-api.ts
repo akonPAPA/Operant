@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-07A AI Agent Work Layer (AI Work Assistant) client.
@@ -143,14 +143,17 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
     };
   }
   try {
-    const response = await fetch(`${aiWorkClient.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: {
-        ...baseHeaders(),
-        ...((init.headers as Record<string, string>) ?? {})
-      }
-    });
+    const response = await fetch(
+      `${aiWorkClient.baseUrl}${path}`,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: {
+          ...baseHeaders(),
+          ...((init.headers as Record<string, string>) ?? {})
+        }
+      })
+    );
     if (!response.ok) {
       // Inspect status before parsing; do not assume a JSON body exists and never
       // surface the raw backend body (it may reference tenant/resource ids).

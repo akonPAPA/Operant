@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-09C Operator Draft Review API client.
@@ -116,11 +116,14 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
   }
 
   try {
-    const response = await fetch(`${draftReviewConfig.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: { ...headers(), ...(init?.headers ?? {}) }
-    });
+    const response = await fetch(
+      `${draftReviewConfig.baseUrl}${path}`,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: { ...headers(), ...(init?.headers ?? {}) }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : (fallbackData as T);
 

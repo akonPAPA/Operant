@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06C RFQ Handoff Operator Workflow client.
@@ -155,11 +155,14 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
     };
   }
   try {
-    const response = await fetch(`${rfqHandoffClient.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: { ...baseHeaders(), ...((init.headers as Record<string, string>) ?? {}) }
-    });
+    const response = await fetch(
+      `${rfqHandoffClient.baseUrl}${path}`,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: { ...baseHeaders(), ...((init.headers as Record<string, string>) ?? {}) }
+      })
+    );
     if (!response.ok) {
       // Never surface raw backend bodies; they can contain internal resource or policy details.
       return { data: fallback, error: rfqHandoffStatusMessage(response.status) };

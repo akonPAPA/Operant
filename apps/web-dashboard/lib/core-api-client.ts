@@ -3,7 +3,7 @@ import {
   missingFrontendAuthorityMessage,
   requireDemoTenantId
 } from "./frontend-authority.mjs";
-import { dashboardCoreApiBaseUrl, toProxiedCorePath, usesBffTransport } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, toProxiedCorePath, usesBffTransport } from "./api-transport";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -67,7 +67,7 @@ export function coreApiStatusMessage(status: number): string {
 export async function coreApiGet<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   let response: Response;
   try {
-    response = await fetch(toProxiedCorePath(path), {
+    response = await fetch(toProxiedCorePath(path), enrichDashboardRequestInit({
       method: "GET",
       cache: "no-store",
       ...init,
@@ -76,7 +76,7 @@ export async function coreApiGet<T>(path: string, init?: RequestInit): Promise<A
         ...demoScopeHeaders(),
         ...((init?.headers as Record<string, string>) ?? {})
       }
-    });
+    }));
   } catch {
     return { ok: false, status: 0, kind: "network_error", message: LOAD_ERROR_STATE_MESSAGE };
   }

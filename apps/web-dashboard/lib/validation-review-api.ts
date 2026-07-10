@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -281,6 +281,9 @@ export const validationReviewConfig = {
 };
 
 function headers() {
+  if (usesBffTransport()) {
+    return { "Content-Type": "application/json" };
+  }
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (validationReviewConfig.tenantId) {
     requestHeaders["X-Tenant-Id"] = validationReviewConfig.tenantId;
@@ -289,16 +292,16 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
-  if (!validationReviewConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewConfig.tenantId)) {
     return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${validationReviewConfig.baseUrl}${path}`, {
+    const response = await fetch(`${validationReviewConfig.baseUrl}${path}`, enrichDashboardRequestInit({
       cache: init?.method && init.method !== "GET" ? "no-store" : "no-store",
       ...init,
       headers: { ...headers(), ...(init?.headers ?? {}) }
-    });
+    }));
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : (fallbackData as T);
 
