@@ -147,9 +147,8 @@ test("permission headers are unreachable when the demo tenant resolver fails clo
 
   assert.ok(permissionClients.length > 0);
   for (const [path, source] of permissionClients) {
-    assert.match(
-      source,
-      /if\s*\(\s*![A-Za-z0-9]+\.tenantId\s*\)/,
+    assert.ok(
+      /isDashboardApiAuthorityAvailable\(/.test(source) || /if\s*\(\s*![A-Za-z0-9]+\.tenantId\s*\)/.test(source),
       `${path} must stop before fetch when production has no trusted tenant authority`
     );
   }

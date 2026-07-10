@@ -25,6 +25,10 @@ class TrustedGatewaySignerVerifierCompatibilityTest {
       REPO_ROOT.resolve("docs/security/TRUSTED_GATEWAY_HEADER_BOUNDARY.md");
   private static final Path SIGNER_FIXTURE =
       Path.of("src/test/java/com/orderpilot/security/TrustedGatewaySignerFixture.java");
+  // P1-B: fixed cross-language fixture shared with the TypeScript BFF signer
+  // (apps/web-dashboard/tests/gateway-signature-fixture.test.mjs).
+  private static final Path CROSS_LANGUAGE_FIXTURE =
+      REPO_ROOT.resolve("docs/security/gateway-signature-fixture.json");
 
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
   private final TrustedGatewaySignerFixture signer = new TrustedGatewaySignerFixture(TEST_ONLY_SECRET);
@@ -142,6 +146,62 @@ class TrustedGatewaySignerVerifierCompatibilityTest {
   void signerContractArtifactsContainNoRealSecretMaterial() throws Exception {
     assertNoRealSecretMaterial(Files.readString(BOUNDARY_DOC));
     assertNoRealSecretMaterial(Files.readString(SIGNER_FIXTURE));
+  }
+
+  @Test
+  void crossLanguageFixtureCanonicalStringMatchesJavaVerifier() throws Exception {
+    var fixture = new com.fasterxml.jackson.databind.ObjectMapper()
+        .readTree(Files.readString(CROSS_LANGUAGE_FIXTURE));
+    MockHttpServletRequest request = new MockHttpServletRequest(
+        fixture.get("method").asText(), fixture.get("requestUri").asText());
+
+    StringBuilder expectedCanonical = new StringBuilder();
+    fixture.get("canonicalStringJoinedWithNewline").forEach(line -> {
+      if (expectedCanonical.length() > 0) {
+        expectedCanonical.append('\n');
+      }
+      expectedCanonical.append(line.asText());
+    });
+
+    String canonical = GatewayHeaderSignatureVerifier.canonical(
+        request,
+        fixture.get("tenantId").asText(),
+        fixture.get("actorId").asText(),
+        fixture.get("permissionsHeaderValue").asText(),
+        fixture.get("timestampEpochSeconds").asLong(),
+        fixture.get("nonce").asText());
+
+    assertThat(canonical).isEqualTo(expectedCanonical.toString());
+    assertThat(SignedActorVerifier.matchesHmacHex(
+        fixture.get("sharedSecretTestOnly").asText(),
+        canonical,
+        fixture.get("expectedHmacSha256Hex").asText())).isTrue();
+  }
+
+  @Test
+  void crossLanguageFixtureSignedHeadersAreAcceptedByBackendVerifier() throws Exception {
+    var fixture = new com.fasterxml.jackson.databind.ObjectMapper()
+        .readTree(Files.readString(CROSS_LANGUAGE_FIXTURE));
+    long fixtureTimestamp = fixture.get("timestampEpochSeconds").asLong();
+    Clock fixtureClock = Clock.fixed(Instant.ofEpochSecond(fixtureTimestamp), ZoneOffset.UTC);
+
+    MockHttpServletRequest request = new MockHttpServletRequest(
+        fixture.get("method").asText(), fixture.get("requestUri").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.TENANT_HEADER, fixture.get("tenantId").asText());
+    request.addHeader(RequestActorResolver.ACTOR_HEADER, fixture.get("actorId").asText());
+    request.addHeader(ApiPermissionGuard.PERMISSIONS_HEADER, fixture.get("permissionsHeaderValue").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, String.valueOf(fixtureTimestamp));
+    request.addHeader(GatewayHeaderSignatureVerifier.NONCE_HEADER, fixture.get("nonce").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER,
+        fixture.get("expectedHmacSha256Hex").asText());
+
+    GatewayHeaderSignatureVerifier verifier = new GatewayHeaderSignatureVerifier(
+        fixture.get("sharedSecretTestOnly").asText(),
+        MAX_SKEW_SECONDS,
+        fixtureClock,
+        new GatewayHeaderReplayGuard(fixtureClock, 100));
+
+    assertThat(verifier.verify(request)).isTrue();
   }
 
   private static String normalizeWhitespace(String content) {

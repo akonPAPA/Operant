@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { assertApiBaseUrlSource, assertTenantScopedClientSource } from "./lib/api-client-contract.mjs";
 
 // OP-CAP-14D — Frontend wiring for operator validation review commands (source-inspection style, no live backend).
 const root = process.cwd();
@@ -25,8 +26,9 @@ test("command API helper uses only the three 14C POST endpoints with tenant head
   assert.match(commandApi, /\/api\/v1\/validations\/\$\{validationRunId\}\/review\/corrections/);
   assert.match(commandApi, /\/api\/v1\/validations\/\$\{validationRunId\}\/review\/issues\/\$\{issueId\}\/resolution/);
   assert.match(commandApi, /\/api\/v1\/validations\/\$\{validationRunId\}\/review\/approval-requests/);
-  assert.match(commandApi, /X-Tenant-Id/);
-  assert.match(commandApi, /NEXT_PUBLIC_CORE_API_URL/);
+  assertTenantScopedClientSource(commandApi);
+  assertApiBaseUrlSource(commandApi);
+  assert.match(commandApi, /enrichDashboardRequestInit/);
   assert.match(commandApi, /method: "POST"/);
   assert.match(commandApi, /submitValidationReviewCorrection/);
   assert.match(commandApi, /resolveValidationReviewIssue/);
