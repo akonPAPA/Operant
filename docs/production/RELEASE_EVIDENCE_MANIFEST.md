@@ -1,12 +1,16 @@
 # Release Evidence Manifest
 
-**Base anchor SHA:** `7f05a1751d04d22ef572d8d6aca0dcbdc457df72` (`main`, PR #262)  
+**Base anchor SHA:** `7f05a1751d04d22ef572d8d6aca0dcbdc457df72` (`main`, PR #262)
 **P1-A implementation SHA:** `53bdf708c9a437ea66fcd17f0be67bd2bf12a3de` (`feature/p1-a-production-truth-and-config`)
 
 | Evidence ID | Commit SHA | Type | Command / artifact | Result | Gates supported |
 | --- | --- | --- | --- | --- | --- |
 | EV-P1A-001 | `53bdf708c9a437ea66fcd17f0be67bd2bf12a3de` | junit | `cd apps/core-api && mvn -Dtest=ProductionConfigurationValidatorTest,GatewayHeaderAuthProductionGuardTest,ProductionAuthenticationReadinessGuardTest,ProductionIntakeSecurityGuardTest test` | BUILD SUCCESS; **36** tests, 0 failures (`apps/core-api/.logs/mvn-p1a-config.log`) | P1-GATE-01 **PARTIAL / NOT_PASS** |
-| EV-P1A-002 | `53bdf708c9a437ea66fcd17f0be67bd2bf12a3de` | junit | `cd apps/core-api && mvn -Dtest=ProductionConfigurationValidatorTest,GatewayHeaderAuthProductionGuardTest,ProductionAuthenticationReadinessGuardTest,ProductionIntakeSecurityGuardTest,GatewayHeaderReplayProtectionTest,ApiSecurityWebConfigTest,ApiHeaderAuthenticationFilterDisabledModeTest,TrustedGatewaySignerVerifierCompatibilityTest test` | BUILD SUCCESS; **63** tests, 0 failures (`apps/core-api/.logs/mvn-p1a-broader.log`) | P1-GATE-01 **PARTIAL / NOT_PASS** (config/security regression) |
+| EV-P1A-003 | `3fdf166b5429947532a2d535d3e3fcd9ab946a4b` | github-actions | PR #266 CI on `feature/p1-a-production-truth-and-config` @ `7c178e2` (Backend tests, CI, CodeQL, Semgrep, Snyk — all SUCCESS) | MERGED to `main` @ `3fdf166` (`gh pr view 266 --json state,mergedAt,mergeCommit,headRefOid`) | P1-GATE-01 **PARTIAL / NOT_PASS** (CI proven; clean-host deploy not proven) |
+| EV-P1B-001 | `ea543d717219ec91d572b16bb4e086b7e35ee4e3` | node-test + tsc + lint + build | `cd apps/web-dashboard && npm test && npm run typecheck && npm run lint && npm run build` | **553** node tests pass; typecheck/lint/build exit 0; **zero** Next.js Edge Runtime warnings (no `node:crypto`/`redis` in middleware graph), 2026-07-10 | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-002 | `ea543d717219ec91d572b16bb4e086b7e35ee4e3` | behavioral unit | `tests/bff-session-lifecycle.test.mjs`, `tests/bff-proxy-boundary.test.mjs`, `tests/bff-boundary.test.mjs`, `tests/bff-transport-contract.test.mjs`, `tests/edge-middleware-imports.test.mjs`, `tests/login-redirect.test.mjs` (production bootstrap denial + no cookies on failure; Redis mandatory in production, no memory fallback, Redis errors fail closed; expiry/revocation/rotation/logout revocation; default-deny registry incl. wrong-method + internal/support/staff/demo/webhook/public denial; authority/response header stripping; CSRF missing/mismatch/malformed/cross-origin → 403 with upstream fetch count 0; valid mutation reaches upstream exactly once; redirect validation; deterministic `/api/bff` browser transport; Edge middleware import graph clean) | Pass | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-003 | `ea543d717219ec91d572b16bb4e086b7e35ee4e3` | playwright browser E2E | `cd apps/web-dashboard && npm run test:e2e` (Chromium, production non-demo build, bounded fake Core on 127.0.0.1:18080, local-test profile app :3100 + production profile app :3101) | **9/9 scenarios pass** — login redirect, production sign-in fails closed, local bootstrap session, reads only via `/api/bff` with server-signed authority, invalid CSRF denied (0 Core calls), valid CSRF reaches Core exactly once, logout revocation + old-cookie reuse fails, internal support unreachable, raw Core errors/headers not exposed | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-004 | `ea543d717219ec91d572b16bb4e086b7e35ee4e3` | junit | `cd apps/core-api && mvn -Dtest=ProductionConfigurationValidatorTest,GatewayHeaderAuthProductionGuardTest,GatewayHeaderReplayProtectionTest,ApiSecurityWebConfigTest,ApiHeaderAuthenticationFilterDisabledModeTest,TrustedGatewaySignerVerifierCompatibilityTest test` | BUILD SUCCESS; **58** tests, 0 failures — includes the cross-language gateway signature fixture (`docs/security/gateway-signature-fixture.json`) verified by both the TypeScript signer test and the Java verifier | P1-GATE-02 **PARTIAL / NOT_PASS** |
 
 ## P1-GATE-01 status
 
@@ -15,5 +19,13 @@
 | Proven at implementation SHA | Core API fail-closed startup validation for production-like Spring profiles; focused + broader security/configuration JUnit evidence above |
 | Not proven | Next.js production environment validation; clean-host production startup with real deploy config; CI against this feature branch |
 | Explicit non-claim | **PASS** not recorded for P1-GATE-01 |
+
+## P1-GATE-02 / P1-GATE-03 / P1-GATE-04 status
+
+| Gate | Status | Proven (local) | Not proven |
+| --- | --- | --- | --- |
+| P1-GATE-02 (browser BFF boundary) | **PARTIAL / NOT_PASS** | Per-route default-deny BFF registry (no `/api/v1/**`, `/api/stage8/**`, `/api/stage9/**` prefixes); production bootstrap fails closed with **no cookies**; Redis-only production sessions (no memory fallback; Redis errors fail closed); rotation/expiry/revocation/logout revocation; Edge middleware UX-only with clean import graph and zero build warnings; deterministic same-origin `/api/bff` browser transport; CSRF + same-origin on every browser mutation incl. logout; authority/response header stripping; cross-language gateway signature fixture; local browser E2E 9/9 (Chromium, bounded fake Core) | Trusted P1-C identity (bootstrap is local/test-only); live Redis session TTL/expiry/revocation against a real deployed Redis; E2E against real Core API in production topology |
+| P1-GATE-03 | **NOT_PASS** | — | Public Core ingress closure belongs to P1-D |
+| P1-GATE-04 | **NOT_PASS** | — | Live Redis expiry/revocation proof outstanding (unit + fake-store proof only) |
 
 **Update policy:** Append rows with exact `git rev-parse HEAD` used for each test run. Do not mark PASS without `BUILD SUCCESS` and gate-specific runtime proof.
