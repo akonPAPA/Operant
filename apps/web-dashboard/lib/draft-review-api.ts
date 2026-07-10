@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-09C Operator Draft Review API client.
@@ -97,7 +98,7 @@ export type ProductPickerItem = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const draftReviewConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

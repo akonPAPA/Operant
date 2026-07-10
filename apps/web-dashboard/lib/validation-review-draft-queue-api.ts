@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-15C Review-origin draft queue (lite) API client.
@@ -69,7 +70,7 @@ export type ReviewDraftQueueFilter = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const reviewDraftQueueConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

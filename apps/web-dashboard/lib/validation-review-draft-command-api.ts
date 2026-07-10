@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 // OP-CAP-15A/15B Validation Review → Draft Quote / Draft Order command client.
 // Typed, tenant-scoped helpers over the OP-CAP-15A/15B backend endpoints ONLY:
 //   GET  /api/v1/validations/{validationRunId}/review/draft-status
@@ -97,7 +98,7 @@ import { demoTenantId } from "./frontend-authority.mjs";
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewDraftConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

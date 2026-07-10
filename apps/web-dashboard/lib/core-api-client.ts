@@ -3,14 +3,23 @@ import {
   missingFrontendAuthorityMessage,
   requireDemoTenantId
 } from "./frontend-authority.mjs";
+import { dashboardCoreApiBaseUrl, toProxiedCorePath, usesBffTransport } from "./api-transport";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export function coreApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
+  if (usesBffTransport()) {
+    return "/api/bff";
+  }
+  return dashboardCoreApiBaseUrl();
 }
 
+export { toProxiedCorePath, usesBffTransport };
+
 export function demoScopeHeaders(): Record<string, string> {
+  if (usesBffTransport()) {
+    return {};
+  }
   return { "X-Tenant-Id": requireDemoTenantId() };
 }
 
@@ -58,7 +67,7 @@ export function coreApiStatusMessage(status: number): string {
 export async function coreApiGet<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   let response: Response;
   try {
-    response = await fetch(`${coreApiBaseUrl()}${path}`, {
+    response = await fetch(toProxiedCorePath(path), {
       method: "GET",
       cache: "no-store",
       ...init,

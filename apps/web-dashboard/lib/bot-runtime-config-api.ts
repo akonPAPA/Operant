@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06B / OP-CAP-06B.1 Controlled Bot Runtime Configuration client.
@@ -77,7 +78,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 const BOT_ACTION_PERMISSION = "BOT_ACTION";
 
 export const botRuntimeConfigClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

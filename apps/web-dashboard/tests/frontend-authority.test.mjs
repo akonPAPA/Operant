@@ -20,6 +20,16 @@ function frontendRuntimeSources(directory) {
   });
 }
 
+test("production with BFF enabled resolves bff-session without browser tenant", () => {
+  const authority = resolveFrontendAuthority({
+    nodeEnv: "production",
+    bffEnabled: "true"
+  });
+  assert.equal(authority.available, true);
+  assert.equal(authority.mode, "bff-session");
+  assert.equal("tenantId" in authority && authority.tenantId, "");
+});
+
 test("production rejects demo tenant authority even when public demo config is present", () => {
   const authority = resolveFrontendAuthority({
     nodeEnv: "production",
@@ -131,8 +141,8 @@ test("quote transaction client resolves demo tenant internally and accepts busin
 
 test("permission headers are unreachable when the demo tenant resolver fails closed", () => {
   const sources = frontendRuntimeSources(join(root, "lib"));
-  const permissionClients = sources.filter(([, source]) =>
-    source.includes('"X-OrderPilot-Permissions"')
+  const permissionClients = sources.filter(([path, source]) =>
+    source.includes('"X-OrderPilot-Permissions"') && !path.includes(`${join("lib", "bff")}`)
   );
 
   assert.ok(permissionClients.length > 0);
