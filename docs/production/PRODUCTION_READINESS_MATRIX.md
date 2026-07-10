@@ -4,7 +4,7 @@
 
 | Gate ID | Capability | Status @ base SHA | Evidence @ base SHA | P1-A delta (uncommitted until recorded) |
 | --- | --- | --- | --- | --- |
-| P1-GATE-01 | Production config rejects demo/insecure defaults | FAIL | Partial guards only (`GatewayHeaderAuthProductionGuard`, intake, OIDC stub) | `ProductionConfigurationValidator` + tests (pending manifest ID) |
+| P1-GATE-01 | Production config rejects demo/insecure defaults | **PARTIAL / NOT_PASS** @ `53bdf70` | EV-P1A-001, EV-P1A-002 | Core startup validator; not full gate |
 | P1-GATE-02 | Browser traffic mediated by BFF | FAIL | Direct `NEXT_PUBLIC_CORE_API_URL` clients | Not in P1-A scope |
 | P1-GATE-03 | Direct public Core access denied | FAIL | Compose publishes Core :8080 | Not in P1-A scope |
 | P1-GATE-04 | Sessions expire/revoke | FAIL | No session layer | Not in P1-A scope |
