@@ -34,6 +34,12 @@ public class CoreConfiguration {
   }
 
   @Bean
+  @ConfigurationProperties(prefix = "orderpilot.production")
+  ProductionDeploymentProperties productionDeploymentProperties() {
+    return new ProductionDeploymentProperties();
+  }
+
+  @Bean
   @ConditionalOnMissingBean(SecretVaultService.class)
   SecretVaultService secretVaultService(Clock clock) {
     return new LocalDevelopmentSecretVaultService(clock);

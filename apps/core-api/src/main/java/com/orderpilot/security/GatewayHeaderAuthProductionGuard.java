@@ -1,8 +1,8 @@
 package com.orderpilot.security;
 
-import java.util.Arrays;
+import com.orderpilot.security.production.GatewayHeaderAuthProductionRules;
+import com.orderpilot.security.production.ProductionLikeProfiles;
 import java.util.Locale;
-import java.util.Set;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * misconfiguration at deploy time.
  *
  * <p>This guard closes that gap by failing application startup (fail-closed) when a production-like
- * profile is active and gateway-header authentication is enabled in an unsafe shape. It is a narrow
+ * profile is active and gateway-header authentication is missing, unsigned, or otherwise unsafe. It is a narrow
  * startup/config validator only: no new framework, no runtime/DB dependency, no external call, and
  * it never logs or echoes the shared-secret value.
  *
@@ -36,12 +36,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class GatewayHeaderAuthProductionGuard implements InitializingBean {
 
-  /**
-   * Profile names treated as production-like. {@code staging} is included deliberately: a staging
-   * environment is exposed and internet-adjacent, so it must enforce the same header-trust contract
-   * as production rather than silently running in dev/test mode.
-   */
-  static final Set<String> PRODUCTION_LIKE_PROFILES = Set.of("prod", "production", "cloud", "staging");
+  /** @deprecated use {@link ProductionLikeProfiles#PRODUCTION_LIKE_PROFILES} */
+  @Deprecated
+  static final java.util.Set<String> PRODUCTION_LIKE_PROFILES =
+      ProductionLikeProfiles.PRODUCTION_LIKE_PROFILES;
 
   private final Environment environment;
   private final boolean enabled;
@@ -68,34 +66,14 @@ public class GatewayHeaderAuthProductionGuard implements InitializingBean {
 
   @Override
   public void afterPropertiesSet() {
-    // Only production-like profiles enforce the contract; if header trust is off, the filter never
-    // trusts client headers regardless of signature/secret, so there is nothing to guard.
-    if (!isProductionLikeProfileActive() || !enabled) {
+    if (!ProductionLikeProfiles.isActive(environment)) {
       return;
     }
-    if (!signatureRequired) {
-      throw new IllegalStateException(
-          "gateway-header-auth signature-required must be true in production "
-              + "(signature-required=false is dev/test only; a trusted gateway must HMAC-sign authority headers)");
-    }
-    if (sharedSecret.isBlank()) {
-      // Never include the value — only the property name.
-      throw new IllegalStateException(
-          "gateway-header-auth shared-secret must be configured in production "
-              + "(orderpilot.security.gateway-header-auth.shared-secret is blank/missing)");
-    }
-    if (!"redis".equals(replayStore) && !singleInstanceReplayStoreAllowedInProduction) {
-      throw new IllegalStateException(
-          "gateway-header-auth replay-store must be redis in production signed mode "
-              + "(memory replay admission is single-instance only; set "
-              + "orderpilot.security.gateway-header-auth.replay-store=redis or explicitly allow "
-              + "single-instance production replay-store mode)");
-    }
-  }
-
-  private boolean isProductionLikeProfileActive() {
-    return Arrays.stream(environment.getActiveProfiles())
-        .map(profile -> profile.toLowerCase(Locale.ROOT))
-        .anyMatch(PRODUCTION_LIKE_PROFILES::contains);
+    GatewayHeaderAuthProductionRules.validateProductionGatewayConfiguration(
+        enabled,
+        signatureRequired,
+        sharedSecret,
+        replayStore,
+        singleInstanceReplayStoreAllowedInProduction);
   }
 }
