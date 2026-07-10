@@ -1,0 +1,381 @@
+/**
+ * Default-deny BFF → Core route registry.
+ *
+ * Every forwardable route is bound explicitly: exact HTTP method, exact or narrowly
+ * parameterized path, access plane, required permission, read/mutation classification,
+ * allowed request content type, maximum body size, and CSRF requirement. There is no
+ * prefix forwarding — a new Core route never becomes reachable through the BFF until it
+ * is registered here. Internal/support/staff/admin/ops/diagnostics/maintenance/incident/
+ * release/break-glass/webhook/public/demo planes are explicitly denied.
+ *
+ * Required permissions mirror apps/core-api ApiRouteSecurityPolicy; the BFF enforces them
+ * against the server-side session as defense in depth (Core remains authoritative).
+ */
+
+export type BffHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export type BffRouteRule = {
+  method: BffHttpMethod;
+  /** Slash-joined template; ":name" matches exactly one validated path segment. */
+  pattern: string;
+  plane: "tenant-operator";
+  permission: string;
+  kind: "read" | "mutation";
+  /** Required request content type for mutations with a body; null = no request body. */
+  contentType: string | null;
+  maxBodyBytes: number;
+  csrfRequired: boolean;
+  allowIdempotencyKey: boolean;
+  allowIfMatch: boolean;
+};
+
+const JSON_CONTENT_TYPE = "application/json";
+const DEFAULT_MUTATION_BODY_LIMIT = 256 * 1024;
+
+/**
+ * Segment names that must never travel through the tenant operator BFF, regardless of
+ * position. These planes (owner support & maintenance, staff, ops, webhooks, public,
+ * demo, …) are outside tenant browser sessions by design.
+ */
+const DENIED_SEGMENTS = new Set([
+  "internal",
+  "support",
+  "staff",
+  "admin",
+  "ops",
+  "diagnostics",
+  "maintenance",
+  "incident",
+  "incidents",
+  "release",
+  "releases",
+  "break-glass",
+  "break-glass-requests",
+  "repair",
+  "data-repair-requests",
+  "webhook",
+  "webhooks",
+  "public",
+  "demo",
+  "platform",
+  "connector-gateway"
+]);
+
+/** Narrow path-parameter charset: public handles, UUIDs, numeric ids, bounded tokens. */
+const SAFE_PARAM_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$/;
+
+function read(pattern: string, permission: string): BffRouteRule {
+  return {
+    method: "GET",
+    pattern,
+    plane: "tenant-operator",
+    permission,
+    kind: "read",
+    contentType: null,
+    maxBodyBytes: 0,
+    csrfRequired: false,
+    allowIdempotencyKey: false,
+    allowIfMatch: false
+  };
+}
+
+function mutate(
+  method: Exclude<BffHttpMethod, "GET">,
+  pattern: string,
+  permission: string,
+  options?: { maxBodyBytes?: number }
+): BffRouteRule {
+  return {
+    method,
+    pattern,
+    plane: "tenant-operator",
+    permission,
+    kind: "mutation",
+    contentType: JSON_CONTENT_TYPE,
+    maxBodyBytes: options?.maxBodyBytes ?? DEFAULT_MUTATION_BODY_LIMIT,
+    csrfRequired: true,
+    allowIdempotencyKey: true,
+    allowIfMatch: false
+  };
+}
+
+const ROUTE_RULES: BffRouteRule[] = [
+  // Analytics / command center (ANALYTICS_READ)
+  read("api/v1/analytics/overview", "ANALYTICS_READ"),
+  read("api/v1/analytics/intake", "ANALYTICS_READ"),
+  read("api/v1/analytics/validation", "ANALYTICS_READ"),
+  read("api/v1/analytics/commerce/summary", "ANALYTICS_READ"),
+  read("api/v1/command-center/summary", "ANALYTICS_READ"),
+  read("api/v1/commerce-intelligence/demo-flow", "ANALYTICS_READ"),
+  read("api/v1/runtime-control/demo-flow", "ANALYTICS_READ"),
+  read("api/v1/reconciliation/cases", "ANALYTICS_READ"),
+  mutate("POST", "api/v1/reconciliation/inventory/run", "ANALYTICS_MANAGE"),
+
+  // Order journeys (read-only operator surface)
+  read("api/v1/order-journeys", "ANALYTICS_READ"),
+  read("api/v1/order-journeys/attention", "ANALYTICS_READ"),
+  read("api/v1/order-journeys/projection-health", "ANALYTICS_READ"),
+  read("api/v1/order-journeys/:journeyId", "ANALYTICS_READ"),
+  read("api/v1/order-journeys/:journeyId/operator-timeline", "ANALYTICS_READ"),
+
+  // Pilot evidence (read-only)
+  read("api/v1/pilot/demo-scenarios", "ANALYTICS_READ"),
+  read("api/v1/pilot/evidence-report", "ANALYTICS_READ"),
+  read("api/v1/pilot/metrics", "ANALYTICS_READ"),
+  read("api/v1/pilot/metrics/exceptions", "ANALYTICS_READ"),
+
+  // Intake (read-only through the browser; uploads are not registered)
+  read("api/v1/intake/documents", "INTAKE_READ"),
+  read("api/v1/intake/documents/:documentId", "INTAKE_READ"),
+  read("api/v1/intake/events", "INTAKE_READ"),
+  read("api/v1/intake/jobs", "INTAKE_READ"),
+  read("api/v1/intake/messages", "INTAKE_READ"),
+  read("api/v1/intake/messages/:messageId", "INTAKE_READ"),
+
+  // Extraction → validation bridge
+  read("api/v1/extractions/:extractionId/validation/review-case", "EXTRACTION_READ"),
+
+  // Validation runs and review drafts
+  read("api/v1/validations/:validationRunId/review", "VALIDATION_READ"),
+  read("api/v1/validations/:validationRunId/review/draft-status", "VALIDATION_READ"),
+  read("api/v1/validations/:validationRunId/review/draftability", "VALIDATION_READ"),
+  read("api/v1/validations/extractions/:extractionResultId/review", "VALIDATION_READ"),
+  read("api/v1/validations/review-drafts", "VALIDATION_READ"),
+  read("api/v1/validations/review-drafts/remediation-rollup", "VALIDATION_READ"),
+  read(
+    "api/v1/validations/review-drafts/:draftKind/:draftId/remediation-lineage",
+    "VALIDATION_READ"
+  ),
+  read("api/v1/validations/runs/:validationRunId/product-matches", "VALIDATION_READ"),
+  read("api/v1/validations/runs/:validationRunId/uom-normalizations", "VALIDATION_READ"),
+  read("api/v1/validations/runs/:validationRunId/inventory-checks", "VALIDATION_READ"),
+  read("api/v1/validations/runs/:validationRunId/price-checks", "VALIDATION_READ"),
+  read("api/v1/validations/runs/:validationRunId/discount-checks", "VALIDATION_READ"),
+  read("api/v1/validations/runs/:validationRunId/margin-checks", "VALIDATION_READ"),
+  mutate("POST", "api/v1/validations/:validationRunId/review/corrections", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validations/:validationRunId/review/approval-requests", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validations/:validationRunId/review/draft-order", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validations/:validationRunId/review/draft-quote", "REVIEW_ACTION"),
+  mutate(
+    "POST",
+    "api/v1/validations/:validationRunId/review/issues/:issueId/resolution",
+    "REVIEW_ACTION"
+  ),
+
+  // Validation review workspace
+  read("api/v1/validation-review", "REVIEW_READ"),
+  read("api/v1/validation-review/:reviewCaseId", "REVIEW_READ"),
+  read("api/v1/validation-review/:reviewCaseId/draft-preview", "REVIEW_READ"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/approve", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/reject", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/corrections/product", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/corrections/quantity", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/corrections/uom", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/issues/acknowledge", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/issues/override", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/substitutes/select", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/substitutes/reject", "REVIEW_ACTION"),
+  mutate(
+    "POST",
+    "api/v1/validation-review/:reviewCaseId/approvals/:approvalRequestId/approve",
+    "REVIEW_ACTION"
+  ),
+  mutate(
+    "POST",
+    "api/v1/validation-review/:reviewCaseId/approvals/:approvalRequestId/reject",
+    "REVIEW_ACTION"
+  ),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/prepare-draft-quote", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/validation-review/:reviewCaseId/prepare-draft-order", "REVIEW_ACTION"),
+
+  // Draft review workspace
+  read("api/v1/workspace/draft-quotes/review-queue", "REVIEW_READ"),
+  read("api/v1/workspace/draft-orders/review-queue", "REVIEW_READ"),
+  read("api/v1/workspace/draft-quotes/:draftQuoteId/review", "REVIEW_READ"),
+  read("api/v1/workspace/draft-orders/:draftOrderId/review", "REVIEW_READ"),
+  read("api/v1/workspace/products/search", "REVIEW_READ"),
+  mutate("PATCH", "api/v1/workspace/draft-quotes/:draftQuoteId/lines/:lineId", "REVIEW_ACTION"),
+  mutate("PATCH", "api/v1/workspace/draft-orders/:draftOrderId/lines/:lineId", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/workspace/draft-quotes/:draftQuoteId/mark-ready", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/workspace/draft-orders/:draftOrderId/mark-ready", "REVIEW_ACTION"),
+
+  // Quote review cockpit
+  read("api/v1/quote-review/queue", "REVIEW_READ"),
+  read("api/v1/quote-review/conversion-attempts", "REVIEW_READ"),
+  read("api/v1/quote-review/conversion-attempts/:attemptId", "REVIEW_READ"),
+  read("api/v1/quote-review/:quoteId", "REVIEW_READ"),
+  mutate("POST", "api/v1/quote-review/:quoteId/assemble-draft", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/quote-review/:quoteId/issues/:issueId/escalate", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/quote-review/:quoteId/issues/:issueId/resolve", "REVIEW_ACTION"),
+  mutate("POST", "api/v1/quote-review/:quoteId/lines/:lineId/correct", "REVIEW_ACTION"),
+  mutate(
+    "POST",
+    "api/v1/quote-review/:quoteId/lines/:lineId/substitutes/select",
+    "REVIEW_ACTION"
+  ),
+  mutate(
+    "POST",
+    "api/v1/quote-review/:quoteId/lines/:lineId/substitutes/reject",
+    "REVIEW_ACTION"
+  ),
+
+  // Quotes
+  read("api/v1/quotes/:quoteId/approval-state", "QUOTE_READ"),
+  read("api/v1/quotes/:quoteId/source-context", "QUOTE_READ"),
+  read("api/v1/quotes/drafts/from-rfq-handoff/:handoffId", "QUOTE_READ"),
+  mutate("POST", "api/v1/quotes/from-rfq", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/:quoteId/approve", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/:quoteId/reject", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/:quoteId/request-changes", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/:quoteId/convert-to-internal-order", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId/decision", "QUOTE_ACTION"),
+
+  // Quote transactions (channel/document conversion)
+  mutate("POST", "api/v1/quote-transactions/from-channel-message/:messageId", "QUOTE_ACTION"),
+  mutate(
+    "POST",
+    "api/v1/quote-transactions/from-inbound-document/:documentId",
+    "QUOTE_ACTION"
+  ),
+
+  // Channels / RFQ handoffs
+  read("api/v1/channels/bot-bridge/status", "ADMIN_SETTINGS_READ"),
+  read("api/v1/channels/bot-events", "ADMIN_SETTINGS_READ"),
+  read("api/v1/channels/rfq-handoffs", "ADMIN_SETTINGS_READ"),
+  read("api/v1/channels/rfq-handoffs/:handoffId", "ADMIN_SETTINGS_READ"),
+  mutate("POST", "api/v1/channels/rfq-handoffs/:handoffId/dismiss", "ADMIN_SETTINGS_MANAGE"),
+  mutate(
+    "POST",
+    "api/v1/channels/rfq-handoffs/:handoffId/mark-converted",
+    "ADMIN_SETTINGS_MANAGE"
+  ),
+  mutate("POST", "api/v1/channels/rfq-handoffs/:handoffId/start-review", "ADMIN_SETTINGS_MANAGE"),
+
+  // Channel identities
+  read("api/v1/channel-identities", "ADMIN_SETTINGS_READ"),
+  read("api/v1/channel-identities/:identityId", "ADMIN_SETTINGS_READ"),
+  mutate("POST", "api/v1/channel-identities/:identityId/link", "CHANNEL_IDENTITY_ACTION"),
+  mutate("POST", "api/v1/channel-identities/:identityId/unlink", "CHANNEL_IDENTITY_ACTION"),
+  mutate("POST", "api/v1/channel-identities/:identityId/block", "CHANNEL_IDENTITY_ACTION"),
+  mutate(
+    "POST",
+    "api/v1/channel-identities/:identityId/needs-review",
+    "CHANNEL_IDENTITY_ACTION"
+  ),
+
+  // Customers / master data (read-only)
+  read("api/v1/customers", "ADMIN_SETTINGS_READ"),
+  read("api/v1/customers/:customerId/contacts", "ADMIN_SETTINGS_READ"),
+  read("api/v1/products", "ADMIN_SETTINGS_READ"),
+  read("api/v1/inventory", "ADMIN_SETTINGS_READ"),
+
+  // AI advisory work
+  read("api/v1/ai-work/suggestions", "REVIEW_READ"),
+  read("api/v1/ai-work/suggestions/:suggestionId", "REVIEW_READ"),
+  read("api/v1/ai-work/rfq-handoffs/:handoffId/suggestions", "REVIEW_READ"),
+  mutate("POST", "api/v1/ai-work/suggestions/:suggestionId/accept", "AI_WORK_ACTION"),
+  mutate("POST", "api/v1/ai-work/suggestions/:suggestionId/reject", "AI_WORK_ACTION"),
+
+  // Bot runtime operator surface
+  read("api/v1/bot-runtime/configurations", "BOT_READ"),
+  read("api/v1/bot-runtime/configurations/:connectionId", "BOT_READ"),
+  read("api/v1/bot-runtime/conversations", "BOT_READ"),
+  read("api/v1/bot-runtime/conversations/:conversationId", "BOT_READ"),
+  read("api/v1/bot-runtime/handoffs", "BOT_READ"),
+  read("api/v1/bot-runtime/settings", "BOT_READ"),
+  mutate("PUT", "api/v1/bot-runtime/configurations/:connectionId", "BOT_ACTION"),
+  mutate(
+    "POST",
+    "api/v1/bot-runtime/configurations/:connectionId/reset-defaults",
+    "BOT_ACTION"
+  ),
+  mutate(
+    "POST",
+    "api/v1/bot-runtime/conversations/:conversationId/responses/draft",
+    "BOT_ACTION"
+  ),
+  mutate(
+    "POST",
+    "api/v1/bot-runtime/conversations/:conversationId/review-handoff",
+    "BOT_ACTION"
+  ),
+  mutate("POST", "api/v1/bot-runtime/messages/simulate", "BOT_ACTION"),
+  mutate("POST", "api/v1/bot-runtime/responses/:responseId/mark-ready", "BOT_ACTION"),
+  mutate("POST", "api/v1/bot-runtime/responses/:responseId/stub-send", "BOT_ACTION"),
+  mutate("PUT", "api/v1/bot-runtime/settings", "BOT_ACTION"),
+
+  // Stage 8 analytics / reconciliation / value (tenant analytics plane)
+  read("api/stage8/analytics/command-center", "ANALYTICS_READ"),
+  read("api/stage8/reconciliation/cases", "ANALYTICS_READ"),
+  read("api/stage8/reconciliation/summary", "ANALYTICS_READ"),
+  read("api/stage8/reconciliation/products/:productId/timeline", "ANALYTICS_READ"),
+  read("api/stage8/value/summary", "ANALYTICS_READ"),
+  read("api/stage8/value/roi-assumptions", "ANALYTICS_READ"),
+  read("api/stage8/value/export", "ANALYTICS_READ"),
+  mutate("PUT", "api/stage8/value/roi-assumptions", "ANALYTICS_MANAGE"),
+
+  // Stage 9 integration visibility (reads) + change-request creation
+  read("api/stage9/change-requests", "CHANGE_REQUEST_READ"),
+  read("api/stage9/connector-audit", "ADMIN_SETTINGS_READ"),
+  read("api/stage9/connector-sync-runs", "ADMIN_SETTINGS_READ"),
+  read("api/stage9/connectors/policies", "ADMIN_SETTINGS_READ"),
+  read("api/stage9/integrations", "ADMIN_SETTINGS_READ"),
+  mutate("POST", "api/stage9/change-requests", "CHANGE_REQUEST_CREATE")
+];
+
+function segmentsDenied(segments: string[]): boolean {
+  return segments.some((segment) => DENIED_SEGMENTS.has(segment.toLowerCase()));
+}
+
+function patternMatches(patternSegments: string[], segments: string[]): boolean {
+  if (patternSegments.length !== segments.length) {
+    return false;
+  }
+  for (let i = 0; i < patternSegments.length; i += 1) {
+    const expected = patternSegments[i];
+    const actual = segments[i];
+    if (expected.startsWith(":")) {
+      if (!SAFE_PARAM_SEGMENT.test(actual)) {
+        return false;
+      }
+      continue;
+    }
+    if (expected !== actual) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Default deny: returns the single registered rule for (method, path) or null. */
+export function matchBffRoute(segments: string[], method: string): BffRouteRule | null {
+  if (segments.length < 3) {
+    return null;
+  }
+  if (segmentsDenied(segments)) {
+    return null;
+  }
+  const normalizedMethod = method.toUpperCase();
+  for (const rule of ROUTE_RULES) {
+    if (rule.method !== normalizedMethod) {
+      continue;
+    }
+    if (patternMatches(rule.pattern.split("/"), segments)) {
+      return rule;
+    }
+  }
+  return null;
+}
+
+export function isBffProxyPathAllowed(segments: string[], method: string): boolean {
+  return matchBffRoute(segments, method) !== null;
+}
+
+export function corePathFromBffSegments(segments: string[]): string {
+  return `/${segments.join("/")}`;
+}
+
+/** Exposed for registry contract tests. */
+export function registeredBffRoutes(): readonly BffRouteRule[] {
+  return ROUTE_RULES;
+}

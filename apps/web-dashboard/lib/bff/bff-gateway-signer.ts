@@ -26,9 +26,12 @@ export function signGatewayHeaders(input: {
   actorId: string;
   permissions: string[];
   sharedSecret: string;
+  /** Fixed freshness for cross-language fixture tests only; production callers omit these. */
+  timestampEpochForTesting?: number;
+  nonceForTesting?: string;
 }): Record<string, string> {
-  const timestampEpoch = Math.floor(Date.now() / 1000);
-  const nonce = randomBytes(16).toString("hex");
+  const timestampEpoch = input.timestampEpochForTesting ?? Math.floor(Date.now() / 1000);
+  const nonce = input.nonceForTesting ?? randomBytes(16).toString("hex");
   const permissions = input.permissions.join(",");
   const canonical = gatewayCanonicalString(
     input.method,
