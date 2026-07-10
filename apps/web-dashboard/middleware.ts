@@ -1,8 +1,16 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { BFF_SESSION_COOKIE, bffRuntimeMode, bffSessionSecret } from "@/lib/bff/bff-config";
-import { parseSessionToken } from "@/lib/bff/bff-session";
-import { validateBffProductionConfig } from "@/lib/bff/bff-proxy";
+import { BFF_SESSION_COOKIE, bffRuntimeMode } from "@/lib/bff/bff-config";
+
+/**
+ * Edge Middleware — UX only, never an authority boundary.
+ *
+ * This module (and its transitive imports) must stay Edge-safe: no bff-proxy,
+ * bff-session-store, bff-gateway-signer, node:crypto, redis, or any Node-runtime-only
+ * module. It adds security headers, detects only the PRESENCE of the opaque session
+ * cookie, and redirects unauthenticated protected-page navigation to /login.
+ * Authoritative session validation lives in the Node-runtime route handlers.
+ */
 
 const PUBLIC_PATH_PREFIXES = ["/login", "/api/auth", "/public", "/api/bff/health"];
 const STATIC_PREFIXES = ["/_next", "/favicon.ico"];
@@ -14,12 +22,13 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-export function middleware(request: NextRequest) {
-  const configError = validateBffProductionConfig();
-  if (configError && bffRuntimeMode() === "bff-production") {
-    return new NextResponse("BFF configuration invalid", { status: 503 });
-  }
+/** Cookie presence only — never authentication. */
+function hasSessionCookie(request: NextRequest): boolean {
+  const value = request.cookies.get(BFF_SESSION_COOKIE)?.value?.trim();
+  return Boolean(value && value.length >= 16);
+}
 
+export function middleware(request: NextRequest) {
   const response = NextResponse.next();
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
@@ -36,11 +45,7 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  const session = parseSessionToken(
-    request.cookies.get(BFF_SESSION_COOKIE)?.value,
-    bffSessionSecret()
-  );
-  if (!session) {
+  if (!hasSessionCookie(request)) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);

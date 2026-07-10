@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 export default function LoginClient() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function LoginClient() {
         setMessage("Sign-in is not available.");
         return;
       }
-      router.replace(searchParams.get("next") ?? "/");
+      router.replace(safeInternalPath(searchParams.get("next")));
     } catch {
       setMessage("Sign-in is not available.");
     } finally {
