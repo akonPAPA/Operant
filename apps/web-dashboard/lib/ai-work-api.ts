@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-07A AI Agent Work Layer (AI Work Assistant) client.
@@ -107,7 +108,7 @@ const REVIEW_READ = "REVIEW_READ";
 const AI_WORK_ACTION = "AI_WORK_ACTION";
 
 export const aiWorkClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

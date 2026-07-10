@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-14B Operator Validation Review (detail) API client.
@@ -113,7 +114,7 @@ export type ValidationReviewDetail = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewDetailConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

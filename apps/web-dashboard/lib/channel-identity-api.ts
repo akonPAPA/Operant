@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06E Channel Identity operator control and read contract client.
@@ -67,7 +68,7 @@ export type ChannelIdentityApiResult<T> = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const channelIdentityClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

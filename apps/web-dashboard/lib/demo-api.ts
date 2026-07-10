@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> =
@@ -58,7 +59,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 const DEMO_RFQ_TEXT = "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.";
 
 export const demoConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId(),
   productId: process.env.NEXT_PUBLIC_DEMO_PRODUCT_ID ?? "",
   locationId: process.env.NEXT_PUBLIC_DEMO_LOCATION_ID ?? ""

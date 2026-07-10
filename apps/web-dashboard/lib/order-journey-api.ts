@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-22 Order Journey & Fulfillment Visibility client.
@@ -156,7 +157,7 @@ const ANALYTICS_READ = "ANALYTICS_READ";
 const REVIEW_ACTION = "REVIEW_ACTION";
 
 export const orderJourneyClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 

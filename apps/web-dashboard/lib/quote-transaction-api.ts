@@ -1,3 +1,4 @@
+import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { requireDemoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -166,7 +167,7 @@ export type QuoteApprovalDecisionPayload = {
   idempotencyKey?: string;
 };
 
-const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
+const baseUrl = dashboardCoreApiBaseUrl();
 
 export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPayload): Promise<QuoteTransactionResponse> {
   const { idempotencyKey, ...body } = payload;
