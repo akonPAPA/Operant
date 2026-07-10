@@ -15,7 +15,7 @@ import org.springframework.context.ConfigurableApplicationContext;
  */
 class GatewayHeaderAuthProductionGuardTest {
 
-  private static final String TEST_ONLY_SECRET = "op-cap-43d-test-only-non-secret-value";
+  private static final String TEST_ONLY_SECRET = "p1a-gateway-guard-test-secret-not-placeholder";
 
   private ApplicationContextRunner runnerWithProfiles(String... profiles) {
     return new ApplicationContextRunner()
@@ -70,6 +70,22 @@ class GatewayHeaderAuthProductionGuardTest {
   }
 
   @Test
+  void productionProfileRejectsPlaceholderSharedSecret() {
+    runnerWithProfiles("prod")
+        .withPropertyValues(
+            "orderpilot.security.gateway-header-auth.enabled=true",
+            "orderpilot.security.gateway-header-auth.signature-required=true",
+            "orderpilot.security.gateway-header-auth.shared-secret=change-me-local-dev-only",
+            "orderpilot.security.gateway-header-auth.replay-store=redis")
+        .run(context -> assertThat(context)
+            .hasFailed()
+            .getFailure()
+            .rootCause()
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("non-placeholder secret"));
+  }
+
+  @Test
   void productionProfileAcceptsGatewayHeaderAuthWithSignatureRequiredSecretAndRedisReplayStore() {
     runnerWithProfiles("prod")
         .withPropertyValues(
@@ -96,13 +112,18 @@ class GatewayHeaderAuthProductionGuardTest {
   }
 
   @Test
-  void productionProfileAllowsGatewayHeaderAuthDisabled() {
+  void productionProfileRejectsGatewayHeaderAuthDisabled() {
     runnerWithProfiles("prod")
         .withPropertyValues(
             "orderpilot.security.gateway-header-auth.enabled=false",
             "orderpilot.security.gateway-header-auth.signature-required=false",
             "orderpilot.security.gateway-header-auth.shared-secret=")
-        .run(context -> assertThat(context).hasNotFailed());
+        .run(context -> assertThat(context)
+            .hasFailed()
+            .getFailure()
+            .rootCause()
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("gateway-header-auth must be enabled in production"));
   }
 
   @Test
