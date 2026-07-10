@@ -1,4 +1,5 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, usesBffTransport } from "./api-transport";
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -289,15 +290,15 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
-  if (!validationReviewConfig.tenantId) {
+  if (!usesBffTransport() && !validationReviewConfig.tenantId) {
     return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${validationReviewConfig.baseUrl}${path}`, {
-      cache: init?.method && init.method !== "GET" ? "no-store" : "no-store",
+    const response = await fetch(dashboardFetchUrl(path), {
+      cache: "no-store",
       ...init,
-      headers: { ...headers(), ...(init?.headers ?? {}) }
+      headers: { ...dashboardFetchHeaders(init), ...headers(), ...(init?.headers as Record<string, string> ?? {}) }
     });
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : (fallbackData as T);

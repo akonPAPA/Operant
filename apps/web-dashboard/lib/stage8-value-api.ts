@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -69,7 +70,7 @@ export function getStage8PilotReportExportUrl(): string | null {
 async function requestStage8Value<T>(path: string): Promise<T | null> {
   if (!stage8ValueConfig.tenantId) return null;
   try {
-    const response = await fetch(`${stage8ValueConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       cache: "no-store",
       headers: { "X-Tenant-Id": stage8ValueConfig.tenantId }
     });

@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -137,7 +138,7 @@ async function read<T>(path: string, fallback: T): Promise<PilotApiResult<T>> {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${pilotMetricsClient.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       cache: "no-store",
       method: "GET",
       headers: baseHeaders()

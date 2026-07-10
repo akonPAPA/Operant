@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -99,9 +100,9 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<ApiResu
     return { ok: false, message: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${demoConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       ...init,
-      headers: { ...headers(), ...(init?.headers ?? {}) }
+      headers: { ...dashboardFetchHeaders(init),  ...headers(), ...(init?.headers ?? {}) }
     });
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : ({} as T);

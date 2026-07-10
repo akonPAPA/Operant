@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 

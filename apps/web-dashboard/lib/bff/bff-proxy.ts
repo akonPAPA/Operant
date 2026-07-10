@@ -13,6 +13,7 @@ import {
 } from "./bff-config";
 import { signGatewayHeaders } from "./bff-gateway-signer";
 import { parseSessionToken } from "./bff-session";
+import { isSessionRevoked } from "./bff-session-revocation";
 
 const SAFE_PROXY_ERROR = "The request could not be completed.";
 
@@ -44,7 +45,7 @@ export async function proxyCoreRequest(
     return NextResponse.json({ message: SAFE_PROXY_ERROR }, { status: 404 });
   }
   const session = await readOperatorSessionFromCookies();
-  if (!session) {
+  if (!session || isSessionRevoked(session.sessionId)) {
     return NextResponse.json({ message: SAFE_PROXY_ERROR }, { status: 401 });
   }
   const method = request.method.toUpperCase();

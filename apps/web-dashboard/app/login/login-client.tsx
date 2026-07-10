@@ -3,7 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
-export default function LoginClient() {
+type Props = { oidcEnabled: boolean };
+
+export default function LoginClient({ oidcEnabled }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
@@ -13,6 +15,10 @@ export default function LoginClient() {
     setPending(true);
     setMessage("");
     try {
+      if (oidcEnabled) {
+        window.location.href = "/api/auth/oidc/login";
+        return;
+      }
       const response = await fetch("/api/auth/session", { method: "POST" });
       if (!response.ok) {
         setMessage("Sign-in is not available.");
@@ -29,7 +35,7 @@ export default function LoginClient() {
   return (
     <main style={{ margin: "4rem auto", maxWidth: 420, padding: "0 1rem" }}>
       <h1>Operant sign-in</h1>
-      <p>Production BFF session (bootstrap until OIDC in P1-C).</p>
+      <p>{oidcEnabled ? "Production OIDC sign-in." : "Bootstrap session (until OIDC is configured)."}</p>
       {message ? <p role="status">{message}</p> : null}
       <button disabled={pending} onClick={() => void signIn()} type="button">
         {pending ? "Signing in…" : "Continue"}

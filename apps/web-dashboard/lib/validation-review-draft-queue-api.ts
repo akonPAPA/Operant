@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -276,7 +277,7 @@ export async function getReviewDraftRecentRemediationRollup(
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${reviewDraftQueueConfig.baseUrl}${remediationRollupPath(limit)}`, {
+    const response = await fetch(dashboardFetchUrl(remediationRollupPath(limit)), {
       method: "GET",
       cache: "no-store",
       headers: headers()

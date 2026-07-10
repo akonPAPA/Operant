@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -82,7 +83,7 @@ async function postCommand<T>(path: string, body: unknown): Promise<ApiResult<T>
   }
 
   try {
-    const response = await fetch(`${validationReviewCommandConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       method: "POST",
       cache: "no-store",
       headers: headers(),

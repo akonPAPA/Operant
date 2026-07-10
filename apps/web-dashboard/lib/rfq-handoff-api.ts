@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -155,7 +156,7 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
     };
   }
   try {
-    const response = await fetch(`${rfqHandoffClient.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       cache: "no-store",
       ...init,
       headers: { ...baseHeaders(), ...((init.headers as Record<string, string>) ?? {}) }

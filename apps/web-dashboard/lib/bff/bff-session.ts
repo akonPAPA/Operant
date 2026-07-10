@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export type OperatorSession = {
+  sessionId: string;
   tenantId: string;
   actorId: string;
   permissions: string[];
@@ -46,7 +47,8 @@ export function parseSessionToken(token: string | undefined, secret: string): Op
   try {
     const session = JSON.parse(base64UrlDecode(payload).toString("utf8")) as OperatorSession;
     if (
-      typeof session.tenantId !== "string"
+      typeof session.sessionId !== "string"
+      || typeof session.tenantId !== "string"
       || typeof session.actorId !== "string"
       || !Array.isArray(session.permissions)
       || typeof session.expiresAtEpochSec !== "number"

@@ -14,6 +14,7 @@ test("bff session token round-trip and expiry", () => {
   const secret = "x".repeat(32);
   const token = createSessionToken(
     {
+      sessionId: "test-session-id",
       tenantId: "11111111-1111-4111-8111-111111111111",
       actorId: "22222222-2222-4222-8222-222222222222",
       permissions: ["REVIEW_READ"],

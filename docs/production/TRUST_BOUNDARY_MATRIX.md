@@ -13,12 +13,14 @@
 
 **Client must never own:** tenant, actor, staff, permissions, approval, connector execution authority (see root `AGENTS.md`).
 
-## Temporary production authentication decision (P1-A)
+## Temporary production authentication decision (P1-A / P1-C)
 
 | Constant | Value |
 | --- | --- |
-| `CURRENT_PRODUCTION_AUTH_MODE` | `SIGNED_GATEWAY_HEADERS` |
-| `OIDC_STATUS` | `NOT_IMPLEMENTED` |
-| `OIDC_ENABLED_IN_PRODUCTION` | `FAIL_CLOSED` (`orderpilot.security.oidc.enabled=true` rejects startup) |
+| `CURRENT_PRODUCTION_AUTH_MODE` | `SIGNED_GATEWAY_HEADERS` (BFF signs Core requests) |
+| `BROWSER_SESSION` | Signed httpOnly `op_session` + CSRF `op_csrf` (BFF) |
+| `OIDC_STATUS` | **Implemented at BFF** (`/api/auth/oidc/*`) when `ORDERPILOT_OIDC_*` env is set |
+| `OIDC_ENABLED_ON_CORE` | `FAIL_CLOSED` (`orderpilot.security.oidc.enabled=true` still rejects Core startup) |
+| `BOOTSTRAP_LOGIN` | `POST /api/auth/session` only when OIDC is not configured |
 
-**P1-C** must replace the temporary OIDC rejection with real OIDC/session identity mapping and tenant membership resolution. Until then, production-like profiles require signed gateway header authentication plus non-placeholder actor and datasource secrets (`ProductionConfigurationValidator`).
+Tenant, actor, and permissions for production browser traffic are taken from the IdP claims map (`mapOidcClaimsToSession`) or bootstrap env — never from `NEXT_PUBLIC_*`.

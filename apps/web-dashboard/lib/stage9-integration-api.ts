@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -83,7 +84,7 @@ export async function getStage9ConnectorAudit(): Promise<Stage9ConnectorAuditEve
 async function requestStage9<T>(path: string): Promise<T | null> {
   if (!stage9IntegrationConfig.tenantId) return null;
   try {
-    const response = await fetch(`${stage9IntegrationConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       cache: "no-store",
       headers: { "X-Tenant-Id": stage9IntegrationConfig.tenantId }
     });

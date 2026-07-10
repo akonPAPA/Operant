@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 // OP-CAP-15A/15B Validation Review → Draft Quote / Draft Order command client.
 // Typed, tenant-scoped helpers over the OP-CAP-15A/15B backend endpoints ONLY:
@@ -127,7 +128,7 @@ async function postDraftCommand(path: string, options?: CreateDraftOptions): Pro
   }
 
   try {
-    const response = await fetch(`${validationReviewDraftConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       method: "POST",
       cache: "no-store",
       headers: headers(),

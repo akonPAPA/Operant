@@ -7,10 +7,15 @@ import {
   bffSessionSecret
 } from "@/lib/bff/bff-config";
 import { createSessionToken, newCsrfToken, sessionMaxAgeSeconds } from "@/lib/bff/bff-session";
+import { newSessionId } from "@/lib/bff/bff-session-revocation";
+import { isOidcLoginEnabled } from "@/lib/bff/oidc-config";
 
 const SAFE_FAILURE = "Sign-in is not available.";
 
 export async function POST() {
+  if (isOidcLoginEnabled()) {
+    return NextResponse.json({ message: SAFE_FAILURE }, { status: 503 });
+  }
   if (bffRuntimeMode() !== "bff-production") {
     return NextResponse.json({ message: SAFE_FAILURE }, { status: 503 });
   }
@@ -27,6 +32,7 @@ export async function POST() {
   const expiresAtEpochSec = Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds();
   const token = createSessionToken(
     {
+      sessionId: newSessionId(),
       tenantId,
       actorId,
       permissions: permissions.split(",").map((p) => p.trim()).filter(Boolean),

@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { requireDemoTenantId } from "./frontend-authority.mjs";
 
@@ -225,7 +226,7 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
   const body = payload
     ? { approvalRequestId: payload.approvalRequestId, reason: payload.reason, comment: payload.comment }
     : undefined;
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await fetch(dashboardFetchUrl(path), {
     method: payload ? "POST" : "GET",
     headers: {
       "Content-Type": "application/json",
@@ -243,7 +244,7 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
 
 async function requestQuoteTransaction<T>(path: string, payload: ChannelToQuotePayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await fetch(dashboardFetchUrl(path), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

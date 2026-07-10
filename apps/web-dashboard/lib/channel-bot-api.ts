@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -53,7 +54,7 @@ async function getJson<T>(path: string, fallback: T): Promise<ChannelBotApiResul
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${channelBotConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       cache: "no-store",
       headers: { "X-Tenant-Id": channelBotConfig.tenantId }
     });

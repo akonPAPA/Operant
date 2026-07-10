@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -44,7 +45,7 @@ async function fetchTenantData<T>(path: string): Promise<DataResult<T>> {
   }
 
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       cache: "no-store",
       headers: { "X-Tenant-Id": tenantId }
     });

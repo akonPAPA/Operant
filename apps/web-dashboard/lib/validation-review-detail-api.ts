@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -133,7 +134,7 @@ async function getJson<T>(path: string): Promise<ApiResult<T>> {
   }
 
   try {
-    const response = await fetch(`${validationReviewDetailConfig.baseUrl}${path}`, {
+    const response = await fetch(dashboardFetchUrl(path), {
       method: "GET",
       cache: "no-store",
       headers: headers()

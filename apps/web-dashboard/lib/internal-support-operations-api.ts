@@ -1,3 +1,4 @@
+import { dashboardFetchHeaders, dashboardFetchUrl } from "./bff/dashboard-fetch";
 import { dashboardCoreApiBaseUrl } from "./api-transport";
 // OP-CAP-56/57 — Internal Support API client (READ-ONLY).
 //
@@ -152,7 +153,7 @@ async function getJson<T>(path: string, tenantId?: string): Promise<ApiResult<T>
 
   let response: Response;
   try {
-    response = await fetch(`${internalSupportConfig.baseUrl}${path}`, {
+    response = await fetch(dashboardFetchUrl(path), {
       method: "GET",
       cache: "no-store",
       headers: requestHeaders

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { BFF_SESSION_COOKIE, bffRuntimeMode, bffSessionSecret } from "@/lib/bff/bff-config";
 import { parseSessionToken } from "@/lib/bff/bff-session";
+import { isSessionRevoked } from "@/lib/bff/bff-session-revocation";
 import { validateBffProductionConfig } from "@/lib/bff/bff-proxy";
 
 const PUBLIC_PATH_PREFIXES = ["/login", "/api/auth", "/public", "/api/bff/health"];
@@ -40,7 +41,7 @@ export function middleware(request: NextRequest) {
     request.cookies.get(BFF_SESSION_COOKIE)?.value,
     bffSessionSecret()
   );
-  if (!session) {
+  if (!session || isSessionRevoked(session.sessionId)) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);
