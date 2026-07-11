@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getPilotDemoScenarios } from "@/lib/pilot-metrics-api";
+import { getPilotDemoScenarios } from "@/lib/server/pilot-metrics-api.server";
 
 // OP-CAP-11I scripted demo dataset summary (static, display-only). Mirrors
 // apps/core-api/src/test/resources/demo/core-v1-demo/scripted-scenarios-demo.json.

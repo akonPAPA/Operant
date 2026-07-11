@@ -2,8 +2,8 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { ValidationReviewDetailView } from "@/components/validation-review-detail";
 import { ValidationReviewActionsClient } from "@/components/validation-review-actions";
 import { ValidationReviewDraftControls } from "@/components/validation-review-draft-controls";
-import { getValidationReviewByRun } from "@/lib/validation-review-detail-api";
-import { getValidationReviewDraftStatus, getValidationReviewDraftability } from "@/lib/validation-review-draft-command-api";
+import { getValidationReviewByRun } from "@/lib/server/validation-review-detail-api.server";
+import { getValidationReviewDraftStatus, getValidationReviewDraftability } from "@/lib/server/validation-review-draft-command-api.server";
 
 // OP-CAP-14B / 15B / 15C — operator validation review workspace (read-only detail + narrow client controls).
 // Route: /validations/{validationRunId}/review (nested under the existing /validations/[id] slug).

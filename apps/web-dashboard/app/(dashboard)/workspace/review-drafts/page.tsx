@@ -6,7 +6,7 @@ import {
   getReviewDraftRecentRemediationRollup,
   remediationLineagePath,
   type ValidationReviewDraftRemediationSummary
-} from "@/lib/validation-review-draft-queue-api";
+} from "@/lib/server/validation-review-draft-queue-api.server";
 
 // OP-CAP-15C/15G — lite, read-only queue of internal drafts created from validation reviews.
 // Server-rendered (matches the existing workspace review-queue convention). Read-only: links out to the

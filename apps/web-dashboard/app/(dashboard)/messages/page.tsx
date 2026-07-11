@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getIntakeMessages } from "@/lib/intake-api";
+import { getIntakeMessages } from "@/lib/server/intake-api.server";
 import Link from "next/link";
 
 export default async function Page({ searchParams }: Readonly<{ searchParams: Promise<{ channel?: string; status?: string }> }>) {

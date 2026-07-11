@@ -1,5 +1,5 @@
-import { dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
-import { dashboardApiFetch } from "./dashboard-http";
+import { dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport.ts";
+import { dashboardApiFetch } from "./dashboard-http.ts";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type IntakeDocument = {

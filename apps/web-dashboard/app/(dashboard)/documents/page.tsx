@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getIntakeDocuments } from "@/lib/intake-api";
+import { getIntakeDocuments } from "@/lib/server/intake-api.server";
 import Link from "next/link";
 
 export default async function Page() {

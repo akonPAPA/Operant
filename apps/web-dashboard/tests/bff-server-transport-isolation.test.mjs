@@ -151,8 +151,24 @@ test("opaque session cookie is not a signed tenant payload", async () => {
 
 test("architecture: dashboard-http does not import next/headers", () => {
   const source = readFileSync(join(root, "lib", "dashboard-http.ts"), "utf8");
+  const browser = readFileSync(join(root, "lib", "dashboard-http.browser.ts"), "utf8");
   assert.doesNotMatch(source, /next\/headers/);
-  assert.doesNotMatch(source, /server-only/);
+  assert.doesNotMatch(browser, /next\/headers/);
+  assert.doesNotMatch(browser, /server-only/);
+});
+
+test("architecture: dashboard-http.browser has no next/headers", () => {
+  const source = readFileSync(join(root, "lib", "dashboard-http.ts"), "utf8");
+  const browser = readFileSync(join(root, "lib", "dashboard-http.browser.ts"), "utf8");
+  assert.doesNotMatch(source, /next\/headers/);
+  assert.doesNotMatch(browser, /next\/headers/);
+  assert.doesNotMatch(browser, /dashboard-server-bff/);
+});
+
+test("architecture: server tenant reads use tenant-get-json.server", () => {
+  const source = readFileSync(join(root, "lib", "server", "intake-api.server.ts"), "utf8");
+  assert.match(source, /tenant-get-json\.server/);
+  assert.match(source, /\.server/);
 });
 
 test("architecture: in-process server read stays in bff-server-read", () => {

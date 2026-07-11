@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getPilotExceptionBreakdown, getPilotMetrics } from "@/lib/pilot-metrics-api";
+import { getPilotExceptionBreakdown, getPilotMetrics } from "@/lib/server/pilot-metrics-api.server";
 
 function formatPercent(rate: number): string {
   return `${(rate * 100).toFixed(1)}%`;

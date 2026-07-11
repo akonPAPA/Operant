@@ -6,7 +6,7 @@ import {
   type LineageTimelineEntry,
   type ValidationReviewDraftRemediationLineageAction,
   type ValidationReviewDraftRemediationLineageLine
-} from "@/lib/validation-review-draft-queue-api";
+} from "@/lib/server/validation-review-draft-queue-api.server";
 
 // OP-CAP-15H — read-only remediation lineage DETAIL for one review-origin draft. Makes the OP-CAP-15G
 // queue summary explainable: per draft line, the structured operator-action lineage (corrections, issue

@@ -1,6 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { ChannelQuoteConversionPanel } from "@/components/channel-quote-conversion-panel";
-import { getIntakeDocument } from "@/lib/intake-api";
+import { getIntakeDocument } from "@/lib/server/intake-api.server";
 
 export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;

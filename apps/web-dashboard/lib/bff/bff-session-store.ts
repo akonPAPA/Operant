@@ -65,6 +65,21 @@ export function resetSessionStoreForTesting(): void {
   memoryStore.clear();
 }
 
+/** Test-only: mark an in-memory session expired without mutating production Redis semantics. */
+export function expireOperatorSessionForTesting(sessionId: string): void {
+  if (!memorySessionStoreAllowed()) {
+    return;
+  }
+  const record = memoryStore.get(sessionId);
+  if (!record) {
+    return;
+  }
+  memoryStore.set(sessionId, {
+    ...record,
+    expiresAtEpochSec: Math.floor(Date.now() / 1000) - 1
+  });
+}
+
 function sessionTtlSeconds(): number {
   return sessionMaxAgeSecondsFromEnv();
 }

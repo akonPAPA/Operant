@@ -1,6 +1,6 @@
 import { BotConversationsWorkspace } from "@/components/bot-conversations-workspace";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { listBotConversationDetails } from "@/lib/bot-runtime-api";
+import { listBotConversationDetails } from "@/lib/server/bot-runtime-api.server";
 
 export default async function BotConversationsPage() {
   const { data, error } = await listBotConversationDetails();

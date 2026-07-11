@@ -1,6 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { ReconciliationCases } from "@/components/reconciliation-cases";
-import { listInventory } from "@/lib/stage2-data-api";
+import { listInventory } from "@/lib/server/stage2-data-api.server";
 
 export default async function Page() {
   const result = await listInventory();

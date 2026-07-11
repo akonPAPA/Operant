@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { DashboardShell } from "@/components/dashboard-shell";
-import { listValidationReviewCases } from "@/lib/validation-review-api";
+import { listValidationReviewCases } from "@/lib/server/validation-review-api.server";
 
 export default async function Page() {
   const { data: cases, error } = await listValidationReviewCases();

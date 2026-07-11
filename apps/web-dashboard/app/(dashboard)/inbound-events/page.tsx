@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getInboundEvents } from "@/lib/intake-api";
+import { getInboundEvents } from "@/lib/server/intake-api.server";
 
 export default async function Page() {
   const { data: events, error } = await getInboundEvents();

@@ -1,6 +1,6 @@
 import { BotRuntimeConfigWorkspace } from "@/components/bot-runtime-config-workspace";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getBotRuntimeConfiguration, getBotRuntimeConfigurations } from "@/lib/bot-runtime-config-api";
+import { getBotRuntimeConfiguration, getBotRuntimeConfigurations } from "@/lib/server/bot-runtime-config-api.server";
 
 // OP-CAP-06B.1 Interactive Bot Runtime Configuration editor.
 // Server loader: fetches the tenant-scoped, bot-capable channel connections and the first connection's

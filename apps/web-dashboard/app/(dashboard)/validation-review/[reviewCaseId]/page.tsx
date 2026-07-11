@@ -1,6 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { ValidationReviewWorkspace } from "@/components/validation-review-workspace";
-import { getDraftPreview, getValidationReviewCase, getValidationRunChecks } from "@/lib/validation-review-api";
+import { getDraftPreview, getValidationReviewCase, getValidationRunChecks } from "@/lib/server/validation-review-api.server";
 
 export default async function Page({ params }: Readonly<{ params: Promise<{ reviewCaseId: string }> }>) {
   const { reviewCaseId } = await params;

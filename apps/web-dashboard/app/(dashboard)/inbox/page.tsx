@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getIntakeDocuments, getIntakeJobs, getIntakeMessages } from "@/lib/intake-api";
+import { getIntakeDocuments, getIntakeJobs, getIntakeMessages } from "@/lib/server/intake-api.server";
 
 export default async function Page({ searchParams }: Readonly<{ searchParams: Promise<{ channel?: string; status?: string }> }>) {
   const [{ data: documents, error: documentError }, { data: messages, error: messageError }, { data: jobs }] = await Promise.all([

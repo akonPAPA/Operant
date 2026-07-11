@@ -1,6 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RfqHandoffWorkspace } from "@/components/rfq-handoff-workspace";
-import { listRfqHandoffs } from "@/lib/rfq-handoff-api";
+import { listRfqHandoffs } from "@/lib/server/rfq-handoff-api.server";
 
 // OP-CAP-06C RFQ Handoff Operator Workflow surface.
 // Server loader: pre-fetches the tenant-scoped PENDING_REVIEW handoffs and passes them to the
