@@ -16,11 +16,13 @@ export type BffHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type BffRouteRule = {
   method: BffHttpMethod;
-  /** Slash-joined template; ":name" matches exactly one validated path segment. */
+  /** Slash-joined template; ":name" matches exactly one typed, validated path segment. */
   pattern: string;
   plane: "tenant-operator";
   permission: string;
   kind: "read" | "mutation";
+  params: Record<string, BffPathParamType>;
+  query: BffQueryPolicy;
   /** Required request content type for mutations with a body; null = no request body. */
   contentType: string | null;
   maxBodyBytes: number;
@@ -31,6 +33,16 @@ export type BffRouteRule = {
 
 const JSON_CONTENT_TYPE = "application/json";
 const DEFAULT_MUTATION_BODY_LIMIT = 256 * 1024;
+
+export type BffPathParamType = "uuid" | "positive-int" | "handle";
+export type BffQueryValueType = "uuid" | "positive-int" | "enum" | "text";
+export type BffQueryFieldPolicy = {
+  type: BffQueryValueType;
+  maxValues?: number;
+  maxLength?: number;
+  enumValues?: readonly string[];
+};
+export type BffQueryPolicy = Record<string, BffQueryFieldPolicy>;
 
 /**
  * Segment names that must never travel through the tenant operator BFF, regardless of
@@ -61,16 +73,54 @@ const DENIED_SEGMENTS = new Set([
   "connector-gateway"
 ]);
 
-/** Narrow path-parameter charset: public handles, UUIDs, numeric ids, bounded tokens. */
-const SAFE_PARAM_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$/;
+const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const POSITIVE_INT_SEGMENT = /^[1-9][0-9]{0,8}$/;
+const HANDLE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$/;
 
-function read(pattern: string, permission: string): BffRouteRule {
+const NO_QUERY: BffQueryPolicy = Object.freeze({});
+const LIMIT_QUERY: BffQueryPolicy = Object.freeze({
+  limit: { type: "positive-int", maxValues: 1 }
+});
+const QUOTE_CONVERSION_ATTEMPTS_QUERY: BffQueryPolicy = Object.freeze({
+  limit: { type: "positive-int", maxValues: 1 },
+  status: { type: "text", maxValues: 1, maxLength: 32 },
+  sourceType: { type: "text", maxValues: 1, maxLength: 48 },
+  customerRef: { type: "text", maxValues: 1, maxLength: 128 }
+});
+const ORDER_JOURNEY_BY_SOURCE_QUERY: BffQueryPolicy = Object.freeze({
+  sourceType: {
+    type: "enum",
+    enumValues: ["QUOTE", "ORDER", "RFQ", "VALIDATION_RUN", "CHANNEL_MESSAGE"],
+    maxValues: 1
+  },
+  sourceId: { type: "uuid", maxValues: 1 }
+});
+
+function paramsFor(pattern: string): Record<string, BffPathParamType> {
+  const params: Record<string, BffPathParamType> = {};
+  for (const segment of pattern.split("/")) {
+    if (!segment.startsWith(":")) {
+      continue;
+    }
+    const name = segment.slice(1);
+    params[name] = name.endsWith("Id") ? "uuid" : "handle";
+  }
+  return params;
+}
+
+function read(
+  pattern: string,
+  permission: string,
+  options?: { params?: Record<string, BffPathParamType>; query?: BffQueryPolicy }
+): BffRouteRule {
   return {
     method: "GET",
     pattern,
     plane: "tenant-operator",
     permission,
     kind: "read",
+    params: options?.params ?? paramsFor(pattern),
+    query: options?.query ?? NO_QUERY,
     contentType: null,
     maxBodyBytes: 0,
     csrfRequired: false,
@@ -83,7 +133,7 @@ function mutate(
   method: Exclude<BffHttpMethod, "GET">,
   pattern: string,
   permission: string,
-  options?: { maxBodyBytes?: number }
+  options?: { maxBodyBytes?: number; params?: Record<string, BffPathParamType>; query?: BffQueryPolicy }
 ): BffRouteRule {
   return {
     method,
@@ -91,6 +141,8 @@ function mutate(
     plane: "tenant-operator",
     permission,
     kind: "mutation",
+    params: options?.params ?? paramsFor(pattern),
+    query: options?.query ?? NO_QUERY,
     contentType: JSON_CONTENT_TYPE,
     maxBodyBytes: options?.maxBodyBytes ?? DEFAULT_MUTATION_BODY_LIMIT,
     csrfRequired: true,
@@ -112,11 +164,15 @@ const ROUTE_RULES: BffRouteRule[] = [
   mutate("POST", "api/v1/reconciliation/inventory/run", "ANALYTICS_MANAGE"),
 
   // Order journeys (read-only operator surface)
-  read("api/v1/order-journeys", "ANALYTICS_READ"),
-  read("api/v1/order-journeys/attention", "ANALYTICS_READ"),
+  read("api/v1/order-journeys", "ANALYTICS_READ", { query: LIMIT_QUERY }),
+  read("api/v1/order-journeys/attention", "ANALYTICS_READ", { query: LIMIT_QUERY }),
   read("api/v1/order-journeys/projection-health", "ANALYTICS_READ"),
+  read("api/v1/order-journeys/by-source", "ANALYTICS_READ", { query: ORDER_JOURNEY_BY_SOURCE_QUERY }),
   read("api/v1/order-journeys/:journeyId", "ANALYTICS_READ"),
   read("api/v1/order-journeys/:journeyId/operator-timeline", "ANALYTICS_READ"),
+  mutate("POST", "api/v1/order-journeys/:journeyId/tracking-links", "REVIEW_ACTION"),
+  read("api/v1/order-journeys/:journeyId/tracking-links", "ANALYTICS_READ"),
+  mutate("POST", "api/v1/order-journeys/:journeyId/tracking-links/:linkId/revoke", "REVIEW_ACTION"),
 
   // Pilot evidence (read-only)
   read("api/v1/pilot/demo-scenarios", "ANALYTICS_READ"),
@@ -201,7 +257,9 @@ const ROUTE_RULES: BffRouteRule[] = [
 
   // Quote review cockpit
   read("api/v1/quote-review/queue", "REVIEW_READ"),
-  read("api/v1/quote-review/conversion-attempts", "REVIEW_READ"),
+  read("api/v1/quote-review/conversion-attempts", "REVIEW_READ", {
+    query: QUOTE_CONVERSION_ATTEMPTS_QUERY
+  }),
   read("api/v1/quote-review/conversion-attempts/:attemptId", "REVIEW_READ"),
   read("api/v1/quote-review/:quoteId", "REVIEW_READ"),
   mutate("POST", "api/v1/quote-review/:quoteId/assemble-draft", "REVIEW_ACTION"),
@@ -302,7 +360,7 @@ const ROUTE_RULES: BffRouteRule[] = [
   mutate("POST", "api/v1/bot-runtime/messages/simulate", "BOT_ACTION"),
   mutate("POST", "api/v1/bot-runtime/responses/:responseId/mark-ready", "BOT_ACTION"),
   mutate("POST", "api/v1/bot-runtime/responses/:responseId/stub-send", "BOT_ACTION"),
-  mutate("PUT", "api/v1/bot-runtime/settings", "BOT_ACTION"),
+  mutate("POST", "api/v1/bot-runtime/settings", "BOT_ACTION"),
 
   // Stage 8 analytics / reconciliation / value (tenant analytics plane)
   read("api/stage8/analytics/command-center", "ANALYTICS_READ"),
@@ -327,7 +385,18 @@ function segmentsDenied(segments: string[]): boolean {
   return segments.some((segment) => DENIED_SEGMENTS.has(segment.toLowerCase()));
 }
 
-function patternMatches(patternSegments: string[], segments: string[]): boolean {
+function paramMatches(type: BffPathParamType, actual: string): boolean {
+  if (type === "uuid") {
+    return UUID_SEGMENT.test(actual);
+  }
+  if (type === "positive-int") {
+    return POSITIVE_INT_SEGMENT.test(actual);
+  }
+  return HANDLE_SEGMENT.test(actual);
+}
+
+function patternMatches(rule: BffRouteRule, segments: string[]): boolean {
+  const patternSegments = rule.pattern.split("/");
   if (patternSegments.length !== segments.length) {
     return false;
   }
@@ -335,7 +404,8 @@ function patternMatches(patternSegments: string[], segments: string[]): boolean 
     const expected = patternSegments[i];
     const actual = segments[i];
     if (expected.startsWith(":")) {
-      if (!SAFE_PARAM_SEGMENT.test(actual)) {
+      const paramType = rule.params[expected.slice(1)];
+      if (!paramType || !paramMatches(paramType, actual)) {
         return false;
       }
       continue;
@@ -360,7 +430,7 @@ export function matchBffRoute(segments: string[], method: string): BffRouteRule 
     if (rule.method !== normalizedMethod) {
       continue;
     }
-    if (patternMatches(rule.pattern.split("/"), segments)) {
+    if (patternMatches(rule, segments)) {
       return rule;
     }
   }

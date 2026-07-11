@@ -7,7 +7,7 @@
 import { createClient } from "redis";
 import { randomBytes } from "node:crypto";
 import type { OperatorSession } from "./bff-session.ts";
-import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
+import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";`r`nimport { registeredBffRoutes } from "./bff-route-registry.ts";
 
 export type StoredOperatorSession = OperatorSession & {
   sessionId: string;
@@ -34,6 +34,10 @@ type MinimalRedisClient = {
 
 const SESSION_KEY_PREFIX = "op:bff:session:";
 const DEFAULT_TTL_SECONDS = 28_800;
+const SESSION_ID_VALUE = /^[A-Za-z0-9_-]{43,128}$/;
+const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const PERMISSION_VALUE = /^[A-Z][A-Z0-9_]{1,64}$/;
+const MAX_SESSION_PERMISSIONS = 64;`r`nconst ALLOWED_BFF_PERMISSIONS = new Set(registeredBffRoutes().map((rule) => rule.permission));
 
 let redisClient: MinimalRedisClient | null = null;
 let redisClientFactoryForTesting: ((url: string) => MinimalRedisClient) | null = null;
@@ -125,6 +129,64 @@ export async function persistOperatorSession(
   return { sessionId, record };
 }
 
+function validSessionId(sessionId: string | undefined): sessionId is string {
+  return Boolean(sessionId && SESSION_ID_VALUE.test(sessionId));
+}
+
+function parseStoredRecord(raw: string | null, expectedSessionId: string): StoredOperatorSession | null {
+  if (!raw || raw.length > 8192) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  const record = parsed as Partial<StoredOperatorSession>;
+  if (record.sessionId !== expectedSessionId || !validSessionId(record.sessionId)) {
+    return null;
+  }
+  if (!record.tenantId || !UUID_VALUE.test(record.tenantId)) {
+    return null;
+  }
+  if (!record.actorId || !UUID_VALUE.test(record.actorId)) {
+    return null;
+  }
+  if (!Array.isArray(record.permissions)) {
+    return null;
+  }
+  if (record.permissions.length === 0 || record.permissions.length > MAX_SESSION_PERMISSIONS) {
+    return null;
+  }
+  const permissions = record.permissions;
+  const unique = new Set(permissions);
+  if (unique.size !== permissions.length || !permissions.every((p) => PERMISSION_VALUE.test(p))) {
+    return null;
+  }
+  const issuedAtEpochSec = record.issuedAtEpochSec;
+  const expiresAtEpochSec = record.expiresAtEpochSec;
+  const sessionVersion = record.sessionVersion;
+  if (
+    typeof issuedAtEpochSec !== "number" ||
+    typeof expiresAtEpochSec !== "number" ||
+    typeof sessionVersion !== "number" ||
+    !Number.isSafeInteger(issuedAtEpochSec) ||
+    !Number.isSafeInteger(expiresAtEpochSec) ||
+    !Number.isSafeInteger(sessionVersion) ||
+    sessionVersion !== 1 ||
+    typeof record.revoked !== "boolean" ||
+    issuedAtEpochSec <= 0 ||
+    expiresAtEpochSec <= issuedAtEpochSec
+  ) {
+    return null;
+  }
+  return record as StoredOperatorSession;
+}
+
 function liveOrNull(record: StoredOperatorSession | null): StoredOperatorSession | null {
   if (!record) {
     return null;
@@ -139,19 +201,16 @@ function liveOrNull(record: StoredOperatorSession | null): StoredOperatorSession
 export async function loadOperatorSession(
   sessionId: string | undefined
 ): Promise<StoredOperatorSession | null> {
-  if (!sessionId?.trim()) {
+  if (!validSessionId(sessionId)) {
     return null;
   }
   if (memorySessionStoreAllowed()) {
-    return liveOrNull(memoryStore.get(sessionId) ?? null);
+    return liveOrNull(parseStoredRecord(JSON.stringify(memoryStore.get(sessionId) ?? null), sessionId));
   }
   try {
     const redis = await requireRedis();
     const raw = await redis.get(`${SESSION_KEY_PREFIX}${sessionId}`);
-    if (!raw) {
-      return null;
-    }
-    return liveOrNull(JSON.parse(raw) as StoredOperatorSession);
+    return liveOrNull(parseStoredRecord(raw, sessionId));
   } catch {
     return null;
   }
@@ -159,7 +218,7 @@ export async function loadOperatorSession(
 
 /** Deletes the server-side session. Throws SessionStoreUnavailableError when Redis fails. */
 export async function revokeOperatorSession(sessionId: string | undefined): Promise<void> {
-  if (!sessionId?.trim()) {
+  if (!validSessionId(sessionId)) {
     return;
   }
   if (memorySessionStoreAllowed()) {

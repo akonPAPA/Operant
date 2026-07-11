@@ -25,9 +25,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [["list"]],
+  reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   use: {
-    baseURL: "http://localhost:3100"
+    baseURL: "http://localhost:3100",
+    trace: "retain-on-failure"
   },
   webServer: [
     {

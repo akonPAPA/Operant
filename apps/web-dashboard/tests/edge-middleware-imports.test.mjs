@@ -102,3 +102,17 @@ test("middleware performs no authoritative session validation", () => {
   assert.match(source, /hasSessionCookie/);
   assert.match(source, /X-Content-Type-Options/);
 });
+
+test("middleware returns JSON for unauthenticated API paths and redirects only page navigation", () => {
+  const source = readFileSync(join(root, "middleware.ts"), "utf8");
+  assert.match(source, /pathname\.startsWith\("\/api\/"\)/);
+  assert.match(source, /NextResponse\.json\(/);
+  assert.match(source, /status:\s*401/);
+  const denialBlock = source.slice(source.indexOf('if (!hasSessionCookie'), source.indexOf('return response;', source.indexOf('if (!hasSessionCookie')));
+  assert.match(denialBlock, /NextResponse\.json\(/);
+  assert.match(denialBlock, /NextResponse\.redirect\(login\)/);
+  assert.ok(
+    denialBlock.indexOf('pathname.startsWith("/api/")') < denialBlock.indexOf('NextResponse.redirect(login)'),
+    "API denial must be handled before the page redirect"
+  );
+});

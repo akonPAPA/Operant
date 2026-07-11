@@ -12,12 +12,14 @@ const root = process.cwd();
 test("bff route registry is default-deny with explicit per-route method binding", () => {
   // registered
   assert.equal(isBffProxyPathAllowed(["api", "v1", "quote-review", "queue"], "GET"), true);
-  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "q1", "approve"], "POST"), true);
-  assert.equal(isBffProxyPathAllowed(["api", "v1", "order-journeys", "j1"], "GET"), true);
+  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "11111111-1111-4111-8111-111111111111", "approve"], "POST"), true);
+  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "q1", "approve"], "POST"), false);
+  assert.equal(isBffProxyPathAllowed(["api", "v1", "order-journeys", "22222222-2222-4222-8222-222222222222"], "GET"), true);
+  assert.equal(isBffProxyPathAllowed(["api", "v1", "order-journeys", "j1"], "GET"), false);
   // wrong method on a registered path
   assert.equal(isBffProxyPathAllowed(["api", "v1", "quote-review", "queue"], "POST"), false);
-  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "q1", "approve"], "GET"), false);
-  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "q1", "approve"], "DELETE"), false);
+  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "11111111-1111-4111-8111-111111111111", "approve"], "GET"), false);
+  assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "11111111-1111-4111-8111-111111111111", "approve"], "DELETE"), false);
   // formerly broad prefixes no longer forward unknown sub-routes
   assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes"], "GET"), false);
   assert.equal(isBffProxyPathAllowed(["api", "v1", "quotes", "brand-new-endpoint"], "POST"), false);
@@ -34,7 +36,7 @@ test("bff route registry is default-deny with explicit per-route method binding"
 });
 
 test("registered mutations bind permission, content type, size and CSRF", () => {
-  const rule = matchBffRoute(["api", "v1", "quote-review", "q1", "assemble-draft"], "POST");
+  const rule = matchBffRoute(["api", "v1", "quote-review", "33333333-3333-4333-8333-333333333333", "assemble-draft"], "POST");
   assert.equal(rule.kind, "mutation");
   assert.equal(rule.permission, "REVIEW_ACTION");
   assert.equal(rule.contentType, "application/json");

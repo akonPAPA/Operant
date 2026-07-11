@@ -11,21 +11,17 @@ const unavailable = (reason) =>
 export function resolveFrontendAuthority({
   nodeEnv,
   demoMode,
-  demoTenantId,
-  bffEnabled
+  demoTenantId
 } = {}) {
   if (nodeEnv === "production") {
     if (demoMode === "true") {
       return unavailable("DEMO_MODE_FORBIDDEN_IN_PRODUCTION");
     }
-    if (bffEnabled === "true") {
-      return Object.freeze({
-        available: true,
-        mode: "bff-session",
-        tenantId: ""
-      });
-    }
-    return unavailable("AUTHENTICATED_SESSION_UNAVAILABLE");
+    return Object.freeze({
+      available: true,
+      mode: "bff-session",
+      tenantId: ""
+    });
   }
 
   if (nodeEnv !== "development" && nodeEnv !== "test") {
@@ -52,8 +48,7 @@ export function frontendAuthority() {
   return resolveFrontendAuthority({
     nodeEnv: process.env.NODE_ENV,
     demoMode: process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE,
-    demoTenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID,
-    bffEnabled: process.env.ORDERPILOT_BFF_ENABLED
+    demoTenantId: process.env.NEXT_PUBLIC_DEMO_TENANT_ID
   });
 }
 

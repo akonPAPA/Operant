@@ -20,10 +20,9 @@ function frontendRuntimeSources(directory) {
   });
 }
 
-test("production with BFF enabled resolves bff-session without browser tenant", () => {
+test("production resolves bff-session without private BFF env or browser tenant", () => {
   const authority = resolveFrontendAuthority({
-    nodeEnv: "production",
-    bffEnabled: "true"
+    nodeEnv: "production"
   });
   assert.equal(authority.available, true);
   assert.equal(authority.mode, "bff-session");
@@ -45,15 +44,16 @@ test("production rejects demo tenant authority even when public demo config is p
   assert.equal("tenantId" in authority, false);
 });
 
-test("production does not use the demo tenant variable without demo opt-in", () => {
+test("production ignores demo tenant variable without demo opt-in", () => {
   const authority = resolveFrontendAuthority({
     nodeEnv: "production",
     demoMode: undefined,
     demoTenantId: "11111111-1111-4111-8111-111111111111"
   });
 
-  assert.equal(authority.available, false);
-  assert.equal("tenantId" in authority, false);
+  assert.equal(authority.available, true);
+  assert.equal(authority.mode, "bff-session");
+  assert.equal(authority.tenantId, "");
 });
 
 test("development demo mode requires exact explicit opt-in", () => {
@@ -108,6 +108,7 @@ test("resolver accepts no actor or permission authority input", () => {
   assert.equal("actorId" in authority, false);
   assert.equal("permissions" in authority, false);
   assert.doesNotMatch(authoritySource, /NEXT_PUBLIC_.*(?:ACTOR|PERMISSION)/);
+  assert.doesNotMatch(authoritySource, /ORDERPILOT_BFF_ENABLED/);
 });
 
 test("unavailable errors are safe and do not echo config values", () => {

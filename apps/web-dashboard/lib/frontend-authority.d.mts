@@ -5,6 +5,11 @@ export type FrontendAuthority =
       tenantId: string;
     }>
   | Readonly<{
+      available: true;
+      mode: "bff-session";
+      tenantId: "";
+    }>
+  | Readonly<{
       available: false;
       mode: "unavailable";
       reason: string;

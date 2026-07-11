@@ -24,6 +24,7 @@ import { readCookie } from "./bff-cookies.ts";
 const SAFE_FAILURE = "Sign-in is not available.";
 const SAFE_LOGOUT_FAILURE = "Sign-out could not be completed.";
 const MAX_BOOTSTRAP_PERMISSIONS = 32;
+const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function safeJson(status: number, message: string): Response {
   return new Response(JSON.stringify({ message }), {
@@ -43,14 +44,18 @@ function boundedBootstrapIdentity():
   const tenantId = process.env.ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID?.trim();
   const actorId = process.env.ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID?.trim();
   const rawPermissions = process.env.ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS?.trim();
-  if (!tenantId || !actorId || !rawPermissions) {
+  if (!tenantId || !actorId || !rawPermissions || !UUID_VALUE.test(tenantId) || !UUID_VALUE.test(actorId)) {
     return null;
   }
-  const permissions = rawPermissions
-    .split(",")
-    .map((p) => p.trim())
-    .filter((p) => /^[A-Z][A-Z0-9_]{1,64}$/.test(p));
-  if (permissions.length === 0 || permissions.length > MAX_BOOTSTRAP_PERMISSIONS) {
+  const raw = rawPermissions.split(",").map((p) => p.trim());
+  const permissions = raw.filter((p) => /^[A-Z][A-Z0-9_]{1,64}$/.test(p));
+  const unique = new Set(permissions);
+  if (
+    raw.length !== permissions.length ||
+    permissions.length === 0 ||
+    permissions.length > MAX_BOOTSTRAP_PERMISSIONS ||
+    unique.size !== permissions.length
+  ) {
     return null;
   }
   return { tenantId, actorId, permissions };

@@ -81,7 +81,7 @@ test("tenant read travels only through /api/bff with server-signed authority", a
 test("invalid CSRF mutation is denied and never reaches Core", async ({ page, request }) => {
   await signIn(page);
   const status = await page.evaluate(async () => {
-    const response = await fetch("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+    const response = await fetch("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-OP-CSRF-Token": "wrong-token-0123456789abcdef" },
       body: JSON.stringify({ reasonCode: "READY" })
@@ -97,7 +97,7 @@ test("valid CSRF mutation reaches the bounded test Core exactly once", async ({ 
   await signIn(page);
   const csrf = csrfFromCookies(await context.cookies(LOCAL_APP));
   const status = await page.evaluate(async (token) => {
-    const response = await fetch("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+    const response = await fetch("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-OP-CSRF-Token": token },
       body: JSON.stringify({ reasonCode: "READY" })
@@ -106,7 +106,7 @@ test("valid CSRF mutation reaches the bounded test Core exactly once", async ({ 
   }, csrf);
   expect(status).toBe(200);
   const upstream = (await coreRequests(request)).filter(
-    (r) => r.method === "POST" && r.path === "/api/v1/quote-review/q1/assemble-draft"
+    (r) => r.method === "POST" && r.path === "/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft"
   );
   expect(upstream).toHaveLength(1);
 });

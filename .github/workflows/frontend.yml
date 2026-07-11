@@ -69,6 +69,16 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: npm run test:e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-bff-report
+          path: |
+            apps/web-dashboard/playwright-report/
+            apps/web-dashboard/test-results/
+          if-no-files-found: ignore
 
   # Skip-safe required gate: "Frontend / Frontend Gate".
   # This job MUST always run and reach a terminal success/failure conclusion so it is

@@ -124,17 +124,31 @@ test("local development (server runtime) keeps demo-dev transport", () => {
 });
 
 test("no NEXT_PUBLIC gateway or session secrets exist anywhere in the dashboard", async () => {
-  const { readFileSync, readdirSync, statSync } = await import("node:fs");
+  const { readFileSync, readdirSync } = await import("node:fs");
   const { join } = await import("node:path");
   const offenders = [];
   const scan = (dir) => {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        if (entry === "node_modules" || entry === ".next") continue;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".next") continue;
         scan(full);
-      } else if (/\.(ts|tsx|mjs)$/.test(entry)) {
-        const source = readFileSync(full, "utf8");
+      } else if (entry.isFile() && /\.(ts|tsx|mjs)$/.test(entry.name)) {
+        let source;
+        try {
+          source = readFileSync(full, "utf8");
+        } catch (error) {
+          if (error?.code === "ENOENT" || error?.code === "ENOTDIR") continue;
+          throw error;
+        }
         if (/NEXT_PUBLIC_[A-Z_]*(SECRET|GATEWAY|SESSION)/.test(source)) {
           offenders.push(full);
         }

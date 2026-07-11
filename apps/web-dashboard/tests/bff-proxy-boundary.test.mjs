@@ -285,7 +285,7 @@ test("mutation without CSRF token -> 403, upstream fetch call count remains 0", 
     const sessionId = await operatorSession();
     const { calls, impl } = recordingFetch();
     const response = await withFetch(impl, () =>
-      proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
         sessionId,
         method: "POST",
         body: JSON.stringify({ reasonCode: "READY" })
@@ -301,7 +301,7 @@ test("mutation with mismatched CSRF token -> 403, no upstream call", async () =>
     const sessionId = await operatorSession();
     const { calls, impl } = recordingFetch();
     const response = await withFetch(impl, () =>
-      proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
         sessionId,
         method: "POST",
         csrf: "different-token-9876543210fedcba",
@@ -319,7 +319,7 @@ test("mutation with malformed CSRF token -> 403, no upstream call", async () => 
     const { calls, impl } = recordingFetch();
     for (const malformed of ["ab", "bad token with spaces!", "<script>", "x".repeat(300)]) {
       const response = await withFetch(impl, () =>
-        proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+        proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
           sessionId,
           method: "POST",
           csrf: malformed,
@@ -337,7 +337,7 @@ test("cross-origin mutation -> 403, no upstream call", async () => {
     const sessionId = await operatorSession();
     const { calls, impl } = recordingFetch();
     const response = await withFetch(impl, () =>
-      proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
         sessionId,
         method: "POST",
         csrf: CSRF,
@@ -355,7 +355,7 @@ test("valid CSRF mutation reaches the registered upstream route exactly once", a
     const sessionId = await operatorSession();
     const { calls, impl } = recordingFetch();
     const response = await withFetch(impl, () =>
-      proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
         sessionId,
         method: "POST",
         csrf: CSRF,
@@ -367,7 +367,7 @@ test("valid CSRF mutation reaches the registered upstream route exactly once", a
     assert.equal(calls.length, 1);
     assert.equal(
       calls[0].url,
-      "http://core.internal.test:8080/api/v1/quote-review/q1/assemble-draft"
+      "http://core.internal.test:8080/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft"
     );
     assert.equal(calls[0].init.headers.get("Idempotency-Key"), "op-key-123");
     assert.equal(calls[0].init.method, "POST");
@@ -379,7 +379,7 @@ test("wrong content type -> 415 and oversized body -> 413, no upstream call", as
     const sessionId = await operatorSession();
     const { calls, impl } = recordingFetch();
     const wrongType = await withFetch(impl, () =>
-      proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
         sessionId,
         method: "POST",
         csrf: CSRF,
@@ -389,7 +389,7 @@ test("wrong content type -> 415 and oversized body -> 413, no upstream call", as
     );
     assert.equal(wrongType.status, 415);
     const oversized = await withFetch(impl, () =>
-      proxied("/api/bff/api/v1/quote-review/q1/assemble-draft", {
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
         sessionId,
         method: "POST",
         csrf: CSRF,
@@ -485,5 +485,80 @@ test("registry contract: every registered rule is fully bound and clean of denie
   // broad prefixes must not match arbitrary sub-routes anymore
   assert.equal(matchBffRoute(["api", "v1", "quotes", "new-unknown-endpoint"], "POST"), null);
   assert.equal(matchBffRoute(["api", "stage8", "anything-new"], "GET"), null);
-  assert.equal(matchBffRoute(["api", "stage9", "connectors", "credentials"], "GET"), null);
+  assert.equal(matchBffRoute(["api", "v1", "quote-review", "issues"], "GET"), null);
+  assert.equal(matchBffRoute(["api", "v1", "order-journeys", "by-source"], "GET")?.pattern, "api/v1/order-journeys/by-source");
+  assert.equal(matchBffRoute(["api", "v1", "order-journeys", "not-a-uuid"], "GET"), null);
+  assert.equal(matchBffRoute(["api", "v1", "order-journeys", "11111111-1111-4111-8111-111111111111"], "GET")?.pattern, "api/v1/order-journeys/:journeyId");
+  assert.equal(matchBffRoute(["api", "v1", "quote-review", "conversion-attempts", "not-a-uuid"], "GET"), null);
+});
+
+test("invalid query is rejected with 400 and zero upstream calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["ANALYTICS_READ"]);
+    const { calls, impl } = recordingFetch();
+    const unknown = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/order-journeys?unknown=1", { sessionId })
+    );
+    assert.equal(unknown.status, 400);
+    const repeated = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/order-journeys?limit=1&limit=2", { sessionId })
+    );
+    assert.equal(repeated.status, 400);
+    const malformed = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/order-journeys/by-source?sourceType=QUOTE&sourceId=not-a-uuid", { sessionId })
+    );
+    assert.equal(malformed.status, 400);
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("tracking-link and bot settings canonical methods are registered", () => {
+  assert.equal(
+    matchBffRoute(["api", "v1", "order-journeys", "11111111-1111-4111-8111-111111111111", "tracking-links"], "POST")?.permission,
+    "REVIEW_ACTION"
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "order-journeys", "11111111-1111-4111-8111-111111111111", "tracking-links"], "GET")?.permission,
+    "ANALYTICS_READ"
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "order-journeys", "11111111-1111-4111-8111-111111111111", "tracking-links", "22222222-2222-4222-8222-222222222222", "revoke"], "POST")?.permission,
+    "REVIEW_ACTION"
+  );
+  assert.equal(matchBffRoute(["api", "v1", "bot-runtime", "settings"], "POST")?.permission, "BOT_ACTION");
+  assert.equal(matchBffRoute(["api", "v1", "bot-runtime", "settings"], "PUT"), null);
+});
+
+test("upstream 4xx, non-json, oversized response and 204 are safely bounded", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const raw404 = await withFetch(
+      recordingFetch(new Response("SQL tenant leak", { status: 404, headers: { "Content-Type": "application/json" } })).impl,
+      () => proxied("/api/bff/api/v1/quote-review/queue", { sessionId })
+    );
+    assert.equal(raw404.status, 404);
+    assert.doesNotMatch(await raw404.text(), /SQL tenant leak/);
+
+    const nonJson = await withFetch(
+      recordingFetch(new Response("html", { status: 200, headers: { "Content-Type": "text/html" } })).impl,
+      () => proxied("/api/bff/api/v1/quote-review/queue", { sessionId })
+    );
+    assert.equal(nonJson.status, 502);
+
+    const tooLarge = await withFetch(
+      recordingFetch(new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Content-Length": String(3 * 1024 * 1024) }
+      })).impl,
+      () => proxied("/api/bff/api/v1/quote-review/queue", { sessionId })
+    );
+    assert.equal(tooLarge.status, 502);
+
+    const noContent = await withFetch(
+      recordingFetch(new Response(null, { status: 204 })).impl,
+      () => proxied("/api/bff/api/v1/quote-review/queue", { sessionId })
+    );
+    assert.equal(noContent.status, 204);
+    assert.equal(await noContent.text(), "");
+  });
 });

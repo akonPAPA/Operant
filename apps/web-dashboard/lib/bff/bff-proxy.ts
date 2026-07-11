@@ -7,7 +7,12 @@
  * from scratch: Core Set-Cookie and internal headers are never exposed, and authenticated
  * responses are Cache-Control: no-store.
  */
-import { matchBffRoute, corePathFromBffSegments, type BffRouteRule } from "./bff-route-registry.ts";
+import {
+  matchBffRoute,
+  corePathFromBffSegments,
+  type BffQueryFieldPolicy,
+  type BffRouteRule
+} from "./bff-route-registry.ts";
 import {
   BFF_CSRF_COOKIE,
   BFF_SESSION_COOKIE,
@@ -26,6 +31,9 @@ import { readCookie } from "./bff-cookies.ts";
 const SAFE_PROXY_ERROR = "The request could not be completed.";
 const SAFE_IDEMPOTENCY_KEY = /^[A-Za-z0-9._~:-]{1,128}$/;
 const ALLOWED_ACCEPT = new Set(["application/json", "*/*", "application/json, text/plain, */*"]);
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const UUID_QUERY = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const TEXT_QUERY = /^[A-Za-z0-9][A-Za-z0-9._~:@ -]{0,127}$/;
 
 function safeJson(status: number): Response {
   return new Response(JSON.stringify({ message: SAFE_PROXY_ERROR }), {
@@ -107,20 +115,137 @@ function buildOutboundHeaders(
   return headers;
 }
 
-function sanitizedQuery(requestUrl: string): string {
-  try {
-    const search = new URL(requestUrl).search;
-    if (!search) {
-      return "";
-    }
+function queryValueAllowed(value: string, policy: BffQueryFieldPolicy): boolean {
+  if (value.length === 0 || value.length > (policy.maxLength ?? 128)) {
+    return false;
+  }
+  if (policy.type === "uuid") {
+    return UUID_QUERY.test(value);
+  }
+  if (policy.type === "positive-int") {
+    return /^[1-9][0-9]{0,8}$/.test(value);
+  }
+  if (policy.type === "enum") {
+    return Boolean(policy.enumValues?.includes(value));
+  }
+  return TEXT_QUERY.test(value);
+}
 
-    if (search.length > 2048 || /[\u0000-\u001f\u007f]/.test(search)) {
-      return "";
-    }
-    return search;
+function validatedQuery(requestUrl: string, rule: BffRouteRule): string | null {
+  let url: URL;
+  try {
+    url = new URL(requestUrl);
   } catch {
+    return null;
+  }
+  if (!url.search) {
     return "";
   }
+  if (url.search.length > 2048 || /[\u0000-\u001f\u007f]/.test(url.search)) {
+    return null;
+  }
+  const allowedKeys = new Set(Object.keys(rule.query));
+  for (const key of url.searchParams.keys()) {
+    if (!allowedKeys.has(key)) {
+      return null;
+    }
+    const values = url.searchParams.getAll(key);
+    const policy = rule.query[key];
+    if (values.length === 0 || values.length > (policy.maxValues ?? 1)) {
+      return null;
+    }
+    if (!values.every((value) => queryValueAllowed(value, policy))) {
+      return null;
+    }
+  }
+  return url.search;
+}
+
+function contentLengthValue(request: Request): number | null {
+  const raw = request.headers.get("content-length");
+  if (!raw) {
+    return null;
+  }
+  if (!/^[0-9]{1,12}$/.test(raw)) {
+    return Number.NaN;
+  }
+  return Number.parseInt(raw, 10);
+}
+
+async function readRequestBodyBounded(request: Request, maxBytes: number): Promise<string | null> {
+  const declaredLength = contentLengthValue(request);
+  if (Number.isNaN(declaredLength) || (declaredLength !== null && declaredLength > maxBytes)) {
+    await request.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!request.body) {
+    return "";
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+async function readUpstreamTextBounded(upstream: Response): Promise<string | null> {
+  const rawLength = upstream.headers.get("content-length");
+  if (rawLength) {
+    if (!/^[0-9]{1,12}$/.test(rawLength) || Number.parseInt(rawLength, 10) > MAX_RESPONSE_BYTES) {
+      await upstream.body?.cancel().catch(() => undefined);
+      return null;
+    }
+  }
+  if (!upstream.body) {
+    return "";
+  }
+  const reader = upstream.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 export async function proxyCoreRequest(request: Request, segments: string[]): Promise<Response> {
@@ -172,17 +297,23 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   let body: string | undefined;
   if (rule.kind === "mutation") {
     const requestContentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
-    body = await request.text();
-    if (body.length === 0) {
+    const bodyText = await readRequestBodyBounded(request, rule.maxBodyBytes);
+    if (bodyText === null) {
+      return safeJson(413);
+    }
+    if (bodyText.length === 0) {
       body = undefined;
     } else {
       if (!rule.contentType || requestContentType !== rule.contentType) {
         return safeJson(415);
       }
-      if (new TextEncoder().encode(body).byteLength > rule.maxBodyBytes) {
-        return safeJson(413);
-      }
+      body = bodyText;
     }
+  }
+
+  const query = validatedQuery(request.url, rule);
+  if (query === null) {
+    return safeJson(400);
   }
 
   const coreBaseUrl = validatedCoreApiInternalBaseUrl();
@@ -192,7 +323,7 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   }
 
   const corePath = corePathFromBffSegments(segments);
-  const target = `${coreBaseUrl}${corePath}${sanitizedQuery(request.url)}`;
+  const target = `${coreBaseUrl}${corePath}${query}`;
   const signed = signGatewayHeaders({
     method,
     requestUri: corePath,
@@ -220,17 +351,25 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
     clearTimeout(timer);
   }
 
-  // Bounded safe error mapping: raw Core 5xx bodies are never exposed to the browser.
-  if (upstream.status >= 500) {
+  const upstreamContentType = upstream.headers.get("Content-Type")?.toLowerCase() ?? "";
+  if (upstream.status === 204) {
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!upstreamContentType.startsWith("application/json")) {
+    await upstream.body?.cancel().catch(() => undefined);
     return safeJson(502);
   }
-  const text = await upstream.text();
+  // Bounded safe error mapping: raw Core 4xx/5xx bodies are never exposed to the browser.
+  if (upstream.status >= 400) {
+    await upstream.body?.cancel().catch(() => undefined);
+    return safeJson(upstream.status >= 500 ? 502 : upstream.status);
+  }
+  const text = await readUpstreamTextBounded(upstream);
+  if (text === null) {
+    return safeJson(502);
+  }
   const responseHeaders = new Headers({ "Cache-Control": "no-store" });
-  const upstreamContentType = upstream.headers.get("Content-Type");
-  responseHeaders.set(
-    "Content-Type",
-    upstreamContentType?.startsWith("application/json") ? upstreamContentType : "application/json"
-  );
+  responseHeaders.set("Content-Type", upstreamContentType);
   return new Response(text.length > 0 ? text : null, {
     status: upstream.status,
     headers: responseHeaders

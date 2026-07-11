@@ -46,6 +46,12 @@ export function middleware(request: NextRequest) {
   }
 
   if (!hasSessionCookie(request)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { message: "Authentication is required." },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);
