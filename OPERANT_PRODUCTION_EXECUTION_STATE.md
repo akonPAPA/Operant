@@ -1,13 +1,13 @@
 document_version: 2
-updated_at: 2026-07-11T00:00:00Z
+updated_at: 2026-07-11T16:22:00Z
 repository: akonPAPA/Operant
 phase: 1
 controller_prompt: docs/prompts/production/01_SERVER_PLATFORM_AND_CONTROL_PLANE.md
 branch: feature/p1-b-browser-bff-boundary
-head_sha: e292c1320061aab6c8affdbcfb76c808871ea9c1
+head_sha: af01e52c0734397b71fb6d80adda30ffe5dcbf31
 implementation_base_sha: 3fdf166b5429947532a2d535d3e3fcd9ab946a4b
 upstream_sha: 3fdf166b5429947532a2d535d3e3fcd9ab946a4b
-worktree_clean: false
+worktree_clean: true
 current_pr: "#267"
 last_merged_pr: "#266 p1-a-production-truth-and-config"
 production_authentication:
@@ -23,9 +23,9 @@ failed_gates:
     implementation_sha: 53bdf708c9a437ea66fcd17f0be67bd2bf12a3de
   - id: P1-GATE-02
     status: PARTIAL_NOT_PASS
-    evidence: [EV-P1B-005, EV-P1B-006, EV-P1B-007, EV-P1B-008, EV-P1B-009]
-    implementation_sha: e292c1320061aab6c8affdbcfb76c808871ea9c1
-    note: Browser BFF boundary locally implemented and verified; live Redis, P1-C identity, deployed topology, remote CI, and direct Core ingress closure are not proven here.
+    evidence: [EV-P1B-005, EV-P1B-006, EV-P1B-007, EV-P1B-008, EV-P1B-010]
+    implementation_sha: af01e52c0734397b71fb6d80adda30ffe5dcbf31
+    note: Browser BFF boundary locally implemented and verified (Maven security tests run at af01e52 clean worktree); live Redis, P1-C identity, deployed topology, remote CI, and direct Core ingress closure are not proven here.
   - id: P1-GATE-03
     status: FAIL
     note: Direct Core exposure not remediated (P1-D)

@@ -2,9 +2,9 @@
 
 ## P1-B - Browser/BFF boundary local implementation proof (PR #267)
 
-- Status: PARTIAL / NOT_PASS (2026-07-11, PR #267 branch). The browser boundary is locally implemented and verified, but not a production PASS.
+- Status: PARTIAL / NOT_PASS (2026-07-11 16:22 UTC, PR #267 branch @ af01e52). The browser boundary is locally implemented and verified, but not a production PASS.
 - What changed: production browser authority now resolves through same-origin `/api/bff`; browser requests without a session return JSON 401 for `/api/**` and page redirects for navigations; BFF sessions validate tenant/actor/session shape fail-closed; the BFF route registry default-denies unknown routes, requires canonical UUID `*Id` path params, validates exposed query params, strips client authority headers, enforces CSRF on mutations, maps raw Core errors safely, and bounds request/response bodies.
-- Proof: `npm test` (557/557), targeted BFF/edge/frontend-authority node tests (50/50), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run test:e2e` (9/9 Chromium scenarios), targeted Core route/security JUnit (272 tests), and wider `com.orderpilot.security.*Test` JUnit (470 tests) all passed locally.
+- Proof: `npm test` (573/573), targeted BFF/edge/frontend-authority node tests (50/50), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run test:e2e` (9/9 Chromium scenarios), targeted Core route/security JUnit (285 tests @ af01e52 clean), and broader `com.orderpilot.security.*Test` JUnit (470 tests @ af01e52 clean) all passed locally. Java 21.0.11, Maven 3.9.16.
 - Not proven: remote PR #267 CI/security checks, live Redis TTL/expiry/revocation in deployed topology, real production OIDC/session identity and tenant membership mapping, E2E against real Core in production topology, and direct public Core ingress closure (P1-D).
 
 ## P3 — Operator Cockpit v1 guided RFQ-to-quote: deferred proof + draft-quote detail route (GitHub PR #260 / Operator Cockpit v1 slice)
