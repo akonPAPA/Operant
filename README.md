@@ -46,4 +46,5 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\dev\check-local.ps1"
 
 ## Stage status
 
-Current stage:OP-CAP-47 Operator fulfillment and visibility timeline api
+Current stage:e2e readiness stage
+
