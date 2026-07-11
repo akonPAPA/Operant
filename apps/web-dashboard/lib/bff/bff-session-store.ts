@@ -5,8 +5,9 @@
  * (ORDERPILOT_BFF_SESSION_STORE=memory on a non-production-like deployment).
  */
 import { createClient } from "redis";
-import { randomBytes } from "node:crypto";
 import type { OperatorSession } from "./bff-session.ts";
+import { newOpaqueSessionId } from "./bff-session.ts";
+import { sessionLifetimeWithinPolicy, sessionMaxAgeSecondsFromEnv } from "./bff-session-ttl-policy.ts";
 import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
 import { registeredBffRoutes } from "./bff-route-registry.ts";
 
@@ -41,7 +42,6 @@ type MinimalRedisClient = {
 };
 
 const SESSION_KEY_PREFIX = "op:bff:session:";
-const DEFAULT_TTL_SECONDS = 28_800;
 const SESSION_ID_VALUE = /^[A-Za-z0-9_-]{43,128}$/;
 const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PERMISSION_VALUE = /^[A-Z][A-Z0-9_]{1,64}$/;
@@ -66,9 +66,7 @@ export function resetSessionStoreForTesting(): void {
 }
 
 function sessionTtlSeconds(): number {
-  const raw = process.env.ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS ?? "28800";
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TTL_SECONDS;
+  return sessionMaxAgeSecondsFromEnv();
 }
 
 type SessionAuthorityCandidate = {
@@ -176,10 +174,6 @@ async function requireRedis(): Promise<MinimalRedisClient> {
     }
   }
   return redisClient;
-}
-
-export function newOpaqueSessionId(): string {
-  return randomBytes(32).toString("base64url");
 }
 
 export async function persistOperatorSession(

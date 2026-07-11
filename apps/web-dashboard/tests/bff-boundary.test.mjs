@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { isBffProxyPathAllowed, matchBffRoute } from "../lib/bff/bff-route-registry.ts";
-import { createSessionToken, parseSessionToken } from "../lib/bff/bff-session.ts";
+import { createSessionToken, parseSessionToken } from "./helpers/bff-stateless-session-token.ts";
 import { isLocalTestBootstrapAllowed, isProductionLikeDeployment } from "../lib/bff/bff-deployment-profile.ts";
 import { validateCsrf, validateSameOrigin } from "../lib/bff/bff-csrf.ts";
 

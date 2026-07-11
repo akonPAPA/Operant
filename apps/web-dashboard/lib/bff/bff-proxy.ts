@@ -25,8 +25,9 @@ import {
 import { signGatewayHeaders } from "./bff-gateway-signer.ts";
 import { loadOperatorSession, requireRedisSessionBackend } from "./bff-session-store.ts";
 import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
+import { parseBffSessionMaxAgeSeconds } from "./bff-session-ttl-policy.ts";
 import { validateCsrf, validateSameOrigin } from "./bff-csrf.ts";
-import { readCookie } from "./bff-cookies.ts";
+import { readSecurityCookieHeader } from "./bff-cookies.ts";
 
 const SAFE_PROXY_ERROR = "The request could not be completed.";
 const SAFE_IDEMPOTENCY_KEY = /^[A-Za-z0-9._~:-]{1,128}$/;
@@ -82,7 +83,7 @@ export function rawBffPathRejected(rawPathname: string): boolean {
 }
 
 async function readOperatorSession(request: Request) {
-  const sessionId = readCookie(request.headers.get("cookie"), BFF_SESSION_COOKIE);
+  const sessionId = readSecurityCookieHeader(request.headers.get("cookie"), BFF_SESSION_COOKIE);
   return loadOperatorSession(sessionId);
 }
 
@@ -287,7 +288,7 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
       return safeJson(403);
     }
     if (rule.csrfRequired) {
-      const csrfCookie = readCookie(request.headers.get("cookie"), BFF_CSRF_COOKIE);
+      const csrfCookie = readSecurityCookieHeader(request.headers.get("cookie"), BFF_CSRF_COOKIE);
       if (!validateCsrf(request, csrfCookie)) {
         return safeJson(403);
       }
@@ -389,6 +390,12 @@ export async function validateBffProductionConfig(): Promise<string | null> {
   }
   if (!validatedCoreApiInternalBaseUrl()) {
     return "CORE_API_BASE_URL must be an explicit http(s) URL for BFF production mode";
+  }
+  const ttl = parseBffSessionMaxAgeSeconds(process.env.ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS, {
+    allowDefaultOnMissing: true
+  });
+  if (!ttl.ok) {
+    return ttl.reason;
   }
   if (isProductionLikeDeployment()) {
     const redisError = await requireRedisSessionBackend();

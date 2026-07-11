@@ -258,7 +258,7 @@ test("expired session issuance is rejected before storage write", async () => {
 });
 
 test("excessive custom expiry is rejected", async () => {
-  await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS: "60" }, async () => {
+  await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS: "300" }, async () => {
     await assert.rejects(
       () =>
         persistOperatorSession({
