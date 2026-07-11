@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 /**
  * P1-B browser E2E. Run `npm run build` first — both app servers start from the same
- * production build (`next start`) with different runtime env:
+ * production standalone artifact with different runtime env:
  *  - :3100 explicit local/test profile with bounded bootstrap identity (memory sessions)
  *  - :3101 production profile — sign-in must fail closed (no P1-C trusted identity yet)
  *  - :18080 bounded fake Core recording every request that crosses the BFF boundary
@@ -38,7 +38,7 @@ export default defineConfig({
       timeout: 30_000
     },
     {
-      command: "npx next start -p 3100",
+      command: "node e2e/standalone-server.mjs --port 3100",
       url: "http://localhost:3100/api/bff/health",
       reuseExistingServer: false,
       timeout: 120_000,
@@ -53,7 +53,7 @@ export default defineConfig({
       }
     },
     {
-      command: "npx next start -p 3101",
+      command: "node e2e/standalone-server.mjs --port 3101",
       url: "http://localhost:3101/api/bff/health",
       reuseExistingServer: false,
       timeout: 120_000,
