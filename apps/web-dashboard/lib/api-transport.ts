@@ -2,9 +2,36 @@ import { BFF_CSRF_HEADER, bffRuntimeMode } from "./bff/bff-config.ts";
 import { readCsrfTokenFromDocumentCookie } from "./dashboard-fetch-headers.ts";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
+const CLIENT_AUTHORITY_HEADERS = new Set(["x-tenant-id", "x-orderpilot-permissions"]);
 
 function isBrowserRuntime(): boolean {
   return typeof window !== "undefined";
+}
+
+function headersToRecord(headers?: HeadersInit): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  return { ...headers };
+}
+
+function stripClientAuthorityHeaders(headers: Record<string, string>): Record<string, string> {
+  if (!usesBffTransport()) {
+    return headers;
+  }
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!CLIENT_AUTHORITY_HEADERS.has(key.toLowerCase())) {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
 }
 
 /** Explicit static demo bundle (public showcase build) — never a production tenant surface. */
@@ -76,12 +103,21 @@ export function clientTenantHeaders(
   return headers;
 }
 
+export function dashboardRequestHeaders(
+  tenantId: string | undefined,
+  permissions?: string,
+  extra?: HeadersInit
+): Record<string, string> {
+  return stripClientAuthorityHeaders({
+    ...clientTenantHeaders(tenantId, permissions),
+    ...headersToRecord(extra)
+  });
+}
+
 /** Shared mutation helper: attaches the CSRF header for every BFF browser mutation. */
 export function enrichDashboardRequestInit(init?: RequestInit): RequestInit {
   const method = (init?.method ?? "GET").toUpperCase();
-  const headers: Record<string, string> = {
-    ...((init?.headers as Record<string, string> | undefined) ?? {})
-  };
+  const headers = headersToRecord(init?.headers);
   if (
     usesBffTransport()
     && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")
@@ -91,5 +127,5 @@ export function enrichDashboardRequestInit(init?: RequestInit): RequestInit {
       headers[BFF_CSRF_HEADER] = csrf;
     }
   }
-  return { ...init, headers };
+  return { ...init, headers: stripClientAuthorityHeaders(headers) };
 }

@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 export { toCustomerTrackingHref, toCustomerTrackingPath } from "./order-journey-customer-tracking-url";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -163,18 +163,11 @@ export const orderJourneyClient = {
 };
 
 function baseHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-OrderPilot-Permissions": ANALYTICS_READ
-  };
-  if (orderJourneyClient.tenantId) {
-    h["X-Tenant-Id"] = orderJourneyClient.tenantId;
-  }
-  return h;
+  return dashboardRequestHeaders(orderJourneyClient.tenantId, ANALYTICS_READ);
 }
 
 async function read<T>(path: string): Promise<{ data: T | null; error?: string }> {
-  if (!orderJourneyClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(orderJourneyClient.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
@@ -241,7 +234,7 @@ export async function createOrderJourneyTrackingLink(
   journeyId: string,
   expiresInHours?: number
 ): Promise<TrackingLinkCreated> {
-  if (!orderJourneyClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(orderJourneyClient.tenantId)) {
     throw Object.assign(new Error("Tenant scope is not configured."), { status: 0 });
   }
   const body: Record<string, number> = {};

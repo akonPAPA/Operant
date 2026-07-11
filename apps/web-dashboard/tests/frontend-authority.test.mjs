@@ -140,17 +140,21 @@ test("quote transaction client resolves demo tenant internally and accepts busin
   assert.doesNotMatch(source, /X-OrderPilot-Permissions/);
 });
 
-test("permission headers are unreachable when the demo tenant resolver fails closed", () => {
+test("BFF-aware clients do not use raw tenantId truthiness as production authority", () => {
   const sources = frontendRuntimeSources(join(root, "lib"));
-  const permissionClients = sources.filter(([path, source]) =>
-    source.includes('"X-OrderPilot-Permissions"') && !path.includes(`${join("lib", "bff")}`)
+  const bffAwareClients = sources.filter(([path, source]) =>
+    !path.includes(`${join("lib", "bff")}`) &&
+    source.includes("dashboardCoreApiBaseUrl") &&
+    source.includes("demoTenantId")
   );
 
-  assert.ok(permissionClients.length > 0);
-  for (const [path, source] of permissionClients) {
-    assert.ok(
-      /isDashboardApiAuthorityAvailable\(/.test(source) || /if\s*\(\s*![A-Za-z0-9]+\.tenantId\s*\)/.test(source),
-      `${path} must stop before fetch when production has no trusted tenant authority`
+  assert.ok(bffAwareClients.length > 0);
+  for (const [path, source] of bffAwareClients) {
+    assert.match(source, /isDashboardApiAuthorityAvailable\(/, `${path} must use the BFF-aware authority guard`);
+    assert.doesNotMatch(
+      source,
+      /if\s*\(\s*![A-Za-z0-9_.]+tenantId\s*\)/,
+      `${path} must not block production BFF session requests on an empty browser tenantId`
     );
   }
 });

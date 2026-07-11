@@ -58,8 +58,7 @@ test("list client calls the exact GET list route with ANALYTICS_READ and header 
   assert.match(registryApi, /listOrderJourneyTrackingLinks/);
   assert.match(registryApi, /\/api\/v1\/order-journeys\/\$\{encodeURIComponent\(journeyId\)\}\/tracking-links/);
   assert.match(registryApi, /method:\s*"GET"/);
-  assert.match(registryApi, /"X-OrderPilot-Permissions":\s*ANALYTICS_READ/);
-  assert.match(registryApi, /"X-Tenant-Id":\s*orderJourneyClient\.tenantId/);
+  assert.match(registryApi, /dashboardRequestHeaders\(orderJourneyClient\.tenantId,\s*ANALYTICS_READ\)/);
 });
 
 test("list response type exposes only safe lifecycle metadata — no token/tokenHash/trackingPath", () => {

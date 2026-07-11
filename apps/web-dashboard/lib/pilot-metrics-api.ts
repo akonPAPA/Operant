@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-11F Pilot Shadow-Mode ROI Readiness client.
@@ -122,18 +122,11 @@ export const pilotMetricsClient = {
 };
 
 function baseHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-OrderPilot-Permissions": ANALYTICS_READ
-  };
-  if (pilotMetricsClient.tenantId) {
-    h["X-Tenant-Id"] = pilotMetricsClient.tenantId;
-  }
-  return h;
+  return dashboardRequestHeaders(pilotMetricsClient.tenantId, ANALYTICS_READ);
 }
 
 async function read<T>(path: string, fallback: T): Promise<PilotApiResult<T>> {
-  if (!pilotMetricsClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(pilotMetricsClient.tenantId)) {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {

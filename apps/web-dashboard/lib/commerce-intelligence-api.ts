@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // Read-only tenant operator client. The browser sends no request body, authority fields, source
@@ -111,14 +111,11 @@ function statusMessage(status: number): string {
 }
 
 export async function getCommerceIntelligenceDemoFlow(): Promise<CommerceIntelligenceResult> {
-  if (!commerceIntelligenceClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(commerceIntelligenceClient.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
-  const headers: Record<string, string> = {
-    "X-OrderPilot-Permissions": ANALYTICS_READ
-  };
-  headers["X-Tenant-Id"] = commerceIntelligenceClient.tenantId;
+  const headers = dashboardRequestHeaders(commerceIntelligenceClient.tenantId, ANALYTICS_READ);
 
   try {
     const response = await fetch(

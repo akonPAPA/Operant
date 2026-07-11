@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06B / OP-CAP-06B.1 Controlled Bot Runtime Configuration client.
@@ -91,7 +91,7 @@ function headers(extra?: Record<string, string>): Record<string, string> {
 }
 
 async function requestJson<T>(path: string, init: RequestInit, fallback: T): Promise<BotRuntimeConfigApiResult<T>> {
-  if (!botRuntimeConfigClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(botRuntimeConfigClient.tenantId)) {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {

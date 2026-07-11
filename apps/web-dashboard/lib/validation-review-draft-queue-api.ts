@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-15C Review-origin draft queue (lite) API client.
@@ -75,11 +75,7 @@ export const reviewDraftQueueConfig = {
 };
 
 function headers() {
-  const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
-  if (reviewDraftQueueConfig.tenantId) {
-    requestHeaders["X-Tenant-Id"] = reviewDraftQueueConfig.tenantId;
-  }
-  return requestHeaders;
+  return dashboardRequestHeaders(reviewDraftQueueConfig.tenantId);
 }
 
 // OP-CAP-15H read-only remediation lineage DETAIL types. Stable ids + deterministic backend text only —
@@ -199,7 +195,7 @@ export function remediationRollupPath(limit?: number): string {
 }
 
 export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Promise<ApiResult<ValidationReviewDraftQueueResponse>> {
-  if (!reviewDraftQueueConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(reviewDraftQueueConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   const params = new URLSearchParams();
@@ -238,7 +234,7 @@ export async function getReviewDraftRemediationLineage(
   draftKind: string,
   draftId: string
 ): Promise<ApiResult<ValidationReviewDraftRemediationLineageDetail>> {
-  if (!reviewDraftQueueConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(reviewDraftQueueConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
@@ -272,7 +268,7 @@ export async function getReviewDraftRemediationLineage(
 export async function getReviewDraftRecentRemediationRollup(
   limit?: number
 ): Promise<ApiResult<ValidationReviewDraftRecentRemediationRollupResponse>> {
-  if (!reviewDraftQueueConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(reviewDraftQueueConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {

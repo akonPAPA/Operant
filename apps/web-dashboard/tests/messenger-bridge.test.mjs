@@ -11,7 +11,7 @@ const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8
 test("messenger bridge client uses the read-only bridged-events endpoint with tenant scoping", () => {
   assert.match(apiClient, /getChannelBotEvents/);
   assert.match(apiClient, /\/api\/v1\/channels\/bot-events/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assert.match(apiClient, /dashboardRequestHeaders\(channelBotConfig\.tenantId\)/);
   assert.match(apiClient, /ChannelBotEvent/);
 });
 

@@ -16,7 +16,7 @@ test("stage8 value API client exposes tenant-scoped ROI endpoints", () => {
   assert.match(valueApi, /\/api\/stage8\/value\/summary/);
   assert.match(valueApi, /\/api\/stage8\/value\/roi-assumptions/);
   assert.match(valueApi, /\/api\/stage8\/value\/export/);
-  assert.match(valueApi, /X-Tenant-Id/);
+  assert.match(valueApi, /dashboardRequestHeaders\(stage8ValueConfig\.tenantId\)/);
 });
 
 test("command center renders Business Value cards and estimated labels", () => {

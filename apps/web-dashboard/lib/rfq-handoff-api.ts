@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06C RFQ Handoff Operator Workflow client.
@@ -148,7 +148,7 @@ function baseHeaders(): Record<string, string> {
 }
 
 async function request<T>(path: string, init: RequestInit, fallback: T): Promise<RfqHandoffApiResult<T>> {
-  if (!rfqHandoffClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(rfqHandoffClient.tenantId)) {
     return {
       data: fallback,
       error: "Authenticated dashboard access is unavailable."

@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06E Channel Identity operator control and read contract client.
@@ -89,7 +89,7 @@ async function request<T>(
   init: RequestInit,
   fallback: T
 ): Promise<ChannelIdentityApiResult<T>> {
-  if (!channelIdentityClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(channelIdentityClient.tenantId)) {
     return {
       data: fallback,
       error: "Authenticated dashboard access is unavailable."

@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-07A AI Agent Work Layer (AI Work Assistant) client.
@@ -136,7 +136,7 @@ function baseHeaders(extra?: Record<string, string>): Record<string, string> {
 }
 
 async function request<T>(path: string, init: RequestInit, fallback: T): Promise<AiWorkApiResult<T>> {
-  if (!aiWorkClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(aiWorkClient.tenantId)) {
     return {
       data: fallback,
       error: "Authenticated dashboard access is unavailable."

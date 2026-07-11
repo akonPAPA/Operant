@@ -29,8 +29,13 @@ export function assertPermissionBoundary(source, permissionLiteral) {
 
 export function assertAuthorityGuardBeforeFetch(source, configSymbol = /[A-Za-z0-9]+Config|[A-Za-z0-9]+Client/) {
   assert.ok(
-    /isDashboardApiAuthorityAvailable\(/.test(source) || /if\s*\(\s*![A-Za-z0-9]+\.tenantId\s*\)/.test(source),
-    "expected isDashboardApiAuthorityAvailable or explicit tenantId guard before fetch"
+    /isDashboardApiAuthorityAvailable\(/.test(source),
+    "expected BFF-aware isDashboardApiAuthorityAvailable guard before fetch"
+  );
+  assert.doesNotMatch(
+    source,
+    /if\s*\(\s*![A-Za-z0-9_.]+tenantId\s*\)/,
+    "BFF-aware clients must not block production session transport with raw tenantId truthiness"
   );
   assert.match(source, configSymbol);
 }

@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06A Messenger Chatbot Integration Layer (read-only client).
@@ -49,13 +49,13 @@ export const channelBotConfig = {
 };
 
 async function getJson<T>(path: string, fallback: T): Promise<ChannelBotApiResult<T>> {
-  if (!channelBotConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(channelBotConfig.tenantId)) {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
     const response = await fetch(`${channelBotConfig.baseUrl}${path}`, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": channelBotConfig.tenantId }
+      headers: dashboardRequestHeaders(channelBotConfig.tenantId)
     });
     if (!response.ok) {
       return { data: fallback, error: `Core API returned ${response.status}.` };

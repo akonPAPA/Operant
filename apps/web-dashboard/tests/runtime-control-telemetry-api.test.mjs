@@ -34,7 +34,7 @@ const clientJs = transpile(clientSrc, "runtime-control-telemetry-api.ts")
   .replace(/["']\.\/api-transport["']/g, '"./api-transport-stub.mjs"');
 
 const authorityStub = `export function demoTenantId() { return "11111111-1111-1111-1111-111111111111"; }\n`;
-const apiTransportStub = `export function dashboardCoreApiBaseUrl() { return "http://localhost:8080"; }\n`;
+const apiTransportStub = `export function dashboardCoreApiBaseUrl() { return "http://localhost:8080"; }\nexport function dashboardRequestHeaders(tenantId, permissions) { return { "Content-Type": "application/json", "X-Tenant-Id": tenantId, ...(permissions ? { "X-OrderPilot-Permissions": permissions } : {}) }; }\nexport function isDashboardApiAuthorityAvailable() { return true; }\n`;
 
 writeFileSync(join(tmpDir, "authority-stub.mjs"), authorityStub);
 writeFileSync(join(tmpDir, "api-transport-stub.mjs"), apiTransportStub);

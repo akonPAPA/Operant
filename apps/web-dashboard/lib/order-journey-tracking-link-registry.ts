@@ -10,7 +10,7 @@
 // the raw token, its hash, the public tracking path, or the customer URL. Nothing here is ever written
 // to localStorage / sessionStorage, logged, or sent to analytics.
 
-import { enrichDashboardRequestInit } from "./api-transport";
+import { dashboardRequestHeaders, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { orderJourneyClient } from "@/lib/order-journey-api";
 
 const ANALYTICS_READ = "ANALYTICS_READ";
@@ -38,7 +38,7 @@ export type TrackingLinkListResult = { data: TrackingLinkList | null; error?: st
 // List a journey's secure tracking links (newest first). GET-only, tenant-scoped via header. Non-2xx
 // and unreachable responses become a safe `error` string; the raw backend body is never surfaced.
 export async function listOrderJourneyTrackingLinks(journeyId: string): Promise<TrackingLinkListResult> {
-  if (!orderJourneyClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(orderJourneyClient.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   let response: Response;
@@ -48,11 +48,7 @@ export async function listOrderJourneyTrackingLinks(journeyId: string): Promise<
       {
         method: "GET",
         cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-          "X-OrderPilot-Permissions": ANALYTICS_READ,
-          "X-Tenant-Id": orderJourneyClient.tenantId
-        }
+        headers: dashboardRequestHeaders(orderJourneyClient.tenantId, ANALYTICS_READ)
       }
     );
   } catch {
@@ -72,7 +68,7 @@ export async function listOrderJourneyTrackingLinks(journeyId: string): Promise<
 // thrown with the HTTP `status` attached so the caller can map them through `mapOperatorActionError`;
 // the raw backend body is drained and never surfaced (it may carry internal ids).
 export async function revokeOrderJourneyTrackingLink(journeyId: string, linkId: string): Promise<void> {
-  if (!orderJourneyClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(orderJourneyClient.tenantId)) {
     throw Object.assign(new Error("Tenant scope is not configured."), { status: 0 });
   }
   let response: Response;

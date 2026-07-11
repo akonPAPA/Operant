@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type IntakeDocument = {
@@ -58,14 +58,14 @@ export const intakeConfig = {
 };
 
 async function getJson<T>(path: string): Promise<IntakeApiResult<T>> {
-  if (!intakeConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(intakeConfig.tenantId)) {
     return { data: [] as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
     const response = await fetch(`${intakeConfig.baseUrl}${path}`, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": intakeConfig.tenantId }
+      headers: dashboardRequestHeaders(intakeConfig.tenantId)
     });
 
     if (!response.ok) {

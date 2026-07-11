@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // Read-only tenant operator client for Runtime Control Telemetry (RFQ/AI/demo path). The browser sends
@@ -181,14 +181,11 @@ function isRuntimeControlDemoFlowTelemetry(
 }
 
 export async function getRuntimeControlDemoFlowTelemetry(): Promise<RuntimeControlTelemetryResult> {
-  if (!runtimeControlTelemetryClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(runtimeControlTelemetryClient.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
-  const headers: Record<string, string> = {
-    "X-OrderPilot-Permissions": ANALYTICS_READ,
-    "X-Tenant-Id": runtimeControlTelemetryClient.tenantId
-  };
+  const headers = dashboardRequestHeaders(runtimeControlTelemetryClient.tenantId, ANALYTICS_READ);
 
   // Network/transport failures only.
   let response: Response;

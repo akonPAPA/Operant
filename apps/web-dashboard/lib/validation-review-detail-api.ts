@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-14B Operator Validation Review (detail) API client.
@@ -119,16 +119,12 @@ export const validationReviewDetailConfig = {
 };
 
 function headers() {
-  const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
-  if (validationReviewDetailConfig.tenantId) {
-    requestHeaders["X-Tenant-Id"] = validationReviewDetailConfig.tenantId;
-  }
-  return requestHeaders;
+  return dashboardRequestHeaders(validationReviewDetailConfig.tenantId);
 }
 
 // Read-only GET. Tenant id is taken from configured env (never from user input or request body).
 async function getJson<T>(path: string): Promise<ApiResult<T>> {
-  if (!validationReviewDetailConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewDetailConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 

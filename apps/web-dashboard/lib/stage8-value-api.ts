@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl } from "./api-transport";
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -62,16 +62,16 @@ export async function getStage8RoiAssumptions(): Promise<RoiAssumptions | null> 
 }
 
 export function getStage8PilotReportExportUrl(): string | null {
-  if (!stage8ValueConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage8ValueConfig.tenantId)) return null;
   return `${stage8ValueConfig.baseUrl}/api/stage8/value/export`;
 }
 
 async function requestStage8Value<T>(path: string): Promise<T | null> {
-  if (!stage8ValueConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage8ValueConfig.tenantId)) return null;
   try {
     const response = await fetch(`${stage8ValueConfig.baseUrl}${path}`, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": stage8ValueConfig.tenantId }
+      headers: dashboardRequestHeaders(stage8ValueConfig.tenantId)
     });
     if (!response.ok) return null;
     return (await response.json()) as T;

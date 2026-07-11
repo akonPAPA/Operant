@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -130,7 +130,7 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
-  if (!botRuntimeConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(botRuntimeConfig.tenantId)) {
     return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 

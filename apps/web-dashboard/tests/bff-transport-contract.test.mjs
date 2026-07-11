@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import ts from "typescript";
 import {
   clientTenantHeaders,
   dashboardCoreApiBaseUrl,
+  enrichDashboardRequestInit,
+  isDashboardApiAuthorityAvailable,
   toProxiedCorePath,
   usesBffTransport
 } from "../lib/api-transport.ts";
@@ -98,6 +104,110 @@ test("BFF transport sends no client-owned authority headers", () => {
       assert.equal(headers["X-OrderPilot-Permissions"], undefined);
     })
   );
+});
+test("BFF authority accepts empty browser tenant and strips forged authority headers", () => {
+  inBrowser(() =>
+    withEnv({ NODE_ENV: "production" }, () => {
+      assert.equal(isDashboardApiAuthorityAvailable(""), true);
+      const init = enrichDashboardRequestInit({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Tenant-Id": "evil-tenant",
+          "x-orderpilot-permissions": "INTERNAL_ADMIN"
+        }
+      });
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get("X-Tenant-Id"), null);
+      assert.equal(headers.get("X-OrderPilot-Permissions"), null);
+      assert.equal(headers.get("Content-Type"), "application/json");
+    })
+  );
+});
+
+async function withProductionBrowserFetch(fn) {
+  const prior = {
+    NODE_ENV: process.env.NODE_ENV,
+    NEXT_PUBLIC_ORDERPILOT_DEMO_MODE: process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE,
+    NEXT_PUBLIC_CORE_API_URL: process.env.NEXT_PUBLIC_CORE_API_URL,
+    CORE_API_BASE_URL: process.env.CORE_API_BASE_URL,
+    fetch: globalThis.fetch,
+    window: globalThis.window,
+    document: globalThis.document,
+    hadWindow: Object.prototype.hasOwnProperty.call(globalThis, "window"),
+    hadDocument: Object.prototype.hasOwnProperty.call(globalThis, "document")
+  };
+  const calls = [];
+  process.env.NODE_ENV = "production";
+  delete process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE;
+  process.env.NEXT_PUBLIC_CORE_API_URL = "http://evil.example:9999";
+  process.env.CORE_API_BASE_URL = "http://internal-core:8080";
+  globalThis.window = {};
+  globalThis.document = { cookie: "op_csrf=csrf-token-0123456789abcdef" };
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    await fn(calls);
+  } finally {
+    if (prior.NODE_ENV === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prior.NODE_ENV;
+    if (prior.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE === undefined) delete process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE; else process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE = prior.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE;
+    if (prior.NEXT_PUBLIC_CORE_API_URL === undefined) delete process.env.NEXT_PUBLIC_CORE_API_URL; else process.env.NEXT_PUBLIC_CORE_API_URL = prior.NEXT_PUBLIC_CORE_API_URL;
+    if (prior.CORE_API_BASE_URL === undefined) delete process.env.CORE_API_BASE_URL; else process.env.CORE_API_BASE_URL = prior.CORE_API_BASE_URL;
+    globalThis.fetch = prior.fetch;
+    if (prior.hadWindow) globalThis.window = prior.window; else delete globalThis.window;
+    if (prior.hadDocument) globalThis.document = prior.document; else delete globalThis.document;
+  }
+}
+
+async function importFreshClient(relativePath) {
+  const sourcePath = join(process.cwd(), relativePath);
+  const apiTransportUrl = pathToFileURL(join(process.cwd(), "lib", "api-transport.ts")).href;
+  const frontendAuthorityUrl = pathToFileURL(join(process.cwd(), "lib", "frontend-authority.mjs")).href;
+  const source = readFileSync(sourcePath, "utf8")
+    .replaceAll('from "./api-transport"', `from "${apiTransportUrl}"`)
+    .replaceAll('from "./frontend-authority.mjs"', `from "${frontendAuthorityUrl}"`);
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022
+    }
+  });
+  const encoded = Buffer.from(transpiled.outputText, "utf8").toString("base64");
+  return import(`data:text/javascript;base64,${encoded}#${Date.now()}-${Math.random()}`);
+}
+
+function assertNoBrowserAuthorityHeaders(init) {
+  const headers = new Headers(init.headers);
+  assert.equal(headers.get("X-Tenant-Id"), null);
+  assert.equal(headers.get("X-OrderPilot-Permissions"), null);
+}
+
+test("production BFF read clients continue with empty browser tenantId", async () => {
+  await withProductionBrowserFetch(async (calls) => {
+    const { listRecentAiWork } = await importFreshClient("lib/ai-work-api.ts");
+    const result = await listRecentAiWork(7);
+    assert.equal(result.error, undefined);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "/api/bff/api/v1/ai-work/suggestions?limit=7");
+    assert.equal(calls[0].init.method, "GET");
+    assertNoBrowserAuthorityHeaders(calls[0].init);
+  });
+});
+
+test("production BFF mutation clients attach CSRF without browser authority", async () => {
+  await withProductionBrowserFetch(async (calls) => {
+    const { acceptAiWorkSuggestion } = await importFreshClient("lib/ai-work-api.ts");
+    const result = await acceptAiWorkSuggestion("suggestion-1", { reason: "looks good" });
+    assert.equal(result.error, undefined);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "/api/bff/api/v1/ai-work/suggestions/suggestion-1/accept");
+    assert.equal(calls[0].init.method, "POST");
+    const headers = new Headers(calls[0].init.headers);
+    assert.equal(headers.get("X-OP-CSRF-Token"), "csrf-token-0123456789abcdef");
+    assertNoBrowserAuthorityHeaders(calls[0].init);
+  });
 });
 
 test("explicit static demo bundle keeps demo transport (not a production tenant surface)", () => {
