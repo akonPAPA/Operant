@@ -255,7 +255,7 @@ test("unregistered route and wrong method -> 404, no upstream call", async () =>
 
 test("internal, support, staff, demo, webhook and public planes are denied", async () => {
   await withEnv(BFF_ENV, async () => {
-    const sessionId = await operatorSession(["REVIEW_READ", "STAFF_SUPPORT_READ"]);
+    const sessionId = await operatorSession(["REVIEW_READ", "REVIEW_ACTION"]);
     const { calls, impl } = recordingFetch();
     const deniedPaths = [
       "/api/bff/api/v1/internal/support/tenants/search",

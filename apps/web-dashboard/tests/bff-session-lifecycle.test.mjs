@@ -7,6 +7,7 @@ import {
   requireRedisSessionBackend,
   resetSessionStoreForTesting,
   setRedisClientFactoryForTesting,
+  InvalidSessionAuthorityError,
   SessionStoreUnavailableError
 } from "../lib/bff/bff-session-store.ts";
 
@@ -25,6 +26,28 @@ const ENV_KEYS = [
   "REDIS_URL"
 ];
 
+const VALID_TENANT_ID = "11111111-1111-4111-8111-111111111111";
+const VALID_ACTOR_ID = "22222222-2222-4222-8222-222222222222";
+const VALID_SESSION_ID = "S".repeat(43);
+
+function nowEpoch() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function storedRecord(overrides = {}) {
+  const issuedAtEpochSec = nowEpoch();
+  return {
+    sessionId: VALID_SESSION_ID,
+    tenantId: VALID_TENANT_ID,
+    actorId: VALID_ACTOR_ID,
+    permissions: ["REVIEW_READ"],
+    issuedAtEpochSec,
+    expiresAtEpochSec: issuedAtEpochSec + 600,
+    sessionVersion: 1,
+    revoked: false,
+    ...overrides
+  };
+}
 const LOCAL_BOOTSTRAP_ENV = {
   ORDERPILOT_DEPLOY_PROFILE: "local-test",
   ORDERPILOT_BFF_ENABLED: "true",
@@ -164,6 +187,125 @@ test("local/test bootstrap issues an opaque HttpOnly session and CSRF cookie", a
   });
 });
 
+test("valid tenant session persists and loads through the memory store", async () => {
+  await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
+    const { sessionId, record } = await persistOperatorSession({
+      tenantId: VALID_TENANT_ID,
+      actorId: VALID_ACTOR_ID,
+      permissions: ["REVIEW_READ", "REVIEW_ACTION"]
+    });
+    const loaded = await loadOperatorSession(sessionId);
+    assert.deepEqual(loaded, record);
+  });
+});
+
+const INVALID_AUTHORITY_CASES = [
+  {
+    name: "unknown syntactically valid permission",
+    session: { tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: ["UNKNOWN_PERMISSION"] }
+  },
+  {
+    name: "staff/support permission",
+    session: { tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: ["STAFF_SUPPORT_READ"] }
+  },
+  {
+    name: "malformed tenant UUID",
+    session: { tenantId: "not-a-uuid", actorId: VALID_ACTOR_ID, permissions: ["REVIEW_READ"] }
+  },
+  {
+    name: "malformed actor UUID",
+    session: { tenantId: VALID_TENANT_ID, actorId: "not-a-uuid", permissions: ["REVIEW_READ"] }
+  },
+  {
+    name: "duplicate permissions",
+    session: { tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: ["REVIEW_READ", "REVIEW_READ"] }
+  },
+  {
+    name: "empty permission list",
+    session: { tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: [] }
+  },
+  {
+    name: "permission count above limit",
+    session: {
+      tenantId: VALID_TENANT_ID,
+      actorId: VALID_ACTOR_ID,
+      permissions: Array.from({ length: 65 }, (_, index) => `UNKNOWN_${index}`)
+    }
+  }
+];
+
+for (const { name, session } of INVALID_AUTHORITY_CASES) {
+  test(`invalid session authority is rejected before memory storage mutation: ${name}`, async () => {
+    await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
+      await assert.rejects(() => persistOperatorSession(session), InvalidSessionAuthorityError);
+    });
+  });
+}
+
+test("expired session issuance is rejected before storage write", async () => {
+  await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
+    await assert.rejects(
+      () =>
+        persistOperatorSession({
+          tenantId: VALID_TENANT_ID,
+          actorId: VALID_ACTOR_ID,
+          permissions: ["REVIEW_READ"],
+          expiresAtEpochSec: nowEpoch() - 1
+        }),
+      InvalidSessionAuthorityError
+    );
+  });
+});
+
+test("excessive custom expiry is rejected", async () => {
+  await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS: "60" }, async () => {
+    await assert.rejects(
+      () =>
+        persistOperatorSession({
+          tenantId: VALID_TENANT_ID,
+          actorId: VALID_ACTOR_ID,
+          permissions: ["REVIEW_READ"],
+          expiresAtEpochSec: nowEpoch() + 3600
+        }),
+      InvalidSessionAuthorityError
+    );
+  });
+});
+
+test("invalid Redis-backed issuance does not call setEx", async () => {
+  let setExCalls = 0;
+  const redis = {
+    isOpen: true,
+    connect: async () => {},
+    get: async () => null,
+    setEx: async () => {
+      setExCalls += 1;
+    },
+    del: async () => {},
+    on: () => {}
+  };
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => redis);
+      await assert.rejects(
+        () =>
+          persistOperatorSession({
+            tenantId: VALID_TENANT_ID,
+            actorId: VALID_ACTOR_ID,
+            permissions: ["STAFF_SUPPORT_READ"]
+          }),
+        InvalidSessionAuthorityError
+      );
+      assert.equal(setExCalls, 0);
+    }
+  );
+});
+
 test("re-bootstrap rotates the session: the old ID is invalidated", async () => {
   await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
     const first = await handleSessionBootstrap(bootstrapRequest());
@@ -179,16 +321,30 @@ test("re-bootstrap rotates the session: the old ID is invalidated", async () => 
   });
 });
 
-test("expired sessions fail closed", async () => {
-  await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
-    const { sessionId } = await persistOperatorSession({
-      tenantId: "t",
-      actorId: "a",
-      permissions: ["REVIEW_READ"],
-      expiresAtEpochSec: Math.floor(Date.now() / 1000) - 1
-    });
-    assert.equal(await loadOperatorSession(sessionId), null);
+test("expired stored Redis records fail closed", async () => {
+  const expiredRecord = storedRecord({
+    issuedAtEpochSec: nowEpoch() - 120,
+    expiresAtEpochSec: nowEpoch() - 60
   });
+  const redisWithExpired = {
+    isOpen: true,
+    connect: async () => {},
+    get: async () => JSON.stringify(expiredRecord),
+    setEx: async () => {},
+    del: async () => {},
+    on: () => {}
+  };
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => redisWithExpired);
+      assert.equal(await loadOperatorSession(VALID_SESSION_ID), null);
+    }
+  );
 });
 
 test("missing sessions fail closed", async () => {
@@ -248,7 +404,7 @@ test("Redis is mandatory for production-like sessions — no memory fallback", a
     async () => {
       // even with ORDERPILOT_BFF_SESSION_STORE=memory set, production-like refuses memory
       await assert.rejects(
-        persistOperatorSession({ tenantId: "t", actorId: "a", permissions: ["REVIEW_READ"] }),
+        persistOperatorSession({ tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: ["REVIEW_READ"] }),
         SessionStoreUnavailableError
       );
       const error = await requireRedisSessionBackend();
@@ -280,7 +436,7 @@ test("Redis command errors fail closed on load and deny bootstrap without cookie
     },
     async () => {
       setRedisClientFactoryForTesting(() => failingRedis);
-      assert.equal(await loadOperatorSession("some-session"), null, "Redis errors fail closed");
+      assert.equal(await loadOperatorSession(VALID_SESSION_ID), null, "Redis errors fail closed");
       const response = await handleSessionBootstrap(bootstrapRequest());
       assert.equal(response.status, 503);
       assert.deepEqual(setCookies(response), [], "no cookies on store failure");
@@ -288,21 +444,55 @@ test("Redis command errors fail closed on load and deny bootstrap without cookie
   );
 });
 
+test("tampered Redis record with unknown permission fails closed", async () => {
+  const redisWithTamperedRecord = {
+    isOpen: true,
+    connect: async () => {},
+    get: async () => JSON.stringify(storedRecord({ permissions: ["INTERNAL_ADMIN"] })),
+    setEx: async () => {},
+    del: async () => {},
+    on: () => {}
+  };
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => redisWithTamperedRecord);
+      assert.equal(await loadOperatorSession(VALID_SESSION_ID), null);
+    }
+  );
+});
+
+test("tampered Redis record with invalid UUID fails closed", async () => {
+  const redisWithTamperedRecord = {
+    isOpen: true,
+    connect: async () => {},
+    get: async () => JSON.stringify(storedRecord({ tenantId: "not-a-uuid" })),
+    setEx: async () => {},
+    del: async () => {},
+    on: () => {}
+  };
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => redisWithTamperedRecord);
+      assert.equal(await loadOperatorSession(VALID_SESSION_ID), null);
+    }
+  );
+});
+
 test("revoked session records fail closed", async () => {
-  const revokedRecord = JSON.stringify({
-    sessionId: "s",
-    tenantId: "t",
-    actorId: "a",
-    permissions: ["REVIEW_READ"],
-    issuedAtEpochSec: 1,
-    expiresAtEpochSec: Math.floor(Date.now() / 1000) + 600,
-    sessionVersion: 1,
-    revoked: true
-  });
   const redisWithRevoked = {
     isOpen: true,
     connect: async () => {},
-    get: async () => revokedRecord,
+    get: async () => JSON.stringify(storedRecord({ revoked: true })),
     setEx: async () => {},
     del: async () => {},
     on: () => {}
@@ -315,7 +505,7 @@ test("revoked session records fail closed", async () => {
     },
     async () => {
       setRedisClientFactoryForTesting(() => redisWithRevoked);
-      assert.equal(await loadOperatorSession("s"), null);
+      assert.equal(await loadOperatorSession(VALID_SESSION_ID), null);
     }
   );
 });

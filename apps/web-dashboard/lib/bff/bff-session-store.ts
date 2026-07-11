@@ -7,7 +7,8 @@
 import { createClient } from "redis";
 import { randomBytes } from "node:crypto";
 import type { OperatorSession } from "./bff-session.ts";
-import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";`r`nimport { registeredBffRoutes } from "./bff-route-registry.ts";
+import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
+import { registeredBffRoutes } from "./bff-route-registry.ts";
 
 export type StoredOperatorSession = OperatorSession & {
   sessionId: string;
@@ -20,6 +21,13 @@ export class SessionStoreUnavailableError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "SessionStoreUnavailableError";
+  }
+}
+
+export class InvalidSessionAuthorityError extends Error {
+  constructor() {
+    super("Invalid BFF session authority.");
+    this.name = "InvalidSessionAuthorityError";
   }
 }
 
@@ -37,7 +45,8 @@ const DEFAULT_TTL_SECONDS = 28_800;
 const SESSION_ID_VALUE = /^[A-Za-z0-9_-]{43,128}$/;
 const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PERMISSION_VALUE = /^[A-Z][A-Z0-9_]{1,64}$/;
-const MAX_SESSION_PERMISSIONS = 64;`r`nconst ALLOWED_BFF_PERMISSIONS = new Set(registeredBffRoutes().map((rule) => rule.permission));
+const MAX_SESSION_PERMISSIONS = 64;
+const ALLOWED_BFF_PERMISSIONS = new Set(registeredBffRoutes().map((rule) => rule.permission));
 
 let redisClient: MinimalRedisClient | null = null;
 let redisClientFactoryForTesting: ((url: string) => MinimalRedisClient) | null = null;
@@ -60,6 +69,79 @@ function sessionTtlSeconds(): number {
   const raw = process.env.ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS ?? "28800";
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TTL_SECONDS;
+}
+
+type SessionAuthorityCandidate = {
+  sessionId?: unknown;
+  tenantId?: unknown;
+  actorId?: unknown;
+  permissions?: unknown;
+  issuedAtEpochSec?: unknown;
+  expiresAtEpochSec?: unknown;
+  sessionVersion?: unknown;
+  revoked?: unknown;
+};
+
+function validateSessionAuthority(
+  candidate: SessionAuthorityCandidate,
+  options: { expectedSessionId?: string; nowEpochSec: number; requireActive: boolean }
+): candidate is StoredOperatorSession {
+  if (options.expectedSessionId !== undefined) {
+    if (
+      typeof candidate.sessionId !== "string" ||
+      candidate.sessionId !== options.expectedSessionId ||
+      !validSessionId(candidate.sessionId)
+    ) {
+      return false;
+    }
+  }
+  if (typeof candidate.tenantId !== "string" || !UUID_VALUE.test(candidate.tenantId)) {
+    return false;
+  }
+  if (typeof candidate.actorId !== "string" || !UUID_VALUE.test(candidate.actorId)) {
+    return false;
+  }
+  if (!Array.isArray(candidate.permissions)) {
+    return false;
+  }
+  const permissions = candidate.permissions;
+  if (permissions.length === 0 || permissions.length > MAX_SESSION_PERMISSIONS) {
+    return false;
+  }
+  const unique = new Set(permissions);
+  if (
+    unique.size !== permissions.length ||
+    !permissions.every(
+      (permission): permission is string =>
+        typeof permission === "string" &&
+        PERMISSION_VALUE.test(permission) &&
+        ALLOWED_BFF_PERMISSIONS.has(permission)
+    )
+  ) {
+    return false;
+  }
+
+  const { issuedAtEpochSec, expiresAtEpochSec, sessionVersion, revoked } = candidate;
+  if (
+    typeof issuedAtEpochSec !== "number" ||
+    typeof expiresAtEpochSec !== "number" ||
+    typeof sessionVersion !== "number" ||
+    !Number.isSafeInteger(issuedAtEpochSec) ||
+    !Number.isSafeInteger(expiresAtEpochSec) ||
+    !Number.isSafeInteger(sessionVersion) ||
+    issuedAtEpochSec <= 0 ||
+    issuedAtEpochSec > options.nowEpochSec ||
+    expiresAtEpochSec <= issuedAtEpochSec ||
+    expiresAtEpochSec - issuedAtEpochSec > sessionTtlSeconds() ||
+    sessionVersion !== 1 ||
+    typeof revoked !== "boolean"
+  ) {
+    return false;
+  }
+  if (options.requireActive && (revoked || expiresAtEpochSec <= options.nowEpochSec)) {
+    return false;
+  }
+  return true;
 }
 
 /** Memory storage is an explicit local/test mode only — never a production fallback. */
@@ -103,10 +185,8 @@ export function newOpaqueSessionId(): string {
 export async function persistOperatorSession(
   session: Omit<OperatorSession, "expiresAtEpochSec"> & { expiresAtEpochSec?: number }
 ): Promise<{ sessionId: string; record: StoredOperatorSession }> {
-  const sessionId = newOpaqueSessionId();
   const now = Math.floor(Date.now() / 1000);
-  const record: StoredOperatorSession = {
-    sessionId,
+  const authority = {
     tenantId: session.tenantId,
     actorId: session.actorId,
     permissions: [...session.permissions],
@@ -114,6 +194,20 @@ export async function persistOperatorSession(
     expiresAtEpochSec: session.expiresAtEpochSec ?? now + sessionTtlSeconds(),
     sessionVersion: 1,
     revoked: false
+  };
+  if (!validateSessionAuthority(authority, { nowEpochSec: now, requireActive: true })) {
+    throw new InvalidSessionAuthorityError();
+  }
+  const sessionId = newOpaqueSessionId();
+  const record: StoredOperatorSession = {
+    sessionId,
+    tenantId: authority.tenantId,
+    actorId: authority.actorId,
+    permissions: authority.permissions,
+    issuedAtEpochSec: authority.issuedAtEpochSec,
+    expiresAtEpochSec: authority.expiresAtEpochSec,
+    sessionVersion: authority.sessionVersion,
+    revoked: authority.revoked
   };
   if (memorySessionStoreAllowed()) {
     memoryStore.set(sessionId, record);
@@ -147,44 +241,16 @@ function parseStoredRecord(raw: string | null, expectedSessionId: string): Store
     return null;
   }
   const record = parsed as Partial<StoredOperatorSession>;
-  if (record.sessionId !== expectedSessionId || !validSessionId(record.sessionId)) {
-    return null;
-  }
-  if (!record.tenantId || !UUID_VALUE.test(record.tenantId)) {
-    return null;
-  }
-  if (!record.actorId || !UUID_VALUE.test(record.actorId)) {
-    return null;
-  }
-  if (!Array.isArray(record.permissions)) {
-    return null;
-  }
-  if (record.permissions.length === 0 || record.permissions.length > MAX_SESSION_PERMISSIONS) {
-    return null;
-  }
-  const permissions = record.permissions;
-  const unique = new Set(permissions);
-  if (unique.size !== permissions.length || !permissions.every((p) => PERMISSION_VALUE.test(p))) {
-    return null;
-  }
-  const issuedAtEpochSec = record.issuedAtEpochSec;
-  const expiresAtEpochSec = record.expiresAtEpochSec;
-  const sessionVersion = record.sessionVersion;
   if (
-    typeof issuedAtEpochSec !== "number" ||
-    typeof expiresAtEpochSec !== "number" ||
-    typeof sessionVersion !== "number" ||
-    !Number.isSafeInteger(issuedAtEpochSec) ||
-    !Number.isSafeInteger(expiresAtEpochSec) ||
-    !Number.isSafeInteger(sessionVersion) ||
-    sessionVersion !== 1 ||
-    typeof record.revoked !== "boolean" ||
-    issuedAtEpochSec <= 0 ||
-    expiresAtEpochSec <= issuedAtEpochSec
+    !validateSessionAuthority(record, {
+      expectedSessionId,
+      nowEpochSec: Math.floor(Date.now() / 1000),
+      requireActive: true
+    })
   ) {
     return null;
   }
-  return record as StoredOperatorSession;
+  return record;
 }
 
 function liveOrNull(record: StoredOperatorSession | null): StoredOperatorSession | null {
