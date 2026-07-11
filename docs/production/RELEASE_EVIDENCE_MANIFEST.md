@@ -8,10 +8,11 @@
 | Field | SHA / status |
 | --- | --- |
 | `base_sha` (branch parent before P1-B delta) | `34099fd7b5328536cc26b35955a064561d7148f7` |
-| `implementation_sha` (clean worktree after bounded implementation commits) | `1210f94e841c4f7103b4f1ff16330dd0fdf30fb8` |
-| `evidence_docs_sha` | `6d991ec5edfe044c66768e8c3a8d2d8645be9f85` |
-| `pr_head_sha` | `6d991ec5edfe044c66768e8c3a8d2d8645be9f85` (implementation `1210f94` + docs; not pushed) |
-| `remote_ci_status` | `NOT_RUN_FOR_FINAL_IMPLEMENTATION_SHA` |
+| `implementation_sha` (authoritative verification anchor) | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` |
+| `evidence_commit` | `THIS_COMMIT` (resolve with `git log -1 --format=%H -- docs/production/RELEASE_EVIDENCE_MANIFEST.md`) |
+| `pr_head_sha` | `LOCAL_UNPUSHED_HEAD` |
+| `remote_ci_status` | `NOT_RUN_FOR_FINAL_LOCAL_HEAD` |
+| `remote_ci_head_sha` | `NOT_RUN` |
 | `push_performed` | `false` |
 
 | Evidence ID | Commit SHA | Type | Command / artifact | Result | Gates supported |
@@ -35,7 +36,13 @@
 | EV-P1B-015 | `1210f94e841c4f7103b4f1ff16330dd0fdf30fb8` | behavioral unit | `tests/bff-server-transport-isolation.test.mjs`, `tests/browser-csrf-cookie.test.mjs`, `tests/bff-session-ttl-policy.test.mjs`, `tests/bff-boundary.test.mjs`, `tests/bff-proxy-boundary.test.mjs`, `tests/bff-session-lifecycle.test.mjs`, `tests/bff-transport-contract.test.mjs`, `tests/e2e-standalone-runner.test.mjs` | Request-scoped in-process BFF isolation (concurrent tenants); canonical CSRF + duplicate security-cookie fail-closed; strict session TTL policy; stateless HMAC session tokens rejected in production paths; architecture import guards | P1-GATE-02 **PARTIAL / NOT_PASS** |
 | EV-P1B-016 | `1210f94e841c4f7103b4f1ff16330dd0fdf30fb8` | junit | `cd apps/core-api && mvn clean "-Dtest=TrustedGatewaySignerVerifierCompatibilityTest,ApiRouteSecurityPolicyDefaultDenyTest,ApiRouteSecurityClassificationTest,ApiPermissionInterceptorPermissionTest,ApiPermissionRouteCoverageTest,GatewayHeaderReplayProtectionTest,ApiSecurityWebConfigTest" test` (JDK 21.0.11) | **285** tests, 0 failures (`apps/core-api/.logs/mvn-targeted1.log`) | P1-GATE-02 **PARTIAL / NOT_PASS** |
 | EV-P1B-017 | `1210f94e841c4f7103b4f1ff16330dd0fdf30fb8` | junit | `cd apps/core-api && mvn "-Dtest=com.orderpilot.security.*Test" test` (JDK 21.0.11) | **470** tests, 0 failures, 0 skipped (`apps/core-api/.logs/mvn-security-all.log`) | P1-GATE-02 **PARTIAL / NOT_PASS** |
-| EV-P1B-018 | `1210f94e841c4f7103b4f1ff16330dd0fdf30fb8` | behavioral unit | `internal-support-operations-api` + BFF registry tests | Support plane returns `SUPPORT_PLANE_NOT_CONFIGURED` under production BFF; tenant BFF cannot reach internal/support routes (also covered in E2E) | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-018 | `1210f94e841c4f7103b4f1ff16330dd0fdf30fb8` | behavioral unit | `internal-support-operations-api` + BFF registry tests | Support plane returns `SUPPORT_PLANE_NOT_CONFIGURED` under production BFF; tenant BFF cannot reach internal/support routes (also covered in E2E) | **SUPERSEDED** — see EV-P1B-022/E2E @ `09b8a98` |
+| EV-P1B-019 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | node-test | `cd apps/web-dashboard && npm ci && npm test` | **601** pass, 0 fail | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-020 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | lint + tsc + build | `npm run lint && npm run typecheck && npm run build` | All exit 0 | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-021 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | playwright E2E | `npm run test:e2e` (standalone, `shell: false`) | **9/9** pass | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-022 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | behavioral unit | `bff-production-rsc-path.test.mjs`, `rsc-page-import-guard.test.mjs` | Production Server Component reads via `lib/server/*.server.ts` → `tenant-get-json.server` → in-process BFF (`dashboard-server-bff-fetch`); inbox `/api/v1/intake/messages` path; tenant isolation; fail-closed session/permission/route cases; no server `/api/bff` HTTP | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-023 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | junit | targeted security clean (JDK 21.0.11) | **285** tests, BUILD SUCCESS | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-024 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | junit | `com.orderpilot.security.*Test` (JDK 21.0.11) | **470** tests, BUILD SUCCESS | P1-GATE-02 **PARTIAL / NOT_PASS** |
 
 ## P1-GATE-01 status
 
@@ -49,7 +56,7 @@
 
 | Gate | Status | Proven (local) | Not proven |
 | --- | --- | --- | --- |
-| P1-GATE-02 (browser BFF boundary) | **PARTIAL / NOT_PASS** | Immutable local proof @ `1210f94`: `dashboardApiFetch` browser/server split; tenant API clients route through same-origin `/api/bff` (or in-process isolation tests); internal support fail-closed; public tracking separate; opaque server-side sessions; canonical CSRF/TTL/duplicate-cookie policy; standalone Playwright E2E 9/9; Node **586** + targeted behavioral suites; Core security JUnit **285** + **470** @ JDK 21 | Trusted P1-C identity (bootstrap local/test-only); live Redis TTL/expiry/revocation in deployed topology; remote PR #267 CI on `1210f94`; direct public Core ingress closure (P1-D); full RSC in-process BFF without cookie-forwarding HTTP |
+| P1-GATE-02 (browser BFF boundary) | **PARTIAL / NOT_PASS** | Immutable local proof @ `09b8a98`: browser `dashboard-http.browser` → same-origin `/api/bff`; Server Components import `lib/server/*.server.ts` → in-process BFF (`tenant-get-json.server` + `dashboard-server-bff-fetch`); no production RSC relative `/api/bff` HTTP; `rsc-page-import-guard` + `bff-production-rsc-path` behavioral proof; Node **601**; E2E **9/9**; Core **285**/**470** @ JDK 21 | P1-C identity; live Redis; remote CI; P1-D public Core ingress |
 | P1-GATE-03 | **NOT_PASS** | — | Public Core ingress closure belongs to P1-D |
 | P1-GATE-04 | **PARTIAL / NOT_PASS** | Unit/fake-store session TTL, expiry, revocation, logout; strict TTL parser; duplicate cookie fail-closed | Live Redis expiry/revocation in deployed topology |
 

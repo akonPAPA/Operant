@@ -2,10 +2,10 @@
 
 ## P1-B - Browser/BFF boundary local implementation proof (PR #267)
 
-- Status: PARTIAL / NOT_PASS (2026-07-11 18:45 UTC, PR #267 @ implementation_sha `1210f94`, clean worktree). Not a production PASS.
-- What changed: `dashboardApiFetch` centralizes browser vs server transport; tenant `*-api` modules migrated off direct Core URL fetches; opaque server-side sessions (stateless HMAC tokens removed from production); canonical browser CSRF parser + duplicate security-cookie fail-closed; strict BFF session TTL policy (300–86400s); internal support plane fail-closed under BFF; standalone Playwright runner (`shell: false`).
-- Proof (immutable @ `1210f94`): `npm ci` + `npm test` (**586/586**), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run test:e2e` (**9/9** standalone), behavioral suites (`bff-server-transport-isolation`, CSRF, TTL, boundary/proxy), Core `mvn` targeted **285** + `com.orderpilot.security.*` **470** (JDK 21.0.11, Maven 3.9.16). Evidence rows EV-P1B-012..018; EV-P1B-005..009 SUPERSEDED.
-- Not proven: remote PR #267 CI on `1210f94`, live Redis TTL/expiry/revocation in deployed topology, real production OIDC/session identity, E2E against real Core in production topology, direct public Core ingress closure (P1-D), push/merge.
+- Status: PARTIAL / NOT_PASS (2026-07-11 20:30 UTC, implementation_sha `09b8a98`). Not a production PASS.
+- Architecture: **OUTCOME B** — production Server Components call `lib/server/*.server.ts` read modules that use in-process BFF (`dashboard-server-bff-fetch` + authoritative registry/proxy). Client Components continue to use browser `lib/*-api.ts` → `/api/bff`.
+- Proof @ `09b8a98`: `npm ci` + `npm test` (**601/601**), lint, typecheck, build, E2E **9/9**, EV-P1B-022 RSC path + page import guard, Core security **285** + **470** (JDK 21).
+- Not proven: remote CI, live Redis, P1-C identity, P1-D ingress, push/merge.
 
 ## P3 — Operator Cockpit v1 guided RFQ-to-quote: deferred proof + draft-quote detail route (GitHub PR #260 / Operator Cockpit v1 slice)
 
