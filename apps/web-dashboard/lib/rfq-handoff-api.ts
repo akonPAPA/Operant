@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06C RFQ Handoff Operator Workflow client.
@@ -155,8 +156,8 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
     };
   }
   try {
-    const response = await fetch(
-      `${rfqHandoffClient.baseUrl}${path}`,
+    const response = await dashboardApiFetch(
+      path,
       enrichDashboardRequestInit({
         cache: "no-store",
         ...init,

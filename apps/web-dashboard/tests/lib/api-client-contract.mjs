@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 /** Demo/dev clients send X-Tenant-Id; BFF clients must not and use session transport instead. */
 export function assertTenantScopedClientSource(source) {
   const bffAware =
-    /usesBffTransport\(\)/.test(source)
-    && /dashboardCoreApiBaseUrl/.test(source)
+    (/usesBffTransport\(\)/.test(source) || /dashboardApiFetch/.test(source))
+    && (/dashboardCoreApiBaseUrl/.test(source) || /dashboardApiFetch/.test(source))
     && (/isDashboardApiAuthorityAvailable/.test(source) || /clientTenantHeaders/.test(source));
   const demoHeaders = /X-Tenant-Id/.test(source);
   assert.ok(bffAware || demoHeaders, "expected BFF-aware transport or demo X-Tenant-Id headers");

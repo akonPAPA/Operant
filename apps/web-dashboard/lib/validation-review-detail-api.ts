@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-14B Operator Validation Review (detail) API client.
@@ -129,7 +130,7 @@ async function getJson<T>(path: string): Promise<ApiResult<T>> {
   }
 
   try {
-    const response = await fetch(`${validationReviewDetailConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       method: "GET",
       cache: "no-store",
       headers: headers()

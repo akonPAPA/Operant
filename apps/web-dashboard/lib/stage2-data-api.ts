@@ -1,4 +1,5 @@
-import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -35,7 +36,6 @@ type DataResult<T> = {
   message?: string;
 };
 
-const baseUrl = dashboardCoreApiBaseUrl();
 const tenantId = demoTenantId();
 
 async function fetchTenantData<T>(path: string): Promise<DataResult<T>> {
@@ -44,7 +44,7 @@ async function fetchTenantData<T>(path: string): Promise<DataResult<T>> {
   }
 
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       headers: dashboardRequestHeaders(tenantId)
     });

@@ -1,5 +1,5 @@
 import { BFF_CSRF_HEADER, bffRuntimeMode } from "./bff/bff-config.ts";
-import { readCsrfTokenFromDocumentCookie } from "./dashboard-fetch-headers.ts";
+import { readBrowserCsrfTokenFromDocument } from "./browser-csrf-cookie.ts";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 const CLIENT_AUTHORITY_HEADERS = new Set(["x-tenant-id", "x-orderpilot-permissions"]);
@@ -122,7 +122,7 @@ export function enrichDashboardRequestInit(init?: RequestInit): RequestInit {
     usesBffTransport()
     && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")
   ) {
-    const csrf = readCsrfTokenFromDocumentCookie();
+    const csrf = readBrowserCsrfTokenFromDocument();
     if (csrf) {
       headers[BFF_CSRF_HEADER] = csrf;
     }

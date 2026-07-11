@@ -4,6 +4,7 @@ import {
   isDashboardApiAuthorityAvailable,
   usesBffTransport
 } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 // OP-CAP-15A/15B Validation Review → Draft Quote / Draft Order command client.
 // Typed, tenant-scoped helpers over the OP-CAP-15A/15B backend endpoints ONLY:
 //   GET  /api/v1/validations/{validationRunId}/review/draft-status
@@ -135,8 +136,8 @@ async function postDraftCommand(path: string, options?: CreateDraftOptions): Pro
   }
 
   try {
-    const response = await fetch(
-      `${validationReviewDraftConfig.baseUrl}${path}`,
+    const response = await dashboardApiFetch(
+      path,
       enrichDashboardRequestInit({
       method: "POST",
       cache: "no-store",
@@ -179,8 +180,8 @@ export async function getValidationReviewDraftStatus(validationRunId: string): P
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${validationReviewDraftConfig.baseUrl}/api/v1/validations/${validationRunId}/review/draft-status`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/${validationRunId}/review/draft-status`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -206,8 +207,8 @@ export async function getValidationReviewDraftability(validationRunId: string): 
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${validationReviewDraftConfig.baseUrl}/api/v1/validations/${validationRunId}/review/draftability`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/${validationRunId}/review/draftability`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();

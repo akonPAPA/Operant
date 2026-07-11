@@ -1,4 +1,5 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit } from "./api-transport";
+import { enrichDashboardRequestInit } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { requireDemoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -167,12 +168,10 @@ export type QuoteApprovalDecisionPayload = {
   idempotencyKey?: string;
 };
 
-const baseUrl = dashboardCoreApiBaseUrl();
-
 export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPayload): Promise<QuoteTransactionResponse> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(
-    `${baseUrl}/api/v1/quotes/from-rfq`,
+  const response = await dashboardApiFetch(
+    "/api/v1/quotes/from-rfq",
     enrichDashboardRequestInit({
       method: "POST",
       headers: {
@@ -228,8 +227,8 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
   const body = payload
     ? { approvalRequestId: payload.approvalRequestId, reason: payload.reason, comment: payload.comment }
     : undefined;
-  const response = await fetch(
-    `${baseUrl}${path}`,
+  const response = await dashboardApiFetch(
+    path,
     enrichDashboardRequestInit({
       method: payload ? "POST" : "GET",
       headers: {
@@ -249,8 +248,8 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
 
 async function requestQuoteTransaction<T>(path: string, payload: ChannelToQuotePayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(
-    `${baseUrl}${path}`,
+  const response = await dashboardApiFetch(
+    path,
     enrichDashboardRequestInit({
       method: "POST",
       headers: {

@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -69,7 +70,7 @@ export function getStage8PilotReportExportUrl(): string | null {
 async function requestStage8Value<T>(path: string): Promise<T | null> {
   if (!isDashboardApiAuthorityAvailable(stage8ValueConfig.tenantId)) return null;
   try {
-    const response = await fetch(`${stage8ValueConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       headers: dashboardRequestHeaders(stage8ValueConfig.tenantId)
     });

@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-15C Review-origin draft queue (lite) API client.
@@ -206,8 +207,8 @@ export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Prom
   const query = params.toString();
 
   try {
-    const response = await fetch(
-      `${reviewDraftQueueConfig.baseUrl}/api/v1/validations/review-drafts${query ? `?${query}` : ""}`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/review-drafts${query ? `?${query}` : ""}`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -238,8 +239,8 @@ export async function getReviewDraftRemediationLineage(
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${reviewDraftQueueConfig.baseUrl}/api/v1/validations/review-drafts/${encodeURIComponent(draftKind)}/${encodeURIComponent(draftId)}/remediation-lineage`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/review-drafts/${encodeURIComponent(draftKind)}/${encodeURIComponent(draftId)}/remediation-lineage`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -272,7 +273,7 @@ export async function getReviewDraftRecentRemediationRollup(
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${reviewDraftQueueConfig.baseUrl}${remediationRollupPath(limit)}`, {
+    const response = await dashboardApiFetch(remediationRollupPath(limit), {
       method: "GET",
       cache: "no-store",
       headers: headers()

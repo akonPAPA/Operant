@@ -4,6 +4,7 @@ import {
   isDashboardApiAuthorityAvailable,
   usesBffTransport
 } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-14D Operator Validation Review command client.
@@ -88,8 +89,8 @@ async function postCommand<T>(path: string, body: unknown): Promise<ApiResult<T>
   }
 
   try {
-    const response = await fetch(
-      `${validationReviewCommandConfig.baseUrl}${path}`,
+    const response = await dashboardApiFetch(
+      path,
       enrichDashboardRequestInit({
       method: "POST",
       cache: "no-store",

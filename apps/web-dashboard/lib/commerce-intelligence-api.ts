@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // Read-only tenant operator client. The browser sends no request body, authority fields, source
@@ -118,8 +119,8 @@ export async function getCommerceIntelligenceDemoFlow(): Promise<CommerceIntelli
   const headers = dashboardRequestHeaders(commerceIntelligenceClient.tenantId, ANALYTICS_READ);
 
   try {
-    const response = await fetch(
-      `${commerceIntelligenceClient.baseUrl}/api/v1/commerce-intelligence/demo-flow`,
+    const response = await dashboardApiFetch(
+      "/api/v1/commerce-intelligence/demo-flow",
       {
         cache: "no-store",
         method: "GET",

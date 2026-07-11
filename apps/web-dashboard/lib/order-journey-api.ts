@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 export { toCustomerTrackingHref, toCustomerTrackingPath } from "./order-journey-customer-tracking-url";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -171,7 +172,7 @@ async function read<T>(path: string): Promise<{ data: T | null; error?: string }
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${orderJourneyClient.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       method: "GET",
       headers: baseHeaders()
@@ -243,8 +244,8 @@ export async function createOrderJourneyTrackingLink(
   }
   let response: Response;
   try {
-    response = await fetch(
-      `${orderJourneyClient.baseUrl}/api/v1/order-journeys/${encodeURIComponent(journeyId)}/tracking-links`,
+    response = await dashboardApiFetch(
+      `/api/v1/order-journeys/${encodeURIComponent(journeyId)}/tracking-links`,
       enrichDashboardRequestInit({
         method: "POST",
         cache: "no-store",

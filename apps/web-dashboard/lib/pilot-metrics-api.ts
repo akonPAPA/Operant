@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-11F Pilot Shadow-Mode ROI Readiness client.
@@ -130,7 +131,7 @@ async function read<T>(path: string, fallback: T): Promise<PilotApiResult<T>> {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${pilotMetricsClient.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       method: "GET",
       headers: baseHeaders()

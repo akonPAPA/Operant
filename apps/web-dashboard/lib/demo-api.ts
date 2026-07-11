@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> =
@@ -99,8 +100,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<ApiResu
     return { ok: false, message: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${demoConfig.baseUrl}${path}`,
+    const response = await dashboardApiFetch(
+      path,
       enrichDashboardRequestInit({
         ...init,
         headers: { ...headers(), ...(init?.headers ?? {}) }
@@ -165,7 +166,7 @@ export function viewReconciliationCases() {
 
 async function requestDashboardJson<T>(path: string): Promise<ApiResult<T>> {
   try {
-    const response = await fetch(path, enrichDashboardRequestInit({ method: "POST" }));
+    const response = await dashboardApiFetch(path, enrichDashboardRequestInit({ method: "POST" }));
     const text = await response.text();
     if (!response.ok) {
       return {

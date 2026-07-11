@@ -1,4 +1,5 @@
-import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable, toProxiedCorePath, usesBffTransport } from "./api-transport";
+import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-21 Transaction Command Center read-model client.
@@ -126,9 +127,7 @@ export async function getCommandCenterSummary(): Promise<CommandCenterResult> {
   }
   try {
     const path = "/api/v1/command-center/summary";
-    const response = await fetch(
-      usesBffTransport() ? toProxiedCorePath(path) : `${commandCenterClient.baseUrl}${path}`,
-      {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       method: "GET",
       headers: baseHeaders()

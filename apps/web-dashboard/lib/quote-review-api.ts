@@ -1,4 +1,5 @@
 import { enrichDashboardRequestInit } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import {
   ApiResult,
   coreApiBaseUrl,
@@ -210,8 +211,8 @@ export function assembleQuoteDraft(quoteId: string, payload: QuoteReviewCommandP
 // may reference tenant/resource ids) is never surfaced into the UI.
 async function requestQuoteReview<T>(path: string, payload: QuoteReviewCommandPayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(
-    `${coreApiBaseUrl()}${path}`,
+  const response = await dashboardApiFetch(
+    path,
     enrichDashboardRequestInit({
       method: "POST",
       headers: {

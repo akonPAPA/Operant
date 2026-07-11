@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -297,7 +298,7 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
   }
 
   try {
-    const response = await fetch(`${validationReviewConfig.baseUrl}${path}`, enrichDashboardRequestInit({
+    const response = await dashboardApiFetch(path, enrichDashboardRequestInit({
       cache: init?.method && init.method !== "GET" ? "no-store" : "no-store",
       ...init,
       headers: { ...headers(), ...(init?.headers ?? {}) }

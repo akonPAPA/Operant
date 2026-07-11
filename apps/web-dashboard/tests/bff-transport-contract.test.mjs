@@ -143,7 +143,7 @@ async function withProductionBrowserFetch(fn) {
   process.env.NEXT_PUBLIC_CORE_API_URL = "http://evil.example:9999";
   process.env.CORE_API_BASE_URL = "http://internal-core:8080";
   globalThis.window = {};
-  globalThis.document = { cookie: "op_csrf=csrf-token-0123456789abcdef" };
+  globalThis.document = { cookie: "op_csrf=csrf-token-0123456789abcdef012345" };
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), init });
     return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
@@ -165,8 +165,12 @@ async function importFreshClient(relativePath) {
   const sourcePath = join(process.cwd(), relativePath);
   const apiTransportUrl = pathToFileURL(join(process.cwd(), "lib", "api-transport.ts")).href;
   const frontendAuthorityUrl = pathToFileURL(join(process.cwd(), "lib", "frontend-authority.mjs")).href;
+  const dashboardHttpUrl = pathToFileURL(join(process.cwd(), "lib", "dashboard-http.ts")).href;
   const source = readFileSync(sourcePath, "utf8")
     .replaceAll('from "./api-transport"', `from "${apiTransportUrl}"`)
+    .replaceAll('from "./api-transport.ts"', `from "${apiTransportUrl}"`)
+    .replaceAll('from "./dashboard-http"', `from "${dashboardHttpUrl}"`)
+    .replaceAll('from "./dashboard-http.ts"', `from "${dashboardHttpUrl}"`)
     .replaceAll('from "./frontend-authority.mjs"', `from "${frontendAuthorityUrl}"`);
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -205,7 +209,7 @@ test("production BFF mutation clients attach CSRF without browser authority", as
     assert.equal(calls[0].url, "/api/bff/api/v1/ai-work/suggestions/suggestion-1/accept");
     assert.equal(calls[0].init.method, "POST");
     const headers = new Headers(calls[0].init.headers);
-    assert.equal(headers.get("X-OP-CSRF-Token"), "csrf-token-0123456789abcdef");
+    assert.equal(headers.get("X-OP-CSRF-Token"), "csrf-token-0123456789abcdef012345");
     assertNoBrowserAuthorityHeaders(calls[0].init);
   });
 });

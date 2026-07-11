@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06E Channel Identity operator control and read contract client.
@@ -96,8 +97,8 @@ async function request<T>(
     };
   }
   try {
-    const response = await fetch(
-      `${channelIdentityClient.baseUrl}${path}`,
+    const response = await dashboardApiFetch(
+      path,
       enrichDashboardRequestInit({
         cache: "no-store",
         ...init,

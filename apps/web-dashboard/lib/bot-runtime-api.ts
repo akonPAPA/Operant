@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -135,8 +136,8 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
   }
 
   try {
-    const response = await fetch(
-      `${botRuntimeConfig.baseUrl}${path}`,
+    const response = await dashboardApiFetch(
+      path,
       enrichDashboardRequestInit({
         cache: "no-store",
         ...init,
