@@ -1,23 +1,6 @@
 import "server-only";
 
-import { dashboardServerBffFetchWithCookieHeader } from "./dashboard-server-bff-fetch.ts";
-
-let testServerCookieHeader: string | null | undefined;
-
-export function setTenantServerGetJsonCookieHeaderForTesting(
-  cookieHeader: string | null | undefined
-): void {
-  testServerCookieHeader = cookieHeader;
-}
-
-export function resetTenantServerGetJsonCookieHeaderForTesting(): void {
-  testServerCookieHeader = undefined;
-}
-
 async function serverTenantFetch(path: string, init?: RequestInit): Promise<Response> {
-  if (testServerCookieHeader !== undefined) {
-    return dashboardServerBffFetchWithCookieHeader(testServerCookieHeader, path, init);
-  }
   const { dashboardServerBffFetch } = await import("./dashboard-server-bff-transport.ts");
   return dashboardServerBffFetch(path, init);
 }

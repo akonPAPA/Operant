@@ -1,0 +1,1 @@
+do not review the code before Im asking it directly and do not review it without mentioning you directly in comments as "@Copilot" and do not use codex for review the code.

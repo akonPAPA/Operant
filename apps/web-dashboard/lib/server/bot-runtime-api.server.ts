@@ -1,10 +1,13 @@
 import "server-only";
 
 import type {
-  BotConversationDetail,
   BotHandoff,
   BotRuntimeSettings
 } from "../bot-runtime-api.ts";
+import {
+  listBotConversationDetailsWithReaders,
+  type BotConversationDetailReaders
+} from "../bot-conversation-details.ts";
 import { tenantServerGetJson, tenantServerGetJsonNullable } from "./tenant-get-json.server.ts";
 
 export type { BotConversationDetail, BotHandoff, BotRuntimeSettings } from "../bot-runtime-api.ts";
@@ -17,9 +20,13 @@ const EMPTY_SETTINGS: BotRuntimeSettings = {
   safeResponseTemplates: []
 };
 
-export async function listBotConversationDetails() {
-  const result = await tenantServerGetJson<BotConversationDetail[]>("/api/v1/bot-runtime/conversations");
-  return { data: Array.isArray(result.data) ? result.data : [], error: result.error };
+const DEFAULT_READERS: BotConversationDetailReaders = {
+  getJson: tenantServerGetJson,
+  getNullable: tenantServerGetJsonNullable
+};
+
+export async function listBotConversationDetails(readers: BotConversationDetailReaders = DEFAULT_READERS) {
+  return listBotConversationDetailsWithReaders(readers);
 }
 
 export async function getBotRuntimeSettings() {

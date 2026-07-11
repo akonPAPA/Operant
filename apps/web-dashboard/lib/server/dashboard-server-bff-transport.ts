@@ -1,21 +1,26 @@
 /**
- * Next.js request-scoped entry: reads `op_session` from the current request cookies.
+ * Next.js request-scoped entry: reads `op_session` from the current request Cookie header.
  */
-import { cookies } from "next/headers.js";
+import { headers } from "next/headers.js";
 import { BFF_SESSION_COOKIE } from "../bff/bff-config.ts";
+import { readSecurityCookieHeader } from "../bff/bff-cookies.ts";
 import { dashboardServerBffFetchWithCookieHeader } from "./dashboard-server-bff-fetch.ts";
 
 if (typeof window !== "undefined") {
   throw new Error("dashboard-server-bff-transport cannot be imported in the browser");
 }
 
-async function readRequestOpSessionCookieHeader(): Promise<string | null> {
-  const jar = await cookies();
-  const raw = jar.get(BFF_SESSION_COOKIE)?.value;
-  if (raw === undefined) {
+export function cookieHeaderForServerBffRequest(rawCookieHeader: string | null | undefined): string | null {
+  const sessionId = readSecurityCookieHeader(rawCookieHeader, BFF_SESSION_COOKIE);
+  if (sessionId === undefined) {
     return null;
   }
-  return `${BFF_SESSION_COOKIE}=${encodeURIComponent(raw)}`;
+  return `${BFF_SESSION_COOKIE}=${encodeURIComponent(sessionId)}`;
+}
+
+async function readRequestOpSessionCookieHeader(): Promise<string | null> {
+  const requestHeaders = await headers();
+  return cookieHeaderForServerBffRequest(requestHeaders.get("cookie"));
 }
 
 export async function dashboardServerBffFetch(

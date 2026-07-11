@@ -11,6 +11,7 @@ import {
   revokeOperatorSession
 } from "../lib/bff/bff-session-store.ts";
 import { dashboardServerBffFetchWithCookieHeader } from "../lib/server/dashboard-server-bff-fetch.ts";
+import { cookieHeaderForServerBffRequest } from "../lib/server/dashboard-server-bff-transport.ts";
 
 const INBOX_READ_PATH = "/api/v1/intake/messages";
 
@@ -112,6 +113,22 @@ async function sessionFor(tenantId, actorId, permissions, expiresAtEpochSec) {
   return sessionId;
 }
 
+
+test("production RSC cookie resolver canonicalizes exactly one op_session", () => {
+  assert.equal(cookieHeaderForServerBffRequest(null), null);
+  assert.equal(cookieHeaderForServerBffRequest("other=1"), null);
+  assert.equal(
+    cookieHeaderForServerBffRequest("other=1; op_session=abc%201; theme=dark"),
+    "op_session=abc%201"
+  );
+});
+
+test("production RSC cookie resolver fails closed on duplicate and malformed op_session", () => {
+  assert.equal(cookieHeaderForServerBffRequest("op_session=same; op_session=same"), null);
+  assert.equal(cookieHeaderForServerBffRequest("op_session=first; op_session=second"), null);
+  assert.equal(cookieHeaderForServerBffRequest("op_session="), null);
+  assert.equal(cookieHeaderForServerBffRequest("op_session=%E0%A4%A"), null);
+});
 test("production inbox read-model getIntakeMessages signs tenant A via in-process BFF", async () => {
   await withEnv(BFF_ENV, async () => {
     const recorder = recordingFetch();
@@ -164,6 +181,42 @@ test("missing session denies inbox read-model with zero Core calls", async () =>
   });
 });
 
+
+test("duplicate server session cookies deny inbox read-model with zero Core calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const recorder = recordingFetch();
+    const sessionId = await sessionFor(TENANT_A, ACTOR_A, ["INTAKE_READ"]);
+    const cookie = sessionCookieHeader(sessionId);
+    await withFetch(recorder, async () => {
+      const result = await probeInboxServerRead(`${cookie}; ${cookie}`);
+      assert.match(result.error ?? "", /401/);
+      assert.equal(recorder.calls.length, 0);
+    });
+  });
+});
+
+test("conflicting server session cookies deny inbox read-model with zero Core calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const recorder = recordingFetch();
+    const sessionId = await sessionFor(TENANT_A, ACTOR_A, ["INTAKE_READ"]);
+    await withFetch(recorder, async () => {
+      const result = await probeInboxServerRead(`${sessionCookieHeader(sessionId)}; ${BFF_SESSION_COOKIE}=tampered`);
+      assert.match(result.error ?? "", /401/);
+      assert.equal(recorder.calls.length, 0);
+    });
+  });
+});
+
+test("malformed server session cookie denies inbox read-model with zero Core calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const recorder = recordingFetch();
+    await withFetch(recorder, async () => {
+      const result = await probeInboxServerRead(`${BFF_SESSION_COOKIE}=%E0%A4%A`);
+      assert.match(result.error ?? "", /401/);
+      assert.equal(recorder.calls.length, 0);
+    });
+  });
+});
 test("expired session denies with zero Core calls", async () => {
   await withEnv(BFF_ENV, async () => {
     const recorder = recordingFetch();
@@ -271,6 +324,17 @@ test("architecture: server fetch module excludes browser CSRF/document APIs", ()
 
 test("architecture: dashboard-api-fetch uses dynamic server import only on server branch", () => {
   const source = readFileSync(join(root, "lib", "server", "tenant-get-json.server.ts"), "utf8");
-  assert.match(source, /dashboard-server-bff-fetch/);
+  assert.match(source, /dashboard-server-bff-transport/);
   assert.doesNotMatch(source, /next\/headers/);
+  assert.doesNotMatch(source, /testServerCookieHeader/);
+  assert.doesNotMatch(source, /setTenantServerGetJsonCookieHeaderForTesting/);
+});
+
+test("architecture: production RSC transport uses raw Cookie header with duplicate-aware parser", () => {
+  const source = readFileSync(join(root, "lib", "server", "dashboard-server-bff-transport.ts"), "utf8");
+  assert.match(source, /headers\(\)/);
+  assert.match(source, /readSecurityCookieHeader/);
+  assert.match(source, /requestHeaders\.get\("cookie"\)/);
+  assert.doesNotMatch(source, /cookies\(\)/);
+  assert.doesNotMatch(source, /\.get\(BFF_SESSION_COOKIE\)/);
 });
