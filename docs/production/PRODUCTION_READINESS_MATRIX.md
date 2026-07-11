@@ -5,9 +5,9 @@
 | Gate ID | Capability | Status @ base SHA | Evidence @ base SHA | Current delta |
 | --- | --- | --- | --- | --- |
 | P1-GATE-01 | Production config rejects demo/insecure defaults | **PARTIAL / NOT_PASS** @ `53bdf70` | EV-P1A-001, EV-P1A-002 | P1-A merged in PR #266; clean-host deploy still not full gate |
-| P1-GATE-02 | Browser traffic mediated by BFF | FAIL | Direct `NEXT_PUBLIC_CORE_API_URL` clients | **PARTIAL / NOT_PASS** locally on PR #267 branch @ `af01e52`: same-origin `/api/bff`, server session authority, default-deny route registry, CSRF mutation guard, safe Core error mapping, local Chromium E2E 9/9, Maven targeted/broader security tests (285/470 pass at clean af01e52); remote CI/live Redis/P1-C identity/deployed topology not proven |
-| P1-GATE-03 | Direct public Core access denied | FAIL | Compose publishes Core :8080 | Still not pass; public Core ingress closure belongs to P1-D |
-| P1-GATE-04 | Sessions expire/revoke | FAIL | No session layer | Unit/fake-store proof only; live Redis proof not complete |
+| P1-GATE-02 | Browser traffic mediated by BFF | FAIL | Direct `NEXT_PUBLIC_CORE_API_URL` clients | **PARTIAL / NOT_PASS** locally on PR #267 @ `1210f94` (immutable clean worktree): `dashboardApiFetch` split, same-origin `/api/bff`, opaque Redis-backed sessions, CSRF/TTL/duplicate-cookie hardening, support plane fail-closed, standalone E2E 9/9, Node 586 + behavioral isolation/CSRF/TTL, Core security 285/470 @ JDK 21; remote CI/live Redis/P1-C/deployed topology/public Core ingress not proven |
+| P1-GATE-03 | Direct public Core access denied | FAIL | Compose publishes Core :8080 | **NOT_PASS**; public Core ingress closure belongs to P1-D |
+| P1-GATE-04 | Sessions expire/revoke | FAIL | No session layer | **PARTIAL / NOT_PASS** @ `1210f94`: unit/fake-store TTL/expiry/revocation/logout; live Redis proof not complete |
 | P1-GATE-05 | Tenant/staff/service identity separation | PARTIAL | Support grant + permission tests | P1-C identity mapping still required |
 | P1-GATE-06 | Linux production deployment | FAIL | Local compose only | Not in P1-B scope |
 | P1-GATE-07 | Readiness reflects dependencies | PARTIAL | Actuator health | Not in P1-B scope |
