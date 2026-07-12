@@ -6,9 +6,8 @@ import test from "node:test";
 const root = process.cwd();
 
 /**
- * P1-B: Edge Middleware must contain no Node-runtime-only imports — directly or
- * transitively. The forbidden set mirrors the boundary spec: bff-proxy,
- * bff-session-store, bff-gateway-signer, node:* builtins, and redis.
+ * P1-B: Edge entry (Next.js `proxy.ts` / legacy `middleware.ts`) must contain no
+ * Node-runtime-only imports — directly or transitively.
  */
 const FORBIDDEN_SPECIFIERS = [
   "bff-proxy",
@@ -21,6 +20,18 @@ const FORBIDDEN_SPECIFIERS = [
   "redis",
   "next/headers"
 ];
+
+function edgeEntryFile() {
+  const proxyPath = join(root, "proxy.ts");
+  const middlewarePath = join(root, "middleware.ts");
+  if (existsSync(proxyPath)) {
+    return proxyPath;
+  }
+  if (existsSync(middlewarePath)) {
+    return middlewarePath;
+  }
+  throw new Error("expected apps/web-dashboard/proxy.ts or middleware.ts");
+}
 
 function resolveLocal(fromFile, specifier) {
   let base;
@@ -58,7 +69,7 @@ function collectImportGraph(entryFile) {
     assert.doesNotMatch(
       source,
       /\brequire\s*\(|import\s*\(/,
-      `middleware graph file must not use require/dynamic import: ${file}`
+      `edge entry graph file must not use require/dynamic import: ${file}`
     );
     const importPattern = /(?:import|export)\s[^;]*?from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g;
     for (const match of source.matchAll(importPattern)) {
@@ -76,17 +87,17 @@ function collectImportGraph(entryFile) {
   return { files: visited, specifiers };
 }
 
-test("middleware import graph contains no Node-only or session/proxy/signer modules", () => {
-  const { files, specifiers } = collectImportGraph(join(root, "middleware.ts"));
+test("edge entry import graph contains no Node-only or session/proxy/signer modules", () => {
+  const { files, specifiers } = collectImportGraph(edgeEntryFile());
   for (const specifier of specifiers) {
     assert.ok(
       !specifier.startsWith("node:"),
-      `middleware must not import Node builtin: ${specifier}`
+      `edge entry must not import Node builtin: ${specifier}`
     );
     for (const forbidden of FORBIDDEN_SPECIFIERS) {
       assert.ok(
         !specifier.includes(forbidden),
-        `middleware must not import ${forbidden} (found ${specifier})`
+        `edge entry must not import ${forbidden} (found ${specifier})`
       );
     }
   }
@@ -95,34 +106,34 @@ test("middleware import graph contains no Node-only or session/proxy/signer modu
     for (const forbidden of ["bff-proxy", "bff-session-store", "bff-gateway-signer", "bff-auth-handlers"]) {
       assert.ok(
         !normalized.includes(forbidden),
-        `middleware transitively reaches ${forbidden}: ${normalized}`
+        `edge entry transitively reaches ${forbidden}: ${normalized}`
       );
     }
   }
-  assert.equal(files.size, 1, "middleware should not import server-only BFF modules");
+  assert.equal(files.size, 1, "edge entry should not import server-only BFF modules");
 });
 
-test("middleware session cookie name stays aligned with BFF config without importing it", () => {
-  const middlewareSource = readFileSync(join(root, "middleware.ts"), "utf8");
+test("edge entry session cookie name stays aligned with BFF config without importing it", () => {
+  const edgeSource = readFileSync(edgeEntryFile(), "utf8");
   const configSource = readFileSync(join(root, "lib/bff/bff-config.ts"), "utf8");
-  const cookie = middlewareSource.match(/const BFF_SESSION_COOKIE = "([^"]+)"/);
-  assert.ok(cookie, "middleware must define BFF_SESSION_COOKIE locally");
+  const cookie = edgeSource.match(/const BFF_SESSION_COOKIE = "([^"]+)"/);
+  assert.ok(cookie, "edge entry must define BFF_SESSION_COOKIE locally");
   assert.match(configSource, new RegExp(`export const BFF_SESSION_COOKIE = "${cookie[1]}"`));
-  assert.match(middlewareSource, /middlewareBffRuntimeEnabled/);
-  assert.doesNotMatch(middlewareSource, /request\.(headers|cookies|nextUrl|url).*ORDERPILOT_BFF|ORDERPILOT_DEPLOY/);
-  assert.match(middlewareSource, /process\.env\.ORDERPILOT_BFF_ENABLED/);
-  assert.match(middlewareSource, /process\.env\.NODE_ENV/);
+  assert.match(edgeSource, /middlewareBffRuntimeEnabled/);
+  assert.doesNotMatch(edgeSource, /request\.(headers|cookies|nextUrl|url).*ORDERPILOT_BFF|ORDERPILOT_DEPLOY/);
+  assert.match(edgeSource, /process\.env\.ORDERPILOT_BFF_ENABLED/);
+  assert.match(edgeSource, /process\.env\.NODE_ENV/);
 });
 
-test("middleware performs no authoritative session validation", () => {
-  const source = readFileSync(join(root, "middleware.ts"), "utf8");
+test("edge entry performs no authoritative session validation", () => {
+  const source = readFileSync(edgeEntryFile(), "utf8");
   assert.doesNotMatch(source, /loadOperatorSession|parseSessionToken|signGatewayHeaders|createClient/);
   assert.match(source, /hasSessionCookie/);
   assert.match(source, /X-Content-Type-Options/);
 });
 
-test("middleware returns JSON for unauthenticated API paths and redirects only page navigation", () => {
-  const source = readFileSync(join(root, "middleware.ts"), "utf8");
+test("edge entry returns JSON for unauthenticated API paths and redirects only page navigation", () => {
+  const source = readFileSync(edgeEntryFile(), "utf8");
   assert.match(source, /pathname\.startsWith\("\/api\/"\)/);
   assert.match(source, /NextResponse\.json\(/);
   assert.match(source, /status:\s*401/);

@@ -55,12 +55,24 @@ function Get-GitCandidateFiles {
   if ($LASTEXITCODE -ne 0) {
     throw "git ls-files --others failed; refusing to report a clean secret scan"
   }
+  # Index entries already deleted in the worktree are pending removal — skip them
+  # (same race class as an untracked file disappearing after inventory).
+  $deleted = @{}
+  foreach ($relative in @(git -C $root ls-files --deleted)) {
+    if ($relative) {
+      $deleted[($relative -replace '\\', '/')] = $true
+    }
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "git ls-files --deleted failed; refusing to report a clean secret scan"
+  }
   $seen = @{}
   foreach ($relative in ($tracked + $untracked)) {
     if (-not $relative) { continue }
     $normalized = $relative -replace '\\', '/'
     if ($seen.ContainsKey($normalized)) { continue }
     $seen[$normalized] = $true
+    if ($deleted.ContainsKey($normalized)) { continue }
     if ($normalized -match $generatedPath) { continue }
     if ($normalized -eq 'scripts/check-no-secrets.ps1') { continue }
     $isTracked = ($tracked -contains $relative) -or (($tracked | ForEach-Object { $_ -replace '\\', '/' }) -contains $normalized)

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { proxyCoreRequest, rawBffPathRejected, validateBffProductionConfig } from "../lib/bff/bff-proxy.ts";
+import { canonicalizeJsonRequestBody, proxyCoreRequest, rawBffPathRejected, validateBffProductionConfig } from "../lib/bff/bff-proxy.ts";
 import {
   matchBffRoute,
   registeredBffRoutes
@@ -131,7 +131,7 @@ test("valid read reaches the registered upstream route exactly once with signed 
     const upstreamHeaders = calls[0].init.headers;
     assert.equal(upstreamHeaders.get("X-Tenant-Id"), "11111111-1111-4111-8111-111111111111");
     assert.equal(upstreamHeaders.get("X-OrderPilot-Actor-Id"), "22222222-2222-4222-8222-222222222222");
-    assert.equal(upstreamHeaders.get("X-OrderPilot-Permissions"), "REVIEW_READ,REVIEW_ACTION");
+    assert.equal(upstreamHeaders.get("X-OrderPilot-Permissions"), "REVIEW_READ");
     assert.ok(upstreamHeaders.get("X-OrderPilot-Gateway-Signature"));
     assert.ok(upstreamHeaders.get("X-OrderPilot-Gateway-Nonce"));
   });
@@ -164,6 +164,7 @@ test("browser-provided authority, credential, and hop-by-hop headers are never f
     const upstreamHeaders = calls[0].init.headers;
     // session authority wins — the browser header values must be absent
     assert.equal(upstreamHeaders.get("X-Tenant-Id"), "11111111-1111-4111-8111-111111111111");
+    assert.equal(upstreamHeaders.get("X-OrderPilot-Permissions"), "REVIEW_READ");
     assert.notEqual(upstreamHeaders.get("X-OrderPilot-Permissions"), "STAFF_SUPPORT_READ");
     assert.equal(upstreamHeaders.get("authorization"), null);
     assert.equal(upstreamHeaders.get("proxy-authorization"), null);
@@ -371,6 +372,108 @@ test("valid CSRF mutation reaches the registered upstream route exactly once", a
     );
     assert.equal(calls[0].init.headers.get("Idempotency-Key"), "op-key-123");
     assert.equal(calls[0].init.method, "POST");
+    assert.equal(calls[0].init.headers.get("X-OrderPilot-Permissions"), "REVIEW_ACTION");
+  });
+});
+
+test("least-privilege signing: outbound permissions are only the matched route permission", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["REVIEW_READ", "REVIEW_ACTION", "ANALYTICS_READ"]);
+    const { calls, impl } = recordingFetch();
+    const response = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/queue", { sessionId })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.headers.get("X-OrderPilot-Permissions"), "REVIEW_READ");
+    assert.doesNotMatch(calls[0].init.headers.get("X-OrderPilot-Permissions") ?? "", /REVIEW_ACTION|ANALYTICS_READ/);
+  });
+});
+
+test("missing required permission with unrelated grants -> 403, zero upstream calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["ANALYTICS_READ", "BOT_READ"]);
+    const { calls, impl } = recordingFetch();
+    const response = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/queue", { sessionId })
+    );
+    assert.equal(response.status, 403);
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("registry permission and signed permission stay aligned for every registered rule", () => {
+  for (const rule of registeredBffRoutes()) {
+    assert.equal(typeof rule.permission, "string");
+    assert.ok(rule.permission.length > 0);
+    assert.equal(rule.permission.includes(","), false, `${rule.method} ${rule.pattern} must bind one permission`);
+  }
+});
+
+test("canonical JSON body collapses duplicate keys and strips UTF-8 BOM", () => {
+  const duplicate = canonicalizeJsonRequestBody(
+    new TextEncoder().encode('{"quantity":1,"quantity":999,"note":"ok"}')
+  );
+  assert.equal(duplicate.ok, true);
+  if (duplicate.ok) {
+    assert.equal(duplicate.body, JSON.stringify({ quantity: 999, note: "ok" }));
+  }
+  const bom = canonicalizeJsonRequestBody(
+    new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('{"a":1}')])
+  );
+  assert.equal(bom.ok, true);
+  if (bom.ok) {
+    assert.equal(bom.body, JSON.stringify({ a: 1 }));
+  }
+  const invalidUtf8 = canonicalizeJsonRequestBody(new Uint8Array([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xc3, 0x7d]));
+  assert.equal(invalidUtf8.ok, false);
+  const invalidJson = canonicalizeJsonRequestBody(new TextEncoder().encode("{not-json"));
+  assert.equal(invalidJson.ok, false);
+});
+
+test("invalid UTF-8 and invalid JSON mutation bodies are rejected with zero upstream calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const { calls, impl } = recordingFetch();
+    const badUtf8 = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
+        sessionId,
+        method: "POST",
+        csrf: CSRF,
+        body: Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xc3, 0x7d])
+      })
+    );
+    assert.equal(badUtf8.status, 400);
+    assert.doesNotMatch(await badUtf8.text(), /\xc3|\\u00/);
+    const badJson = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
+        sessionId,
+        method: "POST",
+        csrf: CSRF,
+        body: "{not-json"
+      })
+    );
+    assert.equal(badJson.status, 400);
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("duplicate-key JSON is normalized before upstream forward", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const { calls, impl } = recordingFetch();
+    const response = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
+        sessionId,
+        method: "POST",
+        csrf: CSRF,
+        body: '{"reasonCode":"FIRST","reasonCode":"READY"}'
+      })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.body, JSON.stringify({ reasonCode: "READY" }));
+    assert.equal(calls[0].init.headers.get("X-OrderPilot-Permissions"), "REVIEW_ACTION");
   });
 });
 

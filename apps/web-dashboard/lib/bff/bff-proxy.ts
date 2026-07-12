@@ -173,14 +173,29 @@ function contentLengthValue(request: Request): number | null {
   return Number.parseInt(raw, 10);
 }
 
-async function readRequestBodyBounded(request: Request, maxBytes: number): Promise<string | null> {
+type BoundedBodyBytes =
+  | { ok: true; bytes: Uint8Array }
+  | { ok: false; status: 413 };
+
+type CanonicalJsonBody =
+  | { ok: true; body: string }
+  | { ok: false; status: 400 };
+
+/**
+ * Read raw request bytes with a hard size cap before any decode/parse work.
+ * Oversized or malformed Content-Length → 413.
+ */
+async function readRequestBodyBytesBounded(
+  request: Request,
+  maxBytes: number
+): Promise<BoundedBodyBytes> {
   const declaredLength = contentLengthValue(request);
   if (Number.isNaN(declaredLength) || (declaredLength !== null && declaredLength > maxBytes)) {
     await request.body?.cancel().catch(() => undefined);
-    return null;
+    return { ok: false, status: 413 };
   }
   if (!request.body) {
-    return "";
+    return { ok: true, bytes: new Uint8Array(0) };
   }
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -194,7 +209,7 @@ async function readRequestBodyBounded(request: Request, maxBytes: number): Promi
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        return null;
+        return { ok: false, status: 413 };
       }
       chunks.push(value);
     }
@@ -207,7 +222,31 @@ async function readRequestBodyBounded(request: Request, maxBytes: number): Promi
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(bytes);
+  return { ok: true, bytes };
+}
+
+/**
+ * JSON mutation body path: fatal UTF-8 → JSON.parse → JSON.stringify.
+ * Duplicate object keys collapse to the last value (ECMA-262), and only the
+ * normalized serialization is forwarded upstream. Raw ambiguous bytes never leave the BFF.
+ * A leading UTF-8 BOM (U+FEFF) is stripped once after a successful fatal decode.
+ */
+export function canonicalizeJsonRequestBody(bytes: Uint8Array): CanonicalJsonBody {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return { ok: false, status: 400 };
+  }
+  if (text.length > 0 && text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return { ok: true, body: JSON.stringify(parsed) };
+  } catch {
+    return { ok: false, status: 400 };
+  }
 }
 
 async function readUpstreamTextBounded(upstream: Response): Promise<string | null> {
@@ -298,17 +337,27 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   let body: string | undefined;
   if (rule.kind === "mutation") {
     const requestContentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
-    const bodyText = await readRequestBodyBounded(request, rule.maxBodyBytes);
-    if (bodyText === null) {
-      return safeJson(413);
+    const rawBody = await readRequestBodyBytesBounded(request, rule.maxBodyBytes);
+    if (!rawBody.ok) {
+      return safeJson(rawBody.status);
     }
-    if (bodyText.length === 0) {
+    if (rawBody.bytes.byteLength === 0) {
+      // Empty body is allowed for registered mutations (idempotent POST markers, etc.).
       body = undefined;
     } else {
       if (!rule.contentType || requestContentType !== rule.contentType) {
         return safeJson(415);
       }
-      body = bodyText;
+      if (rule.contentType === "application/json") {
+        const canonical = canonicalizeJsonRequestBody(rawBody.bytes);
+        if (!canonical.ok) {
+          return safeJson(canonical.status);
+        }
+        body = canonical.body;
+      } else {
+        // Non-JSON mutation media types are not registered today; fail closed.
+        return safeJson(415);
+      }
     }
   }
 
@@ -325,12 +374,13 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
 
   const corePath = corePathFromBffSegments(segments);
   const target = `${coreBaseUrl}${corePath}${query}`;
+  // Least privilege: sign only the matched route permission after session possession check.
   const signed = signGatewayHeaders({
     method,
     requestUri: corePath,
     tenantId: session.tenantId,
     actorId: session.actorId,
-    permissions: session.permissions,
+    permissions: [rule.permission],
     sharedSecret: gatewaySecret
   });
 

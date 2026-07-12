@@ -35,7 +35,7 @@ function hasSessionCookie(request: NextRequest): boolean {
   return Boolean(value && value.length >= 16);
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const response = NextResponse.next();
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
