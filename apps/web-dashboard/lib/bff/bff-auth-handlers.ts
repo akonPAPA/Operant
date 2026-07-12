@@ -10,7 +10,7 @@ import {
   BFF_CSRF_COOKIE,
   BFF_SESSION_COOKIE,
   bffCookieSecure,
-  bffSessionSecret
+  localBootstrapSecret
 } from "./bff-config.ts";
 import { isLocalTestBootstrapAllowed } from "./bff-deployment-profile.ts";
 import { newCsrfToken, sessionMaxAgeSeconds } from "./bff-session.ts";
@@ -65,7 +65,7 @@ export async function handleSessionBootstrap(request: Request): Promise<Response
   if (!isLocalTestBootstrapAllowed()) {
     return safeJson(503, SAFE_FAILURE);
   }
-  const secret = bffSessionSecret();
+  const secret = localBootstrapSecret();
   if (!secret || secret.length < 32) {
     return safeJson(503, SAFE_FAILURE);
   }

@@ -93,16 +93,39 @@ test("csrf and same-origin validation", () => {
   assert.equal(validateCsrf(withHeader(token), "other-token-0123456789abcdef"), false);
   assert.equal(validateCsrf(withHeader("short"), "short"), false, "malformed short token rejected");
   assert.equal(validateCsrf(new Request("http://x"), token), false);
-  const originReq = new Request("http://localhost:3000/api/bff/x", {
-    method: "POST",
-    headers: { origin: "http://localhost:3000", host: "localhost:3000" }
-  });
-  assert.equal(validateSameOrigin(originReq), true);
-  const crossReq = new Request("http://localhost:3000/api/bff/x", {
-    method: "POST",
-    headers: { origin: "https://attacker.example", host: "localhost:3000" }
-  });
-  assert.equal(validateSameOrigin(crossReq), false);
+
+  const priorOrigin = process.env.ORDERPILOT_PUBLIC_ORIGIN;
+  const priorProfile = process.env.ORDERPILOT_DEPLOY_PROFILE;
+  const priorNode = process.env.NODE_ENV;
+  process.env.ORDERPILOT_DEPLOY_PROFILE = "local-test";
+  process.env.NODE_ENV = "test";
+  process.env.ORDERPILOT_PUBLIC_ORIGIN = "http://localhost:3000";
+  try {
+    const originReq = new Request("http://localhost:3000/api/bff/x", {
+      method: "POST",
+      headers: { origin: "http://localhost:3000", host: "evil.example", "x-forwarded-host": "evil.example" }
+    });
+    assert.equal(validateSameOrigin(originReq), true, "Host/Forwarded must not affect public origin");
+    const crossReq = new Request("http://localhost:3000/api/bff/x", {
+      method: "POST",
+      headers: { origin: "https://attacker.example", host: "localhost:3000" }
+    });
+    assert.equal(validateSameOrigin(crossReq), false);
+    const refererReq = new Request("http://localhost:3000/api/bff/x", {
+      method: "POST",
+      headers: { referer: "http://localhost:3000/page" }
+    });
+    assert.equal(validateSameOrigin(refererReq), true);
+    const missingBoth = new Request("http://localhost:3000/api/bff/x", { method: "POST" });
+    assert.equal(validateSameOrigin(missingBoth), false);
+  } finally {
+    if (priorOrigin === undefined) delete process.env.ORDERPILOT_PUBLIC_ORIGIN;
+    else process.env.ORDERPILOT_PUBLIC_ORIGIN = priorOrigin;
+    if (priorProfile === undefined) delete process.env.ORDERPILOT_DEPLOY_PROFILE;
+    else process.env.ORDERPILOT_DEPLOY_PROFILE = priorProfile;
+    if (priorNode === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = priorNode;
+  }
 });
 
 test("bff proxy validates session and csrf before upstream fetch", () => {

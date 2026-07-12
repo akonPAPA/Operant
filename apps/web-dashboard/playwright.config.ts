@@ -8,15 +8,15 @@ import { defineConfig } from "@playwright/test";
  *  - :18080 bounded fake Core recording every request that crosses the BFF boundary
  */
 const SESSION_SECRET = "p1b-e2e-session-secret-test-only-0123456789abcdef";
-const GATEWAY_SECRET = "p1b-e2e-gateway-secret-test-only";
+const GATEWAY_SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
 
 const sharedEnv = {
   // explicit runtime override: a local .env.local demo profile must not leak into E2E
   NEXT_PUBLIC_ORDERPILOT_DEMO_MODE: "false",
   ORDERPILOT_DEMO_MODE: "false",
   ORDERPILOT_BFF_ENABLED: "true",
-  ORDERPILOT_BFF_SESSION_SECRET: SESSION_SECRET,
-  ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET: GATEWAY_SECRET,
+  ORDERPILOT_LOCAL_BOOTSTRAP_SECRET: SESSION_SECRET,
+  ORDERPILOT_GATEWAY_SHARED_SECRET: GATEWAY_SECRET,
   CORE_API_BASE_URL: "http://127.0.0.1:18080"
 };
 
@@ -45,6 +45,7 @@ export default defineConfig({
       env: {
         ...sharedEnv,
         ORDERPILOT_DEPLOY_PROFILE: "local-test",
+        ORDERPILOT_PUBLIC_ORIGIN: "http://localhost:3100",
         ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
         ORDERPILOT_BFF_SESSION_STORE: "memory",
         ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID: "11111111-1111-4111-8111-111111111111",
@@ -61,6 +62,7 @@ export default defineConfig({
         ...sharedEnv,
         // production profile: bootstrap flags are present but MUST be ignored (fail closed)
         ORDERPILOT_DEPLOY_PROFILE: "production",
+        ORDERPILOT_PUBLIC_ORIGIN: "https://operant.example.com",
         ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
         ORDERPILOT_BFF_SESSION_STORE: "memory",
         ORDERPILOT_BFF_REDIS_URL: "redis://127.0.0.1:63999",

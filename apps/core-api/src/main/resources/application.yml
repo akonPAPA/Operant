@@ -47,7 +47,7 @@ orderpilot:
       # Enabled gateway-header auth must fail closed unless a trusted gateway signs the authority
       # headers with this shared secret. Tests/dev may explicitly set signature-required=false.
       signature-required: "${ORDERPILOT_GATEWAY_HEADER_AUTH_SIGNATURE_REQUIRED:true}"
-      shared-secret: "${ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET:}"
+      shared-secret: "${ORDERPILOT_GATEWAY_SHARED_SECRET:${ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET:}}"
       clock-skew-seconds: "${ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS:300}"
       # memory (default, single-node/dev/test) | redis (distributed nonce admission across instances).
       replay-store: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REPLAY_STORE:memory}"

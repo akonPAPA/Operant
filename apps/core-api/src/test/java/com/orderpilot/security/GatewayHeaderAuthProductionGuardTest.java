@@ -15,7 +15,7 @@ import org.springframework.context.ConfigurableApplicationContext;
  */
 class GatewayHeaderAuthProductionGuardTest {
 
-  private static final String TEST_ONLY_SECRET = "p1a-gateway-guard-test-secret-not-placeholder";
+  private static final String TEST_ONLY_SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
 
   private ApplicationContextRunner runnerWithProfiles(String... profiles) {
     return new ApplicationContextRunner()
@@ -51,7 +51,7 @@ class GatewayHeaderAuthProductionGuardTest {
             .getFailure()
             .rootCause()
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("shared-secret must be configured in production"));
+            .hasMessageContaining("64 hexadecimal characters"));
   }
 
   @Test
@@ -82,7 +82,7 @@ class GatewayHeaderAuthProductionGuardTest {
             .getFailure()
             .rootCause()
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("non-placeholder secret"));
+            .hasMessageContaining("64 hexadecimal characters"));
   }
 
   @Test

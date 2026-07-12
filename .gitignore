@@ -118,3 +118,6 @@ Thumbs.db
 # ===== Investor / business docs =====
 !docs/investor/
 !docs/investor/**
+
+# Local toolchains (not committed)
+.tools/

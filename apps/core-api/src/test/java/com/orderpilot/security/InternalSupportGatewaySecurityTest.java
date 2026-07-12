@@ -44,7 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
     "orderpilot.security.gateway-header-auth.clock-skew-seconds=300"
 })
 class InternalSupportGatewaySecurityTest {
-  static final String SECRET = "wave-01-test-only-gateway-secret";
+  static final String SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
   private static final String TENANT = "11111111-1111-1111-1111-111111111111";
   private static final String ACTOR = "22222222-2222-2222-2222-222222222222";
   private static final String ROUTE = "/api/v1/internal/support/tenants/" + TENANT + "/diagnostics";
@@ -80,16 +80,15 @@ class InternalSupportGatewaySecurityTest {
   void tamperingTenantPermissionIntoStaffPermissionInvalidatesSignature() throws Exception {
     long timestamp = Instant.now().getEpochSecond();
     String nonce = UUID.randomUUID().toString();
-    MockHttpServletRequest canonicalRequest = new MockHttpServletRequest("GET", ROUTE);
-    String signature = SignedActorVerifier.hmacHex(
+    String signature = TrustedGatewayTestSigning.hmacV2EmptyBody(
         SECRET,
-        GatewayHeaderSignatureVerifier.canonical(
-            canonicalRequest,
-            TENANT,
-            ACTOR,
-            ApiPermission.ADMIN_SETTINGS_MANAGE.name(),
-            timestamp,
-            nonce));
+        "GET",
+        ROUTE,
+        TENANT,
+        ACTOR,
+        ApiPermission.ADMIN_SETTINGS_MANAGE.name(),
+        timestamp,
+        nonce);
 
     mockMvc.perform(get(ROUTE)
             .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
@@ -97,31 +96,23 @@ class InternalSupportGatewaySecurityTest {
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.STAFF_SUPPORT_READ.name())
             .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestamp))
             .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
+            .header(GatewayHeaderSignatureVerifier.VERSION_HEADER, GatewayV2Canonical.SIGNATURE_VERSION)
+            .header(
+                GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER,
+                GatewayV2Canonical.EMPTY_BODY_SHA256_HEX)
             .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
   }
 
   private static MockHttpServletRequestBuilder signed(ApiPermission permission) {
-    long timestamp = Instant.now().getEpochSecond();
-    String nonce = UUID.randomUUID().toString();
-    MockHttpServletRequest canonicalRequest = new MockHttpServletRequest("GET", ROUTE);
-    String signature = SignedActorVerifier.hmacHex(
+    return TrustedGatewayTestSigning.signedGet(
         SECRET,
-        GatewayHeaderSignatureVerifier.canonical(
-            canonicalRequest,
-            TENANT,
-            ACTOR,
-            permission.name(),
-            timestamp,
-            nonce));
-    return get(ROUTE)
-        .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
-        .header(RequestActorResolver.ACTOR_HEADER, ACTOR)
-        .header(ApiPermissionGuard.PERMISSIONS_HEADER, permission.name())
-        .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestamp))
-        .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
-        .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature);
+        ROUTE,
+        TENANT,
+        ACTOR,
+        permission.name(),
+        Instant.now().getEpochSecond());
   }
 
   @RestController

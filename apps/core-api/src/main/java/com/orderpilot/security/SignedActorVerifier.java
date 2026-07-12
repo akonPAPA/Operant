@@ -73,9 +73,14 @@ public class SignedActorVerifier {
     }
   }
 
-  /** Lowercase hex HMAC-SHA-256 of {@code message} under {@code secret} — exposed for callers/tests. */
+  /** Lowercase hex HMAC-SHA-256 of {@code message} under UTF-8 {@code secret} — actor-signing path. */
   public static String hmacHex(String signingSecret, String message) {
     return toHex(hmac(signingSecret.getBytes(StandardCharsets.UTF_8), message));
+  }
+
+  /** Lowercase hex HMAC-SHA-256 using a raw key (gateway shared-secret decoded bytes). */
+  public static String hmacHex(byte[] signingSecret, String message) {
+    return toHex(hmac(signingSecret, message));
   }
 
   /** Constant-time verification for callers that share the HMAC-SHA-256 gateway boundary. */
@@ -86,7 +91,11 @@ public class SignedActorVerifier {
     return matchesHmacHex(signingSecret.getBytes(StandardCharsets.UTF_8), message, signatureHeader);
   }
 
-  private static boolean matchesHmacHex(byte[] secret, String message, String signatureHeader) {
+  /** Constant-time verification against a raw HMAC key (decoded gateway secret). */
+  public static boolean matchesHmacHex(byte[] secret, String message, String signatureHeader) {
+    if (secret == null || secret.length == 0) {
+      return false;
+    }
     if (signatureHeader == null || signatureHeader.isBlank()) {
       return false;
     }

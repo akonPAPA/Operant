@@ -12,8 +12,10 @@ final class GatewayHeaderSignatureVerifier {
   // OP-CAP-43E: per-request single-use nonce. The gateway must generate a unique value per signed
   // request and bind it into the HMAC canonical string; the backend admits each value at most once.
   static final String NONCE_HEADER = "X-OrderPilot-Gateway-Nonce";
+  static final String VERSION_HEADER = GatewayV2Canonical.VERSION_HEADER;
+  static final String CONTENT_SHA256_HEADER = GatewayV2Canonical.CONTENT_SHA256_HEADER;
 
-  private final String sharedSecret;
+  private final byte[] sharedSecretKey;
   private final long maxSkewSeconds;
   private final Clock clock;
   private final GatewayHeaderReplayAdmissionStore replayAdmissionStore;
@@ -23,14 +25,14 @@ final class GatewayHeaderSignatureVerifier {
       long maxSkewSeconds,
       Clock clock,
       GatewayHeaderReplayAdmissionStore replayAdmissionStore) {
-    this.sharedSecret = sharedSecret == null ? "" : sharedSecret;
+    this.sharedSecretKey = GatewayHmacKeyCodec.tryDecode(sharedSecret);
     this.maxSkewSeconds = maxSkewSeconds;
     this.clock = clock;
     this.replayAdmissionStore = replayAdmissionStore;
   }
 
   boolean verify(HttpServletRequest request) {
-    if (sharedSecret.isBlank()) {
+    if (sharedSecretKey == null) {
       return false;
     }
     String tenantId = requiredHeader(request, TENANT_HEADER);
@@ -39,8 +41,22 @@ final class GatewayHeaderSignatureVerifier {
     String timestamp = requiredHeader(request, TIMESTAMP_HEADER);
     String signature = requiredHeader(request, SIGNATURE_HEADER);
     String nonce = requiredHeader(request, NONCE_HEADER);
-    if (tenantId == null || actorId == null || permissions == null || timestamp == null
-        || signature == null || nonce == null) {
+    String version = requiredHeader(request, VERSION_HEADER);
+    String contentShaHeader = requiredHeader(request, CONTENT_SHA256_HEADER);
+    if (tenantId == null
+        || actorId == null
+        || permissions == null
+        || timestamp == null
+        || signature == null
+        || nonce == null
+        || version == null
+        || contentShaHeader == null) {
+      return false;
+    }
+    if (!GatewayV2Canonical.SIGNATURE_VERSION.equals(version)) {
+      return false;
+    }
+    if (!GatewayV2Canonical.isValidContentSha256Hex(contentShaHeader)) {
       return false;
     }
     long timestampEpoch;
@@ -53,8 +69,41 @@ final class GatewayHeaderSignatureVerifier {
     if (Math.abs(nowEpoch - timestampEpoch) > maxSkewSeconds) {
       return false;
     }
-    if (!SignedActorVerifier.matchesHmacHex(sharedSecret,
-        canonical(request, tenantId, actorId, permissions, timestampEpoch, nonce), signature)) {
+
+    byte[] bodyBytes = bodyBytes(request);
+    if (bodyBytes == null) {
+      // Fail closed: content-hash verification requires a reusable cached body wrapper.
+      return false;
+    }
+    String actualBodySha = GatewayV2Canonical.sha256Hex(bodyBytes);
+    if (!constantTimeHexEquals(actualBodySha, contentShaHeader)) {
+      return false;
+    }
+
+    String contentType = normalizedContentType(request, bodyBytes.length);
+    if (contentType == null) {
+      return false;
+    }
+
+    String path = request.getRequestURI();
+    String rawQuery = request.getQueryString() == null ? "" : request.getQueryString();
+    String canonical;
+    try {
+      canonical = GatewayV2Canonical.build(
+          request.getMethod(),
+          path,
+          rawQuery,
+          contentType,
+          actualBodySha,
+          tenantId,
+          actorId,
+          permissions,
+          timestampEpoch,
+          nonce);
+    } catch (IllegalArgumentException ex) {
+      return false;
+    }
+    if (!SignedActorVerifier.matchesHmacHex(sharedSecretKey, canonical, signature)) {
       return false;
     }
     // Single-use admission runs only after the signature and freshness checks pass, so a forged or
@@ -64,6 +113,11 @@ final class GatewayHeaderSignatureVerifier {
         tenantId, actorId, nonce, Duration.ofSeconds(Math.max(1L, maxSkewSeconds * 2)));
   }
 
+  /**
+   * @deprecated retained only for source inspection of the historical v1 contract; production uses
+   *     {@link GatewayV2Canonical#build}.
+   */
+  @Deprecated
   static String canonical(
       HttpServletRequest request,
       String tenantId,
@@ -71,13 +125,64 @@ final class GatewayHeaderSignatureVerifier {
       String permissions,
       long timestampEpoch,
       String nonce) {
-    return request.getMethod().toUpperCase(Locale.ROOT) + "\n"
-        + request.getRequestURI() + "\n"
-        + tenantId.trim() + "\n"
-        + actorId.trim() + "\n"
-        + permissions.trim() + "\n"
-        + timestampEpoch + "\n"
-        + nonce.trim();
+    // Compatibility shim used by older unit tests during migration — rebuilds v2 empty-body form.
+    String rawQuery = request.getQueryString() == null ? "" : request.getQueryString();
+    return GatewayV2Canonical.build(
+        request.getMethod(),
+        request.getRequestURI(),
+        rawQuery,
+        "",
+        GatewayV2Canonical.EMPTY_BODY_SHA256_HEX,
+        tenantId,
+        actorId,
+        permissions,
+        timestampEpoch,
+        nonce);
+  }
+
+  private static byte[] bodyBytes(HttpServletRequest request) {
+    if (request instanceof CachedBodyHttpServletRequest cached) {
+      return cached.cachedBody();
+    }
+    // Fail closed: without a reusable cached body the content hash cannot be verified safely.
+    return null;
+  }
+
+  private static String normalizedContentType(HttpServletRequest request, int bodyLength) {
+    String raw = request.getHeader("Content-Type");
+    if (raw == null || raw.isBlank()) {
+      return bodyLength == 0 ? "" : null;
+    }
+    // Reject ambiguous duplicated Content-Type headers.
+    var values = request.getHeaders("Content-Type");
+    int count = 0;
+    while (values != null && values.hasMoreElements()) {
+      values.nextElement();
+      count++;
+      if (count > 1) {
+        return null;
+      }
+    }
+    String normalized = GatewayV2Canonical.normalizeContentType(raw);
+    if (bodyLength > 0 && !"application/json".equals(normalized)) {
+      return null;
+    }
+    if (bodyLength == 0 && !normalized.isEmpty() && !"application/json".equals(normalized)) {
+      return null;
+    }
+    if (bodyLength == 0) {
+      return "";
+    }
+    return normalized;
+  }
+
+  private static boolean constantTimeHexEquals(String left, String right) {
+    if (left == null || right == null) {
+      return false;
+    }
+    byte[] a = left.toLowerCase(Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    byte[] b = right.toLowerCase(Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    return java.security.MessageDigest.isEqual(a, b);
   }
 
   private static String requiredHeader(HttpServletRequest request, String name) {

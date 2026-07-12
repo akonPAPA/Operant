@@ -55,7 +55,7 @@ import org.springframework.web.bind.annotation.RestController;
 })
 class GatewayHeaderReplayProtectionTest {
   // Test-only static secret. NOT a real credential — only proves the HMAC + replay contract.
-  static final String SECRET = "op-cap-43e-test-only-gateway-shared-secret";
+  static final String SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
 
   private static final String TENANT = "11111111-1111-1111-1111-111111111111";
   private static final String ACTOR = "22222222-2222-2222-2222-222222222222";
@@ -165,20 +165,23 @@ class GatewayHeaderReplayProtectionTest {
   }
 
   private MockHttpServletRequestBuilder signed(String path, String permissions, long timestampEpoch, String nonce) {
-    return get(path)
-        .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
-        .header(RequestActorResolver.ACTOR_HEADER, ACTOR)
-        .header(ApiPermissionGuard.PERMISSIONS_HEADER, permissions)
-        .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestampEpoch))
-        .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
-        .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature(path, permissions, timestampEpoch, nonce));
+    return TrustedGatewayTestSigning.signed(
+        SECRET,
+        org.springframework.http.HttpMethod.GET,
+        path,
+        TENANT,
+        ACTOR,
+        permissions,
+        timestampEpoch,
+        nonce,
+        "",
+        "",
+        new byte[0]);
   }
 
   private static String signature(String path, String permissions, long timestampEpoch, String nonce) {
-    String canonical = GatewayHeaderSignatureVerifier.canonical(
-        new org.springframework.mock.web.MockHttpServletRequest("GET", path),
-        TENANT, ACTOR, permissions, timestampEpoch, nonce);
-    return SignedActorVerifier.hmacHex(SECRET, canonical);
+    return TrustedGatewayTestSigning.hmacV2EmptyBody(
+        SECRET, "GET", path, TENANT, ACTOR, permissions, timestampEpoch, nonce);
   }
 
   private static String freshNonce() {

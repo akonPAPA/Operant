@@ -7,13 +7,14 @@
 
 | Field | SHA / status |
 | --- | --- |
-| `base_sha` (branch parent before P1-B delta) | `34099fd7b5328536cc26b35955a064561d7148f7` |
-| `implementation_sha` (authoritative verification anchor) | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` |
-| `evidence_commit` | `THIS_COMMIT` (resolve with `git log -1 --format=%H -- docs/production/RELEASE_EVIDENCE_MANIFEST.md`) |
-| `pr_head_sha` | `LOCAL_UNPUSHED_HEAD` |
-| `remote_ci_status` | `NOT_RUN_FOR_FINAL_LOCAL_HEAD` |
-| `remote_ci_head_sha` | `NOT_RUN` |
-| `push_performed` | `false` |
+| `base_sha` (`origin/main`) | `cae9603c870eeb0e87216d0f4707169b64eb2ea3` |
+| `implementation_sha` | `PENDING_AFTER_IMPLEMENTATION_COMMIT` |
+| `evidence_commit` | `PENDING_AFTER_CI` |
+| `pr_head_sha` | `PENDING_AFTER_PUSH` |
+| `remote_ci_status` | `PENDING` |
+| `remote_ci_head_sha` | `PENDING` |
+| `push_performed` | `false` (Stage A local implementation; no merge-ready claim yet) |
+| `local_implementation_tests` | See EV-P1B-025..028 below (PASS with counts) |
 
 | Evidence ID | Commit SHA | Type | Command / artifact | Result | Gates supported |
 | --- | --- | --- | --- | --- | --- |
@@ -43,6 +44,10 @@
 | EV-P1B-022 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | behavioral unit | `bff-production-rsc-path.test.mjs`, `rsc-page-import-guard.test.mjs` | Production Server Component reads via `lib/server/*.server.ts` → `tenant-get-json.server` → in-process BFF (`dashboard-server-bff-fetch`); inbox `/api/v1/intake/messages` path; tenant isolation; fail-closed session/permission/route cases; no server `/api/bff` HTTP | P1-GATE-02 **PARTIAL / NOT_PASS** |
 | EV-P1B-023 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | junit | targeted security clean (JDK 21.0.11) | **285** tests, BUILD SUCCESS | P1-GATE-02 **PARTIAL / NOT_PASS** |
 | EV-P1B-024 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | junit | `com.orderpilot.security.*Test` (JDK 21.0.11) | **470** tests, BUILD SUCCESS | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-025 | LOCAL_WORKING_TREE (Stage A pre-push) | node-test + lint + tsc + build + e2e | `cd apps/web-dashboard && npm test && npm run lint && npm run typecheck && npm run build && npm run test:e2e` | **624** node tests pass; lint/tsc/build exit 0; Playwright **9/9** pass | P1-GATE-02 **PARTIAL / NOT_PASS**; remote exact-head CI: **PENDING**; **no merge-ready claim** |
+| EV-P1B-026 | LOCAL_WORKING_TREE (Stage A pre-push) | junit | `mvn -f apps/core-api/pom.xml -Dtest='com.orderpilot.security.*Test' test` | **471** tests, 0 failures, 0 skipped (gateway signature v2 + 64-hex secret) | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-027 | LOCAL_WORKING_TREE (Stage A pre-push) | junit | `mvn -f apps/core-api/pom.xml test` | **2371** tests, 0 failures, **45** skipped (Postgres integration profile not active locally — not treated as PASS proof) | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-028 | LOCAL_WORKING_TREE (Stage A pre-push) | secrets | `pwsh -File ./scripts/check-no-secrets.ps1 -SelfTest` + full scan | Self-test PASS; scan PASS | hygiene |
 
 ## P1-GATE-01 status
 

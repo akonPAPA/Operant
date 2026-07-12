@@ -104,7 +104,11 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       RequestActorResolver.TIMESTAMP_HEADER,
       GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER,
       GatewayHeaderSignatureVerifier.SIGNATURE_HEADER,
-      GatewayHeaderSignatureVerifier.NONCE_HEADER);
+      GatewayHeaderSignatureVerifier.NONCE_HEADER,
+      GatewayHeaderSignatureVerifier.VERSION_HEADER,
+      GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER);
+  /** Absolute max body bytes for gateway signature content-hash verification (fail-closed). */
+  private static final int GATEWAY_SIGNED_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
   private final ObjectProvider<ApiPermissionInterceptor> interceptor;
   private final List<String> allowedOrigins;
@@ -257,10 +261,24 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
         throws ServletException, IOException {
       String permissions = request.getHeader(ApiPermissionGuard.PERMISSIONS_HEADER);
-      if (enabled
-          && permissions != null && !permissions.isBlank()
-          && (!signatureRequired || signatureVerifier.verify(request))
-          && SecurityContextHolder.getContext().getAuthentication() == null) {
+      HttpServletRequest effectiveRequest = request;
+      boolean authenticated = false;
+      if (enabled && permissions != null && !permissions.isBlank()) {
+        if (signatureRequired) {
+          CachedBodyHttpServletRequest cached =
+              CachedBodyHttpServletRequest.wrap(request, GATEWAY_SIGNED_MAX_BODY_BYTES);
+          if (cached == null) {
+            // Oversized / malformed Content-Length: do not authenticate; leave body consumed.
+            filterChain.doFilter(request, response);
+            return;
+          }
+          effectiveRequest = cached;
+          authenticated = signatureVerifier.verify(cached);
+        } else {
+          authenticated = true;
+        }
+      }
+      if (authenticated && SecurityContextHolder.getContext().getAuthentication() == null) {
         var authorities = Arrays.stream(permissions.split(","))
             .map(String::trim)
             .filter(permission -> !permission.isBlank())
@@ -269,7 +287,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         var authentication = new PreAuthenticatedAuthenticationToken("orderpilot-gateway", "N/A", authorities);
         SecurityContextHolder.getContext().setAuthentication(authentication);
       }
-      filterChain.doFilter(request, response);
+      filterChain.doFilter(effectiveRequest, response);
     }
   }
 }

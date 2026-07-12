@@ -1,4 +1,4 @@
-import { BFF_CSRF_HEADER } from "./bff-config.ts";
+import { BFF_CSRF_HEADER, bffPublicOrigin } from "./bff-config.ts";
 
 /** Double-submit CSRF: header must exactly match the non-HttpOnly CSRF cookie. */
 export function validateCsrf(request: Request, csrfCookie: string | undefined): boolean {
@@ -12,22 +12,34 @@ export function validateCsrf(request: Request, csrfCookie: string | undefined): 
   return header === csrfCookie;
 }
 
-/** Same-origin check for browser mutations: Origin must match Host (Referer fallback only). */
+/**
+ * Exact public-origin CSRF check for browser mutations.
+ * Trusted origin comes only from ORDERPILOT_PUBLIC_ORIGIN — never Host, X-Forwarded-*, or Forwarded.
+ */
 export function validateSameOrigin(request: Request): boolean {
-  const host = request.headers.get("host");
-  if (!host) {
+  const configured = bffPublicOrigin();
+  if (!configured) {
     return false;
   }
   const origin = request.headers.get("origin");
   if (origin) {
-    return origin === `https://${host}` || origin === `http://${host}`;
+    // Reject comma-separated / malformed Origin values.
+    if (origin.includes(",") || origin !== origin.trim()) {
+      return false;
+    }
+    try {
+      const parsed = new URL(origin);
+      return parsed.origin === configured && origin === parsed.origin;
+    } catch {
+      return false;
+    }
   }
   const referer = request.headers.get("referer");
   if (!referer) {
     return false;
   }
   try {
-    return new URL(referer).host === host;
+    return new URL(referer).origin === configured;
   } catch {
     return false;
   }

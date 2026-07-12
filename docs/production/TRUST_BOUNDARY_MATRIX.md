@@ -5,7 +5,7 @@
 | Plane | Trusted ingress | Current @ base SHA | Target (Phase 1) | Current delta |
 | --- | --- | --- | --- | --- |
 | Tenant operator browser | BFF session -> Core | Client sends `X-Tenant-Id` / permissions to Core URL | BFF-only, no client authority headers | PR #267 @ `09b8a98`: browser uses `dashboard-http.browser` → `/api/bff`; Server Components use `lib/server/*.server.ts` → `tenant-get-json.server` → in-process `dashboard-server-bff-fetch` (no server `/api/bff` HTTP); `rsc-page-import-guard` blocks tenant client APIs from `app/**/page.tsx`. EV-P1B-022. |
-| Trusted gateway | HMAC-signed headers | Optional; dev unsigned mode | Required signed gateway in production-like profiles | P1-A requires enabled+signed+non-placeholder secret; P1-B BFF uses the gateway signer before Core calls. |
+| Trusted gateway | HMAC-signed headers (v2) | Optional; dev unsigned mode | Required signed gateway in production-like profiles; shared secret = 64 hex / 32 decoded bytes; body+query+content-type bound into HMAC | P1-A requires enabled+signed+non-placeholder 64-hex secret; P1-B BFF signs v2 before Core calls. |
 | Staff / support | Staff identity + grant | Resolver seam + tests | Production staff SSO (P1-C) | OIDC enable flag still fails startup until P1-C implements real identity mapping. |
 | Service / bot | Webhook + service auth | Webhook routes + tests | Preserve backend-owned source/actor authority | No P1-B change to production webhook mutation authority. |
 | Control API | operantctl credentials | Not implemented | Authenticated control plane (P1-E) | Not in P1-B scope. |
@@ -50,4 +50,3 @@ Webhooks, bots, connectors, and workers retain separate machine authority. No `o
 ### Operant support and maintenance access plane
 
 `internal-support-operations-api` fails closed with `SUPPORT_PLANE_NOT_CONFIGURED` when production BFF is active. No fallback to tenant BFF or public Core. Average tenant users cannot reach staff/support routes through tenant BFF (registry + E2E).
-

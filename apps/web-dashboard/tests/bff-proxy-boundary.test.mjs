@@ -15,8 +15,11 @@ const ENV_KEYS = [
   "ORDERPILOT_DEPLOY_PROFILE",
   "ORDERPILOT_BFF_ENABLED",
   "ORDERPILOT_BFF_SESSION_STORE",
+  "ORDERPILOT_LOCAL_BOOTSTRAP_SECRET",
   "ORDERPILOT_BFF_SESSION_SECRET",
+  "ORDERPILOT_GATEWAY_SHARED_SECRET",
   "ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET",
+  "ORDERPILOT_PUBLIC_ORIGIN",
   "CORE_API_BASE_URL",
   "ORDERPILOT_BFF_REDIS_URL",
   "REDIS_URL",
@@ -27,8 +30,9 @@ const BFF_ENV = {
   ORDERPILOT_DEPLOY_PROFILE: "local-test",
   ORDERPILOT_BFF_ENABLED: "true",
   ORDERPILOT_BFF_SESSION_STORE: "memory",
-  ORDERPILOT_BFF_SESSION_SECRET: "x".repeat(48),
-  ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET: "gateway-test-only-secret",
+  ORDERPILOT_LOCAL_BOOTSTRAP_SECRET: "p1b-local-bootstrap-secret-test-only-0123456789ab",
+  ORDERPILOT_GATEWAY_SHARED_SECRET: "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517",
+  ORDERPILOT_PUBLIC_ORIGIN: "https://dashboard.test",
   CORE_API_BASE_URL: "http://core.internal.test:8080"
 };
 
@@ -132,8 +136,36 @@ test("valid read reaches the registered upstream route exactly once with signed 
     assert.equal(upstreamHeaders.get("X-Tenant-Id"), "11111111-1111-4111-8111-111111111111");
     assert.equal(upstreamHeaders.get("X-OrderPilot-Actor-Id"), "22222222-2222-4222-8222-222222222222");
     assert.equal(upstreamHeaders.get("X-OrderPilot-Permissions"), "REVIEW_READ");
+    assert.equal(upstreamHeaders.get("X-OrderPilot-Signature-Version"), "2");
+    assert.match(upstreamHeaders.get("X-OrderPilot-Content-SHA256") ?? "", /^[0-9a-f]{64}$/);
+    assert.equal(
+      upstreamHeaders.get("X-OrderPilot-Content-SHA256"),
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
     assert.ok(upstreamHeaders.get("X-OrderPilot-Gateway-Signature"));
     assert.ok(upstreamHeaders.get("X-OrderPilot-Gateway-Nonce"));
+  });
+});
+
+test("client-forged gateway signature headers are stripped and rebuilt by BFF", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const { calls, impl } = recordingFetch();
+    await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/queue", {
+        sessionId,
+        extraHeaders: {
+          "X-OrderPilot-Signature-Version": "1",
+          "X-OrderPilot-Content-SHA256": "0".repeat(64),
+          "X-OrderPilot-Gateway-Signature": "forged"
+        }
+      })
+    );
+    assert.equal(calls.length, 1);
+    const headers = calls[0].init.headers;
+    assert.equal(headers.get("X-OrderPilot-Signature-Version"), "2");
+    assert.notEqual(headers.get("X-OrderPilot-Gateway-Signature"), "forged");
+    assert.notEqual(headers.get("X-OrderPilot-Content-SHA256"), "0".repeat(64));
   });
 });
 
@@ -531,6 +563,7 @@ test("production-like config requires explicit Core URL — no localhost fallbac
     {
       ...BFF_ENV,
       ORDERPILOT_DEPLOY_PROFILE: "production",
+      ORDERPILOT_PUBLIC_ORIGIN: "https://operant.example.com",
       CORE_API_BASE_URL: "",
       ORDERPILOT_BFF_SESSION_STORE: "",
       ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"

@@ -17,8 +17,8 @@ import {
   BFF_CSRF_COOKIE,
   BFF_SESSION_COOKIE,
   bffGatewaySharedSecret,
+  bffPublicOrigin,
   bffRuntimeMode,
-  bffSessionSecret,
   bffUpstreamTimeoutMs,
   validatedCoreApiInternalBaseUrl
 } from "./bff-config.ts";
@@ -373,16 +373,35 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   }
 
   const corePath = corePathFromBffSegments(segments);
-  const target = `${coreBaseUrl}${corePath}${query}`;
+  // One source of truth: validate → build exact forwarded query → sign exact query → send exact query.
+  const forwardedQuery = query;
+  const rawQueryForSignature = forwardedQuery.startsWith("?") ? forwardedQuery.slice(1) : forwardedQuery;
+  const target = `${coreBaseUrl}${corePath}${forwardedQuery}`;
+  const bodyBytes = body === undefined ? new Uint8Array(0) : Buffer.from(body, "utf8");
+  const contentTypeForSignature =
+    bodyBytes.byteLength === 0 ? "" : rule.contentType === "application/json" ? "application/json" : "";
+  if (bodyBytes.byteLength > 0 && contentTypeForSignature !== "application/json") {
+    return safeJson(415);
+  }
   // Least privilege: sign only the matched route permission after session possession check.
-  const signed = signGatewayHeaders({
-    method,
-    requestUri: corePath,
-    tenantId: session.tenantId,
-    actorId: session.actorId,
-    permissions: [rule.permission],
-    sharedSecret: gatewaySecret
-  });
+  // Outbound headers are rebuilt from scratch — client-supplied gateway/signature/hash headers
+  // are never forwarded (buildOutboundHeaders starts from the signed set only).
+  let signed: Record<string, string>;
+  try {
+    signed = signGatewayHeaders({
+      method,
+      path: corePath,
+      rawQuery: rawQueryForSignature,
+      contentType: contentTypeForSignature,
+      bodyBytes,
+      tenantId: session.tenantId,
+      actorId: session.actorId,
+      permissions: [rule.permission],
+      sharedSecret: gatewaySecret
+    });
+  } catch {
+    return safeJson(503);
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), bffUpstreamTimeoutMs());
@@ -390,8 +409,8 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   try {
     upstream = await fetch(target, {
       method,
-      body,
-      headers: buildOutboundHeaders(request, rule, signed, body !== undefined),
+      body: bodyBytes.byteLength > 0 ? body : undefined,
+      headers: buildOutboundHeaders(request, rule, signed, bodyBytes.byteLength > 0),
       cache: "no-store",
       redirect: "manual",
       signal: controller.signal
@@ -432,14 +451,15 @@ export async function validateBffProductionConfig(): Promise<string | null> {
   if (bffRuntimeMode() !== "bff-production") {
     return null;
   }
-  if (!bffSessionSecret() || bffSessionSecret().length < 32) {
-    return "ORDERPILOT_BFF_SESSION_SECRET must be at least 32 characters in BFF production mode";
-  }
+  // Production sessions are opaque Redis IDs — no ORDERPILOT_BFF_SESSION_SECRET required.
   if (!bffGatewaySharedSecret()) {
-    return "ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET is required for BFF production mode";
+    return "ORDERPILOT_GATEWAY_SHARED_SECRET must be exactly 64 hexadecimal characters (openssl rand -hex 32)";
+  }
+  if (!bffPublicOrigin()) {
+    return "ORDERPILOT_PUBLIC_ORIGIN must be an exact origin URL (https in production-like profiles)";
   }
   if (!validatedCoreApiInternalBaseUrl()) {
-    return "CORE_API_BASE_URL must be an explicit http(s) URL for BFF production mode";
+    return "CORE_API_BASE_URL must be https or loopback http (127.0.0.1 / [::1]) for BFF production mode";
   }
   const ttl = parseBffSessionMaxAgeSeconds(process.env.ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS, {
     allowDefaultOnMissing: true

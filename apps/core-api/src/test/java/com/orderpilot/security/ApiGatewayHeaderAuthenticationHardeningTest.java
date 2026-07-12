@@ -59,7 +59,7 @@ import org.springframework.web.bind.annotation.RestController;
 })
 class ApiGatewayHeaderAuthenticationHardeningTest {
   // Test-only static secret. NOT a real credential — only proves the HMAC contract.
-  static final String SECRET = "op-cap-43c-test-only-gateway-shared-secret";
+  static final String SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
 
   private static final String TENANT = "11111111-1111-1111-1111-111111111111";
   private static final String ACTOR = "22222222-2222-2222-2222-222222222222";
@@ -153,11 +153,16 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
   void clientCannotEscalatePermissionsByTamperingSignedHeader() throws Exception {
     long now = nowEpoch();
     String nonce = freshNonce();
-    // Signature computed over the low permission the gateway actually granted.
-    String signatureOverLowGrant = SignedActorVerifier.hmacHex(SECRET,
-        GatewayHeaderSignatureVerifier.canonical(
-            new org.springframework.mock.web.MockHttpServletRequest(HttpMethod.POST.name(), MANAGE_ROUTE),
-            TENANT, ACTOR, ApiPermission.ANALYTICS_READ.name(), now, nonce));
+    // Signature computed over the low permission the gateway actually granted (empty body POST).
+    String signatureOverLowGrant = TrustedGatewayTestSigning.hmacV2EmptyBody(
+        SECRET,
+        HttpMethod.POST.name(),
+        MANAGE_ROUTE,
+        TENANT,
+        ACTOR,
+        ApiPermission.ANALYTICS_READ.name(),
+        now,
+        nonce);
 
     MvcResult result = mockMvc.perform(post(MANAGE_ROUTE)
             .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
@@ -166,6 +171,10 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_MANAGE.name())
             .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(now))
             .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
+            .header(GatewayHeaderSignatureVerifier.VERSION_HEADER, GatewayV2Canonical.SIGNATURE_VERSION)
+            .header(
+                GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER,
+                GatewayV2Canonical.EMPTY_BODY_SHA256_HEX)
             // ...but the signature only covers the low grant, so verification fails closed.
             .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signatureOverLowGrant)
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
@@ -180,19 +189,20 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
 
   private MockHttpServletRequestBuilder signed(
       HttpMethod method, String path, String tenant, String actor, String permissions, long timestampEpoch) {
-    String nonce = freshNonce();
-    String canonical = GatewayHeaderSignatureVerifier.canonical(
-        new org.springframework.mock.web.MockHttpServletRequest(method.name(), path),
-        tenant, actor, permissions, timestampEpoch, nonce);
-    String signature = SignedActorVerifier.hmacHex(SECRET, canonical);
-    MockHttpServletRequestBuilder builder = HttpMethod.POST.equals(method) ? post(path) : get(path);
-    return builder
-        .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, tenant)
-        .header(RequestActorResolver.ACTOR_HEADER, actor)
-        .header(ApiPermissionGuard.PERMISSIONS_HEADER, permissions)
-        .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestampEpoch))
-        .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
-        .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature);
+    byte[] body = HttpMethod.POST.equals(method) ? "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8) : new byte[0];
+    String contentType = body.length == 0 ? "" : "application/json";
+    return TrustedGatewayTestSigning.signed(
+        SECRET,
+        method,
+        path,
+        tenant,
+        actor,
+        permissions,
+        timestampEpoch,
+        freshNonce(),
+        "",
+        contentType,
+        body);
   }
 
   private static String freshNonce() {
