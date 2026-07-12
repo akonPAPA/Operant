@@ -2,25 +2,41 @@
  * Server-only BFF configuration. Never expose gateway or session secrets to the browser.
  * This module is Edge-safe: env reads only, no Node-only imports.
  */
-import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
+import { isProductionLikeDeployment, isProductionNodeRuntime } from "./bff-deployment-profile.ts";
 import { decodeGatewaySharedSecret, readGatewaySharedSecretEnv } from "./bff-gateway-key.ts";
 
 const DEFAULT_CORE = "http://127.0.0.1:8080";
 
 export type BffRuntimeMode = "demo-dev" | "bff-production" | "unavailable";
 
-export function bffRuntimeMode(): BffRuntimeMode {
-  if (process.env.NODE_ENV === "production") {
-    if (process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE === "true") {
-      return "unavailable";
-    }
-    if (process.env.ORDERPILOT_BFF_ENABLED === "true") {
-      return "bff-production";
-    }
-    return "unavailable";
+function envFlag(name: string): string {
+  // Bracket access avoids Next/SWC compile-time inlining of process.env.NAME patterns.
+  return String(process.env[name] ?? "").trim();
+}
+
+function isDemoMode(): boolean {
+  const privateDemo = envFlag("ORDERPILOT_DEMO_MODE");
+  if (privateDemo === "true") {
+    return true;
   }
-  if (process.env.ORDERPILOT_BFF_ENABLED === "true") {
+  if (privateDemo === "false") {
+    return false;
+  }
+  return envFlag("NEXT_PUBLIC_ORDERPILOT_DEMO_MODE") === "true";
+}
+
+function isBffEnabled(): boolean {
+  return envFlag("ORDERPILOT_BFF_ENABLED") === "true";
+}
+
+export function bffRuntimeMode(): BffRuntimeMode {
+  // Private ORDERPILOT_DEMO_MODE=false must win over a build-time-inlined NEXT_PUBLIC demo flag
+  // so production artifacts and E2E can enable BFF even when .env.local baked demo=true into the build.
+  if (isBffEnabled() && !isDemoMode()) {
     return "bff-production";
+  }
+  if (isProductionNodeRuntime() || process.env.NODE_ENV === "production") {
+    return "unavailable";
   }
   return "demo-dev";
 }
@@ -95,7 +111,7 @@ export function bffUpstreamTimeoutMs(): number {
 }
 
 export function bffCookieSecure(): boolean {
-  return process.env.NODE_ENV === "production";
+  return isProductionNodeRuntime();
 }
 
 /**

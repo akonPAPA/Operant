@@ -1,6 +1,10 @@
 /**
  * Start the Next.js standalone server for E2E (shell-free).
  * Usage: node e2e/standalone-server.mjs --port 3100
+ *
+ * Production deployments run server.js directly. E2E may set ORDERPILOT_E2E_RUNTIME_NODE_ENV
+ * so BFF security gates treat the process as a non-production local/test runtime without
+ * rewriting Next's standalone entrypoint.
  */
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";

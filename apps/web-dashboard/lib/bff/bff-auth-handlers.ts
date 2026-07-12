@@ -12,7 +12,7 @@ import {
   BFF_SESSION_COOKIE,
   bffCookieSecure
 } from "./bff-config.ts";
-import { isLocalTestBootstrapAllowed } from "./bff-deployment-profile.ts";
+import { isLocalTestBootstrapAllowed, isProductionNodeRuntime } from "./bff-deployment-profile.ts";
 import { newCsrfToken, sessionMaxAgeSeconds } from "./bff-session.ts";
 import {
   persistOperatorSession,
@@ -74,7 +74,7 @@ function boundedBootstrapIdentity():
 
 export async function handleSessionBootstrap(request: Request): Promise<Response> {
   // Production Node runtimes deny before reading identity, session store, CSRF, or cookies.
-  if (process.env.NODE_ENV === "production") {
+  if (isProductionNodeRuntime()) {
     return bootstrapUnavailable();
   }
   if (!isLocalTestBootstrapAllowed()) {

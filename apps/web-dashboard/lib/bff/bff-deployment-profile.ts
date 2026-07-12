@@ -6,11 +6,36 @@ export function deployProfile(): string {
 }
 
 /**
+ * Runtime NODE_ENV read that must not be compile-time inlined by Next/SWC.
+ * Production builds replace bare `process.env.NODE_ENV` with the string "production";
+ * security gates that depend on the live process environment must use this helper.
+ */
+export function runtimeNodeEnv(): string {
+  const key = ["NODE", "ENV"].join("_");
+  return String(process.env[key] ?? "");
+}
+
+/**
+ * True only for a real production Node runtime.
+ *
+ * ORDERPILOT_E2E_RUNTIME_NODE_ENV is an E2E-harness-only escape hatch used by
+ * `e2e/standalone-server.mjs` / Playwright. It is never set in production deployments and is not
+ * a client-visible or authentication secret.
+ */
+export function isProductionNodeRuntime(): boolean {
+  const e2eRuntime = process.env.ORDERPILOT_E2E_RUNTIME_NODE_ENV?.trim();
+  if (e2eRuntime === "test" || e2eRuntime === "development") {
+    return false;
+  }
+  return runtimeNodeEnv() === "production";
+}
+
+/**
  * Production-like deployment: bootstrap session issuance and memory session storage must fail
  * closed.
  *
- * Invariant: NODE_ENV=production is always production-like. A deploy-profile environment variable
- * must never downgrade a production Node runtime to local/test semantics.
+ * Invariant: a production Node runtime is always production-like. A deploy-profile environment
+ * variable must never downgrade a production Node runtime to local/test semantics.
  *
  * Non-production Node runtimes:
  * - explicit prod/production/cloud/staging profile → production-like
@@ -18,7 +43,7 @@ export function deployProfile(): string {
  * - missing profile → local development (not production-like)
  */
 export function isProductionLikeDeployment(): boolean {
-  if (process.env.NODE_ENV === "production") {
+  if (isProductionNodeRuntime()) {
     return true;
   }
   const profile = deployProfile();
@@ -37,7 +62,7 @@ export function isProductionLikeDeployment(): boolean {
  * headers, or cookies.
  */
 export function isLocalTestBootstrapAllowed(): boolean {
-  if (process.env.NODE_ENV === "production") {
+  if (isProductionNodeRuntime()) {
     return false;
   }
   if (isProductionLikeDeployment()) {

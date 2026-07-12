@@ -28,6 +28,7 @@ const ENV_KEYS = [
   "ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS",
   "ORDERPILOT_BFF_REDIS_URL",
   "REDIS_URL",
+  "ORDERPILOT_E2E_RUNTIME_NODE_ENV",
   // legacy keys must never restore production session HMAC behavior
   "ORDERPILOT_BFF_SESSION_SECRET",
   "ORDERPILOT_LOCAL_BOOTSTRAP_SECRET"
@@ -138,6 +139,17 @@ function countingRedis() {
     }
   };
 }
+
+test("runtimeNodeEnv is not compile-time inlined for security gates", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const source = readFileSync(join(process.cwd(), "lib/bff/bff-deployment-profile.ts"), "utf8");
+  assert.match(source, /\["NODE", "ENV"\]\.join\("_"\)/);
+  assert.match(source, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
+  assert.match(source, /export function isProductionNodeRuntime/);
+  assert.doesNotMatch(source, /return process\.env\.NODE_ENV === "production"/);
+  assert.doesNotMatch(source, /if \(process\.env\.NODE_ENV === "production"\)/);
+});
 
 test("NODE_ENV=production is always production-like regardless of deploy profile", async () => {
   for (const profile of ["", "production", "local", "test", "local-test", "unknown"]) {
