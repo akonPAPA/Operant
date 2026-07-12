@@ -16,17 +16,19 @@ test("E2E runner and standalone launcher avoid shell execution", () => {
   assert.doesNotMatch(runE2e, /npx/);
 });
 
-test("E2E standalone harness can lock non-production NODE_ENV without changing production entrypoint", () => {
+test("E2E standalone harness uses process env and no production-module runtime downgrade", () => {
   const standalone = readFileSync(join(root, "e2e", "standalone-server.mjs"), "utf8");
   assert.doesNotMatch(standalone, /writeE2eNodeEnvLockWrapper/);
   assert.doesNotMatch(standalone, /\.e2e-server-/);
+  assert.doesNotMatch(standalone, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
   const playwright = readFileSync(join(root, "playwright.config.ts"), "utf8");
-  assert.match(playwright, /ORDERPILOT_E2E_RUNTIME_NODE_ENV:\s*"test"/);
+  assert.match(playwright, /NODE_ENV:\s*"test"/);
+  assert.doesNotMatch(playwright, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
   assert.doesNotMatch(
     playwright.split("port 3101")[1] ?? "",
-    /ORDERPILOT_E2E_RUNTIME_NODE_ENV/
+    /NODE_ENV:\s*"test"/
   );
   const profile = readFileSync(join(root, "lib/bff/bff-deployment-profile.ts"), "utf8");
-  assert.match(profile, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
+  assert.doesNotMatch(profile, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
   assert.match(profile, /\["NODE", "ENV"\]\.join\("_"\)/);
 });

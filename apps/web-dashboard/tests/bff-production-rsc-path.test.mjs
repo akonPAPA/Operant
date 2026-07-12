@@ -117,20 +117,24 @@ async function sessionFor(tenantId, actorId, permissions, expiresAtEpochSec) {
 }
 
 
-test("production RSC cookie resolver canonicalizes exactly one op_session", () => {
+test("production RSC cookie resolver canonicalizes exactly one opaque op_session", () => {
+  const sessionId = "S".repeat(43);
   assert.equal(cookieHeaderForServerBffRequest(null), null);
   assert.equal(cookieHeaderForServerBffRequest("other=1"), null);
   assert.equal(
-    cookieHeaderForServerBffRequest("other=1; op_session=abc%201; theme=dark"),
-    "op_session=abc%201"
+    cookieHeaderForServerBffRequest(`other=1; op_session=${sessionId}; theme=dark`),
+    `op_session=${sessionId}`
   );
 });
 
-test("production RSC cookie resolver fails closed on duplicate and malformed op_session", () => {
-  assert.equal(cookieHeaderForServerBffRequest("op_session=same; op_session=same"), null);
-  assert.equal(cookieHeaderForServerBffRequest("op_session=first; op_session=second"), null);
+test("production RSC cookie resolver fails closed on duplicate, malformed and invalid op_session", () => {
+  const sessionId = "S".repeat(43);
+  assert.equal(cookieHeaderForServerBffRequest(`op_session=${sessionId}; op_session=${sessionId}`), null);
+  assert.equal(cookieHeaderForServerBffRequest(`op_session=${sessionId}; op_session=${"T".repeat(43)}`), null);
   assert.equal(cookieHeaderForServerBffRequest("op_session="), null);
   assert.equal(cookieHeaderForServerBffRequest("op_session=%E0%A4%A"), null);
+  assert.equal(cookieHeaderForServerBffRequest("op_session=abc%201"), null);
+  assert.equal(cookieHeaderForServerBffRequest("op_session=short"), null);
 });
 test("production inbox read-model getIntakeMessages signs tenant A via in-process BFF", async () => {
   await withEnv(BFF_ENV, async () => {

@@ -148,7 +148,7 @@ test("bff proxy validates session and csrf before upstream fetch", () => {
 
 test("bff proxy returns before Core fetch when CSRF validation fails", () => {
   const proxy = readFileSync(join(root, "lib", "bff", "bff-proxy.ts"), "utf8");
-  const csrfBlock = proxy.slice(proxy.indexOf("if (!validateCsrf"), proxy.indexOf("await fetch(target"));
+  const csrfBlock = proxy.slice(proxy.indexOf("const csrfCookie = readSecurityCookie"), proxy.indexOf("await fetch(target"));
   assert.match(csrfBlock, /safeJson\(403\)/);
   assert.doesNotMatch(csrfBlock, /await fetch\(/);
 });
