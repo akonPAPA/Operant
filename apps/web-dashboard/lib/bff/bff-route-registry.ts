@@ -95,6 +95,43 @@ const ORDER_JOURNEY_BY_SOURCE_QUERY: BffQueryPolicy = Object.freeze({
   },
   sourceId: { type: "uuid", maxValues: 1 }
 });
+const DRAFT_REVIEW_QUEUE_QUERY: BffQueryPolicy = Object.freeze({
+  status: { type: "text", maxValues: 1, maxLength: 32 },
+  sourceReviewCaseId: { type: "uuid", maxValues: 1 },
+  customerRef: { type: "text", maxValues: 1, maxLength: 128 },
+  limit: { type: "positive-int", maxValues: 1 }
+});
+const PRODUCT_SEARCH_QUERY: BffQueryPolicy = Object.freeze({
+  q: { type: "text", maxValues: 1, maxLength: 128 },
+  limit: { type: "positive-int", maxValues: 1 }
+});
+const RFQ_HANDOFF_LIST_QUERY: BffQueryPolicy = Object.freeze({
+  status: {
+    type: "enum",
+    enumValues: ["PENDING_REVIEW", "IN_REVIEW", "CONVERTED", "DISMISSED"],
+    maxValues: 1
+  },
+  page: { type: "positive-int", maxValues: 1 },
+  size: { type: "positive-int", maxValues: 1 }
+});
+const AI_WORK_SUGGESTIONS_QUERY: BffQueryPolicy = Object.freeze({
+  limit: { type: "positive-int", maxValues: 1 },
+  sourceType: { type: "text", maxValues: 1, maxLength: 48 },
+  sourceId: { type: "uuid", maxValues: 1 }
+});
+const REVIEW_DRAFT_QUEUE_QUERY: BffQueryPolicy = Object.freeze({
+  draftType: { type: "text", maxValues: 1, maxLength: 32 },
+  status: { type: "text", maxValues: 1, maxLength: 32 },
+  limit: { type: "positive-int", maxValues: 1 },
+  offset: { type: "text", maxValues: 1, maxLength: 9 }
+});
+const DRAFT_PREVIEW_QUERY: BffQueryPolicy = Object.freeze({
+  targetType: {
+    type: "enum",
+    enumValues: ["QUOTE", "ORDER"],
+    maxValues: 1
+  }
+});
 
 function paramsFor(pattern: string): Record<string, BffPathParamType> {
   const params: Record<string, BffPathParamType> = {};
@@ -188,16 +225,18 @@ const ROUTE_RULES: BffRouteRule[] = [
   read("api/v1/intake/messages", "INTAKE_READ"),
   read("api/v1/intake/messages/:messageId", "INTAKE_READ"),
 
-  // Extraction → validation bridge
-  read("api/v1/extractions/:extractionId/validation/review-case", "EXTRACTION_READ"),
+  // Extraction → validation bridge (Core exposes POST create only)
+  mutate("POST", "api/v1/extractions/:extractionId/validation/review-case", "EXTRACTION_RUN"),
 
   // Validation runs and review drafts
   read("api/v1/validations/:validationRunId/review", "VALIDATION_READ"),
   read("api/v1/validations/:validationRunId/review/draft-status", "VALIDATION_READ"),
   read("api/v1/validations/:validationRunId/review/draftability", "VALIDATION_READ"),
   read("api/v1/validations/extractions/:extractionResultId/review", "VALIDATION_READ"),
-  read("api/v1/validations/review-drafts", "VALIDATION_READ"),
-  read("api/v1/validations/review-drafts/remediation-rollup", "VALIDATION_READ"),
+  read("api/v1/validations/review-drafts", "VALIDATION_READ", { query: REVIEW_DRAFT_QUEUE_QUERY }),
+  read("api/v1/validations/review-drafts/remediation-rollup", "VALIDATION_READ", {
+    query: LIMIT_QUERY
+  }),
   read(
     "api/v1/validations/review-drafts/:draftKind/:draftId/remediation-lineage",
     "VALIDATION_READ"
@@ -221,7 +260,9 @@ const ROUTE_RULES: BffRouteRule[] = [
   // Validation review workspace
   read("api/v1/validation-review", "REVIEW_READ"),
   read("api/v1/validation-review/:reviewCaseId", "REVIEW_READ"),
-  read("api/v1/validation-review/:reviewCaseId/draft-preview", "REVIEW_READ"),
+  read("api/v1/validation-review/:reviewCaseId/draft-preview", "REVIEW_READ", {
+    query: DRAFT_PREVIEW_QUERY
+  }),
   mutate("POST", "api/v1/validation-review/:reviewCaseId/approve", "REVIEW_ACTION"),
   mutate("POST", "api/v1/validation-review/:reviewCaseId/reject", "REVIEW_ACTION"),
   mutate("POST", "api/v1/validation-review/:reviewCaseId/corrections/product", "REVIEW_ACTION"),
@@ -245,11 +286,15 @@ const ROUTE_RULES: BffRouteRule[] = [
   mutate("POST", "api/v1/validation-review/:reviewCaseId/prepare-draft-order", "REVIEW_ACTION"),
 
   // Draft review workspace
-  read("api/v1/workspace/draft-quotes/review-queue", "REVIEW_READ"),
-  read("api/v1/workspace/draft-orders/review-queue", "REVIEW_READ"),
+  read("api/v1/workspace/draft-quotes/review-queue", "REVIEW_READ", {
+    query: DRAFT_REVIEW_QUEUE_QUERY
+  }),
+  read("api/v1/workspace/draft-orders/review-queue", "REVIEW_READ", {
+    query: DRAFT_REVIEW_QUEUE_QUERY
+  }),
   read("api/v1/workspace/draft-quotes/:draftQuoteId/review", "REVIEW_READ"),
   read("api/v1/workspace/draft-orders/:draftOrderId/review", "REVIEW_READ"),
-  read("api/v1/workspace/products/search", "REVIEW_READ"),
+  read("api/v1/workspace/products/search", "REVIEW_READ", { query: PRODUCT_SEARCH_QUERY }),
   mutate("PATCH", "api/v1/workspace/draft-quotes/:draftQuoteId/lines/:lineId", "REVIEW_ACTION"),
   mutate("PATCH", "api/v1/workspace/draft-orders/:draftOrderId/lines/:lineId", "REVIEW_ACTION"),
   mutate("POST", "api/v1/workspace/draft-quotes/:draftQuoteId/mark-ready", "REVIEW_ACTION"),
@@ -280,12 +325,12 @@ const ROUTE_RULES: BffRouteRule[] = [
   // Quotes
   read("api/v1/quotes/:quoteId/approval-state", "QUOTE_READ"),
   read("api/v1/quotes/:quoteId/source-context", "QUOTE_READ"),
-  read("api/v1/quotes/drafts/from-rfq-handoff/:handoffId", "QUOTE_READ"),
   mutate("POST", "api/v1/quotes/from-rfq", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/:quoteId/approve", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/:quoteId/reject", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/:quoteId/request-changes", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/:quoteId/convert-to-internal-order", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId/decision", "QUOTE_ACTION"),
 
   // Quote transactions (channel/document conversion)
@@ -297,9 +342,9 @@ const ROUTE_RULES: BffRouteRule[] = [
   ),
 
   // Channels / RFQ handoffs
-  read("api/v1/channels/bot-bridge/status", "ADMIN_SETTINGS_READ"),
-  read("api/v1/channels/bot-events", "ADMIN_SETTINGS_READ"),
-  read("api/v1/channels/rfq-handoffs", "ADMIN_SETTINGS_READ"),
+  read("api/v1/channels/bot-bridge/status", "ADMIN_SETTINGS_READ", { query: LIMIT_QUERY }),
+  read("api/v1/channels/bot-events", "ADMIN_SETTINGS_READ", { query: LIMIT_QUERY }),
+  read("api/v1/channels/rfq-handoffs", "ADMIN_SETTINGS_READ", { query: RFQ_HANDOFF_LIST_QUERY }),
   read("api/v1/channels/rfq-handoffs/:handoffId", "ADMIN_SETTINGS_READ"),
   mutate("POST", "api/v1/channels/rfq-handoffs/:handoffId/dismiss", "ADMIN_SETTINGS_MANAGE"),
   mutate(
@@ -328,9 +373,9 @@ const ROUTE_RULES: BffRouteRule[] = [
   read("api/v1/inventory", "ADMIN_SETTINGS_READ"),
 
   // AI advisory work
-  read("api/v1/ai-work/suggestions", "REVIEW_READ"),
+  read("api/v1/ai-work/suggestions", "REVIEW_READ", { query: AI_WORK_SUGGESTIONS_QUERY }),
   read("api/v1/ai-work/suggestions/:suggestionId", "REVIEW_READ"),
-  read("api/v1/ai-work/rfq-handoffs/:handoffId/suggestions", "REVIEW_READ"),
+  mutate("POST", "api/v1/ai-work/rfq-handoffs/:handoffId/suggestions", "AI_WORK_ACTION"),
   mutate("POST", "api/v1/ai-work/suggestions/:suggestionId/accept", "AI_WORK_ACTION"),
   mutate("POST", "api/v1/ai-work/suggestions/:suggestionId/reject", "AI_WORK_ACTION"),
 

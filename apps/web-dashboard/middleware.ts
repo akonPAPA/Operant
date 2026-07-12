@@ -1,6 +1,5 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { BFF_SESSION_COOKIE, bffRuntimeMode } from "@/lib/bff/bff-config";
 
 /**
  * Edge Middleware — UX only, never an authority boundary.
@@ -12,6 +11,14 @@ import { BFF_SESSION_COOKIE, bffRuntimeMode } from "@/lib/bff/bff-config";
  * Authoritative session validation lives in the Node-runtime route handlers.
  */
 
+const BFF_SESSION_COOKIE = "op_session";
+
+function middlewareBffRuntimeEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") {
+    return process.env.NEXT_PUBLIC_ORDERPILOT_DEMO_MODE !== "true" && process.env.ORDERPILOT_BFF_ENABLED === "true";
+  }
+  return process.env.ORDERPILOT_BFF_ENABLED === "true";
+}
 const PUBLIC_PATH_PREFIXES = ["/login", "/api/auth", "/public", "/api/bff/health"];
 const STATIC_PREFIXES = ["/_next", "/favicon.ico"];
 
@@ -36,7 +43,7 @@ export function middleware(request: NextRequest) {
   response.headers.set("Permissions-Policy", "geolocation=()");
   response.headers.set("Cache-Control", "no-store");
 
-  if (bffRuntimeMode() !== "bff-production") {
+  if (!middlewareBffRuntimeEnabled()) {
     return response;
   }
 

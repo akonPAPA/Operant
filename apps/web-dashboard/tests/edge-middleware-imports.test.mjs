@@ -16,6 +16,8 @@ const FORBIDDEN_SPECIFIERS = [
   "bff-gateway-signer",
   "bff-session",
   "bff-auth-handlers",
+  "bff-config",
+  "bff-deployment-profile",
   "redis",
   "next/headers"
 ];
@@ -53,6 +55,11 @@ function collectImportGraph(entryFile) {
     }
     visited.add(file);
     const source = readFileSync(file, "utf8");
+    assert.doesNotMatch(
+      source,
+      /\brequire\s*\(|import\s*\(/,
+      `middleware graph file must not use require/dynamic import: ${file}`
+    );
     const importPattern = /(?:import|export)\s[^;]*?from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g;
     for (const match of source.matchAll(importPattern)) {
       const specifier = match[1] ?? match[2];
@@ -92,8 +99,19 @@ test("middleware import graph contains no Node-only or session/proxy/signer modu
       );
     }
   }
-  // sanity: the graph really was traversed beyond the entry file
-  assert.ok(files.size >= 2, "expected middleware to import at least bff-config");
+  assert.equal(files.size, 1, "middleware should not import server-only BFF modules");
+});
+
+test("middleware session cookie name stays aligned with BFF config without importing it", () => {
+  const middlewareSource = readFileSync(join(root, "middleware.ts"), "utf8");
+  const configSource = readFileSync(join(root, "lib/bff/bff-config.ts"), "utf8");
+  const cookie = middlewareSource.match(/const BFF_SESSION_COOKIE = "([^"]+)"/);
+  assert.ok(cookie, "middleware must define BFF_SESSION_COOKIE locally");
+  assert.match(configSource, new RegExp(`export const BFF_SESSION_COOKIE = "${cookie[1]}"`));
+  assert.match(middlewareSource, /middlewareBffRuntimeEnabled/);
+  assert.doesNotMatch(middlewareSource, /request\.(headers|cookies|nextUrl|url).*ORDERPILOT_BFF|ORDERPILOT_DEPLOY/);
+  assert.match(middlewareSource, /process\.env\.ORDERPILOT_BFF_ENABLED/);
+  assert.match(middlewareSource, /process\.env\.NODE_ENV/);
 });
 
 test("middleware performs no authoritative session validation", () => {

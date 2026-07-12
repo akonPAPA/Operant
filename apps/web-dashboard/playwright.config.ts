@@ -7,7 +7,7 @@ import { defineConfig } from "@playwright/test";
  *  - :3101 production profile — sign-in must fail closed (no P1-C trusted identity yet)
  *  - :18080 bounded fake Core recording every request that crosses the BFF boundary
  */
-const SESSION_SECRET = "p1b-e2e-session-secret-0123456789abcdef01234567";
+const SESSION_SECRET = "p1b-e2e-session-secret-test-only-0123456789abcdef";
 const GATEWAY_SECRET = "p1b-e2e-gateway-secret-test-only";
 
 const sharedEnv = {

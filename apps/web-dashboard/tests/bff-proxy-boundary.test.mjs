@@ -527,6 +527,42 @@ test("tracking-link and bot settings canonical methods are registered", () => {
   );
   assert.equal(matchBffRoute(["api", "v1", "bot-runtime", "settings"], "POST")?.permission, "BOT_ACTION");
   assert.equal(matchBffRoute(["api", "v1", "bot-runtime", "settings"], "PUT"), null);
+  assert.equal(
+    matchBffRoute(["api", "v1", "extractions", "11111111-1111-4111-8111-111111111111", "validation", "review-case"], "POST")?.permission,
+    "EXTRACTION_RUN"
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "extractions", "11111111-1111-4111-8111-111111111111", "validation", "review-case"], "GET"),
+    null
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "quotes", "drafts", "from-rfq-handoff", "11111111-1111-4111-8111-111111111111"], "POST")?.permission,
+    "QUOTE_ACTION"
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "quotes", "drafts", "from-rfq-handoff", "11111111-1111-4111-8111-111111111111"], "GET"),
+    null
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "ai-work", "rfq-handoffs", "11111111-1111-4111-8111-111111111111", "suggestions"], "POST")?.permission,
+    "AI_WORK_ACTION"
+  );
+  assert.equal(
+    matchBffRoute(["api", "v1", "ai-work", "rfq-handoffs", "11111111-1111-4111-8111-111111111111", "suggestions"], "GET"),
+    null
+  );
+  assert.ok(
+    matchBffRoute(["api", "v1", "workspace", "products", "search"], "GET")?.query.q
+  );
+  assert.ok(
+    matchBffRoute(["api", "v1", "workspace", "draft-quotes", "review-queue"], "GET")?.query.status
+  );
+  assert.ok(
+    matchBffRoute(["api", "v1", "channels", "rfq-handoffs"], "GET")?.query.status
+  );
+  assert.ok(
+    matchBffRoute(["api", "v1", "ai-work", "suggestions"], "GET")?.query.limit
+  );
 });
 
 test("upstream 4xx, non-json, oversized response and 204 are safely bounded", async () => {
