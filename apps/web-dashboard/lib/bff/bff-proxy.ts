@@ -19,6 +19,7 @@ import {
   bffGatewaySharedSecret,
   bffPublicOrigin,
   bffRuntimeMode,
+  bffGatewayClockSkewSeconds,
   bffUpstreamTimeoutMs,
   validatedCoreApiInternalBaseUrl
 } from "./bff-config.ts";
@@ -27,7 +28,7 @@ import { loadOperatorSession, requireRedisSessionBackend } from "./bff-session-s
 import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
 import { parseBffSessionMaxAgeSeconds } from "./bff-session-ttl-policy.ts";
 import { validateCsrf, validateSameOrigin } from "./bff-csrf.ts";
-import { readSecurityCookieHeader } from "./bff-cookies.ts";
+import { readSecurityCookie, type SecurityCookiePolicy } from "./bff-cookies.ts";
 
 const SAFE_PROXY_ERROR = "The request could not be completed.";
 const SAFE_IDEMPOTENCY_KEY = /^[A-Za-z0-9._~:-]{1,128}$/;
@@ -35,6 +36,8 @@ const ALLOWED_ACCEPT = new Set(["application/json", "*/*", "application/json, te
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const UUID_QUERY = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TEXT_QUERY = /^[A-Za-z0-9][A-Za-z0-9._~:@ -]{0,127}$/;
+const SESSION_COOKIE_POLICY: SecurityCookiePolicy = { minLength: 43, maxLength: 128, pattern: /^[A-Za-z0-9_-]+$/ };
+const CSRF_COOKIE_POLICY: SecurityCookiePolicy = { minLength: 16, maxLength: 256, pattern: /^[A-Za-z0-9_-]+$/ };
 
 function safeJson(status: number): Response {
   return new Response(JSON.stringify({ message: SAFE_PROXY_ERROR }), {
@@ -83,8 +86,11 @@ export function rawBffPathRejected(rawPathname: string): boolean {
 }
 
 async function readOperatorSession(request: Request) {
-  const sessionId = readSecurityCookieHeader(request.headers.get("cookie"), BFF_SESSION_COOKIE);
-  return loadOperatorSession(sessionId);
+  const sessionCookie = readSecurityCookie(request.headers.get("cookie"), BFF_SESSION_COOKIE, SESSION_COOKIE_POLICY);
+  if (sessionCookie.status !== "valid") {
+    return null;
+  }
+  return loadOperatorSession(sessionCookie.value);
 }
 
 function buildOutboundHeaders(
@@ -327,8 +333,8 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
       return safeJson(403);
     }
     if (rule.csrfRequired) {
-      const csrfCookie = readSecurityCookieHeader(request.headers.get("cookie"), BFF_CSRF_COOKIE);
-      if (!validateCsrf(request, csrfCookie)) {
+      const csrfCookie = readSecurityCookie(request.headers.get("cookie"), BFF_CSRF_COOKIE, CSRF_COOKIE_POLICY);
+      if (csrfCookie.status !== "valid" || !validateCsrf(request, csrfCookie.value)) {
         return safeJson(403);
       }
     }
@@ -376,7 +382,8 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   // One source of truth: validate → build exact forwarded query → sign exact query → send exact query.
   const forwardedQuery = query;
   const rawQueryForSignature = forwardedQuery.startsWith("?") ? forwardedQuery.slice(1) : forwardedQuery;
-  const target = `${coreBaseUrl}${corePath}${forwardedQuery}`;
+  const target = new URL(corePath, `${coreBaseUrl}/`);
+  target.search = forwardedQuery;
   const bodyBytes = body === undefined ? new Uint8Array(0) : Buffer.from(body, "utf8");
   const contentTypeForSignature =
     bodyBytes.byteLength === 0 ? "" : rule.contentType === "application/json" ? "application/json" : "";
@@ -459,7 +466,13 @@ export async function validateBffProductionConfig(): Promise<string | null> {
     return "ORDERPILOT_PUBLIC_ORIGIN must be an exact origin URL (https in production-like profiles)";
   }
   if (!validatedCoreApiInternalBaseUrl()) {
-    return "CORE_API_BASE_URL must be https or loopback http (127.0.0.1 / [::1]) for BFF production mode";
+    return "CORE_API_BASE_URL must be an exact https origin or loopback http origin (127.0.0.1 / [::1]) for BFF production mode";
+  }
+  try {
+    bffGatewayClockSkewSeconds();
+    bffUpstreamTimeoutMs();
+  } catch (error) {
+    return error instanceof Error ? error.message : "BFF numeric configuration is invalid";
   }
   const ttl = parseBffSessionMaxAgeSeconds(process.env.ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS, {
     allowDefaultOnMissing: true

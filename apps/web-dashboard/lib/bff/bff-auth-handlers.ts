@@ -19,13 +19,15 @@ import {
   revokeOperatorSession
 } from "./bff-session-store.ts";
 import { validateCsrf, validateSameOrigin } from "./bff-csrf.ts";
-import { readCookie } from "./bff-cookies.ts";
+import { readSecurityCookie, type SecurityCookiePolicy } from "./bff-cookies.ts";
 
 const SAFE_FAILURE = "Sign-in is not available.";
 const SAFE_LOGOUT_FAILURE = "Sign-out could not be completed.";
 const MAX_BOOTSTRAP_PERMISSIONS = 32;
 const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const FORBIDDEN_BOOTSTRAP_PERMISSION_PREFIXES = ["STAFF_", "SUPPORT_", "ADMIN_", "INTERNAL_"];
+const SESSION_COOKIE_POLICY: SecurityCookiePolicy = { minLength: 43, maxLength: 128, pattern: /^[A-Za-z0-9_-]+$/ };
+const CSRF_COOKIE_POLICY: SecurityCookiePolicy = { minLength: 16, maxLength: 256, pattern: /^[A-Za-z0-9_-]+$/ };
 
 function safeJson(status: number, message: string): Response {
   return new Response(JSON.stringify({ message }), {
@@ -94,11 +96,14 @@ export async function handleSessionBootstrap(request: Request): Promise<Response
   if (!identity) {
     return bootstrapUnavailable();
   }
-  const previousSessionId = readCookie(request.headers.get("cookie"), BFF_SESSION_COOKIE);
+  const previousSession = readSecurityCookie(request.headers.get("cookie"), BFF_SESSION_COOKIE, SESSION_COOKIE_POLICY);
+  if (previousSession.status === "invalid") {
+    return safeJson(403, SAFE_FAILURE);
+  }
   try {
     // Rotation: any previously issued session ID is invalidated before a new one is minted.
-    if (previousSessionId) {
-      await revokeOperatorSession(previousSessionId);
+    if (previousSession.status === "valid") {
+      await revokeOperatorSession(previousSession.value);
     }
     const { sessionId } = await persistOperatorSession(identity);
     const csrf = newCsrfToken();
@@ -125,13 +130,17 @@ export async function handleLogout(request: Request): Promise<Response> {
     return safeJson(403, SAFE_LOGOUT_FAILURE);
   }
   const cookieHeader = request.headers.get("cookie");
-  if (!validateCsrf(request, readCookie(cookieHeader, BFF_CSRF_COOKIE))) {
+  const csrfCookie = readSecurityCookie(cookieHeader, BFF_CSRF_COOKIE, CSRF_COOKIE_POLICY);
+  if (csrfCookie.status !== "valid" || !validateCsrf(request, csrfCookie.value)) {
     return safeJson(403, SAFE_LOGOUT_FAILURE);
   }
-  const sessionId = readCookie(cookieHeader, BFF_SESSION_COOKIE);
+  const sessionCookie = readSecurityCookie(cookieHeader, BFF_SESSION_COOKIE, SESSION_COOKIE_POLICY);
+  if (sessionCookie.status !== "valid") {
+    return safeJson(403, SAFE_LOGOUT_FAILURE);
+  }
   try {
     // Revoke the server-side session BEFORE clearing cookies; a Redis failure fails closed.
-    await revokeOperatorSession(sessionId);
+    await revokeOperatorSession(sessionCookie.value);
   } catch {
     return safeJson(503, SAFE_LOGOUT_FAILURE);
   }

@@ -15,18 +15,8 @@ export function runtimeNodeEnv(): string {
   return String(process.env[key] ?? "");
 }
 
-/**
- * True only for a real production Node runtime.
- *
- * ORDERPILOT_E2E_RUNTIME_NODE_ENV is an E2E-harness-only escape hatch used by
- * `e2e/standalone-server.mjs` / Playwright. It is never set in production deployments and is not
- * a client-visible or authentication secret.
- */
+/** True only for a real production Node runtime. */
 export function isProductionNodeRuntime(): boolean {
-  const e2eRuntime = process.env.ORDERPILOT_E2E_RUNTIME_NODE_ENV?.trim();
-  if (e2eRuntime === "test" || e2eRuntime === "development") {
-    return false;
-  }
   return runtimeNodeEnv() === "production";
 }
 
@@ -38,9 +28,9 @@ export function isProductionNodeRuntime(): boolean {
  * variable must never downgrade a production Node runtime to local/test semantics.
  *
  * Non-production Node runtimes:
- * - explicit prod/production/cloud/staging profile → production-like
- * - explicit local/test/local-test profile → local/test
- * - missing profile → local development (not production-like)
+ * - explicit prod/production/cloud/staging profile -> production-like
+ * - explicit local/test/local-test profile -> local/test
+ * - missing profile -> local development (not production-like)
  */
 export function isProductionLikeDeployment(): boolean {
   if (isProductionNodeRuntime()) {
@@ -58,7 +48,7 @@ export function isProductionLikeDeployment(): boolean {
 
 /**
  * Local/test bootstrap may mint a session only when explicitly enabled and the Node runtime is not
- * production. Bootstrap identity always comes from server env — never the request body, query,
+ * production. Bootstrap identity always comes from server env - never the request body, query,
  * headers, or cookies.
  */
 export function isLocalTestBootstrapAllowed(): boolean {

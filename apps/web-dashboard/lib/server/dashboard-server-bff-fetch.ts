@@ -5,6 +5,8 @@ import { BFF_SESSION_COOKIE } from "../bff/bff-config.ts";
 import { bffInProcessRequest } from "../bff/bff-in-process-request.ts";
 import { readSecurityCookieHeader } from "../bff/bff-cookies.ts";
 
+const SESSION_COOKIE_POLICY = { minLength: 43, maxLength: 128, pattern: /^[A-Za-z0-9_-]+$/ };
+
 const SERVER_ALLOWED_METHODS = new Set(["GET", "HEAD"]);
 const STRIPPED_INCOMING_HEADERS = new Set([
   "authorization",
@@ -45,7 +47,7 @@ export async function dashboardServerBffFetchWithCookieHeader(
       headers: { "Content-Type": "application/json" }
     });
   }
-  const sessionId = readSecurityCookieHeader(cookieHeader, BFF_SESSION_COOKIE);
+  const sessionId = readSecurityCookieHeader(cookieHeader, BFF_SESSION_COOKIE, SESSION_COOKIE_POLICY);
   const minimalCookie =
     sessionId === undefined
       ? null

@@ -4,6 +4,8 @@
 import { headers } from "next/headers.js";
 import { BFF_SESSION_COOKIE } from "../bff/bff-config.ts";
 import { readSecurityCookieHeader } from "../bff/bff-cookies.ts";
+
+const SESSION_COOKIE_POLICY = { minLength: 43, maxLength: 128, pattern: /^[A-Za-z0-9_-]+$/ };
 import { dashboardServerBffFetchWithCookieHeader } from "./dashboard-server-bff-fetch.ts";
 
 if (typeof window !== "undefined") {
@@ -11,7 +13,7 @@ if (typeof window !== "undefined") {
 }
 
 export function cookieHeaderForServerBffRequest(rawCookieHeader: string | null | undefined): string | null {
-  const sessionId = readSecurityCookieHeader(rawCookieHeader, BFF_SESSION_COOKIE);
+  const sessionId = readSecurityCookieHeader(rawCookieHeader, BFF_SESSION_COOKIE, SESSION_COOKIE_POLICY);
   if (sessionId === undefined) {
     return null;
   }

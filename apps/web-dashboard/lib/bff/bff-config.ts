@@ -50,6 +50,41 @@ function isLiteralLoopbackHost(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
 }
 
+export type StrictIntegerResult =
+  | { ok: true; value: number }
+  | { ok: false; reason: string };
+
+export function parseStrictBoundedInteger(
+  raw: string | undefined,
+  name: string,
+  options: { defaultValue?: number; min: number; max: number }
+): StrictIntegerResult {
+  if (raw === undefined) {
+    if (options.defaultValue === undefined) {
+      return { ok: false, reason: `${name} is required` };
+    }
+    return { ok: true, value: options.defaultValue };
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return { ok: false, reason: `${name} must be a decimal integer` };
+  }
+  if (!/^[0-9]+$/.test(trimmed)) {
+    return { ok: false, reason: `${name} must be a decimal integer` };
+  }
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value)) {
+    return { ok: false, reason: `${name} must be a safe integer` };
+  }
+  if (value < options.min) {
+    return { ok: false, reason: `${name} must be at least ${options.min}` };
+  }
+  if (value > options.max) {
+    return { ok: false, reason: `${name} must not exceed ${options.max}` };
+  }
+  return { ok: true, value };
+}
+
 /**
  * Validated internal Core origin for the BFF proxy.
  * Production-like: https only, or http://127.0.0.1 / http://[::1] only.
@@ -69,7 +104,10 @@ export function validatedCoreApiInternalBaseUrl(): string | null {
     if (parsed.username || parsed.password) {
       return null;
     }
-    if (parsed.hash) {
+    if (parsed.search || parsed.hash) {
+      return null;
+    }
+    if (parsed.pathname !== "/" && parsed.pathname !== "") {
       return null;
     }
     if (parsed.protocol === "http:") {
@@ -78,14 +116,14 @@ export function validatedCoreApiInternalBaseUrl(): string | null {
         return null;
       }
     }
-    return raw.replace(/\/+$/, "");
+    return parsed.origin;
   } catch {
     return null;
   }
 }
 
 /**
- * Validated gateway shared secret (64 hex → 32 raw bytes). Returns the configured hex string when
+ * Validated gateway shared secret (64 hex -> 32 raw bytes). Returns the configured hex string when
  * valid; empty string when missing/invalid (callers fail closed).
  */
 export function bffGatewaySharedSecret(): string {
@@ -95,19 +133,28 @@ export function bffGatewaySharedSecret(): string {
 }
 
 export function bffGatewayClockSkewSeconds(): number {
-  const raw = process.env.ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS ?? "300";
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 300;
+  const parsed = parseStrictBoundedInteger(
+    process.env.ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS,
+    "ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS",
+    { defaultValue: 300, min: 1, max: 3_600 }
+  );
+  if (!parsed.ok) {
+    throw new Error(parsed.reason);
+  }
+  return parsed.value;
 }
 
 /** Upstream Core timeout for the BFF proxy, bounded to [1s, 120s]. */
 export function bffUpstreamTimeoutMs(): number {
-  const raw = process.env.ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS ?? "30000";
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) {
-    return 30_000;
+  const parsed = parseStrictBoundedInteger(
+    process.env.ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS,
+    "ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS",
+    { defaultValue: 30_000, min: 1_000, max: 120_000 }
+  );
+  if (!parsed.ok) {
+    throw new Error(parsed.reason);
   }
-  return Math.min(120_000, Math.max(1_000, parsed));
+  return parsed.value;
 }
 
 export function bffCookieSecure(): boolean {

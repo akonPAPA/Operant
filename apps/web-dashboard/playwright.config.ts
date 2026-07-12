@@ -1,10 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
 /**
- * P1-B browser E2E. Run `npm run build` first — both app servers start from the same
+ * P1-B browser E2E. Run `npm run build` first - both app servers start from the same
  * production standalone artifact with different runtime env:
- *  - :3100 ORDERPILOT_E2E_RUNTIME_NODE_ENV=test + local/test bootstrap bridge (harness only)
- *  - :3101 real production Node runtime with malicious local-test vars — bootstrap must stay denied
+ *  - :3100 local/test bootstrap bridge with a non-production Node runtime (harness only)
+ *  - :3101 real production Node runtime with malicious local-test vars - bootstrap must stay denied
  *  - :18080 bounded fake Core recording every request that crosses the BFF boundary
  */
 const GATEWAY_SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
@@ -42,8 +42,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         ...sharedEnv,
-        // E2E-only: non-production security semantics without rewriting Next standalone NODE_ENV.
-        ORDERPILOT_E2E_RUNTIME_NODE_ENV: "test",
+        NODE_ENV: "test",
         ORDERPILOT_DEPLOY_PROFILE: "local-test",
         ORDERPILOT_PUBLIC_ORIGIN: "http://localhost:3100",
         ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",

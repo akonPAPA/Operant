@@ -11,6 +11,7 @@ import {
   SessionStoreUnavailableError
 } from "../lib/bff/bff-session-store.ts";
 import {
+  isProductionNodeRuntime,
   isLocalTestBootstrapAllowed,
   isProductionLikeDeployment
 } from "../lib/bff/bff-deployment-profile.ts";
@@ -145,7 +146,7 @@ test("runtimeNodeEnv is not compile-time inlined for security gates", async () =
   const { join } = await import("node:path");
   const source = readFileSync(join(process.cwd(), "lib/bff/bff-deployment-profile.ts"), "utf8");
   assert.match(source, /\["NODE", "ENV"\]\.join\("_"\)/);
-  assert.match(source, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
+  assert.doesNotMatch(source, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
   assert.match(source, /export function isProductionNodeRuntime/);
   assert.doesNotMatch(source, /return process\.env\.NODE_ENV === "production"/);
   assert.doesNotMatch(source, /if \(process\.env\.NODE_ENV === "production"\)/);
@@ -154,9 +155,27 @@ test("runtimeNodeEnv is not compile-time inlined for security gates", async () =
 test("NODE_ENV=production is always production-like regardless of deploy profile", async () => {
   for (const profile of ["", "production", "local", "test", "local-test", "unknown"]) {
     await withEnv({ NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: profile }, () => {
+      assert.equal(isProductionNodeRuntime(), true, `profile=${profile}`);
       assert.equal(isProductionLikeDeployment(), true, `profile=${profile}`);
       assert.equal(isLocalTestBootstrapAllowed(), false, `profile=${profile}`);
     });
+  }
+});
+
+test("former E2E runtime override cannot downgrade NODE_ENV=production", async () => {
+  for (const override of ["test", "development", ""]) {
+    await withEnv(
+      {
+        ...LOCAL_BOOTSTRAP_ENV,
+        NODE_ENV: "production",
+        ORDERPILOT_E2E_RUNTIME_NODE_ENV: override
+      },
+      () => {
+        assert.equal(isProductionNodeRuntime(), true, `override=${override}`);
+        assert.equal(isProductionLikeDeployment(), true, `override=${override}`);
+        assert.equal(isLocalTestBootstrapAllowed(), false, `override=${override}`);
+      }
+    );
   }
 });
 
@@ -285,7 +304,7 @@ test("duplicate or malformed bootstrap permissions are denied", async () => {
   }
 });
 
-test("request body cannot supply identity — any non-empty body is rejected without cookies", async () => {
+test("request body cannot supply identity - any non-empty body is rejected without cookies", async () => {
   await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
     const response = await handleSessionBootstrap(
       bootstrapRequest({
@@ -298,7 +317,7 @@ test("request body cannot supply identity — any non-empty body is rejected wit
   });
 });
 
-test("query string and headers cannot supply identity — env identity wins", async () => {
+test("query string and headers cannot supply identity - env identity wins", async () => {
   await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
     const response = await handleSessionBootstrap(
       bootstrapRequest({
@@ -549,7 +568,57 @@ test("logout without CSRF is denied and revokes nothing", async () => {
   });
 });
 
-test("Redis is mandatory for production-like sessions — no memory fallback", async () => {
+test("invalid bootstrap security cookie denies without rotation or new cookies", async () => {
+  for (const cookie of [
+    `op_session=${VALID_SESSION_ID}; op_session=${VALID_SESSION_ID}`,
+    `op_session=${VALID_SESSION_ID}; op_session=${"T".repeat(43)}`,
+    "op_session=",
+    "op_session=%E0%A4%A",
+    "op_session=short"
+  ]) {
+    await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
+      const signIn = await handleSessionBootstrap(bootstrapRequest());
+      const existingSessionId = sessionIdFrom(signIn);
+      const response = await handleSessionBootstrap(
+        bootstrapRequest({ headers: { origin: "http://localhost:3000", cookie } })
+      );
+      assert.equal(response.status, 403, cookie);
+      assert.deepEqual(setCookies(response), [], "invalid bootstrap cookie must not set cookies");
+      assert.ok(await loadOperatorSession(existingSessionId), "invalid bootstrap must not revoke existing state");
+    });
+  }
+});
+
+test("invalid logout security cookie denies without revocation or cookie clearing", async () => {
+  for (const cookieBuilder of [
+    (sessionId, csrf) => `op_session=${sessionId}; op_session=${sessionId}; op_csrf=${csrf}`,
+    (sessionId, csrf) => `op_session=${sessionId}; op_csrf=${csrf}; op_csrf=${csrf}`,
+    (_sessionId, csrf) => `op_session=; op_csrf=${csrf}`,
+    (_sessionId, csrf) => `op_session=%E0%A4%A; op_csrf=${csrf}`,
+    (sessionId, _csrf) => `op_session=${sessionId}; op_csrf=`
+  ]) {
+    await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
+      const signIn = await handleSessionBootstrap(bootstrapRequest());
+      const sessionId = sessionIdFrom(signIn);
+      const csrf = csrfFrom(signIn);
+      const response = await handleLogout(
+        new Request("http://localhost:3000/api/auth/logout", {
+          method: "POST",
+          headers: {
+            host: "localhost:3000",
+            origin: "http://localhost:3000",
+            cookie: cookieBuilder(sessionId, csrf),
+            "X-OP-CSRF-Token": csrf
+          }
+        })
+      );
+      assert.equal(response.status, 403);
+      assert.deepEqual(setCookies(response), [], "denied logout must not clear cookies");
+      assert.ok(await loadOperatorSession(sessionId), "denied logout must not revoke the session");
+    });
+  }
+});
+test("Redis is mandatory for production-like sessions - no memory fallback", async () => {
   await withEnv(
     { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "production" },
     async () => {

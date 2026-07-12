@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { canonicalizeJsonRequestBody, proxyCoreRequest, rawBffPathRejected, validateBffProductionConfig } from "../lib/bff/bff-proxy.ts";
 import {
+  bffGatewayClockSkewSeconds,
+  bffUpstreamTimeoutMs,
+  parseStrictBoundedInteger,
+  validatedCoreApiInternalBaseUrl
+} from "../lib/bff/bff-config.ts";
+import {
   matchBffRoute,
   registeredBffRoutes
 } from "../lib/bff/bff-route-registry.ts";
@@ -21,6 +27,7 @@ const ENV_KEYS = [
   "CORE_API_BASE_URL",
   "ORDERPILOT_BFF_REDIS_URL",
   "REDIS_URL",
+  "ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS",
   "ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS"
 ];
 
@@ -252,6 +259,42 @@ test("no session -> 401 and upstream fetch call count remains 0", async () => {
   });
 });
 
+test("invalid or duplicate session cookie -> 401 and zero upstream calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const { calls, impl } = recordingFetch();
+    for (const cookie of [
+      `op_session=${sessionId}; op_session=${sessionId}`,
+      `op_session=${sessionId}; op_session=${"T".repeat(43)}`,
+      "op_session=",
+      "op_session=%E0%A4%A",
+      "op_session=short"
+    ]) {
+      const response = await withFetch(impl, () =>
+        proxied("/api/bff/api/v1/quote-review/queue", { extraHeaders: { cookie } })
+      );
+      assert.equal(response.status, 401, cookie);
+    }
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("duplicate csrf cookie -> 403 and zero upstream calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const { calls, impl } = recordingFetch();
+    const response = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/quote-review/33333333-3333-4333-8333-333333333333/assemble-draft", {
+        method: "POST",
+        csrf: CSRF,
+        body: JSON.stringify({ reasonCode: "READY" }),
+        extraHeaders: { cookie: `op_session=${sessionId}; op_csrf=${CSRF}; op_csrf=${CSRF}` }
+      })
+    );
+    assert.equal(response.status, 403);
+    assert.equal(calls.length, 0);
+  });
+});
 test("session without the registered permission -> 403, no upstream call", async () => {
   await withEnv(BFF_ENV, async () => {
     const sessionId = await operatorSession(["ANALYTICS_READ"]);
@@ -573,6 +616,73 @@ test("production-like config requires explicit Core URL — no localhost fallbac
   );
 });
 
+test("Core API base URL validation requires an exact origin", async () => {
+  const validLocalCases = [
+    ["https://core.internal.example", "https://core.internal.example"],
+    ["https://core.internal.example:8443/", "https://core.internal.example:8443"],
+    ["http://127.0.0.1:8080", "http://127.0.0.1:8080"],
+    ["http://[::1]:8080", "http://[::1]:8080"]
+  ];
+  for (const [raw, expected] of validLocalCases) {
+    await withEnv({ ...BFF_ENV, CORE_API_BASE_URL: raw }, () => {
+      assert.equal(validatedCoreApiInternalBaseUrl(), expected, raw);
+    });
+  }
+
+  for (const raw of [
+    "https://core.internal.example/path",
+    "https://core.internal.example?x=1",
+    "https://core.internal.example#frag",
+    "https://user:pass@core.internal.example",
+    "file:///tmp/core",
+    "javascript:alert(1)",
+    " https://core.internal.example/path "
+  ]) {
+    await withEnv({ ...BFF_ENV, CORE_API_BASE_URL: raw }, () => {
+      assert.equal(validatedCoreApiInternalBaseUrl(), null, raw);
+    });
+  }
+
+  await withEnv(
+    { ...BFF_ENV, ORDERPILOT_DEPLOY_PROFILE: "production", CORE_API_BASE_URL: "http://localhost:8080" },
+    () => assert.equal(validatedCoreApiInternalBaseUrl(), null)
+  );
+  await withEnv(
+    { ...BFF_ENV, ORDERPILOT_DEPLOY_PROFILE: "production", CORE_API_BASE_URL: "http://core.internal.test:8080" },
+    () => assert.equal(validatedCoreApiInternalBaseUrl(), null)
+  );
+});
+
+test("Core target URL preserves the exact validated path and query", async () => {
+  await withEnv({ ...BFF_ENV, CORE_API_BASE_URL: "https://core.internal.example/" }, async () => {
+    const sessionId = await operatorSession(["ANALYTICS_READ"]);
+    const { calls, impl } = recordingFetch();
+    const response = await withFetch(impl, () =>
+      proxied("/api/bff/api/v1/order-journeys?limit=10", { sessionId })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://core.internal.example/api/v1/order-journeys?limit=10");
+  });
+});
+
+test("strict numeric BFF config rejects malformed explicit values", async () => {
+  assert.deepEqual(parseStrictBoundedInteger(undefined, "TEST_INT", { defaultValue: 7, min: 1, max: 10 }), {
+    ok: true,
+    value: 7
+  });
+  for (const raw of ["", "0", "-1", "+1", "1.5", "1e3", "300seconds", "999999999999999999999"]) {
+    const parsed = parseStrictBoundedInteger(raw, "TEST_INT", { defaultValue: 7, min: 1, max: 10 });
+    assert.equal(parsed.ok, false, raw);
+  }
+  await withEnv({ ...BFF_ENV, ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS: "30000abc" }, async () => {
+    assert.throws(() => bffUpstreamTimeoutMs(), /ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS/);
+    assert.match(await validateBffProductionConfig(), /ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS/);
+  });
+  await withEnv({ ...BFF_ENV, ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS: "300seconds" }, () => {
+    assert.throws(() => bffGatewayClockSkewSeconds(), /ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS/);
+  });
+});
 test("upstream timeout is bounded and maps to 504", async () => {
   await withEnv({ ...BFF_ENV, ORDERPILOT_BFF_UPSTREAM_TIMEOUT_MS: "1000" }, async () => {
     const sessionId = await operatorSession();
