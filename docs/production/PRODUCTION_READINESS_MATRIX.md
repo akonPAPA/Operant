@@ -16,6 +16,6 @@
 | P1-GATE-10 | operant-agent | FAIL | Not in repository | Not in P1-B scope |
 | P1-GATE-11 | Cross-platform agent packages | FAIL | Not in repository | Not in P1-B scope |
 | P1-GATE-12 | Backup/restore/upgrade executed | FAIL | Local runbook only | Not in P1-B scope |
-| P1-GATE-13 | Blocking CI/security gates | NOT_PROVEN | Pilot gate on main; not re-run in P1-B pass | PR #267 workflow includes blocking frontend E2E, but remote GitHub checks were not inspected here |
+| P1-GATE-13 | Blocking CI/security gates | PARTIAL | Exact-head CI @ `09d8a08` SUCCESS for Frontend/CI/Backend/Semgrep/Snyk/CodeQL/AI Worker gate | Skipped path-filtered jobs explained; not a full production deploy gate |
 
 **Rule:** No gate may be marked PASS without an evidence row in `RELEASE_EVIDENCE_MANIFEST.md` tied to the exact implementation commit.

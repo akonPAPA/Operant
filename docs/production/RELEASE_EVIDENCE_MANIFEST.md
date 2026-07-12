@@ -8,13 +8,29 @@
 | Field | SHA / status |
 | --- | --- |
 | `base_sha` (`origin/main`) | `cae9603c870eeb0e87216d0f4707169b64eb2ea3` |
-| `implementation_sha` | `PENDING_AFTER_IMPLEMENTATION_COMMIT` |
-| `evidence_commit` | `PENDING_AFTER_CI` |
-| `pr_head_sha` | `PENDING_AFTER_PUSH` |
-| `remote_ci_status` | `PENDING` |
-| `remote_ci_head_sha` | `PENDING` |
-| `push_performed` | `false` (Stage A local implementation; no merge-ready claim yet) |
-| `local_implementation_tests` | See EV-P1B-025..028 below (PASS with counts) |
+| `implementation_sha` | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` |
+| `evidence_commit` | resolve after push with `git rev-parse HEAD` (not self-referenced inside this commit) |
+| `pr_head_sha` | resolve after evidence push |
+| `remote_ci_status` (implementation SHA) | **PASS** (all required workflows SUCCESS @ `09d8a08`) |
+| `remote_ci_head_sha` | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` |
+| `push_performed` | `true` (implementation pushed; evidence commit follows) |
+| `local_implementation_tests` | EV-P1B-025..028 PASS; remote exact-head CI PASS for implementation SHA |
+| `merge_ready_claim` | **not claimed in Stage B docs alone** — see final report after evidence-head CI |
+
+### Exact-head CI @ `09d8a08` (implementation)
+
+| Workflow | Run ID | Result | Notes |
+| --- | --- | --- | --- |
+| Frontend | [29197549322](https://github.com/akonPAPA/Operant/actions/runs/29197549322) | SUCCESS | build job: lint/tsc/build/npm test + Playwright BFF E2E |
+| CI | [29197549317](https://github.com/akonPAPA/Operant/actions/runs/29197549317) | SUCCESS | Backend tests, Docker compose, Core release Docker guard, Stage 11C |
+| Backend | [29197549307](https://github.com/akonPAPA/Operant/actions/runs/29197549307) | SUCCESS | backend-integration-tests |
+| Semgrep Security Scan | [29197549306](https://github.com/akonPAPA/Operant/actions/runs/29197549306) | SUCCESS | SAST + gate |
+| Snyk Dependency Scan | [29197549337](https://github.com/akonPAPA/Operant/actions/runs/29197549337) | SUCCESS | web-dashboard scan + gate; **core-api Snyk job SKIPPED** (path filter / no core-api lock change) |
+| AI Worker | [29197549311](https://github.com/akonPAPA/Operant/actions/runs/29197549311) | SUCCESS | Gate PASS; **test job SKIPPED** (AI worker paths unchanged) |
+| PR #267 / CodeQL | [29197548275](https://github.com/akonPAPA/Operant/actions/runs/29197548275) | SUCCESS | Analyze actions/java/js/python + CodeQL |
+
+PR proves **P1-B browser/BFF boundary**, not full production readiness (P1-C identity + P1-D public Core ingress remain).
+
 
 | Evidence ID | Commit SHA | Type | Command / artifact | Result | Gates supported |
 | --- | --- | --- | --- | --- | --- |
@@ -44,10 +60,11 @@
 | EV-P1B-022 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | behavioral unit | `bff-production-rsc-path.test.mjs`, `rsc-page-import-guard.test.mjs` | Production Server Component reads via `lib/server/*.server.ts` → `tenant-get-json.server` → in-process BFF (`dashboard-server-bff-fetch`); inbox `/api/v1/intake/messages` path; tenant isolation; fail-closed session/permission/route cases; no server `/api/bff` HTTP | P1-GATE-02 **PARTIAL / NOT_PASS** |
 | EV-P1B-023 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | junit | targeted security clean (JDK 21.0.11) | **285** tests, BUILD SUCCESS | P1-GATE-02 **PARTIAL / NOT_PASS** |
 | EV-P1B-024 | `09b8a98eeac574aea5ba8bdc6f84970c45d87764` | junit | `com.orderpilot.security.*Test` (JDK 21.0.11) | **470** tests, BUILD SUCCESS | P1-GATE-02 **PARTIAL / NOT_PASS** |
-| EV-P1B-025 | LOCAL_WORKING_TREE (Stage A pre-push) | node-test + lint + tsc + build + e2e | `cd apps/web-dashboard && npm test && npm run lint && npm run typecheck && npm run build && npm run test:e2e` | **624** node tests pass; lint/tsc/build exit 0; Playwright **9/9** pass | P1-GATE-02 **PARTIAL / NOT_PASS**; remote exact-head CI: **PENDING**; **no merge-ready claim** |
-| EV-P1B-026 | LOCAL_WORKING_TREE (Stage A pre-push) | junit | `mvn -f apps/core-api/pom.xml -Dtest='com.orderpilot.security.*Test' test` | **471** tests, 0 failures, 0 skipped (gateway signature v2 + 64-hex secret) | P1-GATE-02 **PARTIAL / NOT_PASS** |
-| EV-P1B-027 | LOCAL_WORKING_TREE (Stage A pre-push) | junit | `mvn -f apps/core-api/pom.xml test` | **2371** tests, 0 failures, **45** skipped (Postgres integration profile not active locally — not treated as PASS proof) | P1-GATE-02 **PARTIAL / NOT_PASS** |
-| EV-P1B-028 | LOCAL_WORKING_TREE (Stage A pre-push) | secrets | `pwsh -File ./scripts/check-no-secrets.ps1 -SelfTest` + full scan | Self-test PASS; scan PASS | hygiene |
+| EV-P1B-025 | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` | node-test + lint + tsc + build + e2e | `cd apps/web-dashboard && npm test && npm run lint && npm run typecheck && npm run build && npm run test:e2e` | **624** node tests pass; lint/tsc/build exit 0; Playwright **9/9** pass | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-026 | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` | junit | `mvn -f apps/core-api/pom.xml -Dtest='com.orderpilot.security.*Test' test` | **471** tests, 0 failures, 0 skipped (gateway signature v2 + 64-hex secret) | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-027 | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` | junit | `mvn -f apps/core-api/pom.xml test` | **2371** tests, 0 failures, **45** skipped (Postgres `integration.testdb` profile not active locally — not treated as PASS proof) | P1-GATE-02 **PARTIAL / NOT_PASS** |
+| EV-P1B-028 | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` | secrets | `pwsh -File ./scripts/check-no-secrets.ps1 -SelfTest` + full scan | Self-test PASS; scan PASS | hygiene |
+| EV-P1B-029 | `09d8a08c3c43bfe014b4132690f6dd8bb5dc71c9` | github-actions | Exact-head CI workflows listed in anchors table above | All required workflows **SUCCESS**; skipped: AI Worker `test` (paths unchanged), Snyk `core-api` (path filter), Playwright report upload (success path) | P1-GATE-02 **PARTIAL / NOT_PASS** (remote CI proven for implementation SHA) |
 
 ## P1-GATE-01 status
 
@@ -61,7 +78,7 @@
 
 | Gate | Status | Proven (local) | Not proven |
 | --- | --- | --- | --- |
-| P1-GATE-02 (browser BFF boundary) | **PARTIAL / NOT_PASS** | Immutable local proof @ `09b8a98`: browser `dashboard-http.browser` → same-origin `/api/bff`; Server Components import `lib/server/*.server.ts` → in-process BFF (`tenant-get-json.server` + `dashboard-server-bff-fetch`); no production RSC relative `/api/bff` HTTP; `rsc-page-import-guard` + `bff-production-rsc-path` behavioral proof; Node **601**; E2E **9/9**; Core **285**/**470** @ JDK 21 | P1-C identity; live Redis; remote CI; P1-D public Core ingress |
+| P1-GATE-02 (browser BFF boundary) | **PARTIAL / NOT_PASS** | Immutable proof @ `09d8a08`: gateway signature v2 (body/query/content-type), 64-hex shared secret, `ORDERPILOT_PUBLIC_ORIGIN` CSRF, local-bootstrap-only secret rename; Node **624**; E2E **9/9**; Core security **471**; full Maven **2371**/45 skipped; remote exact-head CI SUCCESS | P1-C identity; live Redis topology; P1-D public Core ingress; full production deploy |
 | P1-GATE-03 | **NOT_PASS** | — | Public Core ingress closure belongs to P1-D |
 | P1-GATE-04 | **PARTIAL / NOT_PASS** | Unit/fake-store session TTL, expiry, revocation, logout; strict TTL parser; duplicate cookie fail-closed | Live Redis expiry/revocation in deployed topology |
 
