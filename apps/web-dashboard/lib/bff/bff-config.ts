@@ -69,23 +69,6 @@ export function validatedCoreApiInternalBaseUrl(): string | null {
 }
 
 /**
- * Local/test bootstrap guard only. Production opaque Redis sessions do not use this value.
- * Renamed from ORDERPILOT_BFF_SESSION_SECRET to avoid implying cryptographic session signing.
- */
-export function localBootstrapSecret(): string {
-  return (
-    process.env.ORDERPILOT_LOCAL_BOOTSTRAP_SECRET?.trim() ||
-    process.env.ORDERPILOT_BFF_SESSION_SECRET?.trim() ||
-    ""
-  );
-}
-
-/** @deprecated Use localBootstrapSecret — production must not require a session HMAC secret. */
-export function bffSessionSecret(): string {
-  return localBootstrapSecret();
-}
-
-/**
  * Validated gateway shared secret (64 hex → 32 raw bytes). Returns the configured hex string when
  * valid; empty string when missing/invalid (callers fail closed).
  */

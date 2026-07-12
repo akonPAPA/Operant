@@ -10,6 +10,10 @@ import {
   InvalidSessionAuthorityError,
   SessionStoreUnavailableError
 } from "../lib/bff/bff-session-store.ts";
+import {
+  isLocalTestBootstrapAllowed,
+  isProductionLikeDeployment
+} from "../lib/bff/bff-deployment-profile.ts";
 
 const ENV_KEYS = [
   "NODE_ENV",
@@ -17,15 +21,16 @@ const ENV_KEYS = [
   "ORDERPILOT_BFF_ENABLED",
   "ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP",
   "ORDERPILOT_BFF_SESSION_STORE",
-  "ORDERPILOT_LOCAL_BOOTSTRAP_SECRET",
-  "ORDERPILOT_BFF_SESSION_SECRET",
   "ORDERPILOT_PUBLIC_ORIGIN",
   "ORDERPILOT_BFF_SESSION_MAX_AGE_SECONDS",
   "ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID",
   "ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID",
   "ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS",
   "ORDERPILOT_BFF_REDIS_URL",
-  "REDIS_URL"
+  "REDIS_URL",
+  // legacy keys must never restore production session HMAC behavior
+  "ORDERPILOT_BFF_SESSION_SECRET",
+  "ORDERPILOT_LOCAL_BOOTSTRAP_SECRET"
 ];
 
 const VALID_TENANT_ID = "11111111-1111-4111-8111-111111111111";
@@ -50,12 +55,13 @@ function storedRecord(overrides = {}) {
     ...overrides
   };
 }
+
 const LOCAL_BOOTSTRAP_ENV = {
+  NODE_ENV: "test",
   ORDERPILOT_DEPLOY_PROFILE: "local-test",
   ORDERPILOT_BFF_ENABLED: "true",
   ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
   ORDERPILOT_BFF_SESSION_STORE: "memory",
-  ORDERPILOT_LOCAL_BOOTSTRAP_SECRET: "p1b-local-bootstrap-secret-test-only-0123456789ab",
   ORDERPILOT_PUBLIC_ORIGIN: "http://localhost:3000",
   ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID: "11111111-1111-4111-8111-111111111111",
   ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID: "22222222-2222-4222-8222-222222222222",
@@ -87,7 +93,10 @@ async function withEnv(vars, fn) {
 function bootstrapRequest(options = {}) {
   return new Request("http://localhost:3000/api/auth/session" + (options.query ?? ""), {
     method: "POST",
-    headers: options.headers ?? {},
+    headers: {
+      origin: "http://localhost:3000",
+      ...(options.headers ?? {})
+    },
     body: options.body
   });
 }
@@ -106,26 +115,132 @@ function csrfFrom(response) {
   return cookie?.split(";")[0].split("=")[1];
 }
 
-test("production-like deployments deny bootstrap and set no cookies", async () => {
-  for (const productionEnv of [
-    { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "production" },
-    { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "prod" },
-    { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "cloud" },
-    { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "staging" },
-    { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "", NODE_ENV: "production" }
-  ]) {
-    await withEnv(productionEnv, async () => {
-      const response = await handleSessionBootstrap(bootstrapRequest());
-      assert.equal(response.status, 503);
-      assert.deepEqual(setCookies(response), [], "failed authentication must set no cookies");
+function countingRedis() {
+  const counts = { get: 0, setEx: 0, del: 0, connect: 0 };
+  return {
+    counts,
+    client: {
+      isOpen: true,
+      connect: async () => {
+        counts.connect += 1;
+      },
+      get: async () => {
+        counts.get += 1;
+        return null;
+      },
+      setEx: async () => {
+        counts.setEx += 1;
+      },
+      del: async () => {
+        counts.del += 1;
+      },
+      on: () => {}
+    }
+  };
+}
+
+test("NODE_ENV=production is always production-like regardless of deploy profile", async () => {
+  for (const profile of ["", "production", "local", "test", "local-test", "unknown"]) {
+    await withEnv({ NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: profile }, () => {
+      assert.equal(isProductionLikeDeployment(), true, `profile=${profile}`);
+      assert.equal(isLocalTestBootstrapAllowed(), false, `profile=${profile}`);
     });
   }
+});
+
+test("non-production NODE_ENV respects explicit local/test and production-like profiles", async () => {
+  await withEnv({ NODE_ENV: "test", ORDERPILOT_DEPLOY_PROFILE: "local-test" }, () => {
+    assert.equal(isProductionLikeDeployment(), false);
+  });
+  await withEnv({ NODE_ENV: "development", ORDERPILOT_DEPLOY_PROFILE: "local" }, () => {
+    assert.equal(isProductionLikeDeployment(), false);
+  });
+  await withEnv({ NODE_ENV: "development", ORDERPILOT_DEPLOY_PROFILE: "production" }, () => {
+    assert.equal(isProductionLikeDeployment(), true);
+  });
+  await withEnv({ NODE_ENV: "test", ORDERPILOT_DEPLOY_PROFILE: "staging" }, () => {
+    assert.equal(isProductionLikeDeployment(), true);
+  });
+  await withEnv({ NODE_ENV: "development" }, () => {
+    assert.equal(isProductionLikeDeployment(), false);
+  });
+});
+
+test("production Node runtime denies bootstrap for every profile and sets no cookies", async () => {
+  const redis = countingRedis();
+  for (const productionEnv of [
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "production" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "prod" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "cloud" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "staging" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "local" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "test" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "local-test" },
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "unknown" },
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      NODE_ENV: "production",
+      ORDERPILOT_DEPLOY_PROFILE: "local-test",
+      ORDERPILOT_BFF_SESSION_SECRET: "legacy-session-secret-must-not-enable-bootstrap-01234567",
+      ORDERPILOT_LOCAL_BOOTSTRAP_SECRET: "legacy-local-secret-must-not-enable-bootstrap-01234567",
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+    }
+  ]) {
+    await withEnv(productionEnv, async () => {
+      setRedisClientFactoryForTesting(() => redis.client);
+      const response = await handleSessionBootstrap(
+        bootstrapRequest({
+          headers: {
+            origin: "http://localhost:3000",
+            cookie: `op_session=${VALID_SESSION_ID}`,
+            "X-Tenant-Id": "evil-tenant",
+            "X-OrderPilot-Actor": "evil-actor",
+            "X-OrderPilot-Permissions": "STAFF_SUPPORT_READ"
+          }
+        })
+      );
+      assert.equal(response.status, 404);
+      assert.deepEqual(setCookies(response), [], "production denial must set zero cookies");
+    });
+  }
+  assert.equal(redis.counts.get, 0, "production denial must not read Redis");
+  assert.equal(redis.counts.setEx, 0, "production denial must not write Redis");
+  assert.equal(redis.counts.del, 0, "production denial must not revoke Redis sessions");
+  assert.equal(redis.counts.connect, 0, "production denial must not connect Redis");
+});
+
+test("production denial with valid body still returns 404 and sets no cookies", async () => {
+  await withEnv(
+    { ...LOCAL_BOOTSTRAP_ENV, NODE_ENV: "production", ORDERPILOT_DEPLOY_PROFILE: "local-test" },
+    async () => {
+      const response = await handleSessionBootstrap(
+        bootstrapRequest({
+          body: JSON.stringify({ tenantId: VALID_TENANT_ID }),
+          headers: { origin: "http://localhost:3000", "Content-Type": "application/json" }
+        })
+      );
+      assert.equal(response.status, 404);
+      assert.deepEqual(setCookies(response), []);
+    }
+  );
 });
 
 test("bootstrap denied when the explicit local flag is missing", async () => {
   await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "false" }, async () => {
     const response = await handleSessionBootstrap(bootstrapRequest());
-    assert.equal(response.status, 503);
+    assert.equal(response.status, 404);
+    assert.deepEqual(setCookies(response), []);
+  });
+});
+
+test("bootstrap denied without exact local origin", async () => {
+  await withEnv(LOCAL_BOOTSTRAP_ENV, async () => {
+    const response = await handleSessionBootstrap(
+      bootstrapRequest({ headers: { origin: "https://attacker.example" } })
+    );
+    assert.equal(response.status, 403);
     assert.deepEqual(setCookies(response), []);
   });
 });
@@ -133,9 +248,29 @@ test("bootstrap denied when the explicit local flag is missing", async () => {
 test("bootstrap denied without bounded predefined identity, no cookies set", async () => {
   await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID: "" }, async () => {
     const response = await handleSessionBootstrap(bootstrapRequest());
-    assert.equal(response.status, 503);
+    assert.equal(response.status, 404);
     assert.deepEqual(setCookies(response), []);
   });
+});
+
+test("staff and support permissions in bootstrap identity are denied", async () => {
+  for (const permissions of ["STAFF_SUPPORT_READ", "REVIEW_READ,STAFF_SUPPORT_READ", "ADMIN_SETTINGS_MANAGE"]) {
+    await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: permissions }, async () => {
+      const response = await handleSessionBootstrap(bootstrapRequest());
+      assert.equal(response.status, 404);
+      assert.deepEqual(setCookies(response), []);
+    });
+  }
+});
+
+test("duplicate or malformed bootstrap permissions are denied", async () => {
+  for (const permissions of ["REVIEW_READ,REVIEW_READ", "review_read", "REVIEW_READ,"]) {
+    await withEnv({ ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: permissions }, async () => {
+      const response = await handleSessionBootstrap(bootstrapRequest());
+      assert.equal(response.status, 404);
+      assert.deepEqual(setCookies(response), []);
+    });
+  }
 });
 
 test("request body cannot supply identity — any non-empty body is rejected without cookies", async () => {
@@ -143,7 +278,7 @@ test("request body cannot supply identity — any non-empty body is rejected wit
     const response = await handleSessionBootstrap(
       bootstrapRequest({
         body: JSON.stringify({ tenantId: "evil", roles: ["ADMIN"], permissions: ["STAFF_SUPPORT_READ"] }),
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json", origin: "http://localhost:3000" }
       })
     );
     assert.equal(response.status, 400);
@@ -157,6 +292,7 @@ test("query string and headers cannot supply identity — env identity wins", as
       bootstrapRequest({
         query: "?tenantId=evil&actorId=evil&permissions=STAFF_SUPPORT_READ",
         headers: {
+          origin: "http://localhost:3000",
           "X-Tenant-Id": "evil-tenant",
           "X-OrderPilot-Permissions": "STAFF_SUPPORT_READ",
           "X-OrderPilot-Staff-Grant": "true"
@@ -315,7 +451,7 @@ test("re-bootstrap rotates the session: the old ID is invalidated", async () => 
     const firstId = sessionIdFrom(first);
     assert.ok(await loadOperatorSession(firstId));
     const second = await handleSessionBootstrap(
-      bootstrapRequest({ headers: { cookie: `op_session=${firstId}` } })
+      bootstrapRequest({ headers: { origin: "http://localhost:3000", cookie: `op_session=${firstId}` } })
     );
     const secondId = sessionIdFrom(second);
     assert.notEqual(firstId, secondId);
@@ -405,7 +541,6 @@ test("Redis is mandatory for production-like sessions — no memory fallback", a
   await withEnv(
     { ...LOCAL_BOOTSTRAP_ENV, ORDERPILOT_DEPLOY_PROFILE: "production" },
     async () => {
-      // even with ORDERPILOT_BFF_SESSION_STORE=memory set, production-like refuses memory
       await assert.rejects(
         persistOperatorSession({ tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: ["REVIEW_READ"] }),
         SessionStoreUnavailableError

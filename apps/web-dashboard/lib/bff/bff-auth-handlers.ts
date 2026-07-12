@@ -2,15 +2,15 @@
  * Node-runtime auth handlers for the BFF session boundary (framework-free for testability).
  *
  * Bootstrap sign-in is a local/test-only bridge until P1-C trusted identity exists:
- * production-like deployments always fail closed, identity comes only from bounded server env,
- * and the request body/query/headers/cookies can never supply tenant, actor, or permissions.
- * Failed authentication sets no cookies.
+ * NODE_ENV=production always fails closed before any identity/store/cookie work; local/test
+ * bootstrap requires an explicit non-production profile, flags, exact public origin, and bounded
+ * server env identity. Request body/query/headers/cookies can never supply tenant, actor, or
+ * permissions. Failed authentication sets no cookies and performs no session-store mutation.
  */
 import {
   BFF_CSRF_COOKIE,
   BFF_SESSION_COOKIE,
-  bffCookieSecure,
-  localBootstrapSecret
+  bffCookieSecure
 } from "./bff-config.ts";
 import { isLocalTestBootstrapAllowed } from "./bff-deployment-profile.ts";
 import { newCsrfToken, sessionMaxAgeSeconds } from "./bff-session.ts";
@@ -25,6 +25,7 @@ const SAFE_FAILURE = "Sign-in is not available.";
 const SAFE_LOGOUT_FAILURE = "Sign-out could not be completed.";
 const MAX_BOOTSTRAP_PERMISSIONS = 32;
 const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const FORBIDDEN_BOOTSTRAP_PERMISSION_PREFIXES = ["STAFF_", "SUPPORT_", "ADMIN_", "INTERNAL_"];
 
 function safeJson(status: number, message: string): Response {
   return new Response(JSON.stringify({ message }), {
@@ -33,9 +34,18 @@ function safeJson(status: number, message: string): Response {
   });
 }
 
+/** Bootstrap is unavailable outside the explicit local/test bridge — appear absent. */
+function bootstrapUnavailable(): Response {
+  return safeJson(404, SAFE_FAILURE);
+}
+
 function cookieAttributes(maxAgeSeconds: number): string {
   const secure = bffCookieSecure() ? "; Secure" : "";
   return `Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
+}
+
+function isForbiddenBootstrapPermission(permission: string): boolean {
+  return FORBIDDEN_BOOTSTRAP_PERMISSION_PREFIXES.some((prefix) => permission.startsWith(prefix));
 }
 
 function boundedBootstrapIdentity():
@@ -54,7 +64,8 @@ function boundedBootstrapIdentity():
     raw.length !== permissions.length ||
     permissions.length === 0 ||
     permissions.length > MAX_BOOTSTRAP_PERMISSIONS ||
-    unique.size !== permissions.length
+    unique.size !== permissions.length ||
+    permissions.some(isForbiddenBootstrapPermission)
   ) {
     return null;
   }
@@ -62,12 +73,16 @@ function boundedBootstrapIdentity():
 }
 
 export async function handleSessionBootstrap(request: Request): Promise<Response> {
-  if (!isLocalTestBootstrapAllowed()) {
-    return safeJson(503, SAFE_FAILURE);
+  // Production Node runtimes deny before reading identity, session store, CSRF, or cookies.
+  if (process.env.NODE_ENV === "production") {
+    return bootstrapUnavailable();
   }
-  const secret = localBootstrapSecret();
-  if (!secret || secret.length < 32) {
-    return safeJson(503, SAFE_FAILURE);
+  if (!isLocalTestBootstrapAllowed()) {
+    return bootstrapUnavailable();
+  }
+  // Exact configured public origin required; Host/Forwarded are not authority.
+  if (!validateSameOrigin(request)) {
+    return safeJson(403, SAFE_FAILURE);
   }
   // The request can carry no identity or authority: any non-empty body is rejected outright,
   // and the query string, headers, and cookies are never read for identity.
@@ -77,7 +92,7 @@ export async function handleSessionBootstrap(request: Request): Promise<Response
   }
   const identity = boundedBootstrapIdentity();
   if (!identity) {
-    return safeJson(503, SAFE_FAILURE);
+    return bootstrapUnavailable();
   }
   const previousSessionId = readCookie(request.headers.get("cookie"), BFF_SESSION_COOKIE);
   try {

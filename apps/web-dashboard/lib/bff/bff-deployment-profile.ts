@@ -7,11 +7,20 @@ export function deployProfile(): string {
 
 /**
  * Production-like deployment: bootstrap session issuance and memory session storage must fail
- * closed. An explicit production profile always wins; an explicit local/test profile marks the
- * runtime as non-production (used only for local E2E against a production build); with no
- * explicit profile, a production NODE_ENV is treated as production-like.
+ * closed.
+ *
+ * Invariant: NODE_ENV=production is always production-like. A deploy-profile environment variable
+ * must never downgrade a production Node runtime to local/test semantics.
+ *
+ * Non-production Node runtimes:
+ * - explicit prod/production/cloud/staging profile → production-like
+ * - explicit local/test/local-test profile → local/test
+ * - missing profile → local development (not production-like)
  */
 export function isProductionLikeDeployment(): boolean {
+  if (process.env.NODE_ENV === "production") {
+    return true;
+  }
   const profile = deployProfile();
   if (PRODUCTION_LIKE_DEPLOY_PROFILES.has(profile)) {
     return true;
@@ -19,16 +28,22 @@ export function isProductionLikeDeployment(): boolean {
   if (LOCAL_TEST_DEPLOY_PROFILES.has(profile)) {
     return false;
   }
-  return process.env.NODE_ENV === "production";
+  return false;
 }
 
 /**
- * Local/test bootstrap may mint a session only when explicitly enabled and the deployment is not
- * production-like. Bootstrap identity always comes from server env — never the request body,
- * query, headers, or cookies.
+ * Local/test bootstrap may mint a session only when explicitly enabled and the Node runtime is not
+ * production. Bootstrap identity always comes from server env — never the request body, query,
+ * headers, or cookies.
  */
 export function isLocalTestBootstrapAllowed(): boolean {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
   if (isProductionLikeDeployment()) {
+    return false;
+  }
+  if (!LOCAL_TEST_DEPLOY_PROFILES.has(deployProfile())) {
     return false;
   }
   if (process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP !== "true") {

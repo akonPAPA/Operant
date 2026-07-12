@@ -68,22 +68,31 @@ test("production-like deployment rejects local bootstrap flag", () => {
   const priorProfile = process.env.ORDERPILOT_DEPLOY_PROFILE;
   const priorFlag = process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP;
   const priorBff = process.env.ORDERPILOT_BFF_ENABLED;
-  process.env.NODE_ENV = "production";
-  delete process.env.ORDERPILOT_DEPLOY_PROFILE;
-  process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP = "true";
-  process.env.ORDERPILOT_BFF_ENABLED = "true";
-  assert.equal(isProductionLikeDeployment(), true);
-  assert.equal(isLocalTestBootstrapAllowed(), false);
-  process.env.ORDERPILOT_DEPLOY_PROFILE = "staging";
-  assert.equal(isLocalTestBootstrapAllowed(), false);
-  process.env.NODE_ENV = priorNode;
-  if (priorProfile === undefined) {
+  try {
+    process.env.NODE_ENV = "production";
     delete process.env.ORDERPILOT_DEPLOY_PROFILE;
-  } else {
-    process.env.ORDERPILOT_DEPLOY_PROFILE = priorProfile;
+    process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP = "true";
+    process.env.ORDERPILOT_BFF_ENABLED = "true";
+    assert.equal(isProductionLikeDeployment(), true);
+    assert.equal(isLocalTestBootstrapAllowed(), false);
+    process.env.ORDERPILOT_DEPLOY_PROFILE = "staging";
+    assert.equal(isLocalTestBootstrapAllowed(), false);
+    process.env.ORDERPILOT_DEPLOY_PROFILE = "local-test";
+    assert.equal(isProductionLikeDeployment(), true, "local-test must not downgrade production NODE_ENV");
+    assert.equal(isLocalTestBootstrapAllowed(), false);
+  } finally {
+    if (priorNode === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = priorNode;
+    if (priorProfile === undefined) {
+      delete process.env.ORDERPILOT_DEPLOY_PROFILE;
+    } else {
+      process.env.ORDERPILOT_DEPLOY_PROFILE = priorProfile;
+    }
+    if (priorFlag === undefined) delete process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP;
+    else process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP = priorFlag;
+    if (priorBff === undefined) delete process.env.ORDERPILOT_BFF_ENABLED;
+    else process.env.ORDERPILOT_BFF_ENABLED = priorBff;
   }
-  process.env.ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP = priorFlag;
-  process.env.ORDERPILOT_BFF_ENABLED = priorBff;
 });
 
 test("csrf and same-origin validation", () => {

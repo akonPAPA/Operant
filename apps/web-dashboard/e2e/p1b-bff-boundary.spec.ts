@@ -37,11 +37,27 @@ test("protected page redirects to /login when no session exists", async ({ page 
   await expect(page).toHaveURL(/\/login\?next=%2Forder-journey/);
 });
 
-test("production sign-in fails closed without trusted P1-C identity", async ({ request }) => {
+test("production Node runtime denies bootstrap even with malicious local-test vars", async ({ request }) => {
   const response = await request.post(`${PROD_APP}/api/auth/session`, {
-    headers: { host: "localhost:3101", origin: PROD_APP }
+    headers: {
+      host: "localhost:3101",
+      origin: PROD_APP,
+      "X-Tenant-Id": "evil-tenant",
+      "X-OrderPilot-Permissions": "STAFF_SUPPORT_READ",
+      cookie: "op_session=forged-session-cookie-value-0123456789abcdef"
+    },
+    data: { tenantId: "evil", permissions: ["ADMIN"] }
   });
-  expect(response.status()).toBe(503);
+  expect(response.status()).toBe(404);
+  expect(response.headers()["set-cookie"]).toBeUndefined();
+});
+
+test("production deploy-profile downgrade cannot enable bootstrap session issuance", async ({ request }) => {
+  // :3101 runs NODE_ENV=production with ORDERPILOT_DEPLOY_PROFILE=local-test intentionally.
+  const response = await request.post(`${PROD_APP}/api/auth/session`, {
+    headers: { origin: "https://operant.example.com" }
+  });
+  expect(response.status()).toBe(404);
   expect(response.headers()["set-cookie"]).toBeUndefined();
 });
 

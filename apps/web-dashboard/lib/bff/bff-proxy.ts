@@ -451,7 +451,7 @@ export async function validateBffProductionConfig(): Promise<string | null> {
   if (bffRuntimeMode() !== "bff-production") {
     return null;
   }
-  // Production sessions are opaque Redis IDs — no ORDERPILOT_BFF_SESSION_SECRET required.
+  // Production sessions are opaque Redis IDs with server-side records — not HMAC session tokens.
   if (!bffGatewaySharedSecret()) {
     return "ORDERPILOT_GATEWAY_SHARED_SECRET must be exactly 64 hexadecimal characters (openssl rand -hex 32)";
   }
