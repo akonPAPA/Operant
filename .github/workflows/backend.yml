@@ -41,4 +41,10 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-      - run: mvn test "-Dspring.profiles.active=integration-test" "-Dtest=*IntegrationTest"
+      # RequiresPostgresIntegration / DatabaseIntegrationTestBase gate on this
+      # system property. Without it the job is a false-green (45 skipped).
+      - run: >-
+          mvn test
+          "-Dspring.profiles.active=integration-test"
+          "-Dorderpilot.postgres.integration.enabled=true"
+          "-Dtest=*IntegrationTest"
