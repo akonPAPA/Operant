@@ -47,6 +47,22 @@ export function isProductionLikeDeployment(): boolean {
 }
 
 /**
+ * F08: one fail-safe predicate for issuing AND clearing browser cookies with the Secure attribute.
+ *
+ * Cookies are Secure on every production-like deployment (prod/production/cloud/staging), on any
+ * production Node runtime, and on any unknown/missing profile (fail safe). Secure may be omitted
+ * ONLY on an explicit local/test profile — e.g. a loopback-http E2E run — and never on a production
+ * Node runtime. Because both issuance and clearing derive their attributes from this single
+ * predicate, a cookie can always be cleared with attributes compatible with how it was set.
+ */
+export function isSecureCookieDeployment(): boolean {
+  if (isProductionNodeRuntime()) {
+    return true;
+  }
+  return !LOCAL_TEST_DEPLOY_PROFILES.has(deployProfile());
+}
+
+/**
  * Local/test bootstrap may mint a session only when explicitly enabled and the Node runtime is not
  * production. Bootstrap identity always comes from server env - never the request body, query,
  * headers, or cookies.

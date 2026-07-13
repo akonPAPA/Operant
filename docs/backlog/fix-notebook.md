@@ -1,5 +1,26 @@
 # Fix Notebook
 
+## PR #267 line-by-line audit remediation (F01–F16)
+
+- Status: **PARTIAL (working tree, uncommitted)** — branch `fix/pr267-runtime-root-causes`, no head SHA.
+  Full detail, files, and per-finding proof are in
+  [`docs/backlog/pr267-remediation-ledger.md`](pr267-remediation-ledger.md) (NON-AUTHORITATIVE until
+  the owner commits and CI re-runs at an exact head SHA).
+- **CLOSED (implemented + locally proven):** F01, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12,
+  F13, F14, F15, F16. Local full gates: frontend `npm ci`/`npm test` (681)/`lint`/`typecheck`/
+  `npm run build`/`npm run test:e2e` (10/10, twice, deterministic) all exit 0; backend
+  `mvn clean test` 2375 run / 0 failed / 45 skipped (the Postgres-gated integration tests), exit 0.
+- **PARTIAL:** F02 (multipart bounds + browser upload fail-closed proven — no upload route is
+  registered in the BFF and denial creates zero Core calls; the dedicated production-safe BFF
+  streaming multipart upload path + upload UI remains deferred as its own architecture slice and
+  stays fail-closed until then).
+- **NOT_PASS (unproven production gates, unchanged):** P1-C identity, P1-D public Core ingress, live
+  Redis topology, deployed production startup, production streaming multipart topology, support/staff
+  identity plane, PostgreSQL integration profile (no local Postgres and no Docker daemon in this
+  environment; CI runs it via `mvn test -Dspring.profiles.active=integration-test
+  -Dorderpilot.postgres.integration.enabled=true -Dtest=*IntegrationTest`), Semgrep/Snyk/CodeQL-
+  equivalent scanners (not installed locally; CI-only), remote CI at a committed head SHA.
+
 ## P1-B - Browser/BFF boundary local implementation proof (PR #267)
 
 - Status: PARTIAL / NOT_PASS (2026-07-11 20:30 UTC, implementation_sha `09b8a98`). Not a production PASS.

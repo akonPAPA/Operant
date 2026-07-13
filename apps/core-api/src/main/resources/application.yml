@@ -20,6 +20,17 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  # F02: bound the multipart document-intake path. The request thread must never read an unbounded
+  # upload into heap. max-file-size aligns with IntakeValidationService.DEFAULT_MAX_FILE_BYTES (10 MiB);
+  # max-request-size adds headroom for one file plus small form fields; file-size-threshold spools to
+  # disk beyond 256 KiB so large uploads are not held wholly in memory.
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 12MB
+      file-size-threshold: 256KB
+      resolve-lazily: true
 server:
   port: ${SERVER_PORT:8080}
 management:

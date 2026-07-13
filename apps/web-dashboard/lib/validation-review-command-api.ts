@@ -1,3 +1,4 @@
+import { caughtUiErrorMessage } from "./ui-error.ts";
 import {
   dashboardCoreApiBaseUrl,
   enrichDashboardRequestInit,
@@ -120,7 +121,7 @@ async function postCommand<T>(path: string, body: unknown): Promise<ApiResult<T>
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

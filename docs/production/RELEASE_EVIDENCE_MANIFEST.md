@@ -10,7 +10,7 @@
 | `base_sha` (`origin/main`) | `cae9603c870eeb0e87216d0f4707169b64eb2ea3` |
 | `implementation_anchor_sha` | `d90748307fdeabcf49d146db7f355adeed5bbfb1` |
 | `evidence_basis` | Local gates below + prior remote CI @ `09d8a08` for signature-v2 slice; final PR head recorded in PR comment after evidence push |
-| `pr_head_sha` | resolve after evidence push (`git rev-parse origin/feature/p1-b-browser-bff-boundary`) |
+| `pr_head_sha` | **NOT YET COMMITTED** — the F01–F16 runtime/security remediation (branch `fix/pr267-runtime-root-causes`) is uncommitted in the working tree; no head SHA exists. Evidence below is **NON-AUTHORITATIVE** until the owner commits and re-runs exact-head checks. Do not treat a working-tree scan as release evidence. |
 | `merge_ready_claim` | **not claimed** — human approval still required (`REVIEW_REQUIRED`) |
 
 ### Local gates @ `d907483` (implementation anchor)

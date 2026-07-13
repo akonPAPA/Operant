@@ -11,6 +11,7 @@ import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -145,46 +146,71 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
     assertNoSensitiveLeak(result);
   }
 
-  // 7. Permission escalation is impossible: the signature is bound to the permission value (it is part
-  // of the canonical string). A client holding a properly-signed low grant cannot tamper the
-  // X-OrderPilot-Permissions header up to ANALYTICS_MANAGE without invalidating the signature → 401,
-  // and the mutation route never executes.
+  // 7. F10 — permission-tampering proof. Build ONE fully valid signed request for the MANAGE route,
+  // signed over the CORRECT permission (ANALYTICS_MANAGE). The attack changes ONLY the
+  // X-OrderPilot-Permissions header after signing — every other signed field (method, path, query,
+  // tenant, actor, timestamp, nonce, content type, {} body, body hash, signature) is byte-identical.
+  // The tampered request must fail closed (401) and the mutation handler must NEVER be invoked, while
+  // the untouched control (same nonce and signature) still succeeds — proving the signature binds the
+  // permission and that the denial itself, not some incidental mismatch, is what stops execution.
   @Test
-  void clientCannotEscalatePermissionsByTamperingSignedHeader() throws Exception {
+  void permissionHeaderTamperingAfterSigningFailsClosedWithNoHandlerInvocation() throws Exception {
     long now = nowEpoch();
-    String nonce = freshNonce();
-    // Signature computed over the low permission the gateway actually granted (empty body POST).
-    String signatureOverLowGrant = TrustedGatewayTestSigning.hmacV2EmptyBody(
-        SECRET,
-        HttpMethod.POST.name(),
-        MANAGE_ROUTE,
-        TENANT,
-        ACTOR,
-        ApiPermission.ANALYTICS_READ.name(),
-        now,
-        nonce);
+    GatewayProbeController.REFRESH_INVOCATIONS.set(0);
 
-    MvcResult result = mockMvc.perform(post(MANAGE_ROUTE)
-            .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
-            .header(RequestActorResolver.ACTOR_HEADER, ACTOR)
-            // Tampered up to the manage permission the route requires...
-            .header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_MANAGE.name())
-            .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(now))
-            .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
-            .header(GatewayHeaderSignatureVerifier.VERSION_HEADER, GatewayV2Canonical.SIGNATURE_VERSION)
-            .header(
-                GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER,
-                GatewayV2Canonical.EMPTY_BODY_SHA256_HEX)
-            // ...but the signature only covers the low grant, so verification fails closed.
-            .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signatureOverLowGrant)
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    // Attack: a request signed over the CORRECT permission (ANALYTICS_MANAGE), then the permission
+    // header alone is tampered to a different value. Every other signed field is byte-identical to
+    // its signed baseline; only X-OrderPilot-Permissions was changed after signing. (Nonce replay is
+    // recorded even on failed verification, so the control below uses its own fresh nonce — the
+    // permission<->signature binding, not any incidental field, is what flips the outcome.)
+    String attackNonce = freshNonce();
+    String attackSignature = TrustedGatewayTestSigning.hmacV2EmptyBody(
+        SECRET, HttpMethod.POST.name(), MANAGE_ROUTE, TENANT, ACTOR,
+        ApiPermission.ANALYTICS_MANAGE.name(), now, attackNonce);
+    MvcResult tampered = mockMvc.perform(signedManageRefresh(now, attackNonce, attackSignature)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_READ.name()))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
         .andReturn();
-    assertThat(result.getResponse().getContentAsString())
-        .as("escalation attempt must not reach the mutation handler")
+    assertThat(tampered.getResponse().getContentAsString())
+        .as("tampered request must not reach the mutation handler")
         .doesNotContain("stage8-refresh");
-    assertNoSensitiveLeak(result);
+    assertThat(GatewayProbeController.REFRESH_INVOCATIONS.get())
+        .as("no controller/service invocation on the tampered request -> zero downstream mutation")
+        .isZero();
+    assertNoSensitiveLeak(tampered);
+
+    // Control: the untouched request — permission header matches the signed permission — succeeds and
+    // invokes the handler exactly once. Identical construction to the attack apart from the (fresh)
+    // nonce and the untampered permission header.
+    String controlNonce = freshNonce();
+    String controlSignature = TrustedGatewayTestSigning.hmacV2EmptyBody(
+        SECRET, HttpMethod.POST.name(), MANAGE_ROUTE, TENANT, ACTOR,
+        ApiPermission.ANALYTICS_MANAGE.name(), now, controlNonce);
+    mockMvc.perform(signedManageRefresh(now, controlNonce, controlSignature)
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, ApiPermission.ANALYTICS_MANAGE.name()))
+        .andExpect(status().isOk())
+        .andExpect(content().string(org.hamcrest.Matchers.containsString("stage8-refresh")));
+    assertThat(GatewayProbeController.REFRESH_INVOCATIONS.get())
+        .as("the untouched control request invokes the handler exactly once")
+        .isEqualTo(1);
+  }
+
+  /**
+   * All signed MANAGE-route headers EXCEPT the permission header (each caller sets it last). This is a
+   * canonical EMPTY-body POST: no Content-Type and no body, matching hmacV2EmptyBody's empty-body /
+   * empty-content-type canonicalization and the EMPTY_BODY_SHA256_HEX content hash — so the ONLY thing
+   * that can differ between attack and control is the permission header, never the body hash.
+   */
+  private MockHttpServletRequestBuilder signedManageRefresh(long now, String nonce, String signature) {
+    return post(MANAGE_ROUTE)
+        .header(GatewayHeaderSignatureVerifier.TENANT_HEADER, TENANT)
+        .header(RequestActorResolver.ACTOR_HEADER, ACTOR)
+        .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(now))
+        .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
+        .header(GatewayHeaderSignatureVerifier.VERSION_HEADER, GatewayV2Canonical.SIGNATURE_VERSION)
+        .header(GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER, GatewayV2Canonical.EMPTY_BODY_SHA256_HEX)
+        .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature);
   }
 
   private MockHttpServletRequestBuilder signed(
@@ -228,6 +254,11 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
 
   @RestController
   static class GatewayProbeController {
+    // Invocation counter proves the protected handler is (or is not) reached — a denied request must
+    // leave this at its prior value (zero controller/service invocation, hence zero downstream DB /
+    // audit / outbox / connector mutation, since this handler is the only side-effect surface here).
+    static final AtomicInteger REFRESH_INVOCATIONS = new AtomicInteger(0);
+
     @GetMapping(READ_ROUTE)
     Map<String, String> read() {
       return Map.of("route", "stage8-read");
@@ -235,6 +266,7 @@ class ApiGatewayHeaderAuthenticationHardeningTest {
 
     @PostMapping(MANAGE_ROUTE)
     Map<String, String> refresh() {
+      REFRESH_INVOCATIONS.incrementAndGet();
       return Map.of("route", "stage8-refresh");
     }
   }

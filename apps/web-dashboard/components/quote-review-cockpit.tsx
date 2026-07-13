@@ -17,6 +17,7 @@ import {
   selectQuoteReviewSubstitute
 } from "@/lib/quote-review-api";
 import { generateIdempotencyKey } from "@/lib/security-idempotency";
+import { boundedUiErrorMessage } from "@/lib/ui-error";
 import {
   mapOperatorActionError,
   OperatorActionResult,
@@ -172,9 +173,9 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
       try {
         idempotencyKey = generateIdempotencyKey();
         mutationKeysRef.current.set(actionKey, idempotencyKey);
-      } catch (error) {
+      } catch {
         setMessageKind("error");
-        setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
+        setMessage("Secure idempotency key generation failed.");
         return;
       }
     }
@@ -185,7 +186,10 @@ export function QuoteReviewDetailWorkspace({ quoteId }: { quoteId: string }) {
         return { ok: true as const, data, safeMessage: doneMessage };
       } catch (error) {
         const err = error as Error & { status?: number };
-        const { errorCode, safeMessage } = mapOperatorActionError(err.status ?? 500, err.message);
+        const { errorCode, safeMessage } = mapOperatorActionError(
+          err.status ?? 500,
+          boundedUiErrorMessage(error, "The action could not be completed. Please try again or contact support.")
+        );
         return { ok: false as const, errorCode, safeMessage };
       }
     };

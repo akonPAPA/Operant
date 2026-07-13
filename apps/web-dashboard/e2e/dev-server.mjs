@@ -45,7 +45,12 @@ function main() {
     [nextBin, "dev", "--port", String(port), "--hostname", "127.0.0.1"],
     {
       cwd: appRoot,
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        // F13: the dev runtime writes only to an isolated, gitignored dist directory. It must never
+        // mutate `.next`, which holds the production standalone artifact under test on :3101.
+        ORDERPILOT_NEXT_DIST_DIR: process.env.ORDERPILOT_NEXT_DIST_DIR ?? ".next-e2e-dev"
+      },
       stdio: "inherit",
       shell: false
     }

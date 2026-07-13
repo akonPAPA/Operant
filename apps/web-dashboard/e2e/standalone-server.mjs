@@ -67,16 +67,19 @@ export function findStandaloneServerJs(rootDir) {
 }
 
 export function prepareStandaloneAssets(rootDir, serverJsPath) {
+  // F13: idempotent — run-e2e.mjs prepares assets once, right after the build and BEFORE the
+  // production-artifact snapshot. Re-copying here at server start would mutate `.next` after the
+  // snapshot and trip the artifact-integrity check, so already-prepared assets are left untouched.
   const serverDir = dirname(serverJsPath);
   const staticSrc = join(rootDir, ".next", "static");
   const staticDest = join(serverDir, ".next", "static");
-  if (existsSync(staticSrc)) {
+  if (existsSync(staticSrc) && !existsSync(staticDest)) {
     mkdirSync(dirname(staticDest), { recursive: true });
     cpSync(staticSrc, staticDest, { recursive: true });
   }
   const publicSrc = join(rootDir, "public");
   const publicDest = join(serverDir, "public");
-  if (existsSync(publicSrc)) {
+  if (existsSync(publicSrc) && !existsSync(publicDest)) {
     cpSync(publicSrc, publicDest, { recursive: true });
   }
 }

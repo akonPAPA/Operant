@@ -16,8 +16,18 @@ async function resetCoreRequests(request: APIRequestContext) {
 
 async function signIn(page: Page) {
   await page.goto(`${LOCAL_APP}/login`);
-  await page.getByRole("button", { name: /continue/i }).click();
-  await page.waitForURL(`${LOCAL_APP}/`);
+  const continueButton = page.getByRole("button", { name: /continue/i });
+  // Two dev-runtime realities:
+  //  - the server-rendered button is visible before React hydration attaches onClick, so a single
+  //    early click can be silently lost → retry the click until navigation actually starts;
+  //  - app/page.tsx redirects "/" to /command-center inside the client-side replace, so the browser
+  //    URL never settles on exactly "/". Signed in == we left /login for an authenticated page.
+  await expect(async () => {
+    await continueButton.click();
+    await page.waitForURL((url) => url.origin === LOCAL_APP && url.pathname !== "/login", {
+      timeout: 3000
+    });
+  }).toPass({ timeout: 25_000 });
 }
 
 function csrfFromCookies(cookies: { name: string; value: string }[]): string {

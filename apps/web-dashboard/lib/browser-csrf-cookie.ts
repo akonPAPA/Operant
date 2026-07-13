@@ -1,4 +1,4 @@
-import { BFF_CSRF_COOKIE } from "./bff/bff-config.ts";
+import { BFF_CSRF_COOKIE } from "./bff/bff-public-config.ts";
 
 const CSRF_TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 
