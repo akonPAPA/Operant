@@ -1,11 +1,17 @@
 import { defineConfig } from "@playwright/test";
 
 /**
- * P1-B browser E2E. Run `npm run build` first - both app servers start from the same
- * production standalone artifact with different runtime env:
- *  - :3100 local/test bootstrap bridge with a non-production Node runtime (harness only)
- *  - :3101 real production Node runtime with malicious local-test vars - bootstrap must stay denied
- *  - :18080 bounded fake Core recording every request that crosses the BFF boundary
+ * P1-B browser E2E. Two intentionally different application runtimes prove both sides of the
+ * production bootstrap boundary:
+ *  - :3100 genuine non-production runtime (`next dev`). isProductionNodeRuntime() is false here,
+ *    so the existing explicit local/test bootstrap authorization rules apply — no production
+ *    artifact, no NODE_ENV spoofing, no guard weakening.
+ *  - :3101 real production runtime launched from the production standalone artifact
+ *    (server.js pins NODE_ENV=production). Even with malicious local-test/bootstrap env vars and a
+ *    deploy-profile downgrade attempt, bootstrap must stay fail-closed.
+ *  - :18080 bounded fake Core recording every request that crosses the BFF boundary.
+ *
+ * Run `npm run build` first (run-e2e.mjs does this): the standalone artifact is required for :3101.
  */
 const GATEWAY_SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
 
@@ -36,10 +42,14 @@ export default defineConfig({
       timeout: 30_000
     },
     {
-      command: "node e2e/standalone-server.mjs --port 3100",
+      // Genuine non-production runtime. `next dev` never runs as NODE_ENV=production, so
+      // isProductionNodeRuntime() is false and local/test bootstrap is legitimately available here.
+      command: "node e2e/dev-server.mjs --port 3100",
       url: "http://localhost:3100/api/bff/health",
       reuseExistingServer: false,
-      timeout: 120_000,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
       env: {
         ...sharedEnv,
         NODE_ENV: "test",
