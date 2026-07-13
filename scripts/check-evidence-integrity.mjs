@@ -59,7 +59,7 @@ const DIRTY_AS_RELEASE =
   /\b(working[- ]tree|dirty|uncommitted)\b[^\n]{0,80}\b(is|as|counts?\s+as)\s+release\s+evidence\b/i;
 
 const STALE_EVIDENCE_ANCHOR =
-  /\b(uncommitted|NOT YET (CREATED|COMMITTED)|no SHA (exists|is bound)|No SHA is bound)\b/i;
+  /\b(uncommitted|NOT YET (CREATED|COMMITTED)|no SHA (exists|is bound)|No SHA is bound|pending owner commit|pending exact-head validation|pending remote CI rerun|pending post-fix implementation SHA|local remediation pending owner commit|must be filled by the owner after committing)\b/i;
 
 /**
  * Ledger closure-gate: F13 may be CLOSED only with build + E2E proof in its row; F15 only with
@@ -76,6 +76,92 @@ function checkLedgerClosureGates(rel, text, findings) {
     }
     if (id === "F15" && !(/git diff/i.test(row) && /\buntracked\b/i.test(row))) {
       findings.push(`${rel}: F15 marked CLOSED without post-build git diff + untracked cleanliness proof`);
+    }
+  }
+}
+
+function checkPr269EvidenceAnchors(rel, text, findings) {
+  if (rel === "docs/backlog/pr267-remediation-ledger.md") {
+    const required = [
+      [
+        "remediation implementation SHA",
+        /Remediation implementation SHA:\s*`[0-9a-f]{40}`/i
+      ],
+      [
+        "tested PR head SHA",
+        /Tested PR head SHA:\s*`[0-9a-f]{40}`/i
+      ],
+      [
+        "tested PR merge-test SHA",
+        /Tested PR merge-test SHA:\s*`[0-9a-f]{40}`/i
+      ],
+      [
+        "Frontend exact-head workflow",
+        /Frontend workflow run `\d{8,}`:\s*\*\*SUCCESS\*\*/i
+      ],
+      [
+        "CI exact-head workflow",
+        /CI workflow run `\d{8,}`:\s*\*\*SUCCESS\*\*/i
+      ],
+      [
+        "Backend exact-head workflow",
+        /Backend workflow run `\d{8,}`:\s*\*\*SUCCESS\*\*/i
+      ],
+      [
+        "AI Worker exact-head workflow",
+        /AI Worker workflow run `\d{8,}`:\s*\*\*SUCCESS\*\*/i
+      ]
+    ];
+
+    for (const [label, pattern] of required) {
+      if (!pattern.test(text)) {
+        findings.push(`${rel}: missing ${label}`);
+      }
+    }
+  }
+
+  if (rel === "docs/production/RELEASE_EVIDENCE_MANIFEST.md") {
+    const required = [
+      [
+        "remediation_implementation_sha",
+        /\|\s*`remediation_implementation_sha`\s*\|\s*`[0-9a-f]{40}`\s*\|/i
+      ],
+      [
+        "tested_pr_head_sha",
+        /\|\s*`tested_pr_head_sha`\s*\|\s*`[0-9a-f]{40}`\s*\|/i
+      ],
+      [
+        "tested_pr_merge_sha",
+        /\|\s*`tested_pr_merge_sha`\s*\|\s*`[0-9a-f]{40}`\s*\|/i
+      ],
+      [
+        "Frontend exact-head result",
+        /\|\s*Frontend\s*\|\s*`\d{8,}`\s*\|\s*\*\*SUCCESS\*\*/i
+      ],
+      [
+        "CI exact-head result",
+        /\|\s*CI\s*\|\s*`\d{8,}`\s*\|\s*\*\*SUCCESS\*\*/i
+      ],
+      [
+        "Backend exact-head result",
+        /\|\s*Backend\s*\|\s*`\d{8,}`\s*\|\s*\*\*SUCCESS\*\*/i
+      ],
+      [
+        "AI Worker exact-head result",
+        /\|\s*AI Worker\s*\|\s*`\d{8,}`\s*\|\s*\*\*SUCCESS\*\*/i
+      ]
+    ];
+
+    for (const [label, pattern] of required) {
+      if (!pattern.test(text)) {
+        findings.push(`${rel}: missing ${label}`);
+      }
+    }
+
+    if (/\|\s*`pr_head_sha`\s*\|/i.test(text)) {
+      findings.push(
+        `${rel}: mutable pr_head_sha field is prohibited; use tested_pr_head_sha`
+      );
     }
   }
 }
@@ -120,7 +206,9 @@ for (const rel of EVIDENCE_DOCS) {
       findings.push(`${rel}:${n}: stale mutable evidence anchor language`);
     }
   });
-  checkLedgerClosureGates(rel, lines.join("\n"), findings);
+  const text = lines.join("\n");
+  checkLedgerClosureGates(rel, text, findings);
+  checkPr269EvidenceAnchors(rel, text, findings);checkLedgerClosureGates(rel, lines.join("\n"), findings);
 }
 
 if (findings.length > 0) {

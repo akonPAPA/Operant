@@ -2,25 +2,27 @@
 
 ## PR #267 line-by-line audit remediation (F01–F16)
 
-- Status: **PARTIAL (PR #269 local remediation pending owner commit)** - reviewed PR #269 head
-  `99438a210a905939554f414d7f1038ef01e3b5a2` exists on branch `fix/pr267-runtime-root-causes`.
+- Status: **PARTIAL (implementation and exact-head CI verified; bounded F02/F16 remainders remain)**.
+  PR #269 remediation implementation was tested at
+  `0cae7029d04956910be0b249925f789a709fb481`; GitHub merge-test SHA:
+  `aea64aa971b9c1b6f26decd1710eec4c1701a230`.
   Full detail, files, and per-finding proof are in
-  [`docs/backlog/pr267-remediation-ledger.md`](pr267-remediation-ledger.md). The post-fix
-  implementation SHA, tested SHA, workflow run IDs, and remote CI results must be recorded after the
-  owner commits this remediation and reruns exact-head checks.
-- **CLOSED (implemented + locally proven before this PR #269 fix):** F01, F03, F04, F05, F06, F07,
-  F08, F09, F10, F11, F12, F13, F14, F15, and the narrow F16 permission/plane/read-mutation parity.
-  Full transport-contract parity remains PARTIAL until method/template/permission/plane/read-mutation,
-  CSRF, content type, maximum body size, idempotency policy, and query contract are all proven against
-  Core.
-- **PARTIAL:** F02 (multipart bounds + browser upload fail-closed proven - no upload route is
-  registered in the BFF and denial creates zero Core calls; the dedicated production-safe BFF
-  streaming multipart upload path + upload UI remains deferred as its own architecture slice and
-  stays fail-closed until then), full F16 transport-contract parity.
-- **NOT_PASS (unproven production gates, unchanged):** P1-C identity, P1-D public Core ingress, live
-  Redis topology, deployed production startup, production streaming multipart topology, support/staff
-  identity plane, PostgreSQL integration profile, Semgrep/Snyk/CodeQL-equivalent local scanners, and
-  remote CI at the post-fix implementation SHA.
+  [`docs/backlog/pr267-remediation-ledger.md`](pr267-remediation-ledger.md).
+- Exact-head remote evidence:
+  - Frontend `29291232781`: **SUCCESS**
+  - CI `29291232736`: **SUCCESS**
+  - Backend `29291232777`: **SUCCESS**
+  - AI Worker `29291232776`: **SUCCESS**
+  - Snyk commit status: **SUCCESS**
+- **CLOSED:** F01, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12, F13,
+  F14, F15, and the narrow F16 permission/plane/read-mutation parity.
+  These findings are implemented and proven by local tests and exact-head remote workflows.
+- **PARTIAL:** F02 (multipart bounds + browser upload fail-closed proven; dedicated production-safe
+  BFF streaming multipart upload path and upload UI remain deferred), and full F16 transport-contract
+  parity for content type, maximum body size, idempotency policy and query contract.
+- **NOT_PASS (unproven production gates):** P1-C identity, P1-D public Core ingress, live Redis
+  topology, deployed production startup, production streaming multipart topology, support/staff
+  identity plane, PostgreSQL integration profile, and exact-head Semgrep/CodeQL evidence.
 
 ## P1-B - Browser/BFF boundary local implementation proof (PR #267)
 
