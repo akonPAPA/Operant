@@ -10,7 +10,10 @@ import { registeredBffRoutes } from "../lib/bff/bff-route-registry.ts";
  * ApiRouteSecurityPolicy.classify() against every route, so drift here (a new/changed BFF route that
  * was not regenerated) would silently break parity. Run with UPDATE_BFF_ROUTE_ARTIFACT=1 to refresh.
  */
-const ARTIFACT_URL = new URL("../lib/bff/bff-tenant-routes.generated.json", import.meta.url);
+const ARTIFACT_URL = new URL(
+  "../../../shared/contracts/bff-tenant-routes.generated.json",
+  import.meta.url
+);
 
 function canonicalRoutes() {
   return registeredBffRoutes()

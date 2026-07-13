@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 class BffCoreRoutePolicyParityTest {
 
   private static final String ARTIFACT_RELATIVE_PATH =
-      "apps/web-dashboard/lib/bff/bff-tenant-routes.generated.json";
+      "shared/contracts/bff-tenant-routes.generated.json";
   private static final String SAMPLE_UUID = "11111111-1111-4111-8111-111111111111";
 
   private final ApiRouteSecurityPolicy policy = new ApiRouteSecurityPolicy();
