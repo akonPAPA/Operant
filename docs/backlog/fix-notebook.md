@@ -2,24 +2,25 @@
 
 ## PR #267 line-by-line audit remediation (F01–F16)
 
-- Status: **PARTIAL (working tree, uncommitted)** — branch `fix/pr267-runtime-root-causes`, no head SHA.
+- Status: **PARTIAL (PR #269 local remediation pending owner commit)** - reviewed PR #269 head
+  `99438a210a905939554f414d7f1038ef01e3b5a2` exists on branch `fix/pr267-runtime-root-causes`.
   Full detail, files, and per-finding proof are in
-  [`docs/backlog/pr267-remediation-ledger.md`](pr267-remediation-ledger.md) (NON-AUTHORITATIVE until
-  the owner commits and CI re-runs at an exact head SHA).
-- **CLOSED (implemented + locally proven):** F01, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12,
-  F13, F14, F15, F16. Local full gates: frontend `npm ci`/`npm test` (681)/`lint`/`typecheck`/
-  `npm run build`/`npm run test:e2e` (10/10, twice, deterministic) all exit 0; backend
-  `mvn clean test` 2375 run / 0 failed / 45 skipped (the Postgres-gated integration tests), exit 0.
-- **PARTIAL:** F02 (multipart bounds + browser upload fail-closed proven — no upload route is
+  [`docs/backlog/pr267-remediation-ledger.md`](pr267-remediation-ledger.md). The post-fix
+  implementation SHA, tested SHA, workflow run IDs, and remote CI results must be recorded after the
+  owner commits this remediation and reruns exact-head checks.
+- **CLOSED (implemented + locally proven before this PR #269 fix):** F01, F03, F04, F05, F06, F07,
+  F08, F09, F10, F11, F12, F13, F14, F15, and the narrow F16 permission/plane/read-mutation parity.
+  Full transport-contract parity remains PARTIAL until method/template/permission/plane/read-mutation,
+  CSRF, content type, maximum body size, idempotency policy, and query contract are all proven against
+  Core.
+- **PARTIAL:** F02 (multipart bounds + browser upload fail-closed proven - no upload route is
   registered in the BFF and denial creates zero Core calls; the dedicated production-safe BFF
   streaming multipart upload path + upload UI remains deferred as its own architecture slice and
-  stays fail-closed until then).
+  stays fail-closed until then), full F16 transport-contract parity.
 - **NOT_PASS (unproven production gates, unchanged):** P1-C identity, P1-D public Core ingress, live
   Redis topology, deployed production startup, production streaming multipart topology, support/staff
-  identity plane, PostgreSQL integration profile (no local Postgres and no Docker daemon in this
-  environment; CI runs it via `mvn test -Dspring.profiles.active=integration-test
-  -Dorderpilot.postgres.integration.enabled=true -Dtest=*IntegrationTest`), Semgrep/Snyk/CodeQL-
-  equivalent scanners (not installed locally; CI-only), remote CI at a committed head SHA.
+  identity plane, PostgreSQL integration profile, Semgrep/Snyk/CodeQL-equivalent local scanners, and
+  remote CI at the post-fix implementation SHA.
 
 ## P1-B - Browser/BFF boundary local implementation proof (PR #267)
 

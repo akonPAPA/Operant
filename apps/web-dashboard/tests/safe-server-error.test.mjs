@@ -57,6 +57,36 @@ test("F03: toPublicServerError returns a bounded constant message and never the 
   }
 });
 
+test("F03: generic server logging uses only structured allowlisted fields", () => {
+  const lines = [];
+  const prior = console.error;
+  console.error = (line) => lines.push(String(line));
+  try {
+    const publicError = toPublicServerError(new Error(HOSTILE.join(" | ")));
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], new RegExp(`correlationId=${publicError.correlationId}`));
+    assert.match(lines[0], /code=TEMPORARILY_UNAVAILABLE/);
+    assert.match(lines[0], /errorCategory=Error/);
+    for (const fragment of [
+      "redis://",
+      "core-api.internal",
+      "OrderPilot-Core",
+      "/var/run/secrets",
+      "10.42.7.19",
+      "PSQLException",
+      "tenant_quotes",
+      "Gateway-Signature",
+      "Bearer eyJ",
+      "op_session=",
+      "SELECT *"
+    ]) {
+      assert.equal(lines[0].includes(fragment), false, `log leaked ${fragment}: ${lines[0]}`);
+    }
+  } finally {
+    console.error = prior;
+  }
+});
+
 test("F03: publicCodeForStatus maps HTTP statuses to stable codes", () => {
   assert.equal(publicCodeForStatus(401), "AUTH_REQUIRED");
   assert.equal(publicCodeForStatus(403), "ACCESS_DENIED");

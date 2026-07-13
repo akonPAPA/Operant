@@ -12,6 +12,9 @@
  *    artifact during E2E fails the run;
  *  - the isolated dev dist dir is removed before and after every run (success or failure), so
  *    repeated runs are deterministic and nothing leaks into the worktree (it is gitignored too).
+ *
+ * Cleanup is best-effort for normal build failures, Playwright failures, and handled exits. SIGKILL
+ * terminates the process immediately, so no Node finally block can guarantee restoration in that case.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -100,30 +103,28 @@ let exitCode = 0;
 cleanDevDist();
 try {
   exitCode = run([nextBin, "build"]);
-  if (exitCode !== 0) {
-    process.exit(exitCode);
-  }
+  if (exitCode === 0) {
+    // Prepare the standalone runtime assets NOW so the artifact snapshot below covers the exact
+    // tree the :3101 production server executes, and nothing mutates `.next` after the snapshot.
+    prepareStandaloneAssets(appRoot, findStandaloneServerJs(appRoot));
+    const before = artifactManifest(prodDist);
+    console.log(`F13 production artifact snapshot: ${before}`);
 
-  // Prepare the standalone runtime assets NOW so the artifact snapshot below covers the exact
-  // tree the :3101 production server executes, and nothing mutates `.next` after the snapshot.
-  prepareStandaloneAssets(appRoot, findStandaloneServerJs(appRoot));
-  const before = artifactManifest(prodDist);
-  console.log(`F13 production artifact snapshot: ${before}`);
+    exitCode = run([playwrightBin, "test"]);
 
-  exitCode = run([playwrightBin, "test"]);
-
-  const after = artifactManifest(prodDist);
-  if (after !== before) {
-    console.error(
-      `F13 VIOLATION: the production artifact .next changed during E2E.\n before: ${before}\n after:  ${after}`
-    );
-    exitCode = exitCode === 0 ? 1 : exitCode;
-  } else {
-    console.log(`F13 production artifact unchanged after E2E: ${after}`);
-  }
-  if (existsSync(join(prodDist, "standalone")) === false) {
-    console.error("F13: expected standalone output under .next/standalone");
-    exitCode = exitCode === 0 ? 1 : exitCode;
+    const after = artifactManifest(prodDist);
+    if (after !== before) {
+      console.error(
+        `F13 VIOLATION: the production artifact .next changed during E2E.\n before: ${before}\n after:  ${after}`
+      );
+      exitCode = exitCode === 0 ? 1 : exitCode;
+    } else {
+      console.log(`F13 production artifact unchanged after E2E: ${after}`);
+    }
+    if (existsSync(join(prodDist, "standalone")) === false) {
+      console.error("F13: expected standalone output under .next/standalone");
+      exitCode = exitCode === 0 ? 1 : exitCode;
+    }
   }
 } finally {
   cleanDevDist();

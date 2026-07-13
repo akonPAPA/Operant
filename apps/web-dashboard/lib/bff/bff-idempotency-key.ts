@@ -4,7 +4,7 @@
  * Root cause this closes: a present-but-invalid Idempotency-Key must never be silently
  * trimmed, sanitized, or omitted. Silent omission downgrades a keyed mutation into an
  * unkeyed one at Core, defeating replay/dedup protection. The grammar below is the single
- * source of truth (idempotency-key-contract.json) and is byte-identical to the Core Java
+ * source of truth (shared/contracts/idempotency-key-contract.json) and is byte-identical to the Core Java
  * validator (com.orderpilot.common.api.ClientIdempotencyKey); a parity test on each side
  * asserts the embedded values equal the JSON contract.
  *
@@ -15,7 +15,7 @@
 /** Route-level idempotency policy. Replaces the old boolean allowIdempotencyKey. */
 export type BffIdempotencyPolicy = "required" | "optional" | "forbidden";
 
-/** Embedded canonical contract (kept in lockstep with idempotency-key-contract.json). */
+/** Embedded canonical contract (kept in lockstep with shared/contracts/idempotency-key-contract.json). */
 export const IDEMPOTENCY_KEY_CONTRACT = Object.freeze({
   version: 1,
   header: "Idempotency-Key",

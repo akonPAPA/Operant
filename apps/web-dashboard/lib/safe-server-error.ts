@@ -90,17 +90,26 @@ export function redactTechnicalDetail(input: string): string {
   );
 }
 
-/** Redacted logging. Never logs cookies, signatures, CSRF, authorization, or payloads. */
+function safeErrorCategory(error: unknown): string {
+  if (error instanceof SyntaxError) return "SyntaxError";
+  if (error instanceof TypeError) return "TypeError";
+  if (error instanceof RangeError) return "RangeError";
+  if (error instanceof Error) return "Error";
+  const type = typeof error;
+  return ["string", "number", "boolean", "bigint", "symbol", "undefined"].includes(type)
+    ? type
+    : "nonError";
+}
+
+/** Structured allowlisted logging. Never logs raw messages, stacks, payloads, URLs, SQL, or secrets. */
 export function logRedactedServerError(
   correlationId: string,
   code: PublicServerErrorCode,
   error: unknown
 ): void {
-  const name = error instanceof Error ? error.name : typeof error;
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const safeMessage = redactTechnicalDetail(rawMessage).slice(0, 300);
-  // Only the class name and a redacted, truncated message — no stack, no payload, no headers.
-  console.error(`[server-read] correlationId=${correlationId} code=${code} error=${name}: ${safeMessage}`);
+  console.error(
+    `[server-read] correlationId=${correlationId} code=${code} errorCategory=${safeErrorCategory(error)}`
+  );
 }
 
 /**

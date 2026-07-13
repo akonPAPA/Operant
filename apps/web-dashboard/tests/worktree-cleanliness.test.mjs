@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
  */
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const NEXT_ENV = "apps/web-dashboard/next-env.d.ts";
+const TS_CONFIG = "apps/web-dashboard/tsconfig.json";
 
 function gitDiffClean(pathspec) {
   try {
@@ -24,9 +25,11 @@ function gitDiffClean(pathspec) {
   }
 }
 
-test("F15: next-env.d.ts is not modified in the worktree (git diff --exit-code)", () => {
-  const result = gitDiffClean(NEXT_ENV);
-  assert.ok(result.clean, `${NEXT_ENV} was modified (build/dev/E2E must not rewrite it):\n${result.diff}`);
+test("F15: tracked generated files are not modified in the worktree (git diff --exit-code)", () => {
+  for (const pathspec of [NEXT_ENV, TS_CONFIG]) {
+    const result = gitDiffClean(pathspec);
+    assert.ok(result.clean, `${pathspec} was modified (build/dev/E2E must restore it):\n${result.diff}`);
+  }
 });
 
 test("F15: tsconfig.json carries no leaked E2E distDir include globs", () => {

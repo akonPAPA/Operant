@@ -1,0 +1,21 @@
+{
+  "$comment": "Canonical, versioned Idempotency-Key contract shared by the BFF (TypeScript) and Core (Java com.orderpilot.common.api.ClientIdempotencyKey). This repository-level file is the SINGLE SOURCE OF TRUTH for the token grammar. Both sides embed these values and machine-parity tests assert the embedded values equal this file. Do not fork the grammar: change this file and both validators together.",
+  "version": 1,
+  "header": "Idempotency-Key",
+  "minLength": 1,
+  "maxLength": 128,
+  "pattern": "^[A-Za-z0-9._:-]+$",
+  "policies": [
+    "required",
+    "optional",
+    "forbidden"
+  ],
+  "rejectionBehavior": {
+    "presentInvalid": "reject-400",
+    "presentForbidden": "reject-400",
+    "absentRequired": "reject-400",
+    "duplicateOrCommaJoined": "reject-400",
+    "oversized": "reject-400",
+    "silentNormalizationOrOmission": "prohibited"
+  }
+}

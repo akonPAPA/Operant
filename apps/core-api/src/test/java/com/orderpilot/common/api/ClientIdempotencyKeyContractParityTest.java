@@ -2,7 +2,6 @@ package com.orderpilot.common.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,14 +14,14 @@ import org.junit.jupiter.api.Test;
 /**
  * F01 machine-enforced parity: Core's canonical Idempotency-Key grammar must equal the single-source
  * contract that the BFF also embeds
- * (apps/web-dashboard/lib/bff/idempotency-key-contract.json). If either side edits the grammar without
+ * (shared/contracts/idempotency-key-contract.json). If either side edits the grammar without
  * the other, this test fails — preventing the historical BFF/Core divergence (the BFF-only {@code ~}
  * character) from reappearing.
  */
 class ClientIdempotencyKeyContractParityTest {
 
   private static final String CONTRACT_RELATIVE_PATH =
-      "apps/web-dashboard/lib/bff/idempotency-key-contract.json";
+      "shared/contracts/idempotency-key-contract.json";
 
   private static JsonNode loadContract() throws IOException {
     Path dir = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
@@ -46,29 +45,35 @@ class ClientIdempotencyKeyContractParityTest {
   }
 
   @Test
-  void normalizeAcceptsCanonicalKeysAndRejectsTheHistoricalTilde() {
-    // Accepted canonical shapes (identical to what the BFF forwards).
+  void normalizeAcceptsCanonicalKeysByteForByte() {
     assertThat(ClientIdempotencyKey.normalize("op-key-123")).isEqualTo("op-key-123");
     assertThat(ClientIdempotencyKey.normalize("rfq-handoff-decision-abc.def:1"))
         .isEqualTo("rfq-handoff-decision-abc.def:1");
     assertThat(ClientIdempotencyKey.normalize("SENTINEL_IDEMPOTENCY_KEY"))
         .isEqualTo("SENTINEL_IDEMPOTENCY_KEY");
-
-    // The BFF-only tilde must be rejected here (this was the divergence).
-    assertThatThrownBy(() -> ClientIdempotencyKey.normalize("op~key"))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(ClientIdempotencyKey.normalize("x".repeat(ClientIdempotencyKey.MAX_LENGTH)))
+        .isEqualTo("x".repeat(ClientIdempotencyKey.MAX_LENGTH));
   }
 
   @Test
-  void normalizeRejectsOversizedAndDisallowedCharactersAndTreatsBlankAsAbsent() {
-    assertThatThrownBy(
-            () -> ClientIdempotencyKey.normalize("x".repeat(ClientIdempotencyKey.MAX_LENGTH + 1)))
+  void normalizeRejectsPresentInvalidValuesWithoutTrimmingOrOmission() {
+    assertThat(ClientIdempotencyKey.normalize(null)).isNull();
+    assertThatThrownBy(() -> ClientIdempotencyKey.normalize(""))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> ClientIdempotencyKey.normalize("bad key with spaces"))
+    assertThatThrownBy(() -> ClientIdempotencyKey.normalize("   "))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> ClientIdempotencyKey.normalize(" op-key-123"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> ClientIdempotencyKey.normalize("op-key-123 "))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> ClientIdempotencyKey.normalize("op~key"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> ClientIdempotencyKey.normalize("op-key-1,op-key-2"))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> ClientIdempotencyKey.normalize("op/key/slash"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertNull(ClientIdempotencyKey.normalize(null));
-    assertNull(ClientIdempotencyKey.normalize("   "));
+    assertThatThrownBy(
+            () -> ClientIdempotencyKey.normalize("x".repeat(ClientIdempotencyKey.MAX_LENGTH + 1)))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }

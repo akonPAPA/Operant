@@ -976,7 +976,7 @@ test("F01: canonical grammar excludes the historical tilde and accepts real key 
 
 test("F01: BFF embedded contract equals the single-source JSON contract file", () => {
   const contractPath = fileURLToPath(
-    new URL("../lib/bff/idempotency-key-contract.json", import.meta.url)
+    new URL("../../../shared/contracts/idempotency-key-contract.json", import.meta.url)
   );
   const json = JSON.parse(readFileSync(contractPath, "utf8"));
   assert.equal(IDEMPOTENCY_KEY_CONTRACT.version, json.version);

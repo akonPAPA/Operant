@@ -58,6 +58,9 @@ const TARGETED_AS_FULL =
 const DIRTY_AS_RELEASE =
   /\b(working[- ]tree|dirty|uncommitted)\b[^\n]{0,80}\b(is|as|counts?\s+as)\s+release\s+evidence\b/i;
 
+const STALE_EVIDENCE_ANCHOR =
+  /\b(uncommitted|NOT YET (CREATED|COMMITTED)|no SHA (exists|is bound)|No SHA is bound)\b/i;
+
 /**
  * Ledger closure-gate: F13 may be CLOSED only with build + E2E proof in its row; F15 only with
  * post-build diff/untracked cleanliness proof in its row. Applied to the remediation ledger table.
@@ -112,6 +115,9 @@ for (const rel of EVIDENCE_DOCS) {
     }
     if (DIRTY_AS_RELEASE.test(line) && !negated && !/NON-AUTHORITATIVE/i.test(line)) {
       findings.push(`${rel}:${n}: dirty working-tree output is described as release evidence`);
+    }
+    if (STALE_EVIDENCE_ANCHOR.test(line)) {
+      findings.push(`${rel}:${n}: stale mutable evidence anchor language`);
     }
   });
   checkLedgerClosureGates(rel, lines.join("\n"), findings);
