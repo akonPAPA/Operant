@@ -50,6 +50,8 @@ const ALLOWED_BFF_PERMISSIONS = new Set(registeredBffRoutes().map((rule) => rule
 
 let redisClient: MinimalRedisClient | null = null;
 let redisClientFactoryForTesting: ((url: string) => MinimalRedisClient) | null = null;
+/** Coalesces concurrent connect attempts into one in-flight promise (F04: no connect stampede). */
+let redisConnectInFlight: Promise<void> | null = null;
 const memoryStore = new Map<string, StoredOperatorSession>();
 
 export function setRedisClientFactoryForTesting(
@@ -57,11 +59,13 @@ export function setRedisClientFactoryForTesting(
 ): void {
   redisClientFactoryForTesting = factory;
   redisClient = null;
+  redisConnectInFlight = null;
 }
 
 export function resetSessionStoreForTesting(): void {
   redisClientFactoryForTesting = null;
   redisClient = null;
+  redisConnectInFlight = null;
   memoryStore.clear();
 }
 
@@ -176,19 +180,33 @@ async function requireRedis(): Promise<MinimalRedisClient> {
   if (!redisClient) {
     redisClient = redisClientFactoryForTesting
       ? redisClientFactoryForTesting(url)
-      : (createClient({ url }) as unknown as MinimalRedisClient);
+      : (createClient({
+          url,
+          // F04: bound the failure mode — a single connect with a timeout and no tight
+          // background reconnect loop. Recovery happens on the next request after reset.
+          socket: { reconnectStrategy: false, connectTimeout: 5000 }
+        }) as unknown as MinimalRedisClient);
     redisClient.on?.("error", () => {
       /* connection errors surface on command */
     });
   }
-  if (!redisClient.isOpen) {
+  const client = redisClient;
+  if (!client.isOpen) {
+    // Only one connect is ever in flight; concurrent callers await the same attempt.
+    if (!redisConnectInFlight) {
+      redisConnectInFlight = Promise.resolve(client.connect())
+        .then(() => undefined)
+        .finally(() => {
+          redisConnectInFlight = null;
+        });
+    }
     try {
-      await redisClient.connect();
+      await redisConnectInFlight;
     } catch {
       throw new SessionStoreUnavailableError("BFF Redis session backend is not reachable");
     }
   }
-  return redisClient;
+  return client;
 }
 
 export async function persistOperatorSession(

@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
 import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -224,7 +225,7 @@ export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Prom
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 
@@ -259,7 +260,7 @@ export async function getReviewDraftRemediationLineage(
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 
@@ -291,6 +292,6 @@ export async function getReviewDraftRecentRemediationRollup(
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }

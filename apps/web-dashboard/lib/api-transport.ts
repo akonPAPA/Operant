@@ -1,4 +1,4 @@
-import { BFF_CSRF_HEADER, bffRuntimeMode } from "./bff/bff-config.ts";
+import { BFF_CSRF_HEADER, bffRuntimeMode } from "./bff/bff-public-config.ts";
 import { readBrowserCsrfTokenFromDocument } from "./browser-csrf-cookie.ts";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";

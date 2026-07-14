@@ -29,9 +29,9 @@ import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
 import { parseBffSessionMaxAgeSeconds } from "./bff-session-ttl-policy.ts";
 import { validateCsrf, validateSameOrigin } from "./bff-csrf.ts";
 import { readSecurityCookie, type SecurityCookiePolicy } from "./bff-cookies.ts";
+import { resolveIdempotencyKey } from "./bff-idempotency-key.ts";
 
 const SAFE_PROXY_ERROR = "The request could not be completed.";
-const SAFE_IDEMPOTENCY_KEY = /^[A-Za-z0-9._~:-]{1,128}$/;
 const ALLOWED_ACCEPT = new Set(["application/json", "*/*", "application/json, text/plain, */*"]);
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const UUID_QUERY = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -97,7 +97,8 @@ function buildOutboundHeaders(
   request: Request,
   rule: BffRouteRule,
   signed: Record<string, string>,
-  hasBody: boolean
+  hasBody: boolean,
+  idempotencyKey: string | null
 ): Headers {
   // A brand-new header set: nothing from the browser is forwarded except the bounded
   // business headers explicitly registered for this route.
@@ -107,11 +108,10 @@ function buildOutboundHeaders(
   }
   const accept = request.headers.get("accept")?.trim().toLowerCase();
   headers.set("Accept", accept && ALLOWED_ACCEPT.has(accept) ? accept : "application/json");
-  if (rule.allowIdempotencyKey) {
-    const idempotencyKey = request.headers.get("idempotency-key")?.trim();
-    if (idempotencyKey && SAFE_IDEMPOTENCY_KEY.test(idempotencyKey)) {
-      headers.set("Idempotency-Key", idempotencyKey);
-    }
+  // F01: the key was already validated against the canonical contract and, if present, is
+  // forwarded byte-for-byte. A present-but-invalid key was rejected upstream with 400.
+  if (idempotencyKey !== null) {
+    headers.set("Idempotency-Key", idempotencyKey);
   }
   if (rule.allowIfMatch) {
     const ifMatch = request.headers.get("if-match")?.trim();
@@ -122,6 +122,12 @@ function buildOutboundHeaders(
   return headers;
 }
 
+// Semantic numeric grammars: no leading zeros (except a lone "0"), no sign, no decimal,
+// no exponent, no whitespace, no hex. Capping at 9 digits keeps values < 1e9 < 2^31, so
+// integer overflow is rejected at the BFF before Core ever parses the value.
+const POSITIVE_INT_QUERY = /^[1-9][0-9]{0,8}$/;
+const NON_NEGATIVE_INT_QUERY = /^(0|[1-9][0-9]{0,8})$/;
+
 function queryValueAllowed(value: string, policy: BffQueryFieldPolicy): boolean {
   if (value.length === 0 || value.length > (policy.maxLength ?? 128)) {
     return false;
@@ -130,7 +136,19 @@ function queryValueAllowed(value: string, policy: BffQueryFieldPolicy): boolean 
     return UUID_QUERY.test(value);
   }
   if (policy.type === "positive-int") {
-    return /^[1-9][0-9]{0,8}$/.test(value);
+    return POSITIVE_INT_QUERY.test(value);
+  }
+  if (policy.type === "non-negative-int") {
+    return NON_NEGATIVE_INT_QUERY.test(value);
+  }
+  if (policy.type === "bounded-int") {
+    if (!NON_NEGATIVE_INT_QUERY.test(value)) {
+      return false;
+    }
+    const parsed = Number.parseInt(value, 10);
+    const min = policy.min ?? 0;
+    const max = policy.max ?? Number.MAX_SAFE_INTEGER;
+    return parsed >= min && parsed <= max;
   }
   if (policy.type === "enum") {
     return Boolean(policy.enumValues?.includes(value));
@@ -298,7 +316,10 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   if (bffRuntimeMode() !== "bff-production") {
     return safeJson(503);
   }
-  const configError = await validateBffProductionConfig();
+  // F04: immutable config validation is synchronous and never connects to Redis. Cheap
+  // request-shape denials below (malformed path, unknown route, invalid cookie syntax) all
+  // return before the first Redis touch, which happens only in the session lookup.
+  const configError = validateImmutableBffConfig();
   if (configError) {
     return safeJson(503);
   }
@@ -372,6 +393,15 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
     return safeJson(400);
   }
 
+  // F01: resolve the Idempotency-Key against the route policy and canonical contract BEFORE
+  // signing or any upstream call. A present-but-invalid key fails closed (400) — it is never
+  // silently trimmed or dropped, which would downgrade a keyed mutation to an unkeyed one.
+  const idempotency = resolveIdempotencyKey(request.headers.get("idempotency-key"), rule.idempotency);
+  if (!idempotency.ok) {
+    return safeJson(400);
+  }
+  const forwardedIdempotencyKey = idempotency.forward ? idempotency.value : null;
+
   const coreBaseUrl = validatedCoreApiInternalBaseUrl();
   const gatewaySecret = bffGatewaySharedSecret();
   if (!coreBaseUrl || !gatewaySecret) {
@@ -417,7 +447,7 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
     upstream = await fetch(target, {
       method,
       body: bodyBytes.byteLength > 0 ? body : undefined,
-      headers: buildOutboundHeaders(request, rule, signed, bodyBytes.byteLength > 0),
+      headers: buildOutboundHeaders(request, rule, signed, bodyBytes.byteLength > 0, forwardedIdempotencyKey),
       cache: "no-store",
       redirect: "manual",
       signal: controller.signal
@@ -453,8 +483,13 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   });
 }
 
-/** Fail-closed configuration validation for BFF production mode (Node runtime only). */
-export async function validateBffProductionConfig(): Promise<string | null> {
+/**
+ * Synchronous, immutable BFF configuration validation (F04): shape/format only, and NO Redis
+ * connection. This is the check the per-request hot path uses so that malformed paths, unknown
+ * routes, and invalid session cookies are rejected cheaply — Redis is contacted only by the
+ * session lookup, and only after the request has a valid route and a syntactically valid cookie.
+ */
+export function validateImmutableBffConfig(): string | null {
   if (bffRuntimeMode() !== "bff-production") {
     return null;
   }
@@ -479,6 +514,22 @@ export async function validateBffProductionConfig(): Promise<string | null> {
   });
   if (!ttl.ok) {
     return ttl.reason;
+  }
+  return null;
+}
+
+/**
+ * Full fail-closed configuration validation for BFF bootstrap (Node runtime only). Extends the
+ * immutable check with a Redis availability probe for production-like deployments. Use this at
+ * startup — NOT on the per-request denial path (see validateImmutableBffConfig / F04).
+ */
+export async function validateBffProductionConfig(): Promise<string | null> {
+  const immutable = validateImmutableBffConfig();
+  if (immutable) {
+    return immutable;
+  }
+  if (bffRuntimeMode() !== "bff-production") {
+    return null;
   }
   if (isProductionLikeDeployment()) {
     const redisError = await requireRedisSessionBackend();

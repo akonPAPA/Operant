@@ -110,12 +110,20 @@ test("edge entry import graph contains no Node-only or session/proxy/signer modu
       );
     }
   }
-  assert.equal(files.size, 1, "edge entry should not import server-only BFF modules");
+  // The edge entry may reach only known pure, Edge-safe local modules (F09 refactor moved the
+  // header set + branch decision into lib/edge-middleware-core.ts, which imports safe-internal-path).
+  const EDGE_SAFE_LOCAL = ["edge-middleware-core", "safe-internal-path"];
+  for (const file of files) {
+    const normalized = file.replaceAll("\\", "/");
+    const allowed = normalized.endsWith("/proxy.ts") || EDGE_SAFE_LOCAL.some((m) => normalized.includes(`/lib/${m}.ts`));
+    assert.ok(allowed, `edge entry reached an unexpected local module: ${normalized}`);
+  }
 });
 
 test("edge entry session cookie name stays aligned with BFF config without importing it", () => {
   const edgeSource = readFileSync(edgeEntryFile(), "utf8");
-  const configSource = readFileSync(join(root, "lib/bff/bff-config.ts"), "utf8");
+  // F06: the canonical browser-safe constant lives in bff-public-config.ts (bff-config re-exports it).
+  const configSource = readFileSync(join(root, "lib/bff/bff-public-config.ts"), "utf8");
   const cookie = edgeSource.match(/const BFF_SESSION_COOKIE = "([^"]+)"/);
   assert.ok(cookie, "edge entry must define BFF_SESSION_COOKIE locally");
   assert.match(configSource, new RegExp(`export const BFF_SESSION_COOKIE = "${cookie[1]}"`));
@@ -129,19 +137,29 @@ test("edge entry performs no authoritative session validation", () => {
   const source = readFileSync(edgeEntryFile(), "utf8");
   assert.doesNotMatch(source, /loadOperatorSession|parseSessionToken|signGatewayHeaders|createClient/);
   assert.match(source, /hasSessionCookie/);
-  assert.match(source, /X-Content-Type-Options/);
+  // F09: security headers are applied to EVERY branch via a single helper sourced from the pure core.
+  assert.match(source, /applySecurityHeaders/);
+  const coreSource = readFileSync(join(root, "lib/edge-middleware-core.ts"), "utf8");
+  assert.match(coreSource, /X-Content-Type-Options/);
+  assert.match(coreSource, /X-Frame-Options/);
+  assert.match(coreSource, /Referrer-Policy/);
+  assert.match(coreSource, /Permissions-Policy/);
+  assert.match(coreSource, /Cache-Control/);
 });
 
 test("edge entry returns JSON for unauthenticated API paths and redirects only page navigation", () => {
   const source = readFileSync(edgeEntryFile(), "utf8");
-  assert.match(source, /pathname\.startsWith\("\/api\/"\)/);
+  const coreSource = readFileSync(join(root, "lib/edge-middleware-core.ts"), "utf8");
+  // The proxy materialises each decision: a bounded JSON 401 and a redirect, both header-wrapped.
   assert.match(source, /NextResponse\.json\(/);
-  assert.match(source, /status:\s*401/);
-  const denialBlock = source.slice(source.indexOf('if (!hasSessionCookie'), source.indexOf('return response;', source.indexOf('if (!hasSessionCookie')));
-  assert.match(denialBlock, /NextResponse\.json\(/);
-  assert.match(denialBlock, /NextResponse\.redirect\(login\)/);
+  assert.match(source, /status:\s*401|"json-401"/);
+  assert.match(source, /NextResponse\.redirect\(/);
+  assert.match(source, /applySecurityHeaders\(\s*NextResponse\.json/);
+  // The ordering invariant now lives in the pure decision function: a protected /api/ path resolves
+  // to json-401 BEFORE the page-redirect branch.
+  assert.match(coreSource, /pathname\.startsWith\("\/api\/"\)/);
   assert.ok(
-    denialBlock.indexOf('pathname.startsWith("/api/")') < denialBlock.indexOf('NextResponse.redirect(login)'),
-    "API denial must be handled before the page redirect"
+    coreSource.indexOf('kind: "json-401"') < coreSource.indexOf('kind: "redirect"'),
+    "API denial (json-401) must be decided before the page redirect"
   );
 });

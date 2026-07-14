@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
 import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -121,7 +122,7 @@ async function request<T>(
   } catch (error) {
     return {
       data: fallback,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
 import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -156,7 +157,7 @@ async function getJson<T>(path: string): Promise<ApiResult<T>> {
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

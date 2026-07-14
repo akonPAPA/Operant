@@ -12,6 +12,8 @@
  * against the server-side session as defense in depth (Core remains authoritative).
  */
 
+import type { BffIdempotencyPolicy } from "./bff-idempotency-key.ts";
+
 export type BffHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type BffRouteRule = {
@@ -27,7 +29,12 @@ export type BffRouteRule = {
   contentType: string | null;
   maxBodyBytes: number;
   csrfRequired: boolean;
-  allowIdempotencyKey: boolean;
+  /**
+   * Idempotency-Key policy (F01). Reads forbid the header; mutations accept it as optional.
+   * A route whose Core handler *requires* a key can be tightened to "required" here without
+   * any proxy change — validation and fail-closed behaviour are policy-driven.
+   */
+  idempotency: BffIdempotencyPolicy;
   allowIfMatch: boolean;
 };
 
@@ -35,12 +42,22 @@ const JSON_CONTENT_TYPE = "application/json";
 const DEFAULT_MUTATION_BODY_LIMIT = 256 * 1024;
 
 export type BffPathParamType = "uuid" | "positive-int" | "handle";
-export type BffQueryValueType = "uuid" | "positive-int" | "enum" | "text";
+export type BffQueryValueType =
+  | "uuid"
+  | "positive-int"
+  | "non-negative-int"
+  | "bounded-int"
+  | "enum"
+  | "text";
 export type BffQueryFieldPolicy = {
   type: BffQueryValueType;
   maxValues?: number;
   maxLength?: number;
   enumValues?: readonly string[];
+  /** For "bounded-int": inclusive lower bound (defaults to 0). */
+  min?: number;
+  /** For "bounded-int": inclusive upper bound (required). */
+  max?: number;
 };
 export type BffQueryPolicy = Record<string, BffQueryFieldPolicy>;
 
@@ -111,7 +128,9 @@ const RFQ_HANDOFF_LIST_QUERY: BffQueryPolicy = Object.freeze({
     enumValues: ["PENDING_REVIEW", "IN_REVIEW", "CONVERTED", "DISMISSED"],
     maxValues: 1
   },
-  page: { type: "positive-int", maxValues: 1 },
+  // Spring Pageable: page is zero-based (page=0 is the first page and MUST be valid);
+  // size must be strictly positive (size=0 is invalid).
+  page: { type: "non-negative-int", maxValues: 1 },
   size: { type: "positive-int", maxValues: 1 }
 });
 const AI_WORK_SUGGESTIONS_QUERY: BffQueryPolicy = Object.freeze({
@@ -123,7 +142,8 @@ const REVIEW_DRAFT_QUEUE_QUERY: BffQueryPolicy = Object.freeze({
   draftType: { type: "text", maxValues: 1, maxLength: 32 },
   status: { type: "text", maxValues: 1, maxLength: 32 },
   limit: { type: "positive-int", maxValues: 1 },
-  offset: { type: "text", maxValues: 1, maxLength: 9 }
+  // offset is zero-based (offset=0 MUST be valid); non-numeric/overflow fail at the BFF.
+  offset: { type: "non-negative-int", maxValues: 1 }
 });
 const DRAFT_PREVIEW_QUERY: BffQueryPolicy = Object.freeze({
   targetType: {
@@ -161,7 +181,7 @@ function read(
     contentType: null,
     maxBodyBytes: 0,
     csrfRequired: false,
-    allowIdempotencyKey: false,
+    idempotency: "forbidden",
     allowIfMatch: false
   };
 }
@@ -183,7 +203,7 @@ function mutate(
     contentType: JSON_CONTENT_TYPE,
     maxBodyBytes: options?.maxBodyBytes ?? DEFAULT_MUTATION_BODY_LIMIT,
     csrfRequired: true,
-    allowIdempotencyKey: true,
+    idempotency: "optional",
     allowIfMatch: false
   };
 }

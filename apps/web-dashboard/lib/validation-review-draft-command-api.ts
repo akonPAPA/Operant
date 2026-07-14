@@ -1,3 +1,4 @@
+import { caughtUiErrorMessage } from "./ui-error.ts";
 import {
   dashboardCoreApiBaseUrl,
   enrichDashboardRequestInit,
@@ -170,7 +171,7 @@ async function postDraftCommand(path: string, options?: CreateDraftOptions): Pro
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }
@@ -197,7 +198,7 @@ export async function getValidationReviewDraftStatus(validationRunId: string): P
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 
@@ -224,7 +225,7 @@ export async function getValidationReviewDraftability(validationRunId: string): 
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 

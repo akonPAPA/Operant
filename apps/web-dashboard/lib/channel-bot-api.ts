@@ -1,4 +1,5 @@
 import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
 import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -63,7 +64,7 @@ async function getJson<T>(path: string, fallback: T): Promise<ChannelBotApiResul
     }
     return { data: (await response.json()) as T };
   } catch (error) {
-    return { data: fallback, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: fallback, error: caughtUiErrorMessage(error) };
   }
 }
 

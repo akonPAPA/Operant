@@ -3,42 +3,42 @@
 **Base anchor SHA:** `7f05a1751d04d22ef572d8d6aca0dcbdc457df72` (`main`, PR #262)
 **P1-A implementation SHA:** `53bdf708c9a437ea66fcd17f0be67bd2bf12a3de` (`feature/p1-a-production-truth-and-config`)
 
-## PR #267 immutable anchors (browser/BFF boundary)
+## PR #269 remediation immutable anchors (PR #267 browser/BFF boundary)
 
 | Field | SHA / status |
 | --- | --- |
-| `base_sha` (`origin/main`) | `cae9603c870eeb0e87216d0f4707169b64eb2ea3` |
-| `implementation_anchor_sha` | `d90748307fdeabcf49d146db7f355adeed5bbfb1` |
-| `evidence_basis` | Local gates below + prior remote CI @ `09d8a08` for signature-v2 slice; final PR head recorded in PR comment after evidence push |
-| `pr_head_sha` | resolve after evidence push (`git rev-parse origin/feature/p1-b-browser-bff-boundary`) |
-| `merge_ready_claim` | **not claimed** — human approval still required (`REVIEW_REQUIRED`) |
+| `base_sha` (`feature/p1-b-browser-bff-boundary`) | `a08a0c896ac2c16e75ac725971ecefdae76f239d` |
+| `original_p1b_implementation_anchor_sha` | `d90748307fdeabcf49d146db7f355adeed5bbfb1` |
+| `remediation_implementation_sha` | `0cae7029d04956910be0b249925f789a709fb481` |
+| `tested_pr_head_sha` | `0cae7029d04956910be0b249925f789a709fb481` |
+| `tested_pr_merge_sha` | `aea64aa971b9c1b6f26decd1710eec4c1701a230` |
+| `evidence_semantics` | Immutable tested code and merge-test anchors; later evidence-only commits do not rewrite these anchors |
+| `merge_ready_claim` | PR #269 code/CI gates passed; F02 and full F16 remain explicitly PARTIAL; cumulative PR #267 review is still required |
 
-### Local gates @ `d907483` (implementation anchor)
+### Local remediation proof
 
 | Gate | Result |
 | --- | --- |
-| Frontend `npm test` | **632** pass / 0 fail |
-| Frontend lint + typecheck + build | exit 0 |
-| Playwright BFF E2E | **10/10** pass (production bootstrap denial + local harness) |
-| Core `com.orderpilot.security.*Test` | **471** pass |
-| Core full `mvn test` | **2371** pass / 0 fail / **45** skipped (Postgres `integration-test` profile not active locally) |
-| Secrets scanner | self-test + scan PASS |
-| `git diff --check` | clean |
+| Frontend route-artifact drift test | **2/2 PASS** |
+| Core `BffCoreRoutePolicyParityTest` | **PASS** |
+| Core release Docker image build | **PASS** |
+| `git diff --check` | **PASS** |
 
-### Exact-head CI @ `09d8a08` (prior signature-v2 implementation; superseded for final head)
+### Exact-head CI for PR #269 remediation
 
-| Workflow | Run ID | Result | Notes |
+| Workflow / status | Run ID | Result | Proven scope |
 | --- | --- | --- | --- |
-| Frontend | [29197549322](https://github.com/akonPAPA/Operant/actions/runs/29197549322) | SUCCESS | build job: lint/tsc/build/npm test + Playwright BFF E2E |
-| CI | [29197549317](https://github.com/akonPAPA/Operant/actions/runs/29197549317) | SUCCESS | Backend tests, Docker compose, Core release Docker guard, Stage 11C |
-| Backend | [29197549307](https://github.com/akonPAPA/Operant/actions/runs/29197549307) | SUCCESS | backend-integration-tests (`integration-test` + `*IntegrationTest`) |
-| Semgrep Security Scan | [29197549306](https://github.com/akonPAPA/Operant/actions/runs/29197549306) | SUCCESS | SAST + gate |
-| Snyk Dependency Scan | [29197549337](https://github.com/akonPAPA/Operant/actions/runs/29197549337) | SUCCESS | web-dashboard scan + gate; **core-api Snyk job SKIPPED** (path filter) |
-| AI Worker | [29197549311](https://github.com/akonPAPA/Operant/actions/runs/29197549311) | SUCCESS | Gate PASS; **test job SKIPPED** (paths unchanged) |
-| PR #267 / CodeQL | [29197548275](https://github.com/akonPAPA/Operant/actions/runs/29197548275) | SUCCESS | Analyze actions/java/js/python + CodeQL |
+| Frontend | `29291232781` | **SUCCESS** | npm ci, lint, typecheck, build, unit tests, Chromium install, Playwright BFF E2E, Frontend Gate |
+| CI | `29291232736` | **SUCCESS** | Core release Docker guard, backend tests, Docker Compose validation, Stage 11C preflight |
+| Backend | `29291232777` | **SUCCESS** | Backend workflow |
+| AI Worker | `29291232776` | **SUCCESS** | AI Worker workflow |
+| Snyk commit status | external status | **SUCCESS** | Dependency/security status reported successful |
+
+PR #269 proves remediation of the bounded PR #267 findings. It does not prove full production
+readiness: P1-C identity, P1-D public Core ingress, live Redis deployment, the F02 streaming upload
+remainder, and full F16 transport-contract parity remain outside this closure.
 
 PR proves **P1-B browser/BFF boundary**, not full production readiness (P1-C identity + P1-D public Core ingress remain).
-
 
 | Evidence ID | Commit SHA | Type | Command / artifact | Result | Gates supported |
 | --- | --- | --- | --- | --- | --- |

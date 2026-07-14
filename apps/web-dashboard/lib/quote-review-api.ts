@@ -1,4 +1,5 @@
 import { enrichDashboardRequestInit } from "./api-transport";
+import { BoundedUiError } from "./ui-error.ts";
 import { dashboardApiFetch } from "./dashboard-http";
 import {
   ApiResult,
@@ -225,7 +226,7 @@ async function requestQuoteReview<T>(path: string, payload: QuoteReviewCommandPa
   );
   if (!response.ok) {
     const error = Object.assign(
-      new Error(coreApiStatusMessage(response.status)),
+      new BoundedUiError(coreApiStatusMessage(response.status)),
       { status: response.status }
     );
     throw error;

@@ -1,6 +1,7 @@
 import { enrichDashboardRequestInit } from "./api-transport";
 import { dashboardApiFetch } from "./dashboard-http";
 import { requireDemoTenantId } from "./frontend-authority.mjs";
+import { BoundedUiError } from "./ui-error.ts";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -183,7 +184,7 @@ export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPa
     })
   );
   if (!response.ok) {
-    throw new Error(`Core API returned ${response.status}`);
+    throw new BoundedUiError(`Core API returned ${response.status}`);
   }
   return response.json() as Promise<QuoteTransactionResponse>;
 }
@@ -241,7 +242,7 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
   );
   if (!response.ok) {
     // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
-    throw new Error(safeErrorMessage(response.status));
+    throw new BoundedUiError(safeErrorMessage(response.status));
   }
   return response.json() as Promise<T>;
 }
@@ -262,7 +263,7 @@ async function requestQuoteTransaction<T>(path: string, payload: ChannelToQuoteP
   );
   if (!response.ok) {
     // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
-    throw new Error(safeErrorMessage(response.status));
+    throw new BoundedUiError(safeErrorMessage(response.status));
   }
   return response.json() as Promise<T>;
 }

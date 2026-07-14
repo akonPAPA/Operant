@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { boundedUiErrorMessage } from "@/lib/ui-error";
 
 import { getQuoteSourceContext, QuoteSourceContext } from "@/lib/quote-transaction-api";
 
@@ -18,7 +19,7 @@ export function QuoteSourceContextPanel({ quoteId }: { quoteId: string }) {
     try {
       setContext(await getQuoteSourceContext(quoteId));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Source summary unavailable.");
+      setMessage(boundedUiErrorMessage(error, "Source summary unavailable."));
     } finally {
       setLoading(false);
     }
