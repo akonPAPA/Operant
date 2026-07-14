@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readdirSync
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const root = process.cwd();
+const NO_FOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const SOURCE_CACHE = new Map();
 
 /**
  * F14 — transitive RSC import guard.
@@ -14,6 +23,52 @@ const root = process.cwd();
  * module that pulls in a browser transport/authority module (api-transport, dashboard-http.browser,
  * the browser CSRF reader, or a browser lib/*-api.ts client). The full offending chain is reported.
  */
+
+function isMissingOrNonRegular(error) {
+  return Boolean(
+    error
+    && typeof error === "object"
+    && ["ENOENT", "EISDIR", "ELOOP"].includes(error.code)
+  );
+}
+
+/**
+ * Open and read through one descriptor. The descriptor pins the object used by fstat/read, removing
+ * the old exists/stat/read check-then-use race. O_NOFOLLOW blocks a symlink swap where supported.
+ */
+function readRegularUtf8(path) {
+  if (SOURCE_CACHE.has(path)) {
+    return SOURCE_CACHE.get(path);
+  }
+
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | NO_FOLLOW);
+    if (!fstatSync(fd).isFile()) {
+      SOURCE_CACHE.set(path, null);
+      return null;
+    }
+    const source = readFileSync(fd, "utf8");
+    SOURCE_CACHE.set(path, source);
+    return source;
+  } catch (error) {
+    if (isMissingOrNonRegular(error)) {
+      SOURCE_CACHE.set(path, null);
+      return null;
+    }
+    throw error;
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
+  }
+}
+
+function requireSource(path) {
+  const source = readRegularUtf8(path);
+  assert.notEqual(source, null, `expected readable regular source file ${path.replaceAll("\\", "/")}`);
+  return source;
+}
 
 function resolveSpecifier(fromFile, specifier) {
   let base;
@@ -33,7 +88,7 @@ function resolveSpecifier(fromFile, specifier) {
     join(base, "index.ts"),
     join(base, "index.tsx")
   ]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) {
+    if (readRegularUtf8(candidate) !== null) {
       return candidate;
     }
   }
@@ -90,7 +145,7 @@ function findForbiddenChain(rootFile) {
       continue;
     }
     visited.add(file);
-    const source = readFileSync(file, "utf8");
+    const source = requireSource(file);
     // Two valid boundaries are leaves from the server-render graph's perspective:
     //  - a "use client" module (separate client bundle), and
     //  - a lib/server/*.server.ts read wrapper (the designated server data layer — reaching it means
@@ -124,15 +179,16 @@ function findForbiddenChain(rootFile) {
 }
 
 function walkServerEntries(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
       walkServerEntries(full, out);
-    } else if (entry === "page.tsx" || entry === "layout.tsx") {
-      const source = readFileSync(full, "utf8");
-      if (!isUseClient(source)) {
-        out.push(full);
-      }
+    } else if (
+      entry.isFile()
+      && (entry.name === "page.tsx" || entry.name === "layout.tsx")
+      && !isUseClient(requireSource(full))
+    ) {
+      out.push(full);
     }
   }
   return out;
@@ -170,14 +226,21 @@ test("F14: legitimate Server Component -> Client Component composition is NOT fl
   // stop logic via isUseClient on a known client component if one exists.
   const useClientFiles = [];
   const scan = (dir) => {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) scan(full);
-      else if (/\.(tsx|ts)$/.test(entry) && isUseClient(readFileSync(full, "utf8"))) useClientFiles.push(full);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scan(full);
+      } else if (
+        entry.isFile()
+        && /\.(tsx|ts)$/.test(entry.name)
+        && isUseClient(requireSource(full))
+      ) {
+        useClientFiles.push(full);
+      }
     }
   };
   scan(join(root, "components"));
   assert.ok(useClientFiles.length > 0, "expected at least one client component");
   // Each real client component is a leaf: findForbiddenChain stops at it (does not traverse in).
-  assert.ok(existsSync(clientLeaf));
+  assert.notEqual(readRegularUtf8(clientLeaf), null, "expected browser transport leaf to exist");
 });
