@@ -1,3 +1,5 @@
+import { type UploadCapability, uploadCapability } from "../lib/upload-capability.ts";
+
 export type NavigationItem = {
   label: string;
   href: string;
@@ -11,7 +13,7 @@ export type NavigationGroup = {
   items: NavigationItem[];
 };
 
-export const navigationGroups: NavigationGroup[] = [
+const baseNavigationGroups: NavigationGroup[] = [
   {
     label: "Command Center",
     href: "/command-center",
@@ -124,4 +126,17 @@ export const navigationGroups: NavigationGroup[] = [
   }
 ];
 
+export function navigationGroupsForUploadCapability(
+  capability: UploadCapability = uploadCapability()
+): NavigationGroup[] {
+  if (capability === "AVAILABLE") {
+    return baseNavigationGroups;
+  }
+  return baseNavigationGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.href !== "/upload")
+  }));
+}
+
+export const navigationGroups: NavigationGroup[] = navigationGroupsForUploadCapability();
 export const navigationItems: NavigationItem[] = navigationGroups.flatMap((group) => group.items);

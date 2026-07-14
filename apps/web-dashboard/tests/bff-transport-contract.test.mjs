@@ -12,6 +12,11 @@ import {
   toProxiedCorePath,
   usesBffTransport
 } from "../lib/api-transport.ts";
+import {
+  isUploadAvailable,
+  uploadCapability
+} from "../lib/upload-capability.ts";
+import { navigationGroupsForUploadCapability } from "../components/navigation.ts";
 
 const ENV_KEYS = [
   "NODE_ENV",
@@ -77,6 +82,29 @@ test("production browser bundle deterministically uses same-origin /api/bff", ()
   );
 });
 
+test("production BFF mode disables upload capability and navigation", () => {
+  inBrowser(() =>
+    withEnv({ NODE_ENV: "production" }, () => {
+      assert.equal(uploadCapability(), "NOT_AVAILABLE_IN_PRODUCTION_BFF");
+      assert.equal(isUploadAvailable(), false);
+      const hrefs = navigationGroupsForUploadCapability(uploadCapability()).flatMap((group) =>
+        group.items.map((item) => item.href)
+      );
+      assert.equal(hrefs.includes("/upload"), false);
+    })
+  );
+});
+
+test("local demo mode keeps upload capability available", () => {
+  withEnv({ NODE_ENV: "development" }, () => {
+    assert.equal(uploadCapability(), "AVAILABLE");
+    assert.equal(isUploadAvailable(), true);
+    const hrefs = navigationGroupsForUploadCapability(uploadCapability()).flatMap((group) =>
+      group.items.map((item) => item.href)
+    );
+    assert.equal(hrefs.includes("/upload"), true);
+  });
+});
 test("production browser bundle never falls back to localhost:8080 without env", () => {
   inBrowser(() =>
     withEnv({ NODE_ENV: "production" }, () => {
