@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -116,7 +119,7 @@ export type BotSimulateMessageResponse = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const botRuntimeConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -129,16 +132,19 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
-  if (!botRuntimeConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(botRuntimeConfig.tenantId)) {
     return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${botRuntimeConfig.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: { ...headers(), ...(init?.headers ?? {}) }
-    });
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: { ...headers(), ...(init?.headers ?? {}) }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : (fallbackData as T);
     if (!response.ok) {
@@ -147,7 +153,7 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
     }
     return { data };
   } catch (error) {
-    return { data: fallbackData as T, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: fallbackData as T, error: caughtUiErrorMessage(error) };
   }
 }
 

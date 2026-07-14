@@ -1,0 +1,1293 @@
+{
+  "$comment": "GENERATED from bff-route-registry.ts (registeredBffRoutes). Single source: the TS registry. Regenerate via tests/bff-route-artifact.test.mjs drift guard. Core parity: BffCoreRoutePolicyParityTest.java runs the real ApiRouteSecurityPolicy.classify() against every route here.",
+  "version": 1,
+  "routes": [
+    {
+      "method": "GET",
+      "pattern": "api/stage8/analytics/command-center",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage8/reconciliation/cases",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage8/reconciliation/products/:productId/timeline",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage8/reconciliation/summary",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage8/value/export",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage8/value/roi-assumptions",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "PUT",
+      "pattern": "api/stage8/value/roi-assumptions",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_MANAGE",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage8/value/summary",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage9/change-requests",
+      "plane": "tenant-operator",
+      "permission": "CHANGE_REQUEST_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/stage9/change-requests",
+      "plane": "tenant-operator",
+      "permission": "CHANGE_REQUEST_CREATE",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage9/connector-audit",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage9/connector-sync-runs",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage9/connectors/policies",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/stage9/integrations",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/ai-work/rfq-handoffs/:handoffId/suggestions",
+      "plane": "tenant-operator",
+      "permission": "AI_WORK_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/ai-work/suggestions/:suggestionId/accept",
+      "plane": "tenant-operator",
+      "permission": "AI_WORK_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/ai-work/suggestions/:suggestionId/reject",
+      "plane": "tenant-operator",
+      "permission": "AI_WORK_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/ai-work/suggestions/:suggestionId",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/ai-work/suggestions",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/analytics/commerce/summary",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/analytics/intake",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/analytics/overview",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/analytics/validation",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/configurations/:connectionId/reset-defaults",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/bot-runtime/configurations/:connectionId",
+      "plane": "tenant-operator",
+      "permission": "BOT_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "PUT",
+      "pattern": "api/v1/bot-runtime/configurations/:connectionId",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/bot-runtime/configurations",
+      "plane": "tenant-operator",
+      "permission": "BOT_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/conversations/:conversationId/responses/draft",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/conversations/:conversationId/review-handoff",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/bot-runtime/conversations/:conversationId",
+      "plane": "tenant-operator",
+      "permission": "BOT_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/bot-runtime/conversations",
+      "plane": "tenant-operator",
+      "permission": "BOT_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/bot-runtime/handoffs",
+      "plane": "tenant-operator",
+      "permission": "BOT_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/messages/simulate",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/responses/:responseId/mark-ready",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/responses/:responseId/stub-send",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/bot-runtime/settings",
+      "plane": "tenant-operator",
+      "permission": "BOT_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/bot-runtime/settings",
+      "plane": "tenant-operator",
+      "permission": "BOT_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channel-identities/:identityId/block",
+      "plane": "tenant-operator",
+      "permission": "CHANNEL_IDENTITY_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channel-identities/:identityId/link",
+      "plane": "tenant-operator",
+      "permission": "CHANNEL_IDENTITY_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channel-identities/:identityId/needs-review",
+      "plane": "tenant-operator",
+      "permission": "CHANNEL_IDENTITY_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channel-identities/:identityId/unlink",
+      "plane": "tenant-operator",
+      "permission": "CHANNEL_IDENTITY_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/channel-identities/:identityId",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/channel-identities",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/channels/bot-bridge/status",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/channels/bot-events",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channels/rfq-handoffs/:handoffId/dismiss",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_MANAGE",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channels/rfq-handoffs/:handoffId/mark-converted",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_MANAGE",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/channels/rfq-handoffs/:handoffId/start-review",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_MANAGE",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/channels/rfq-handoffs/:handoffId",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/channels/rfq-handoffs",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/command-center/summary",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/commerce-intelligence/demo-flow",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/customers/:customerId/contacts",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/customers",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/extractions/:extractionId/validation/review-case",
+      "plane": "tenant-operator",
+      "permission": "EXTRACTION_RUN",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/intake/documents/:documentId",
+      "plane": "tenant-operator",
+      "permission": "INTAKE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/intake/documents",
+      "plane": "tenant-operator",
+      "permission": "INTAKE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/intake/events",
+      "plane": "tenant-operator",
+      "permission": "INTAKE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/intake/jobs",
+      "plane": "tenant-operator",
+      "permission": "INTAKE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/intake/messages/:messageId",
+      "plane": "tenant-operator",
+      "permission": "INTAKE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/intake/messages",
+      "plane": "tenant-operator",
+      "permission": "INTAKE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/inventory",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys/:journeyId/operator-timeline",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/order-journeys/:journeyId/tracking-links/:linkId/revoke",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys/:journeyId/tracking-links",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/order-journeys/:journeyId/tracking-links",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys/:journeyId",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys/attention",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys/by-source",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys/projection-health",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/order-journeys",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/pilot/demo-scenarios",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/pilot/evidence-report",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/pilot/metrics/exceptions",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/pilot/metrics",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/products",
+      "plane": "tenant-operator",
+      "permission": "ADMIN_SETTINGS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-review/:quoteId/assemble-draft",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-review/:quoteId/issues/:issueId/escalate",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-review/:quoteId/issues/:issueId/resolve",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-review/:quoteId/lines/:lineId/correct",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-review/:quoteId/lines/:lineId/substitutes/reject",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-review/:quoteId/lines/:lineId/substitutes/select",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/quote-review/:quoteId",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/quote-review/conversion-attempts/:attemptId",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/quote-review/conversion-attempts",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/quote-review/queue",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-transactions/from-channel-message/:messageId",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quote-transactions/from-inbound-document/:documentId",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/quotes/:quoteId/approval-state",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/:quoteId/approve",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/:quoteId/convert-to-internal-order",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/:quoteId/reject",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/:quoteId/request-changes",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/quotes/:quoteId/source-context",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/drafts/from-rfq-handoff/:handoffId/decision",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/drafts/from-rfq-handoff/:handoffId",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/quotes/from-rfq",
+      "plane": "tenant-operator",
+      "permission": "QUOTE_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/reconciliation/cases",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/reconciliation/inventory/run",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_MANAGE",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/runtime-control/demo-flow",
+      "plane": "tenant-operator",
+      "permission": "ANALYTICS_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/approvals/:approvalRequestId/approve",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/approvals/:approvalRequestId/reject",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/approve",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/corrections/product",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/corrections/quantity",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/corrections/uom",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validation-review/:reviewCaseId/draft-preview",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/issues/acknowledge",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/issues/override",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/prepare-draft-order",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/prepare-draft-quote",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/reject",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/substitutes/reject",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validation-review/:reviewCaseId/substitutes/select",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validation-review/:reviewCaseId",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validation-review",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validations/:validationRunId/review/approval-requests",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validations/:validationRunId/review/corrections",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validations/:validationRunId/review/draft-order",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validations/:validationRunId/review/draft-quote",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/:validationRunId/review/draft-status",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/:validationRunId/review/draftability",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/validations/:validationRunId/review/issues/:issueId/resolution",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/:validationRunId/review",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/extractions/:extractionResultId/review",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/review-drafts/:draftKind/:draftId/remediation-lineage",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/review-drafts/remediation-rollup",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/review-drafts",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/runs/:validationRunId/discount-checks",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/runs/:validationRunId/inventory-checks",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/runs/:validationRunId/margin-checks",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/runs/:validationRunId/price-checks",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/runs/:validationRunId/product-matches",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/validations/runs/:validationRunId/uom-normalizations",
+      "plane": "tenant-operator",
+      "permission": "VALIDATION_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "PATCH",
+      "pattern": "api/v1/workspace/draft-orders/:draftOrderId/lines/:lineId",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/workspace/draft-orders/:draftOrderId/mark-ready",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/workspace/draft-orders/:draftOrderId/review",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/workspace/draft-orders/review-queue",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "PATCH",
+      "pattern": "api/v1/workspace/draft-quotes/:draftQuoteId/lines/:lineId",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "POST",
+      "pattern": "api/v1/workspace/draft-quotes/:draftQuoteId/mark-ready",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_ACTION",
+      "kind": "mutation",
+      "csrfRequired": true,
+      "idempotency": "optional"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/workspace/draft-quotes/:draftQuoteId/review",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/workspace/draft-quotes/review-queue",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    },
+    {
+      "method": "GET",
+      "pattern": "api/v1/workspace/products/search",
+      "plane": "tenant-operator",
+      "permission": "REVIEW_READ",
+      "kind": "read",
+      "csrfRequired": false,
+      "idempotency": "forbidden"
+    }
+  ]
+}

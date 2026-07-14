@@ -1,3 +1,5 @@
+import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type Stage8CommandCenterAnalytics = {
@@ -55,16 +57,17 @@ export type Stage8ProductTimeline = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const stage8AnalyticsConfig = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 export async function getStage8CommandCenterAnalytics(): Promise<Stage8CommandCenterAnalytics | null> {
-  if (!stage8AnalyticsConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage8AnalyticsConfig.tenantId)) return null;
   try {
-    const response = await fetch(`${stage8AnalyticsConfig.baseUrl}/api/stage8/analytics/command-center`, {
+    const path = "/api/stage8/analytics/command-center";
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": stage8AnalyticsConfig.tenantId }
+      headers: clientTenantHeaders(stage8AnalyticsConfig.tenantId)
     });
     if (!response.ok) return null;
     return (await response.json()) as Stage8CommandCenterAnalytics;
@@ -86,11 +89,11 @@ export async function getStage8ProductTimeline(productId: string): Promise<Stage
 }
 
 async function requestStage8<T>(path: string): Promise<T | null> {
-  if (!stage8AnalyticsConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage8AnalyticsConfig.tenantId)) return null;
   try {
-    const response = await fetch(`${stage8AnalyticsConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": stage8AnalyticsConfig.tenantId }
+      headers: clientTenantHeaders(stage8AnalyticsConfig.tenantId)
     });
     if (!response.ok) return null;
     return (await response.json()) as T;

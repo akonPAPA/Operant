@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> = {
@@ -275,11 +278,14 @@ export type DraftPreviewLine = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function headers() {
+  if (usesBffTransport()) {
+    return { "Content-Type": "application/json" };
+  }
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (validationReviewConfig.tenantId) {
     requestHeaders["X-Tenant-Id"] = validationReviewConfig.tenantId;
@@ -288,16 +294,16 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
-  if (!validationReviewConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewConfig.tenantId)) {
     return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${validationReviewConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, enrichDashboardRequestInit({
       cache: init?.method && init.method !== "GET" ? "no-store" : "no-store",
       ...init,
       headers: { ...headers(), ...(init?.headers ?? {}) }
-    });
+    }));
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : (fallbackData as T);
 
@@ -312,7 +318,7 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
   } catch (error) {
     return {
       data: fallbackData as T,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

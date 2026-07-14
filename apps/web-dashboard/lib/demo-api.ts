@@ -1,3 +1,5 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type ApiResult<T> =
@@ -58,7 +60,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 const DEMO_RFQ_TEXT = "Need 2 EA PAD-OE-04465 brake pads for Toyota Camry 2018, wholesale, Almaty.";
 
 export const demoConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId(),
   productId: process.env.NEXT_PUBLIC_DEMO_PRODUCT_ID ?? "",
   locationId: process.env.NEXT_PUBLIC_DEMO_LOCATION_ID ?? ""
@@ -94,14 +96,17 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
-  if (!demoConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(demoConfig.tenantId)) {
     return { ok: false, message: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${demoConfig.baseUrl}${path}`, {
-      ...init,
-      headers: { ...headers(), ...(init?.headers ?? {}) }
-    });
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        ...init,
+        headers: { ...headers(), ...(init?.headers ?? {}) }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : ({} as T);
 
@@ -161,7 +166,7 @@ export function viewReconciliationCases() {
 
 async function requestDashboardJson<T>(path: string): Promise<ApiResult<T>> {
   try {
-    const response = await fetch(path, { method: "POST" });
+    const response = await dashboardApiFetch(path, enrichDashboardRequestInit({ method: "POST" }));
     const text = await response.text();
     if (!response.ok) {
       return {

@@ -32,11 +32,11 @@ import org.springframework.web.bind.annotation.RestController;
 @TestPropertySource(properties = {
     "orderpilot.security.gateway-header-auth.enabled=true",
     "orderpilot.security.gateway-header-auth.signature-required=true",
-    "orderpilot.security.gateway-header-auth.shared-secret=test-gateway-shared-secret",
+    "orderpilot.security.gateway-header-auth.shared-secret=a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517",
     "orderpilot.security.gateway-header-auth.clock-skew-seconds=300"
 })
 class ApiGatewayHeaderSignatureSecurityTest {
-  private static final String SECRET = "test-gateway-shared-secret";
+  private static final String SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
   private static final String TENANT = UUID.randomUUID().toString();
   private static final String ACTOR = UUID.randomUUID().toString();
   private static final String PATH = "/api/v1/operator-review/security-baseline/signed-gateway";
@@ -104,12 +104,7 @@ class ApiGatewayHeaderSignatureSecurityTest {
   }
 
   private static MockHttpServletRequestBuilder signedGet(String path, String permissions, long timestampEpoch) {
-    // OP-CAP-43E: a unique nonce per signed request, bound into the canonical string.
-    String nonce = UUID.randomUUID().toString();
-    String canonical = "GET\n" + path + "\n" + TENANT + "\n" + ACTOR + "\n" + permissions + "\n"
-        + timestampEpoch + "\n" + nonce;
-    return unsignedGetWithSignature(path, permissions, timestampEpoch, nonce,
-        SignedActorVerifier.hmacHex(SECRET, canonical));
+    return TrustedGatewayTestSigning.signedGet(SECRET, path, TENANT, ACTOR, permissions, timestampEpoch);
   }
 
   private static MockHttpServletRequestBuilder unsignedGetWithSignature(
@@ -132,6 +127,10 @@ class ApiGatewayHeaderSignatureSecurityTest {
         .header(ApiPermissionGuard.PERMISSIONS_HEADER, permissions)
         .header(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, Long.toString(timestampEpoch))
         .header(GatewayHeaderSignatureVerifier.NONCE_HEADER, nonce)
+        .header(GatewayHeaderSignatureVerifier.VERSION_HEADER, GatewayV2Canonical.SIGNATURE_VERSION)
+        .header(
+            GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER,
+            GatewayV2Canonical.EMPTY_BODY_SHA256_HEX)
         .header(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER, signature);
   }
 

@@ -1,3 +1,11 @@
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import {
+  dashboardCoreApiBaseUrl,
+  enrichDashboardRequestInit,
+  isDashboardApiAuthorityAvailable,
+  usesBffTransport
+} from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 // OP-CAP-15A/15B Validation Review → Draft Quote / Draft Order command client.
 // Typed, tenant-scoped helpers over the OP-CAP-15A/15B backend endpoints ONLY:
 //   GET  /api/v1/validations/{validationRunId}/review/draft-status
@@ -97,11 +105,14 @@ import { demoTenantId } from "./frontend-authority.mjs";
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewDraftConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function headers() {
+  if (usesBffTransport()) {
+    return { "Content-Type": "application/json" };
+  }
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (validationReviewDraftConfig.tenantId) {
     requestHeaders["X-Tenant-Id"] = validationReviewDraftConfig.tenantId;
@@ -121,17 +132,20 @@ function draftBody(options?: CreateDraftOptions): string {
 // POST a 15A/15B draft command. Tenant id comes from configured env (never from user input or request body).
 // Errors map to bounded, user-safe messages — never a stack trace or raw backend internals.
 async function postDraftCommand(path: string, options?: CreateDraftOptions): Promise<ApiResult<ValidationReviewDraftResult>> {
-  if (!validationReviewDraftConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewDraftConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${validationReviewDraftConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
       method: "POST",
       cache: "no-store",
       headers: headers(),
       body: draftBody(options)
-    });
+    })
+    );
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
 
@@ -157,18 +171,18 @@ async function postDraftCommand(path: string, options?: CreateDraftOptions): Pro
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }
 
 export async function getValidationReviewDraftStatus(validationRunId: string): Promise<ApiResult<ValidationReviewDraftStatus>> {
-  if (!validationReviewDraftConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewDraftConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${validationReviewDraftConfig.baseUrl}/api/v1/validations/${validationRunId}/review/draft-status`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/${validationRunId}/review/draft-status`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -184,18 +198,18 @@ export async function getValidationReviewDraftStatus(validationRunId: string): P
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 
 // OP-CAP-15C read-only advisory draftability hints for the validation review surface.
 export async function getValidationReviewDraftability(validationRunId: string): Promise<ApiResult<ValidationReviewDraftabilityResponse>> {
-  if (!validationReviewDraftConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewDraftConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${validationReviewDraftConfig.baseUrl}/api/v1/validations/${validationRunId}/review/draftability`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/${validationRunId}/review/draftability`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -211,7 +225,7 @@ export async function getValidationReviewDraftability(validationRunId: string): 
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 

@@ -26,7 +26,7 @@ test("API helper calls the OP-CAP-14A review endpoints with tenant header (read-
   assert.match(apiClient, /\/api\/v1\/validations\/\$\{validationRunId\}\/review/);
   assert.match(apiClient, /getValidationReviewByExtraction/);
   assert.match(apiClient, /\/api\/v1\/validations\/extractions\/\$\{extractionResultId\}\/review/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assert.match(apiClient, /dashboardRequestHeaders\(validationReviewDetailConfig\.tenantId\)/);
   assert.match(apiClient, /method: "GET"/);
   // No mutating verbs in the read-only client.
   assert.doesNotMatch(apiClient, /method: "POST"|method: "PATCH"|method: "PUT"|method: "DELETE"/);

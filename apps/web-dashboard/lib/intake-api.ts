@@ -1,3 +1,6 @@
+import { dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport.ts";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http.ts";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 export type IntakeDocument = {
@@ -52,19 +55,18 @@ export type IntakeApiResult<T> = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const intakeConfig = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
   tenantId: demoTenantId()
 };
 
 async function getJson<T>(path: string): Promise<IntakeApiResult<T>> {
-  if (!intakeConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(intakeConfig.tenantId)) {
     return { data: [] as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${intakeConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": intakeConfig.tenantId }
+      headers: dashboardRequestHeaders(intakeConfig.tenantId)
     });
 
     if (!response.ok) {
@@ -75,7 +77,7 @@ async function getJson<T>(path: string): Promise<IntakeApiResult<T>> {
   } catch (error) {
     return {
       data: [] as T,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

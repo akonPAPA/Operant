@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { assertApiBaseUrlSource, assertTenantScopedClientSource } from "./lib/api-client-contract.mjs";
 
 const root = process.cwd();
 const apiClientPath = join(root, "lib", "command-center-api.ts");
@@ -17,10 +18,9 @@ const route = readFileSync(routePath, "utf8");
 test("command center API client targets the read-only summary endpoint with tenant + permission boundary", () => {
   assert.equal(existsSync(apiClientPath), true);
   assert.match(apiClient, /\/api\/v1\/command-center\/summary/);
-  assert.match(apiClient, /X-Tenant-Id/);
-  assert.match(apiClient, /X-OrderPilot-Permissions/);
+  assertTenantScopedClientSource(apiClient);
+  assertApiBaseUrlSource(apiClient);
   assert.match(apiClient, /ANALYTICS_READ/);
-  assert.match(apiClient, /CORE_API_BASE_URL/);
   // Read-only client: GET only, no mutation verbs.
   assert.doesNotMatch(apiClient, /method:\s*"(POST|PUT|PATCH|DELETE)"/);
 });
@@ -61,7 +61,7 @@ test("navigation still renders Operant branding, not OrderPilot", () => {
   const brand = readFileSync(brandPath, "utf8");
   assert.match(brand, /Operant/);
   assert.doesNotMatch(brand, /OrderPilot/);
-  // Technical API identifiers (X-OrderPilot-Permissions header) remain unchanged on purpose.
-  assert.match(apiClient, /X-OrderPilot-Permissions/);
+  // Technical permission identifiers remain in client helpers (BFF injects via gateway session).
+  assert.match(apiClient, /ANALYTICS_READ/);
   assert.equal(existsSync(navPath), true);
 });

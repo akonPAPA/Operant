@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getDraftQuoteReviewQueue } from "@/lib/draft-review-api";
+import { getDraftQuoteReviewQueue } from "@/lib/server/draft-review-api.server";
 
 const STATUS_OPTIONS = ["", "DRAFT", "NEEDS_REVIEW", "WAITING_APPROVAL", "APPROVED_INTERNAL", "REJECTED", "CANCELLED"];
 

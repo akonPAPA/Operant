@@ -1,3 +1,6 @@
+import { enrichDashboardRequestInit } from "./api-transport";
+import { BoundedUiError } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import {
   ApiResult,
   coreApiBaseUrl,
@@ -209,18 +212,21 @@ export function assembleQuoteDraft(quoteId: string, payload: QuoteReviewCommandP
 // may reference tenant/resource ids) is never surfaced into the UI.
 async function requestQuoteReview<T>(path: string, payload: QuoteReviewCommandPayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(`${coreApiBaseUrl()}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
-      ...demoScopeHeaders()
-    },
-    body: JSON.stringify(body)
-  });
+  const response = await dashboardApiFetch(
+    path,
+    enrichDashboardRequestInit({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+        ...demoScopeHeaders()
+      },
+      body: JSON.stringify(body)
+    })
+  );
   if (!response.ok) {
     const error = Object.assign(
-      new Error(coreApiStatusMessage(response.status)),
+      new BoundedUiError(coreApiStatusMessage(response.status)),
       { status: response.status }
     );
     throw error;

@@ -1,4 +1,10 @@
-import { coreApiBaseUrl } from "@/lib/core-api-client";
+function publicTrackingCoreBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_CORE_API_URL ??
+    process.env.CORE_API_BASE_URL ??
+    "http://localhost:8080";
+  return raw.replace(/\/$/, "");
+}
 
 // OP-CAP-46E — public, UNAUTHENTICATED customer tracking client.
 //
@@ -47,7 +53,7 @@ export async function getPublicOrderTracking(token: string): Promise<PublicOrder
   let response: Response;
   try {
     response = await fetch(
-      `${coreApiBaseUrl()}/api/v1/public/order-tracking/${encodeURIComponent(token)}`,
+      `${publicTrackingCoreBaseUrl()}/api/v1/public/order-tracking/${encodeURIComponent(token)}`,
       {
         method: "GET",
         cache: "no-store",

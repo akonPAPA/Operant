@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-11F Pilot Shadow-Mode ROI Readiness client.
@@ -116,27 +119,20 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 const ANALYTICS_READ = "ANALYTICS_READ";
 
 export const pilotMetricsClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function baseHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-OrderPilot-Permissions": ANALYTICS_READ
-  };
-  if (pilotMetricsClient.tenantId) {
-    h["X-Tenant-Id"] = pilotMetricsClient.tenantId;
-  }
-  return h;
+  return dashboardRequestHeaders(pilotMetricsClient.tenantId, ANALYTICS_READ);
 }
 
 async function read<T>(path: string, fallback: T): Promise<PilotApiResult<T>> {
-  if (!pilotMetricsClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(pilotMetricsClient.tenantId)) {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${pilotMetricsClient.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       method: "GET",
       headers: baseHeaders()
@@ -152,7 +148,7 @@ async function read<T>(path: string, fallback: T): Promise<PilotApiResult<T>> {
     }
     return { data };
   } catch (error) {
-    return { data: fallback, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: fallback, error: caughtUiErrorMessage(error) };
   }
 }
 

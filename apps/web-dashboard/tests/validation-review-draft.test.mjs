@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { assertApiBaseUrlSource, assertTenantScopedClientSource } from "./lib/api-client-contract.mjs";
 
 // OP-CAP-15A/15B — Validation Review → Draft bridge UI + draft visibility/selected-lines/operator-note
 // (source-inspection style, no live backend).
@@ -25,8 +26,9 @@ test("draft API helper uses only the 15A/15B draft endpoints with tenant header"
   assert.match(draftApi, /\/api\/v1\/validations\/\$\{validationRunId\}\/review\/draft-quote/);
   assert.match(draftApi, /\/api\/v1\/validations\/\$\{validationRunId\}\/review\/draft-order/);
   assert.match(draftApi, /\/api\/v1\/validations\/\$\{validationRunId\}\/review\/draft-status/);
-  assert.match(draftApi, /X-Tenant-Id/);
-  assert.match(draftApi, /NEXT_PUBLIC_CORE_API_URL/);
+  assertTenantScopedClientSource(draftApi);
+  assertApiBaseUrlSource(draftApi);
+  assert.match(draftApi, /enrichDashboardRequestInit/);
   assert.match(draftApi, /method: "POST"/);
   assert.match(draftApi, /method: "GET"/);
   assert.match(draftApi, /createDraftQuoteFromReview/);

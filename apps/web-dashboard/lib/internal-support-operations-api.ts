@@ -1,3 +1,14 @@
+import { usesBffTransport } from "./api-transport";
+
+const DEFAULT_BASE_URL = "http://localhost:8080";
+
+export const SUPPORT_PLANE_NOT_CONFIGURED =
+  "Operant staff support plane is not configured for this dashboard deployment (NOT_IMPLEMENTED).";
+
+export const internalSupportConfig = {
+  /** Staff plane uses a dedicated transport; tenant BFF must never proxy internal support routes. */
+  staffPlaneConfigured: false
+};
 // OP-CAP-56/57 — Internal Support API client (READ-ONLY).
 //
 // OP-CAP-55 backend endpoints:
@@ -128,22 +139,16 @@ export type TenantSearchParams = {
   size?: number;
 };
 
-const DEFAULT_BASE_URL = "http://localhost:8080";
-
-export const internalSupportConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL
-};
-
 const NO_TENANT_MESSAGE = "Select a tenant from the internal support locator to open this view.";
 const FORBIDDEN_MESSAGE =
   "You do not have an active support grant for this tenant (staff support permission and an approved, unexpired grant are required).";
 const NOT_FOUND_MESSAGE = "This support view was not found for this tenant context.";
 const LOAD_ERROR_MESSAGE = "Could not load internal support data right now. Please retry shortly.";
 
-// GET-only fetch. `tenantId` (when provided) is sent ONLY as the X-Tenant-Id resource-scope header; it is
-// never placed in a request body. Maps backend status into a safe operator message and never echoes the raw
-// backend body, tenant ids, resource ids, stack traces, or SQL details.
 async function getJson<T>(path: string, tenantId?: string): Promise<ApiResult<T>> {
+  if (usesBffTransport() || !internalSupportConfig.staffPlaneConfigured) {
+    return { error: SUPPORT_PLANE_NOT_CONFIGURED };
+  }
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (tenantId) {
     requestHeaders["X-Tenant-Id"] = tenantId;
@@ -151,7 +156,7 @@ async function getJson<T>(path: string, tenantId?: string): Promise<ApiResult<T>
 
   let response: Response;
   try {
-    response = await fetch(`${internalSupportConfig.baseUrl}${path}`, {
+    response = await fetch(`${(process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "")}${path}`, {
       method: "GET",
       cache: "no-store",
       headers: requestHeaders

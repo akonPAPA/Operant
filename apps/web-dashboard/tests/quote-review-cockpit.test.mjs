@@ -150,7 +150,12 @@ test("quote review doAction does not clear cached idempotency key before complet
 
 // Error mapping uses mapOperatorActionError with HTTP status, not raw errors.
 test("quote review doAction uses mapOperatorActionError for safe error mapping", () => {
-  assert.match(cockpit, /mapOperatorActionError\(err\.status \?\? 500, err\.message\)/);
+  assert.match(
+    cockpit,
+    /mapOperatorActionError\(\s*err\.status \?\? 500,\s*boundedUiErrorMessage\(error,/
+  );
+  // Raw exception text must never be handed to the mapper as a fallback.
+  assert.doesNotMatch(cockpit, /mapOperatorActionError\([^)]*err\.message/);
   // Must not render raw error stack traces or internal details.
   assert.doesNotMatch(cockpit, /\bconsole\.error\b/);
   assert.doesNotMatch(cockpit, /\bstackTrace\b/);
@@ -160,7 +165,7 @@ test("quote review doAction uses mapOperatorActionError for safe error mapping",
 // The API client attaches HTTP status to errors so mapOperatorActionError can
 // produce status-specific safe messages.
 test("quote review API client attaches HTTP status to thrown command errors", () => {
-  assert.match(apiClient, /Object\.assign\(\s*new Error\(coreApiStatusMessage\(response\.status\)\)/);
+  assert.match(apiClient, /Object\.assign\(\s*new BoundedUiError\(coreApiStatusMessage\(response\.status\)\)/);
   assert.match(apiClient, /\{ status: response\.status \}/);
 });
 

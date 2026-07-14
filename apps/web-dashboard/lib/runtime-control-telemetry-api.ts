@@ -1,3 +1,5 @@
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // Read-only tenant operator client for Runtime Control Telemetry (RFQ/AI/demo path). The browser sends
@@ -76,9 +78,7 @@ const ANALYTICS_READ = "ANALYTICS_READ";
 
 export const runtimeControlTelemetryClient = {
   baseUrl:
-    process.env.CORE_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_CORE_API_URL ??
-    DEFAULT_BASE_URL,
+    dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -182,21 +182,18 @@ function isRuntimeControlDemoFlowTelemetry(
 }
 
 export async function getRuntimeControlDemoFlowTelemetry(): Promise<RuntimeControlTelemetryResult> {
-  if (!runtimeControlTelemetryClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(runtimeControlTelemetryClient.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
-  const headers: Record<string, string> = {
-    "X-OrderPilot-Permissions": ANALYTICS_READ,
-    "X-Tenant-Id": runtimeControlTelemetryClient.tenantId
-  };
+  const headers = dashboardRequestHeaders(runtimeControlTelemetryClient.tenantId, ANALYTICS_READ);
 
   // Network/transport failures only.
   let response: Response;
   let text: string;
   try {
-    response = await fetch(
-      `${runtimeControlTelemetryClient.baseUrl}/api/v1/runtime-control/demo-flow`,
+    response = await dashboardApiFetch(
+      "/api/v1/runtime-control/demo-flow",
       {
         cache: "no-store",
         method: "GET",

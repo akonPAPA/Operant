@@ -1,3 +1,5 @@
+import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-21 Transaction Command Center read-model client.
@@ -111,27 +113,21 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 const ANALYTICS_READ = "ANALYTICS_READ";
 
 export const commandCenterClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function baseHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-OrderPilot-Permissions": ANALYTICS_READ
-  };
-  if (commandCenterClient.tenantId) {
-    h["X-Tenant-Id"] = commandCenterClient.tenantId;
-  }
-  return h;
+  return clientTenantHeaders(commandCenterClient.tenantId, ANALYTICS_READ);
 }
 
 export async function getCommandCenterSummary(): Promise<CommandCenterResult> {
-  if (!commandCenterClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(commandCenterClient.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${commandCenterClient.baseUrl}/api/v1/command-center/summary`, {
+    const path = "/api/v1/command-center/summary";
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
       method: "GET",
       headers: baseHeaders()

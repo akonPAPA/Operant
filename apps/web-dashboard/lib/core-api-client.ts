@@ -3,14 +3,27 @@ import {
   missingFrontendAuthorityMessage,
   requireDemoTenantId
 } from "./frontend-authority.mjs";
-
-const DEFAULT_BASE_URL = "http://localhost:8080";
+import {
+  dashboardCoreApiBaseUrl,
+  enrichDashboardRequestInit,
+  toProxiedCorePath,
+  usesBffTransport
+} from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 
 export function coreApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
+  if (usesBffTransport() && typeof window !== "undefined") {
+    return "/api/bff";
+  }
+  return dashboardCoreApiBaseUrl();
 }
 
+export { toProxiedCorePath, usesBffTransport };
+
 export function demoScopeHeaders(): Record<string, string> {
+  if (usesBffTransport()) {
+    return {};
+  }
   return { "X-Tenant-Id": requireDemoTenantId() };
 }
 
@@ -22,9 +35,6 @@ export function missingDemoScopeMessage(area: string) {
   return missingFrontendAuthorityMessage(area);
 }
 
-// Typed result for tenant-scoped read calls. 403/404 are valid backend
-// security/business outcomes — they must surface as explicit UI states, never
-// as unhandled throws or raw Next.js runtime errors.
 export type ApiResult<T> =
   | { ok: true; status: 200; data: T }
   | { ok: false; status: 403; kind: "forbidden"; message: string }
@@ -32,9 +42,6 @@ export type ApiResult<T> =
   | { ok: false; status: 422; kind: "validation_error"; message: string }
   | { ok: false; status: number; kind: "server_error" | "network_error"; message: string };
 
-// Operator-safe state messages. These intentionally never echo the raw backend
-// body, tenant ids, or resource ids: 403/404 must not leak whether a
-// cross-tenant resource exists, and 5xx must not expose stack traces.
 export const FORBIDDEN_STATE_MESSAGE = "You do not have access to this workspace or tenant context.";
 export const NOT_FOUND_STATE_MESSAGE = "Review not found or no longer available.";
 export const VALIDATION_STATE_MESSAGE = "This request could not be processed as submitted.";
@@ -53,21 +60,22 @@ export function coreApiStatusMessage(status: number): string {
   }
 }
 
-// Tenant-scoped GET helper. Inspects HTTP status before parsing, never assumes a
-// JSON body exists for 403/404, and maps network failure into a typed state.
 export async function coreApiGet<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   let response: Response;
   try {
-    response = await fetch(`${coreApiBaseUrl()}${path}`, {
-      method: "GET",
-      cache: "no-store",
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...demoScopeHeaders(),
-        ...((init?.headers as Record<string, string>) ?? {})
-      }
-    });
+    response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        method: "GET",
+        cache: "no-store",
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...demoScopeHeaders(),
+          ...((init?.headers as Record<string, string>) ?? {})
+        }
+      })
+    );
   } catch {
     return { ok: false, status: 0, kind: "network_error", message: LOAD_ERROR_STATE_MESSAGE };
   }
@@ -83,7 +91,6 @@ async function mapCoreApiResponse<T>(response: Response): Promise<ApiResult<T>> 
       return { ok: false, status: 200, kind: "server_error", message: LOAD_ERROR_STATE_MESSAGE };
     }
   }
-  // Drain but never surface the raw body for non-200 states.
   await safeText(response);
   switch (response.status) {
     case 403:

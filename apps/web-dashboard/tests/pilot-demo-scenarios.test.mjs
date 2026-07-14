@@ -18,7 +18,7 @@ test("API client exposes getPilotDemoScenarios targeting the guarded endpoint", 
   assert.match(apiClient, /getPilotDemoScenarios/);
   assert.match(apiClient, /\/api\/v1\/pilot\/demo-scenarios/);
   assert.match(apiClient, /ANALYTICS_READ/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assert.match(apiClient, /dashboardRequestHeaders\(pilotMetricsClient\.tenantId,\s*ANALYTICS_READ\)/);
   // Scenario contract fields are mapped; no raw payloads.
   for (const field of ["readiness", "requiredCapabilities", "evidenceSignals", "missingCapabilities", "safetyBoundaries", "operatorTalkingPoints"]) {
     assert.match(apiClient, new RegExp(field));

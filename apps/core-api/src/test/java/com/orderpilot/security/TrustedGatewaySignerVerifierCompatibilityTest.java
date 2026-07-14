@@ -2,18 +2,21 @@ package com.orderpilot.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 class TrustedGatewaySignerVerifierCompatibilityTest {
-  private static final String TEST_ONLY_SECRET = "op-cap-43h-test-only-gateway-contract-secret";
+  private static final String TEST_ONLY_SECRET =
+      "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
   private static final Instant NOW = Instant.parse("2026-06-23T00:00:00Z");
   private static final long MAX_SKEW_SECONDS = 300L;
   private static final String TENANT = "11111111-1111-1111-1111-111111111111";
@@ -25,6 +28,8 @@ class TrustedGatewaySignerVerifierCompatibilityTest {
       REPO_ROOT.resolve("docs/security/TRUSTED_GATEWAY_HEADER_BOUNDARY.md");
   private static final Path SIGNER_FIXTURE =
       Path.of("src/test/java/com/orderpilot/security/TrustedGatewaySignerFixture.java");
+  private static final Path CROSS_LANGUAGE_FIXTURE =
+      REPO_ROOT.resolve("docs/security/gateway-signature-fixture.json");
 
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
   private final TrustedGatewaySignerFixture signer = new TrustedGatewaySignerFixture(TEST_ONLY_SECRET);
@@ -93,6 +98,36 @@ class TrustedGatewaySignerVerifierCompatibilityTest {
   }
 
   @Test
+  void bodyByteTamperAfterSigningFails() {
+    var signed = signed("nonce-body-tamper").withBody("tampered".getBytes(StandardCharsets.UTF_8));
+    assertThat(verifier().verify(request(signed))).isFalse();
+  }
+
+  @Test
+  void queryTamperAfterSigningFails() {
+    var signed = signer.sign(
+        authority(),
+        new TrustedGatewaySignerFixture.ClientRequestFacts(
+            HttpMethod.GET.name(), PATH, "a=1", "", new byte[0]),
+        new TrustedGatewaySignerFixture.SigningFreshness(NOW.getEpochSecond(), "nonce-query"));
+    var tampered = new TrustedGatewaySignerFixture.SignedGatewayHeaders(
+        signed.method(),
+        signed.path(),
+        "a=2",
+        signed.bodyBytes(),
+        signed.contentType(),
+        signed.headers());
+    assertThat(verifier().verify(request(tampered))).isFalse();
+  }
+
+  @Test
+  void missingSignatureVersionIsRejected() {
+    var signed = signed("nonce-missing-version")
+        .withoutHeader(GatewayHeaderSignatureVerifier.VERSION_HEADER);
+    assertThat(verifier().verify(request(signed))).isFalse();
+  }
+
+  @Test
   void publicClientAuthorityHeadersAreNotSignerInput() {
     Map<String, String> publicClientHeaders = Map.of(
         GatewayHeaderSignatureVerifier.TENANT_HEADER, "client-tenant",
@@ -114,34 +149,79 @@ class TrustedGatewaySignerVerifierCompatibilityTest {
   @Test
   void docsStateSignerAuthorityComesFromAuthenticatedGatewayContextNotRawClientHeaders()
       throws Exception {
-    String doc = normalizeWhitespace(Files.readString(BOUNDARY_DOC));
-
-    assertThat(doc)
-        .contains("Trusted signer contract")
-        .contains("authenticated identity, session, or API key context")
-        .contains("must not come from public client headers, request bodies, AI workers, bots, or connectors")
-        .contains("X-Tenant-Id")
-        .contains("X-OrderPilot-Actor-Id")
-        .contains("X-OrderPilot-Permissions")
-        .contains("X-OrderPilot-Gateway-Timestamp")
-        .contains("X-OrderPilot-Gateway-Nonce")
+    String docs = Files.readString(BOUNDARY_DOC);
+    assertThat(normalizeWhitespace(docs))
+        .contains("Derive tenant, actor, and permissions from a trusted source")
         .contains("X-OrderPilot-Gateway-Signature");
-  }
-
-  @Test
-  void docsStateExactCanonicalStringAndCurrentQueryBodyLimitation() throws Exception {
-    String doc = normalizeWhitespace(Files.readString(BOUNDARY_DOC));
-
-    assertThat(doc)
-        .contains("METHOD\\nREQUEST_URI_PATH\\ntenantId\\nactorId\\npermissions\\ntimestamp\\nnonce")
-        .contains("does not include query string, request body, or body hash")
-        .contains("Adding query/body binding is a separate production-code security slice");
-  }
-
-  @Test
-  void signerContractArtifactsContainNoRealSecretMaterial() throws Exception {
-    assertNoRealSecretMaterial(Files.readString(BOUNDARY_DOC));
+    assertNoRealSecretMaterial(docs);
     assertNoRealSecretMaterial(Files.readString(SIGNER_FIXTURE));
+  }
+
+  @Test
+  void crossLanguageFixtureCanonicalStringMatchesJavaVerifier() throws Exception {
+    var fixture = new com.fasterxml.jackson.databind.ObjectMapper()
+        .readTree(Files.readString(CROSS_LANGUAGE_FIXTURE));
+    StringBuilder expectedCanonical = new StringBuilder();
+    fixture.get("canonicalStringJoinedWithNewline").forEach(line -> {
+      if (expectedCanonical.length() > 0) {
+        expectedCanonical.append('\n');
+      }
+      expectedCanonical.append(line.asText());
+    });
+
+    String canonical = GatewayV2Canonical.build(
+        fixture.get("method").asText(),
+        fixture.get("path").asText(),
+        fixture.get("rawQuery").asText(),
+        fixture.get("contentType").asText(),
+        fixture.get("bodySha256Hex").asText(),
+        fixture.get("tenantId").asText(),
+        fixture.get("actorId").asText(),
+        fixture.get("permissionsHeaderValue").asText(),
+        fixture.get("timestampEpochSeconds").asLong(),
+        fixture.get("nonce").asText());
+
+    assertThat(canonical).isEqualTo(expectedCanonical.toString());
+    byte[] key = GatewayHmacKeyCodec.requireValid(
+        "fixture", fixture.get("sharedSecretHexTestOnly").asText());
+    assertThat(SignedActorVerifier.matchesHmacHex(
+        key,
+        canonical,
+        fixture.get("expectedHmacSha256Hex").asText())).isTrue();
+  }
+
+  @Test
+  void crossLanguageFixtureSignedHeadersAreAcceptedByBackendVerifier() throws Exception {
+    var fixture = new com.fasterxml.jackson.databind.ObjectMapper()
+        .readTree(Files.readString(CROSS_LANGUAGE_FIXTURE));
+    long fixtureTimestamp = fixture.get("timestampEpochSeconds").asLong();
+    Clock fixtureClock = Clock.fixed(Instant.ofEpochSecond(fixtureTimestamp), ZoneOffset.UTC);
+
+    byte[] body = fixture.get("bodyUtf8").asText().getBytes(StandardCharsets.UTF_8);
+    MockHttpServletRequest request = new MockHttpServletRequest(
+        fixture.get("method").asText(), fixture.get("path").asText());
+    request.setQueryString(fixture.get("rawQuery").asText());
+    request.addHeader("Content-Type", fixture.get("contentType").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.TENANT_HEADER, fixture.get("tenantId").asText());
+    request.addHeader(RequestActorResolver.ACTOR_HEADER, fixture.get("actorId").asText());
+    request.addHeader(ApiPermissionGuard.PERMISSIONS_HEADER, fixture.get("permissionsHeaderValue").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.TIMESTAMP_HEADER, String.valueOf(fixtureTimestamp));
+    request.addHeader(GatewayHeaderSignatureVerifier.NONCE_HEADER, fixture.get("nonce").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.VERSION_HEADER, GatewayV2Canonical.SIGNATURE_VERSION);
+    request.addHeader(
+        GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER, fixture.get("bodySha256Hex").asText());
+    request.addHeader(GatewayHeaderSignatureVerifier.SIGNATURE_HEADER,
+        fixture.get("expectedHmacSha256Hex").asText());
+
+    CachedBodyHttpServletRequest cached = new CachedBodyHttpServletRequest(request, body);
+
+    GatewayHeaderSignatureVerifier verifier = new GatewayHeaderSignatureVerifier(
+        fixture.get("sharedSecretHexTestOnly").asText(),
+        MAX_SKEW_SECONDS,
+        fixtureClock,
+        new GatewayHeaderReplayGuard(fixtureClock, 100));
+
+    assertThat(verifier.verify(cached)).isTrue();
   }
 
   private static String normalizeWhitespace(String content) {
@@ -181,9 +261,7 @@ class TrustedGatewaySignerVerifierCompatibilityTest {
         new GatewayHeaderReplayGuard(clock, 100));
   }
 
-  private static MockHttpServletRequest request(TrustedGatewaySignerFixture.SignedGatewayHeaders signed) {
-    MockHttpServletRequest request = new MockHttpServletRequest(signed.method(), signed.path());
-    signed.headers().forEach(request::addHeader);
-    return request;
+  private static HttpServletRequest request(TrustedGatewaySignerFixture.SignedGatewayHeaders signed) {
+    return TrustedGatewaySignerFixture.toCachedRequest(signed);
   }
 }

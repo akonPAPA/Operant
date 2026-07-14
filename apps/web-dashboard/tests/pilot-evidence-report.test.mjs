@@ -17,7 +17,7 @@ test("evidence report API client maps the contract and targets the guarded endpo
   assert.match(apiClient, /\/api\/v1\/pilot\/evidence-report/);
   assert.match(apiClient, /getPilotEvidenceReport/);
   assert.match(apiClient, /ANALYTICS_READ/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assert.match(apiClient, /dashboardRequestHeaders\(pilotMetricsClient\.tenantId,\s*ANALYTICS_READ\)/);
   // Contract fields are mapped.
   for (const field of [
     "estimatedMinutesSaved",

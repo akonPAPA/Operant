@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-15C Review-origin draft queue (lite) API client.
@@ -69,16 +72,12 @@ export type ReviewDraftQueueFilter = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const reviewDraftQueueConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function headers() {
-  const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
-  if (reviewDraftQueueConfig.tenantId) {
-    requestHeaders["X-Tenant-Id"] = reviewDraftQueueConfig.tenantId;
-  }
-  return requestHeaders;
+  return dashboardRequestHeaders(reviewDraftQueueConfig.tenantId);
 }
 
 // OP-CAP-15H read-only remediation lineage DETAIL types. Stable ids + deterministic backend text only —
@@ -198,7 +197,7 @@ export function remediationRollupPath(limit?: number): string {
 }
 
 export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Promise<ApiResult<ValidationReviewDraftQueueResponse>> {
-  if (!reviewDraftQueueConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(reviewDraftQueueConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   const params = new URLSearchParams();
@@ -209,8 +208,8 @@ export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Prom
   const query = params.toString();
 
   try {
-    const response = await fetch(
-      `${reviewDraftQueueConfig.baseUrl}/api/v1/validations/review-drafts${query ? `?${query}` : ""}`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/review-drafts${query ? `?${query}` : ""}`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -226,7 +225,7 @@ export async function getReviewDraftQueue(filter?: ReviewDraftQueueFilter): Prom
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 
@@ -237,12 +236,12 @@ export async function getReviewDraftRemediationLineage(
   draftKind: string,
   draftId: string
 ): Promise<ApiResult<ValidationReviewDraftRemediationLineageDetail>> {
-  if (!reviewDraftQueueConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(reviewDraftQueueConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(
-      `${reviewDraftQueueConfig.baseUrl}/api/v1/validations/review-drafts/${encodeURIComponent(draftKind)}/${encodeURIComponent(draftId)}/remediation-lineage`,
+    const response = await dashboardApiFetch(
+      `/api/v1/validations/review-drafts/${encodeURIComponent(draftKind)}/${encodeURIComponent(draftId)}/remediation-lineage`,
       { method: "GET", cache: "no-store", headers: headers() }
     );
     const text = await response.text();
@@ -261,7 +260,7 @@ export async function getReviewDraftRemediationLineage(
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }
 
@@ -271,11 +270,11 @@ export async function getReviewDraftRemediationLineage(
 export async function getReviewDraftRecentRemediationRollup(
   limit?: number
 ): Promise<ApiResult<ValidationReviewDraftRecentRemediationRollupResponse>> {
-  if (!reviewDraftQueueConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(reviewDraftQueueConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${reviewDraftQueueConfig.baseUrl}${remediationRollupPath(limit)}`, {
+    const response = await dashboardApiFetch(remediationRollupPath(limit), {
       method: "GET",
       cache: "no-store",
       headers: headers()
@@ -293,6 +292,6 @@ export async function getReviewDraftRecentRemediationRollup(
     }
     return { data };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: null, error: caughtUiErrorMessage(error) };
   }
 }

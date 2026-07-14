@@ -1,6 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { DraftReviewWorkspace } from "@/components/draft-review-workspace";
-import { getDraftOrderReview } from "@/lib/draft-review-api";
+import { getDraftOrderReview } from "@/lib/server/draft-review-api.server";
 
 export default async function Page({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;

@@ -14,6 +14,7 @@ import {
   requestQuoteChanges
 } from "@/lib/quote-transaction-api";
 import { generateIdempotencyKey } from "@/lib/security-idempotency";
+import { boundedUiErrorMessage } from "@/lib/ui-error";
 
 export function QuoteWorkspace() {
   const [result, setResult] = useState<QuoteTransactionResponse | null>(null);
@@ -32,8 +33,8 @@ export function QuoteWorkspace() {
     if (!createDraftKeyRef.current) {
       try {
         createDraftKeyRef.current = generateIdempotencyKey();
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
+      } catch {
+        setMessage("Secure idempotency key generation failed.");
         return;
       }
     }
@@ -60,7 +61,7 @@ export function QuoteWorkspace() {
       setApprovalState(await getQuoteApprovalState(response.draftQuoteId));
       setMessage("Draft quote created through the backend transaction service.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Quote request failed.");
+      setMessage(boundedUiErrorMessage(error, "Quote request failed."));
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -78,8 +79,8 @@ export function QuoteWorkspace() {
     if (!approvalActionKeyRef.current.has(actionKey)) {
       try {
         approvalActionKeyRef.current.set(actionKey, generateIdempotencyKey());
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Secure idempotency key generation failed.");
+      } catch {
+        setMessage("Secure idempotency key generation failed.");
         return;
       }
     }
@@ -105,7 +106,7 @@ export function QuoteWorkspace() {
       setResult({ ...result, status: response.newStatus, approvalRequired: response.approvalRequired, approvalReasons: response.approvalReasons });
       setMessage(`${response.approvalDecision} completed. External ERP write was not executed.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Quote approval action failed.");
+      setMessage(boundedUiErrorMessage(error, "Quote approval action failed."));
     } finally {
       loadingRef.current = false;
       setLoading(false);

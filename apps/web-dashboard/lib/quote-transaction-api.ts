@@ -1,4 +1,7 @@
+import { enrichDashboardRequestInit } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { requireDemoTenantId } from "./frontend-authority.mjs";
+import { BoundedUiError } from "./ui-error.ts";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -166,21 +169,22 @@ export type QuoteApprovalDecisionPayload = {
   idempotencyKey?: string;
 };
 
-const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? process.env.CORE_API_BASE_URL ?? DEFAULT_BASE_URL;
-
 export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPayload): Promise<QuoteTransactionResponse> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(`${baseUrl}/api/v1/quotes/from-rfq`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Tenant-Id": requireDemoTenantId(),
-      "Idempotency-Key": idempotencyKey
-    },
-    body: JSON.stringify(body)
-  });
+  const response = await dashboardApiFetch(
+    "/api/v1/quotes/from-rfq",
+    enrichDashboardRequestInit({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Tenant-Id": requireDemoTenantId(),
+        "Idempotency-Key": idempotencyKey
+      },
+      body: JSON.stringify(body)
+    })
+  );
   if (!response.ok) {
-    throw new Error(`Core API returned ${response.status}`);
+    throw new BoundedUiError(`Core API returned ${response.status}`);
   }
   return response.json() as Promise<QuoteTransactionResponse>;
 }
@@ -224,36 +228,42 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
   const body = payload
     ? { approvalRequestId: payload.approvalRequestId, reason: payload.reason, comment: payload.comment }
     : undefined;
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: payload ? "POST" : "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Tenant-Id": requireDemoTenantId(),
-      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
-    },
-    body: payload ? JSON.stringify(body) : undefined
-  });
+  const response = await dashboardApiFetch(
+    path,
+    enrichDashboardRequestInit({
+      method: payload ? "POST" : "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Tenant-Id": requireDemoTenantId(),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
+      },
+      body: payload ? JSON.stringify(body) : undefined
+    })
+  );
   if (!response.ok) {
     // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
-    throw new Error(safeErrorMessage(response.status));
+    throw new BoundedUiError(safeErrorMessage(response.status));
   }
   return response.json() as Promise<T>;
 }
 
 async function requestQuoteTransaction<T>(path: string, payload: ChannelToQuotePayload): Promise<T> {
   const { idempotencyKey, ...body } = payload;
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Tenant-Id": requireDemoTenantId(),
-      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
-    },
-    body: JSON.stringify(body)
-  });
+  const response = await dashboardApiFetch(
+    path,
+    enrichDashboardRequestInit({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Tenant-Id": requireDemoTenantId(),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
+      },
+      body: JSON.stringify(body)
+    })
+  );
   if (!response.ok) {
     // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
-    throw new Error(safeErrorMessage(response.status));
+    throw new BoundedUiError(safeErrorMessage(response.status));
   }
   return response.json() as Promise<T>;
 }

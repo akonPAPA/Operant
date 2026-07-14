@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06E Channel Identity operator control and read contract client.
@@ -67,7 +70,7 @@ export type ChannelIdentityApiResult<T> = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const channelIdentityClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -88,21 +91,24 @@ async function request<T>(
   init: RequestInit,
   fallback: T
 ): Promise<ChannelIdentityApiResult<T>> {
-  if (!channelIdentityClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(channelIdentityClient.tenantId)) {
     return {
       data: fallback,
       error: "Authenticated dashboard access is unavailable."
     };
   }
   try {
-    const response = await fetch(`${channelIdentityClient.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: {
-        ...baseHeaders(),
-        ...((init.headers as Record<string, string>) ?? {})
-      }
-    });
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: {
+          ...baseHeaders(),
+          ...((init.headers as Record<string, string>) ?? {})
+        }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : fallback;
     if (!response.ok) {
@@ -116,7 +122,7 @@ async function request<T>(
   } catch (error) {
     return {
       data: fallback,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

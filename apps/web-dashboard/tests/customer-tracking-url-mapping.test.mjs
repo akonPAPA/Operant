@@ -16,7 +16,7 @@ import test from "node:test";
 import {
   toCustomerTrackingHref,
   toCustomerTrackingPath
-} from "../lib/order-journey-api.ts";
+} from "../lib/order-journey-customer-tracking-url.ts";
 
 const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "order-journey-api.ts"), "utf8");
@@ -102,12 +102,14 @@ test("the mint API still posts to the exact OP-CAP-46C endpoint", () => {
 });
 
 test("the mapping helpers are exported and use strict prefixes, not a fragile replace", () => {
-  assert.match(apiClient, /export function toCustomerTrackingPath/);
-  assert.match(apiClient, /export function toCustomerTrackingHref/);
-  assert.match(apiClient, /"\/api\/v1\/public\/order-tracking\/"/);
-  assert.match(apiClient, /"\/public\/order-tracking\/"/);
+  assert.match(apiClient, /order-journey-customer-tracking-url/);
+  const mappingModule = readFileSync(join(root, "lib", "order-journey-customer-tracking-url.ts"), "utf8");
+  assert.match(mappingModule, /export function toCustomerTrackingPath/);
+  assert.match(mappingModule, /export function toCustomerTrackingHref/);
+  assert.match(mappingModule, /"\/api\/v1\/public\/order-tracking\/"/);
+  assert.match(mappingModule, /"\/public\/order-tracking\/"/);
   // No fragile string replace that could rewrite an unrelated path.
-  assert.doesNotMatch(apiClient, /trackingPath\.replace\(/);
+  assert.doesNotMatch(mappingModule, /trackingPath\.replace\(/);
 });
 
 test("the panel displays/copies the customer-facing path via the helper, not the backend endpoint", () => {

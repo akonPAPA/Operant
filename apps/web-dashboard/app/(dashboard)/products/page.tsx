@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { listProducts } from "@/lib/stage2-data-api";
+import { listProducts } from "@/lib/server/stage2-data-api.server";
 
 export default async function Page() {
   const result = await listProducts();

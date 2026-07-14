@@ -20,7 +20,7 @@ test("stage9 integration API client exposes tenant-scoped control endpoints", ()
   assert.match(api, /\/api\/stage9\/connector-sync-runs/);
   assert.match(api, /\/api\/stage9\/connectors\/policies/);
   assert.match(api, /\/api\/stage9\/connector-audit/);
-  assert.match(api, /X-Tenant-Id/);
+  assert.match(api, /dashboardRequestHeaders\(stage9IntegrationConfig\.tenantId\)/);
   // Wave 01H Category D: the change-request type is operator-safe — no internal connector/execution
   // machinery declared in the contract (field declarations checked, not prose).
   assert.doesNotMatch(api, /executionStatus\s*:/);

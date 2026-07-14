@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 
 class ProductionConfigurationValidatorTest {
 
-  private static final String GATEWAY_SECRET = "p1a-gateway-secret-value-32chars-min";
+  private static final String GATEWAY_SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
   private static final String ACTOR_SECRET = "p1a-actor-signing-secret-value-32";
   private static final String DB_PASSWORD = "p1a-database-password-value-32";
 
@@ -97,7 +97,7 @@ class ProductionConfigurationValidatorTest {
   }
 
   @Test
-  void productionProfileRejectsBlankGatewaySharedSecret() {
+  void productionProfileRejectsBlankGatewayHmacKeyCodec() {
     productionRunner()
         .withPropertyValues(validProductionProperties())
         .withPropertyValues("orderpilot.security.gateway-header-auth.shared-secret=")
@@ -108,12 +108,12 @@ class ProductionConfigurationValidatorTest {
                     .getFailure()
                     .rootCause()
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("shared-secret is blank/missing")
+                    .hasMessageContaining("64 hexadecimal characters")
                     .hasMessageNotContaining(GATEWAY_SECRET));
   }
 
   @Test
-  void productionProfileRejectsPlaceholderGatewaySharedSecret() {
+  void productionProfileRejectsPlaceholderGatewayHmacKeyCodec() {
     productionRunner()
         .withPropertyValues(validProductionProperties())
         .withPropertyValues("orderpilot.security.gateway-header-auth.shared-secret=change-me-local-dev-only")
@@ -124,7 +124,7 @@ class ProductionConfigurationValidatorTest {
                     .getFailure()
                     .rootCause()
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("non-placeholder secret")
+                    .hasMessageContaining("64 hexadecimal characters")
                     .hasMessageNotContaining("change-me-local-dev-only"));
   }
 

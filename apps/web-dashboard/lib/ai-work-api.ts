@@ -1,3 +1,5 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-07A AI Agent Work Layer (AI Work Assistant) client.
@@ -107,7 +109,7 @@ const REVIEW_READ = "REVIEW_READ";
 const AI_WORK_ACTION = "AI_WORK_ACTION";
 
 export const aiWorkClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -135,21 +137,24 @@ function baseHeaders(extra?: Record<string, string>): Record<string, string> {
 }
 
 async function request<T>(path: string, init: RequestInit, fallback: T): Promise<AiWorkApiResult<T>> {
-  if (!aiWorkClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(aiWorkClient.tenantId)) {
     return {
       data: fallback,
       error: "Authenticated dashboard access is unavailable."
     };
   }
   try {
-    const response = await fetch(`${aiWorkClient.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: {
-        ...baseHeaders(),
-        ...((init.headers as Record<string, string>) ?? {})
-      }
-    });
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: {
+          ...baseHeaders(),
+          ...((init.headers as Record<string, string>) ?? {})
+        }
+      })
+    );
     if (!response.ok) {
       // Inspect status before parsing; do not assume a JSON body exists and never
       // surface the raw backend body (it may reference tenant/resource ids).

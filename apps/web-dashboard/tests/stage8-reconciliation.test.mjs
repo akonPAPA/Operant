@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { assertTenantScopedClientSource } from "./lib/api-client-contract.mjs";
 
 const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "stage8-analytics-api.ts"), "utf8");
@@ -13,7 +14,7 @@ test("stage8 reconciliation API client exposes read model endpoints", () => {
   assert.match(apiClient, /\/api\/stage8\/reconciliation\/summary/);
   assert.match(apiClient, /\/api\/stage8\/reconciliation\/cases/);
   assert.match(apiClient, /\/api\/stage8\/reconciliation\/products\/\$\{productId\}\/timeline/);
-  assert.match(apiClient, /X-Tenant-Id/);
+  assertTenantScopedClientSource(apiClient);
 });
 
 test("inventory page renders reconciliation analytics and cases table", () => {

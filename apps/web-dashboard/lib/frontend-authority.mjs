@@ -14,11 +14,14 @@ export function resolveFrontendAuthority({
   demoTenantId
 } = {}) {
   if (nodeEnv === "production") {
-    return unavailable(
-      demoMode === "true"
-        ? "DEMO_MODE_FORBIDDEN_IN_PRODUCTION"
-        : "AUTHENTICATED_SESSION_UNAVAILABLE"
-    );
+    if (demoMode === "true") {
+      return unavailable("DEMO_MODE_FORBIDDEN_IN_PRODUCTION");
+    }
+    return Object.freeze({
+      available: true,
+      mode: "bff-session",
+      tenantId: ""
+    });
   }
 
   if (nodeEnv !== "development" && nodeEnv !== "test") {
@@ -62,6 +65,9 @@ export function requireDemoTenantId() {
   const authority = frontendAuthority();
   if (!authority.available) {
     throw new Error(FRONTEND_AUTHORITY_UNAVAILABLE_MESSAGE);
+  }
+  if (authority.mode === "bff-session") {
+    return "";
   }
   return authority.tenantId;
 }

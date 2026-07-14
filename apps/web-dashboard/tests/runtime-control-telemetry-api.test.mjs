@@ -29,14 +29,18 @@ function transpile(source, fileName) {
 const tmpDir = mkdtempSync(join(root, ".pr253-api-"));
 
 const clientSrc = readFileSync(join(root, "lib", "runtime-control-telemetry-api.ts"), "utf8");
-const clientJs = transpile(clientSrc, "runtime-control-telemetry-api.ts").replace(
-  /["']\.\/frontend-authority\.mjs["']/g,
-  '"./authority-stub.mjs"'
-);
+const clientJs = transpile(clientSrc, "runtime-control-telemetry-api.ts")
+  .replace(/["']\.\/frontend-authority\.mjs["']/g, '"./authority-stub.mjs"')
+  .replace(/["']\.\/api-transport["']/g, '"./api-transport-stub.mjs"')
+  .replace(/["']\.\/dashboard-http["']/g, '"./dashboard-http-stub.mjs"');
 
 const authorityStub = `export function demoTenantId() { return "11111111-1111-1111-1111-111111111111"; }\n`;
+const apiTransportStub = `export function dashboardCoreApiBaseUrl() { return "http://localhost:8080"; }\nexport function dashboardRequestHeaders(tenantId, permissions) { return { "Content-Type": "application/json", "X-Tenant-Id": tenantId, ...(permissions ? { "X-OrderPilot-Permissions": permissions } : {}) }; }\nexport function isDashboardApiAuthorityAvailable() { return true; }\n`;
+const dashboardHttpStub = `export async function dashboardApiFetch(path, init) { return fetch("http://localhost:8080" + path, init); }\n`;
 
 writeFileSync(join(tmpDir, "authority-stub.mjs"), authorityStub);
+writeFileSync(join(tmpDir, "api-transport-stub.mjs"), apiTransportStub);
+writeFileSync(join(tmpDir, "dashboard-http-stub.mjs"), dashboardHttpStub);
 writeFileSync(join(tmpDir, "runtime-control-telemetry-api.mjs"), clientJs);
 
 const clientUrl = pathToFileURL(join(tmpDir, "runtime-control-telemetry-api.mjs")).href;

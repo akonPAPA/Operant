@@ -1,3 +1,5 @@
+import { dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -34,18 +36,17 @@ type DataResult<T> = {
   message?: string;
 };
 
-const baseUrl = process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL;
 const tenantId = demoTenantId();
 
 async function fetchTenantData<T>(path: string): Promise<DataResult<T>> {
-  if (!tenantId) {
+  if (!isDashboardApiAuthorityAvailable(tenantId)) {
     return { data: [], message: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": tenantId }
+      headers: dashboardRequestHeaders(tenantId)
     });
     if (!response.ok) {
       return { data: [], message: `Core API returned ${response.status}. Demo data may not be seeded yet.` };

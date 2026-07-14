@@ -24,7 +24,7 @@ function typeBlock(source, typeName) {
 test("API client performs the exact read-only request with ANALYTICS_READ", () => {
   assert.match(api, /\/api\/v1\/commerce-intelligence\/demo-flow/);
   assert.match(api, /method:\s*"GET"/);
-  assert.match(api, /"X-OrderPilot-Permissions":\s*ANALYTICS_READ/);
+  assert.match(api, /dashboardRequestHeaders\(commerceIntelligenceClient\.tenantId,\s*ANALYTICS_READ\)/);
   assert.match(api, /const ANALYTICS_READ = "ANALYTICS_READ"/);
   assert.doesNotMatch(api, /body\s*:/);
   assert.doesNotMatch(api, /URLSearchParams|\?tenantId|\?actorId|\?sourceId|\?sourceType/);

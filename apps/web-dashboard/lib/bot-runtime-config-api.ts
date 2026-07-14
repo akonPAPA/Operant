@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06B / OP-CAP-06B.1 Controlled Bot Runtime Configuration client.
@@ -77,7 +80,7 @@ const DEFAULT_BASE_URL = "http://localhost:8080";
 const BOT_ACTION_PERMISSION = "BOT_ACTION";
 
 export const botRuntimeConfigClient = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -90,15 +93,18 @@ function headers(extra?: Record<string, string>): Record<string, string> {
 }
 
 async function requestJson<T>(path: string, init: RequestInit, fallback: T): Promise<BotRuntimeConfigApiResult<T>> {
-  if (!botRuntimeConfigClient.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(botRuntimeConfigClient.tenantId)) {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${botRuntimeConfigClient.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: { ...headers(), ...((init.headers as Record<string, string>) ?? {}) }
-    });
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: { ...headers(), ...((init.headers as Record<string, string>) ?? {}) }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : fallback;
     if (!response.ok) {
@@ -110,7 +116,7 @@ async function requestJson<T>(path: string, init: RequestInit, fallback: T): Pro
     }
     return { data };
   } catch (error) {
-    return { data: fallback, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: fallback, error: caughtUiErrorMessage(error) };
   }
 }
 

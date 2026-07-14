@@ -1,9 +1,11 @@
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const stage9IntegrationConfig = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -80,11 +82,11 @@ export async function getStage9ConnectorAudit(): Promise<Stage9ConnectorAuditEve
 }
 
 async function requestStage9<T>(path: string): Promise<T | null> {
-  if (!stage9IntegrationConfig.tenantId) return null;
+  if (!isDashboardApiAuthorityAvailable(stage9IntegrationConfig.tenantId)) return null;
   try {
-    const response = await fetch(`${stage9IntegrationConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": stage9IntegrationConfig.tenantId }
+      headers: dashboardRequestHeaders(stage9IntegrationConfig.tenantId)
     });
     if (!response.ok) return null;
     return (await response.json()) as T;

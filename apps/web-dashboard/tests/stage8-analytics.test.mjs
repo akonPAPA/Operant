@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { assertApiBaseUrlSource, assertTenantScopedClientSource } from "./lib/api-client-contract.mjs";
 
 const root = process.cwd();
 const apiClientPath = join(root, "lib", "stage8-analytics-api.ts");
@@ -13,8 +14,8 @@ const component = readFileSync(componentPath, "utf8");
 test("stage8 analytics API client targets command center endpoint with tenant boundary", () => {
   assert.equal(existsSync(apiClientPath), true);
   assert.match(apiClient, /\/api\/stage8\/analytics\/command-center/);
-  assert.match(apiClient, /X-Tenant-Id/);
-  assert.match(apiClient, /CORE_API_BASE_URL/);
+  assertTenantScopedClientSource(apiClient);
+  assertApiBaseUrlSource(apiClient);
 });
 
 test("command center renders Stage 8A commerce intelligence cards", () => {

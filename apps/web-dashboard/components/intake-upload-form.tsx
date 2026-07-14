@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { caughtUiErrorMessage } from "@/lib/ui-error";
 
 import {
   coreApiBaseUrl,
@@ -55,7 +56,7 @@ export function IntakeUploadForm() {
       setState({ status: "done", message: `${result.originalFilename ?? "Document"} accepted with status ${result.status ?? "RECEIVED"}.` });
       form.reset();
     } catch (error) {
-      setState({ status: "error", message: error instanceof Error ? error.message : "Upload failed." });
+      setState({ status: "error", message: caughtUiErrorMessage(error) });
     }
   }
 

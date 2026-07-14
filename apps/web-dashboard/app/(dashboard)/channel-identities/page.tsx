@@ -1,6 +1,6 @@
 import { ChannelIdentityWorkspace } from "@/components/channel-identity-workspace";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { listChannelIdentities } from "@/lib/channel-identity-api";
+import { listChannelIdentities } from "@/lib/server/channel-identity-api.server";
 
 // OP-CAP-06E Channel Identity operator review and control surface.
 // Server loader: pre-fetches the tenant-scoped identity list and passes it to the interactive

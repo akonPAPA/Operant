@@ -1,6 +1,6 @@
 import { AiWorkAssistantWorkspace } from "@/components/ai-work-assistant-workspace";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { listRecentAiWork } from "@/lib/ai-work-api";
+import { listRecentAiWork } from "@/lib/server/ai-work-api.server";
 
 // OP-CAP-07A AI Agent Work Layer — AI Work Assistant operator surface.
 // Server loader pre-fetches the tenant-scoped recent advisory suggestions and passes them to the

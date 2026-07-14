@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-06A Messenger Chatbot Integration Layer (read-only client).
@@ -43,25 +46,25 @@ export const DEFAULT_BRIDGE_EVENT_LIMIT = 50;
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const channelBotConfig = {
-  baseUrl: process.env.CORE_API_BASE_URL ?? process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 async function getJson<T>(path: string, fallback: T): Promise<ChannelBotApiResult<T>> {
-  if (!channelBotConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(channelBotConfig.tenantId)) {
     return { data: fallback, error: "Authenticated dashboard access is unavailable." };
   }
   try {
-    const response = await fetch(`${channelBotConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       cache: "no-store",
-      headers: { "X-Tenant-Id": channelBotConfig.tenantId }
+      headers: dashboardRequestHeaders(channelBotConfig.tenantId)
     });
     if (!response.ok) {
       return { data: fallback, error: `Core API returned ${response.status}.` };
     }
     return { data: (await response.json()) as T };
   } catch (error) {
-    return { data: fallback, error: error instanceof Error ? error.message : "Core API is not reachable." };
+    return { data: fallback, error: caughtUiErrorMessage(error) };
   }
 }
 

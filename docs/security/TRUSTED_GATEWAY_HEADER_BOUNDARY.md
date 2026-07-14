@@ -89,11 +89,26 @@ After stripping, the gateway must:
    API key context. Never derive authority from the raw request body or client headers.
 2. Generate a unique nonce per signed request (`X-OrderPilot-Gateway-Nonce`, for example UUID/jti).
 3. Re-add fresh authority headers with a current `X-OrderPilot-Gateway-Timestamp`,
-   `X-OrderPilot-Gateway-Nonce`, and `X-OrderPilot-Gateway-Signature` computed as an HMAC over:
+   `X-OrderPilot-Gateway-Nonce`, `X-OrderPilot-Signature-Version` (`2`),
+   `X-OrderPilot-Content-SHA256`, and `X-OrderPilot-Gateway-Signature` computed as HMAC-SHA-256 over
+   the v2 canonical string (LF-separated):
 
 ```text
-METHOD\nURI\ntenantId\nactorId\npermissions\ntimestamp\nnonce
+ORDERPILOT_GATEWAY_V2
+METHOD
+PATH
+RAW_QUERY
+CONTENT_TYPE
+BODY_SHA256_HEX
+tenantId
+actorId
+permissions
+timestamp
+nonce
 ```
+
+The shared secret must be exactly 64 hexadecimal characters (`openssl rand -hex 32`). HMAC uses the
+decoded 32 raw bytes, never the ASCII hex text. There is no production v1 fallback.
 
 If the proxy layer cannot compute HMAC safely, it must not fake this step. A trusted gateway/auth
 service must perform signing and return only derived tenant, actor, permissions, timestamp, nonce,

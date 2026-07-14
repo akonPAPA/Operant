@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, dashboardRequestHeaders, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-14B Operator Validation Review (detail) API client.
@@ -113,26 +116,22 @@ export type ValidationReviewDetail = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewDetailConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function headers() {
-  const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
-  if (validationReviewDetailConfig.tenantId) {
-    requestHeaders["X-Tenant-Id"] = validationReviewDetailConfig.tenantId;
-  }
-  return requestHeaders;
+  return dashboardRequestHeaders(validationReviewDetailConfig.tenantId);
 }
 
 // Read-only GET. Tenant id is taken from configured env (never from user input or request body).
 async function getJson<T>(path: string): Promise<ApiResult<T>> {
-  if (!validationReviewDetailConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewDetailConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${validationReviewDetailConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(path, {
       method: "GET",
       cache: "no-store",
       headers: headers()
@@ -158,7 +157,7 @@ async function getJson<T>(path: string): Promise<ApiResult<T>> {
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

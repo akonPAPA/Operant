@@ -1,7 +1,7 @@
 # Controller Prompt 01 — Server Platform and Control Plane
 
-**Master:** [`/OPERANT_PRODUCTION_MASTER_PROMPT.md`](../../OPERANT_PRODUCTION_MASTER_PROMPT.md)  
-**Phase:** 1 of 3  
+**Master:** [`/OPERANT_PRODUCTION_MASTER_PROMPT.md`](../../OPERANT_PRODUCTION_MASTER_PROMPT.md)
+**Phase:** 1 of 3
 **Anchor base SHA:** `7f05a1751d04d22ef572d8d6aca0dcbdc457df72` (`main`, PR #262)
 
 ## Objective

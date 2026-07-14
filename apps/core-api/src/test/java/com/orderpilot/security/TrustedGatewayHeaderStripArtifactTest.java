@@ -87,7 +87,7 @@ class TrustedGatewayHeaderStripArtifactTest {
         .doesNotContain("BEGIN PRIVATE KEY")
         .doesNotContain("BEGIN CERTIFICATE")
         .doesNotContain("ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET=")
-        .doesNotContain("test-gateway-shared-secret")
+        .doesNotContain("a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517")
         .doesNotContain("change-me")
         .doesNotContain("password");
   }

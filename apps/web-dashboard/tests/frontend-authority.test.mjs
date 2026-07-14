@@ -20,6 +20,15 @@ function frontendRuntimeSources(directory) {
   });
 }
 
+test("production resolves bff-session without private BFF env or browser tenant", () => {
+  const authority = resolveFrontendAuthority({
+    nodeEnv: "production"
+  });
+  assert.equal(authority.available, true);
+  assert.equal(authority.mode, "bff-session");
+  assert.equal("tenantId" in authority && authority.tenantId, "");
+});
+
 test("production rejects demo tenant authority even when public demo config is present", () => {
   const authority = resolveFrontendAuthority({
     nodeEnv: "production",
@@ -35,15 +44,16 @@ test("production rejects demo tenant authority even when public demo config is p
   assert.equal("tenantId" in authority, false);
 });
 
-test("production does not use the demo tenant variable without demo opt-in", () => {
+test("production ignores demo tenant variable without demo opt-in", () => {
   const authority = resolveFrontendAuthority({
     nodeEnv: "production",
     demoMode: undefined,
     demoTenantId: "11111111-1111-4111-8111-111111111111"
   });
 
-  assert.equal(authority.available, false);
-  assert.equal("tenantId" in authority, false);
+  assert.equal(authority.available, true);
+  assert.equal(authority.mode, "bff-session");
+  assert.equal(authority.tenantId, "");
 });
 
 test("development demo mode requires exact explicit opt-in", () => {
@@ -98,6 +108,7 @@ test("resolver accepts no actor or permission authority input", () => {
   assert.equal("actorId" in authority, false);
   assert.equal("permissions" in authority, false);
   assert.doesNotMatch(authoritySource, /NEXT_PUBLIC_.*(?:ACTOR|PERMISSION)/);
+  assert.doesNotMatch(authoritySource, /ORDERPILOT_BFF_ENABLED/);
 });
 
 test("unavailable errors are safe and do not echo config values", () => {
@@ -129,18 +140,21 @@ test("quote transaction client resolves demo tenant internally and accepts busin
   assert.doesNotMatch(source, /X-OrderPilot-Permissions/);
 });
 
-test("permission headers are unreachable when the demo tenant resolver fails closed", () => {
+test("BFF-aware clients do not use raw tenantId truthiness as production authority", () => {
   const sources = frontendRuntimeSources(join(root, "lib"));
-  const permissionClients = sources.filter(([, source]) =>
-    source.includes('"X-OrderPilot-Permissions"')
+  const bffAwareClients = sources.filter(([path, source]) =>
+    !path.includes(`${join("lib", "bff")}`) &&
+    source.includes("dashboardCoreApiBaseUrl") &&
+    source.includes("demoTenantId")
   );
 
-  assert.ok(permissionClients.length > 0);
-  for (const [path, source] of permissionClients) {
-    assert.match(
+  assert.ok(bffAwareClients.length > 0);
+  for (const [path, source] of bffAwareClients) {
+    assert.match(source, /isDashboardApiAuthorityAvailable\(/, `${path} must use the BFF-aware authority guard`);
+    assert.doesNotMatch(
       source,
-      /if\s*\(\s*![A-Za-z0-9]+\.tenantId\s*\)/,
-      `${path} must stop before fetch when production has no trusted tenant authority`
+      /if\s*\(\s*![A-Za-z0-9_.]+tenantId\s*\)/,
+      `${path} must not block production BFF session requests on an empty browser tenantId`
     );
   }
 });

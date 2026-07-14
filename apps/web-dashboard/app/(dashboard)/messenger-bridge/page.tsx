@@ -3,7 +3,7 @@ import {
   DEFAULT_BRIDGE_EVENT_LIMIT,
   getChannelBotBridgeStatus,
   getChannelBotEvents
-} from "@/lib/channel-bot-api";
+} from "@/lib/server/channel-bot-api.server";
 
 // OP-CAP-06A Messenger Chatbot Integration Layer.
 // Read-only operator surface: shows how verified channel intake became a controlled bot

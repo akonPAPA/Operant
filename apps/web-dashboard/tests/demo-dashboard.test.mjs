@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { assertApiBaseUrlSource, assertPermissionBoundary, assertTenantScopedClientSource } from "./lib/api-client-contract.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const demoPage = readFileSync(join(root, "components", "demo-dashboard.tsx"), "utf8");
@@ -91,10 +92,10 @@ test("demo page renders security and trust controls", () => {
 });
 
 test("API client has configurable base URL, tenant header, and graceful failure contract", () => {
-  assert.match(apiClient, /NEXT_PUBLIC_CORE_API_URL/);
+  assertApiBaseUrlSource(apiClient);
+  assertTenantScopedClientSource(apiClient);
   assert.match(apiClient, /http:\/\/localhost:8080/);
-  assert.match(apiClient, /X-Tenant-Id/);
-  assert.match(apiClient, /X-OrderPilot-Permissions": "ANALYTICS_READ"/);
+  assertPermissionBoundary(apiClient, "ANALYTICS_READ");
   assert.match(apiClient, /Backend returned \$\{response\.status\}/);
   assert.match(apiClient, /Core API is not reachable from the browser/);
   assert.match(apiClient, /Demo backend data not seeded yet/);

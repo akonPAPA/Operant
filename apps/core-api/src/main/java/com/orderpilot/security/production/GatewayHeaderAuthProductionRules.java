@@ -1,5 +1,6 @@
 package com.orderpilot.security.production;
 
+import com.orderpilot.security.GatewayHmacKeyCodec;
 import java.util.Locale;
 
 /**
@@ -27,14 +28,9 @@ public final class GatewayHeaderAuthProductionRules {
           "gateway-header-auth signature-required must be true in production "
               + "(signature-required=false is dev/test only; a trusted gateway must HMAC-sign authority headers)");
     }
-    String secret = sharedSecret == null ? "" : sharedSecret;
-    if (secret.isBlank()) {
-      throw new IllegalStateException(
-          "gateway-header-auth shared-secret must be configured in production "
-              + "(orderpilot.security.gateway-header-auth.shared-secret is blank/missing)");
-    }
-    ProductionInsecurePlaceholderValues.requireNonPlaceholder(
-        "orderpilot.security.gateway-header-auth.shared-secret", secret);
+    // 64-hex / 32-byte contract; never echo the secret value in the exception.
+    GatewayHmacKeyCodec.requireValid(
+        "orderpilot.security.gateway-header-auth.shared-secret", sharedSecret);
     String store = replayStore == null ? "" : replayStore.trim().toLowerCase(Locale.ROOT);
     if (!"redis".equals(store) && !singleInstanceReplayStoreAllowedInProduction) {
       throw new IllegalStateException(

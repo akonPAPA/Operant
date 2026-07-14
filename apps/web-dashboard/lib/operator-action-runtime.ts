@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { boundedUiErrorMessage } from "./ui-error.ts";
 
 // ── Result type ──────────────────────────────────────────────────────────────
 
@@ -162,10 +163,7 @@ export function useOperatorAction<T>(options?: OperatorActionOptions<T>) {
         return result;
       } catch (error) {
         // Unexpected runtime error — map to safe message, never leak raw stack.
-        const safeMessage =
-          error instanceof Error && error.message
-            ? error.message
-            : "An unexpected error occurred.";
+        const safeMessage = boundedUiErrorMessage(error, "An unexpected error occurred.");
         const result: OperatorActionResult<T> = {
           ok: false,
           errorCode: "ACTION_FAILED",

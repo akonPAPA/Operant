@@ -1,6 +1,6 @@
 import { BotSettingsWorkspace } from "@/components/bot-settings-workspace";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getBotRuntimeSettings, listBotConversationDetails, listBotHandoffs } from "@/lib/bot-runtime-api";
+import { getBotRuntimeSettings, listBotConversationDetails, listBotHandoffs } from "@/lib/server/bot-runtime-api.server";
 
 export default async function BotSettingsPage() {
   const [settings, handoffs, details] = await Promise.all([

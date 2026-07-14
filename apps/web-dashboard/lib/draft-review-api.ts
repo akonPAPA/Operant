@@ -1,3 +1,6 @@
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-09C Operator Draft Review API client.
@@ -97,7 +100,7 @@ export type ProductPickerItem = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const draftReviewConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
@@ -110,16 +113,19 @@ function headers() {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T): Promise<ApiResult<T>> {
-  if (!draftReviewConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(draftReviewConfig.tenantId)) {
     return { data: fallbackData as T, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${draftReviewConfig.baseUrl}${path}`, {
-      cache: "no-store",
-      ...init,
-      headers: { ...headers(), ...(init?.headers ?? {}) }
-    });
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
+        cache: "no-store",
+        ...init,
+        headers: { ...headers(), ...(init?.headers ?? {}) }
+      })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : (fallbackData as T);
 
@@ -135,7 +141,7 @@ async function requestJson<T>(path: string, init?: RequestInit, fallbackData?: T
   } catch (error) {
     return {
       data: fallbackData as T,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }

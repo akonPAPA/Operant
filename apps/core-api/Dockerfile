@@ -6,6 +6,7 @@ ENV SPRING_PROFILES_ACTIVE=test
 COPY apps/core-api/pom.xml apps/core-api/pom.xml
 COPY apps/core-api/src apps/core-api/src
 COPY docs docs
+COPY shared shared
 COPY scripts scripts
 
 WORKDIR /workspace/apps/core-api

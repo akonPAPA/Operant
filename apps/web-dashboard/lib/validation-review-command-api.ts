@@ -1,3 +1,11 @@
+import { caughtUiErrorMessage } from "./ui-error.ts";
+import {
+  dashboardCoreApiBaseUrl,
+  enrichDashboardRequestInit,
+  isDashboardApiAuthorityAvailable,
+  usesBffTransport
+} from "./api-transport";
+import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
 // OP-CAP-14D Operator Validation Review command client.
@@ -61,11 +69,14 @@ export type ValidationReviewActionResult = {
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
 export const validationReviewCommandConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_CORE_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: dashboardCoreApiBaseUrl(),
   tenantId: demoTenantId()
 };
 
 function headers() {
+  if (usesBffTransport()) {
+    return { "Content-Type": "application/json" };
+  }
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (validationReviewCommandConfig.tenantId) {
     requestHeaders["X-Tenant-Id"] = validationReviewCommandConfig.tenantId;
@@ -73,20 +84,21 @@ function headers() {
   return requestHeaders;
 }
 
-// POST a 14C command. Tenant id comes from configured env (never from user input or request body).
-// Errors are mapped to bounded, user-safe messages — never a stack trace or raw backend internals.
 async function postCommand<T>(path: string, body: unknown): Promise<ApiResult<T>> {
-  if (!validationReviewCommandConfig.tenantId) {
+  if (!isDashboardApiAuthorityAvailable(validationReviewCommandConfig.tenantId)) {
     return { data: null, error: "Authenticated dashboard access is unavailable." };
   }
 
   try {
-    const response = await fetch(`${validationReviewCommandConfig.baseUrl}${path}`, {
+    const response = await dashboardApiFetch(
+      path,
+      enrichDashboardRequestInit({
       method: "POST",
       cache: "no-store",
       headers: headers(),
       body: JSON.stringify(body)
-    });
+    })
+    );
     const text = await response.text();
     const data = text ? (JSON.parse(text) as T) : null;
 
@@ -109,7 +121,7 @@ async function postCommand<T>(path: string, body: unknown): Promise<ApiResult<T>
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Core API is not reachable."
+      error: caughtUiErrorMessage(error)
     };
   }
 }
