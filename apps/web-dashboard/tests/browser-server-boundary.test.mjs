@@ -67,6 +67,8 @@ const FORBIDDEN_FILE_BASENAMES = new Set([
   "bff-session.ts",
   "bff-auth-handlers.ts",
   "bff-oidc-config.ts",
+  "bff-oidc-runtime.ts",
+  "bff-oidc-runtime-network.ts",
   "bff-proxy.ts",
   "bff-server-read.ts",
   "bff-in-process-request.ts",
@@ -75,7 +77,7 @@ const FORBIDDEN_FILE_BASENAMES = new Set([
 ]);
 
 // External specifiers that must never appear in a browser graph.
-const FORBIDDEN_EXTERNAL = ["redis", "server-only"];
+const FORBIDDEN_EXTERNAL = ["redis", "server-only", "openid-client", "oauth4webapi", "jose"];
 
 // Source-level markers that must never appear in a reachable browser file.
 const FORBIDDEN_SOURCE = [
