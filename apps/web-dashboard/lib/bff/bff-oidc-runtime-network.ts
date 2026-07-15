@@ -40,6 +40,73 @@ export type BoundedOidcDiscoveryFetchOptions = {
   maxBodyBytes?: number;
 };
 
+function ipv4ToInt(host: string): number | null {
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
+    return null;
+  }
+  const parts = host.split(".").map((part) => Number.parseInt(part, 10));
+  if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return null;
+  }
+  return parts.reduce((acc, part) => (acc << 8) + part, 0) >>> 0;
+}
+
+function ipv4InCidr(value: number, base: string, bits: number): boolean {
+  const baseValue = ipv4ToInt(base);
+  if (baseValue === null) {
+    return false;
+  }
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return (value & mask) === (baseValue & mask);
+}
+
+function deniedIpv4Literal(host: string): boolean {
+  const value = ipv4ToInt(host);
+  if (value === null) {
+    return false;
+  }
+  return [
+    ["0.0.0.0", 8],
+    ["10.0.0.0", 8],
+    ["100.64.0.0", 10],
+    ["127.0.0.0", 8],
+    ["169.254.0.0", 16],
+    ["172.16.0.0", 12],
+    ["192.0.0.0", 24],
+    ["192.0.2.0", 24],
+    ["192.168.0.0", 16],
+    ["198.18.0.0", 15],
+    ["198.51.100.0", 24],
+    ["203.0.113.0", 24],
+    ["224.0.0.0", 4],
+    ["240.0.0.0", 4]
+  ].some(([base, bits]) => ipv4InCidr(value, base as string, bits as number));
+}
+
+function deniedIpv6Literal(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host.includes(":")) {
+    return false;
+  }
+  if (host.startsWith("::ffff:")) {
+    return true;
+  }
+  return (
+    host === "::" ||
+    host === "::1" ||
+    host.startsWith("fc") ||
+    host.startsWith("fd") ||
+    host.startsWith("fe80") ||
+    host.startsWith("ff") ||
+    host.startsWith("2001:db8")
+  );
+}
+
+function unsafeDiscoveryHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || deniedIpv4Literal(host) || deniedIpv6Literal(host);
+}
+
 function parsedHttpsUrl(input: string | URL | Request): URL {
   const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   let parsed: URL;
@@ -48,7 +115,14 @@ function parsedHttpsUrl(input: string | URL | Request): URL {
   } catch {
     throw new OidcRuntimeNetworkError("OIDC_DISCOVERY_URL_INVALID");
   }
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash || parsed.port === "0") {
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    parsed.hash ||
+    parsed.port === "0" ||
+    unsafeDiscoveryHostname(parsed.hostname)
+  ) {
     throw new OidcRuntimeNetworkError("OIDC_DISCOVERY_URL_INVALID");
   }
   if (/[\x00-\x1f\x7f]/.test(raw)) {

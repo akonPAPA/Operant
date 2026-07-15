@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { format, inspect } from "node:util";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   OIDC_RUNTIME_IMPLEMENTED,
+  loadValidatedOidcConfiguration,
   oidcConfigurationDiagnostic,
   oidcReadinessState,
   publicAuthenticationCapability,
+  readOidcConfigurationDiagnostic,
   readOidcConfigurationStatus,
-  validOidcConfiguration
+  validOidcConfiguration,
+  validatedOidcClientSecret
 } from "../lib/bff/bff-oidc-config.ts";
 
 const root = process.cwd();
@@ -42,6 +46,30 @@ function expectInvalid(overrides, reasonCode) {
   assert.equal(status.runtimeImplemented, false);
 }
 
+function outputOf(label, fn) {
+  try {
+    return `${label}:${String(fn())}`;
+  } catch (error) {
+    return `${label}:THREW:${String(error?.stack ?? error)}`;
+  }
+}
+
+function assertSecretAbsentFromObjectGraph(value, secret = VALID_SECRET) {
+  const outputs = [
+    outputOf("json", () => JSON.stringify(value)),
+    outputOf("keys", () => JSON.stringify(Object.keys(value))),
+    outputOf("entries", () => JSON.stringify(Object.entries(value))),
+    outputOf("spread", () => JSON.stringify({ ...value })),
+    outputOf("assign", () => JSON.stringify(Object.assign({}, value))),
+    outputOf("inspect", () => inspect(value, { showHidden: true, depth: 8 })),
+    outputOf("format", () => format("%o", value)),
+    outputOf("structuredClone", () => JSON.stringify(structuredClone(value)))
+  ];
+  for (const output of outputs) {
+    assert.doesNotMatch(output, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), output);
+  }
+}
+
 test("OIDC contract is disabled when unset or explicitly false", () => {
   assert.deepEqual(readOidcConfigurationStatus({}), {
     state: "DISABLED",
@@ -60,15 +88,20 @@ test("OIDC enabled flag fails closed on typo values", () => {
 });
 
 test("valid OIDC configuration is not production-ready until runtime is implemented", () => {
-  const status = readOidcConfigurationStatus(validEnv({ ORDERPILOT_OIDC_SCOPES: "openid profile email profile" }));
+  const env = validEnv({ ORDERPILOT_OIDC_SCOPES: "openid profile email profile" });
+  const status = readOidcConfigurationStatus(env);
+  const result = loadValidatedOidcConfiguration(env);
   assert.equal(status.state, "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED");
   assert.equal(status.runtimeImplemented, false);
   assert.equal(OIDC_RUNTIME_IMPLEMENTED, false);
   assert.notEqual(status.state, "READY");
   assert.equal(oidcReadinessState(validEnv()), "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED");
-  assert.deepEqual(status.configuration.scopes, ["openid", "profile", "email"]);
-  assert.equal(status.configuration.clientAuthenticationMethod, "CLIENT_SECRET_BASIC");
-  assert.equal(status.configuration.issuer, VALID_ISSUER);
+  assert.equal("configuration" in status, false);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.configuration.scopes, ["openid", "profile", "email"]);
+  assert.equal(result.configuration.clientAuthenticationMethod, "CLIENT_SECRET_BASIC");
+  assert.equal(result.configuration.issuer, VALID_ISSUER);
+  assert.equal(validatedOidcClientSecret(result.configuration), VALID_SECRET);
 });
 
 test("OIDC required provider fields and placeholders fail closed", () => {
@@ -83,8 +116,12 @@ test("OIDC required provider fields and placeholders fail closed", () => {
   expectInvalid({ ORDERPILOT_OIDC_ISSUER: "http://idp.example.test" }, "ISSUER_HTTPS_REQUIRED");
   expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://localhost" }, "ISSUER_PRODUCTION_HOST_INVALID");
   expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://127.2.3.4" }, "ISSUER_PRODUCTION_HOST_INVALID");
+  expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://10.0.0.4" }, "ISSUER_PRODUCTION_HOST_INVALID");
+  expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://169.254.169.254" }, "ISSUER_PRODUCTION_HOST_INVALID");
   expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://[::1]" }, "ISSUER_PRODUCTION_HOST_INVALID");
   expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://[::]" }, "ISSUER_PRODUCTION_HOST_INVALID");
+  expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://[fc00::1]" }, "ISSUER_PRODUCTION_HOST_INVALID");
+  expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://[::ffff:192.168.0.1]" }, "ISSUER_PRODUCTION_HOST_INVALID");
   expectInvalid({ ORDERPILOT_OIDC_ISSUER: "https://idp.example.test/${tenant}" }, "ISSUER_INVALID");
   expectInvalid({ ORDERPILOT_OIDC_CLIENT_ID: undefined }, "CLIENT_ID_REQUIRED");
   expectInvalid({ ORDERPILOT_OIDC_CLIENT_ID: "client-id" }, "CLIENT_ID_PLACEHOLDER");
@@ -122,19 +159,36 @@ test("OIDC scopes and client authentication method are explicitly bounded", () =
   expectInvalid({ ORDERPILOT_OIDC_CLIENT_AUTHENTICATION_METHOD: "client_secret_basic" }, "CLIENT_AUTHENTICATION_METHOD_UNSUPPORTED");
 });
 
-test("OIDC diagnostics and public capability expose only bounded readiness state", () => {
+test("OIDC status, diagnostics, and public capability expose only bounded readiness state", () => {
   const status = readOidcConfigurationStatus(validEnv());
+  const result = loadValidatedOidcConfiguration(validEnv());
+  assert.equal(result.ok, true);
   assert.throws(() => JSON.stringify(status), /OIDC_CONFIGURATION_STATUS_NOT_PUBLIC/);
-  assert.throws(() => JSON.stringify(validOidcConfiguration(status)), /OIDC_CONFIGURATION_NOT_PUBLIC/);
+  assert.throws(() => JSON.stringify(result.configuration), /OIDC_CONFIGURATION_NOT_PUBLIC/);
   const diagnostic = JSON.stringify(oidcConfigurationDiagnostic(status));
+  const diagnosticFromEnv = JSON.stringify(readOidcConfigurationDiagnostic(validEnv()));
   const publicCapability = JSON.stringify(publicAuthenticationCapability(status));
   for (const sensitive of [VALID_SECRET, VALID_CLIENT_ID, VALID_ISSUER, `${VALID_PUBLIC_ORIGIN}/api/auth/oidc/callback`]) {
     const escaped = sensitive.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.doesNotMatch(diagnostic, new RegExp(escaped));
+    assert.doesNotMatch(diagnosticFromEnv, new RegExp(escaped));
     assert.doesNotMatch(publicCapability, new RegExp(escaped));
   }
   assert.match(diagnostic, /VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED/);
   assert.match(publicCapability, /VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED/);
+});
+
+test("OIDC secret is absent from observable status and configuration object graphs", () => {
+  const status = readOidcConfigurationStatus(validEnv());
+  const configuration = validOidcConfiguration(validEnv());
+  assert.ok(configuration);
+  assert.equal("clientSecret" in status, false);
+  assert.equal("configuration" in status, false);
+  assert.equal("clientSecret" in configuration, false);
+  assertSecretAbsentFromObjectGraph(status);
+  assertSecretAbsentFromObjectGraph(configuration);
+  assertSecretAbsentFromObjectGraph(oidcConfigurationDiagnostic(status));
+  assertSecretAbsentFromObjectGraph(publicAuthenticationCapability(status));
 });
 
 test("OIDC config stays out of public, browser, and Edge trust boundaries", () => {
