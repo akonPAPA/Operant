@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { caughtUiErrorMessage } from "@/lib/ui-error";
+import { isUploadAvailable, uploadCapability, uploadUnavailableMessage } from "@/lib/upload-capability";
 
 import {
   coreApiBaseUrl,
@@ -24,9 +25,14 @@ export function IntakeUploadForm() {
   // and sent only as the X-Tenant-Id header; the backend resolves the tenant from that header, not
   // from any request-body field. The operator cannot type an arbitrary tenant id here.
   const [state, setState] = useState<UploadState>({ status: "idle", message: "No upload submitted." });
+  const capability = uploadCapability();
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isUploadAvailable(capability)) {
+      setState({ status: "error", message: uploadUnavailableMessage() });
+      return;
+    }
     const form = event.currentTarget;
     const formData = new FormData(form);
     const file = formData.get("file");
@@ -58,6 +64,15 @@ export function IntakeUploadForm() {
     } catch (error) {
       setState({ status: "error", message: caughtUiErrorMessage(error) });
     }
+  }
+
+  if (!isUploadAvailable(capability)) {
+    return (
+      <section className="panel" aria-live="polite">
+        <h2>Not available</h2>
+        <p>{uploadUnavailableMessage()}</p>
+      </section>
+    );
   }
 
   return (

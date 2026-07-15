@@ -3,7 +3,27 @@
 **Base anchor SHA:** `7f05a1751d04d22ef572d8d6aca0dcbdc457df72` (`main`, PR #262)
 **P1-A implementation SHA:** `53bdf708c9a437ea66fcd17f0be67bd2bf12a3de` (`feature/p1-a-production-truth-and-config`)
 
-## PR #269 remediation immutable anchors (PR #267 browser/BFF boundary)
+## Tracked repository evidence policy
+
+This source-controlled file defines the release evidence schema and non-final policy state. It must
+not contain the immutable SHA of the same commit in which it resides. Exact-head release evidence is
+generated after checkout of an immutable commit and stored as an external or generated artifact.
+
+| Field | Value |
+| --- | --- |
+| `evidence_schema_version` | `2` |
+| `release_candidate` | `PR-267-runtime-root-causes` |
+| `release_status` | `SOURCE_POLICY_ONLY` |
+| `baseline_reviewed_parent_sha` | `26f7168901932d49bed7dcd018377ac3a9629d70` |
+| `runtime_attestation_path` | `build/evidence/local-head-attestation.json` |
+| `evidence_semantics` | Tracked policy plus external/generated exact-head attestation; no self-referential commit SHA in source |
+| `required_workflows` | `Frontend, CI, Backend, AI Worker, CodeQL/security status` |
+| `verification_policy` | `structural passes from tracked source; local-head and ci modes require clean checkout and generated attestation` |
+
+## Historical immutable anchors (PR #269 remediation for PR #267 browser/BFF boundary)
+
+These SHAs are historical or externally tested anchors. They are not a claim that this manifest names
+its own containing commit.
 
 | Field | SHA / status |
 | --- | --- |
@@ -12,9 +32,22 @@
 | `remediation_implementation_sha` | `0cae7029d04956910be0b249925f789a709fb481` |
 | `tested_pr_head_sha` | `0cae7029d04956910be0b249925f789a709fb481` |
 | `tested_pr_merge_sha` | `aea64aa971b9c1b6f26decd1710eec4c1701a230` |
-| `evidence_semantics` | Immutable tested code and merge-test anchors; later evidence-only commits do not rewrite these anchors |
 | `merge_ready_claim` | PR #269 code/CI gates passed; F02 and full F16 remain explicitly PARTIAL; cumulative PR #267 review is still required |
 
+## Current-head evidence gate
+
+| Field | Status |
+| --- | --- |
+| `STRUCTURAL_POLICY_VALID` | `false` |
+| `CURRENT_HEAD_LOCALLY_VERIFIED` | `false` |
+| `CURRENT_HEAD_CI_VERIFIED` | `false` |
+| `CODEQL_CURRENT_HEAD_VERIFIED` | `false` |
+| `FINAL_RELEASE_EVIDENCE_COMPLETE` | `false` |
+
+This working slice changes code and documentation after `26f7168901932d49bed7dcd018377ac3a9629d70`.
+Before a final source commit exists, exact-head release evidence is intentionally incomplete. After
+that commit exists, the verifier must generate an attestation from the checked-out commit and keep it
+outside the tracked source commit, for example under the ignored `build/evidence/` artifact path.
 ### Local remediation proof
 
 | Gate | Result |

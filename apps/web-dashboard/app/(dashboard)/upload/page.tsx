@@ -1,7 +1,19 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { IntakeUploadForm } from "@/components/intake-upload-form";
+import { isUploadAvailable, uploadCapability, uploadUnavailableMessage } from "@/lib/upload-capability";
 
 export default function Page() {
+  const capability = uploadCapability();
+  if (!isUploadAvailable(capability)) {
+    return (
+      <DashboardShell title="Document Upload">
+        <section className="panel">
+          <h2>Not available</h2>
+          <p>{uploadUnavailableMessage()}</p>
+        </section>
+      </DashboardShell>
+    );
+  }
   return (
     <DashboardShell title="Document Upload">
       <section className="panel">
@@ -10,7 +22,7 @@ export default function Page() {
       </section>
       <section className="panel">
         <h2>Upload result</h2>
-        <p>The browser calls the core-api upload endpoint only; no direct database or object-store access is allowed from the frontend.</p>
+        <p>Local demo uploads send only business input; no direct database or object-store access is allowed from the frontend.</p>
       </section>
       <IntakeUploadForm />
     </DashboardShell>

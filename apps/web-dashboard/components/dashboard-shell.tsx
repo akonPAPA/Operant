@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { productBrand } from "@/lib/brand";
-import { navigationGroups } from "./navigation";
+import { navigationGroupsForUploadCapability } from "./navigation";
 
 export function DashboardShell({
   title,
   children,
   inspector
 }: Readonly<{ title: string; children: React.ReactNode; inspector?: React.ReactNode }>) {
+  const navigationGroups = navigationGroupsForUploadCapability();
+
   return (
     <div className="shell">
       <aside className="sidebar">

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   CONTENT_SHA256_HEADER,
+  GATEWAY_PROTOCOL_MARKER,
   GATEWAY_SIGNATURE_VERSION,
   SIGNATURE_VERSION_HEADER,
   gatewayCanonicalStringV2,
@@ -12,8 +13,36 @@ import {
 } from "../lib/bff/bff-gateway-signer.ts";
 import { decodeGatewaySharedSecret } from "../lib/bff/bff-gateway-key.ts";
 
-const fixturePath = join(process.cwd(), "..", "..", "docs", "security", "gateway-signature-fixture.json");
+const repoRoot = join(process.cwd(), "..", "..");
+const fixturePath = join(repoRoot, "docs", "security", "gateway-signature-fixture.json");
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+
+const authoritativeGatewayContractFiles = [
+  join(repoRoot, "docs", "security", "TRUSTED_GATEWAY_HEADER_BOUNDARY.md"),
+  join(repoRoot, "docs", "security", "gateway-header-strip-nginx-example.conf")
+];
+
+const requiredGatewayContractTerms = [
+  GATEWAY_PROTOCOL_MARKER,
+  "METHOD",
+  "PATH",
+  "RAW_QUERY",
+  "CONTENT_TYPE",
+  "BODY_SHA256_HEX",
+  "tenantId",
+  "actorId",
+  "permissions",
+  "timestamp",
+  "nonce",
+  SIGNATURE_VERSION_HEADER,
+  CONTENT_SHA256_HEADER,
+  "X-Tenant-Id",
+  "X-OrderPilot-Actor-Id",
+  "X-OrderPilot-Permissions",
+  "X-OrderPilot-Gateway-Timestamp",
+  "X-OrderPilot-Gateway-Nonce",
+  "X-OrderPilot-Gateway-Signature"
+];
 
 test("TypeScript v2 canonical string matches the cross-language fixture", () => {
   const canonical = gatewayCanonicalStringV2({
@@ -95,4 +124,36 @@ test("fixture contains no real secret material", () => {
   const raw = readFileSync(fixturePath, "utf8");
   assert.match(raw, /Test-only|test-only|TestOnly/i);
   assert.doesNotMatch(raw, /BEGIN PRIVATE KEY|AKIA|password=/);
+});
+
+test("authoritative gateway contract files define HMAC v2 and do not reintroduce the legacy canonical contract", () => {
+  const expectedCanonical = fixture.canonicalStringJoinedWithNewline;
+  assert.deepEqual(expectedCanonical.slice(0, 6), [
+    GATEWAY_PROTOCOL_MARKER,
+    fixture.method,
+    fixture.path,
+    fixture.rawQuery,
+    fixture.contentType,
+    fixture.bodySha256Hex
+  ]);
+
+  for (const filePath of authoritativeGatewayContractFiles) {
+    const content = readFileSync(filePath, "utf8");
+    assert.doesNotMatch(content, /METHOD\s*\\n\s*REQUEST_URI_PATH\s*\\n\s*tenantId\s*\\n\s*actorId\s*\\n\s*permissions\s*\\n\s*timestamp\s*\\n\s*nonce/i, filePath);
+    assert.doesNotMatch(content, /does not include\s+query string,\s+request body,\s+or body hash/i, filePath);
+    assert.doesNotMatch(content, /query\/body binding is a separate production-code security slice/i, filePath);
+    assert.doesNotMatch(content, /HMAC v1|gateway v1|legacy canonical/i, filePath);
+    for (const term of requiredGatewayContractTerms) {
+      assert.match(content, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${filePath} missing ${term}`);
+    }
+  }
+});
+test("NGINX header-strip artifact does not claim complete body-bound mutation signing", () => {
+  const docs = readFileSync(join(repoRoot, "docs", "security", "TRUSTED_GATEWAY_HEADER_BOUNDARY.md"), "utf8");
+  const nginx = readFileSync(join(repoRoot, "docs", "security", "gateway-header-strip-nginx-example.conf"), "utf8");
+  assert.match(nginx, /proxy_pass_request_body off/);
+  assert.match(nginx, /cannot sign body-bearing\s+# mutations|cannot sign body-bearing mutations/i);
+  assert.match(docs, /cannot independently compute SHA-256 over the exact forwarded body bytes/i);
+  assert.match(docs, /Body-bearing requests must be signed by the existing body-aware BFF\/gateway path/i);
+  assert.doesNotMatch(nginx, /complete HMAC v2 signer for body-bearing mutations|complete body-bound mutation signer\./i);
 });
