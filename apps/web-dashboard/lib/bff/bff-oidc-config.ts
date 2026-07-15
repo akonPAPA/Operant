@@ -1,7 +1,7 @@
 const PRODUCTION_LIKE_DEPLOY_PROFILES = new Set(["prod", "production", "cloud", "staging"]);
 const MAX_OIDC_SCOPE_COUNT = 8;
 const MAX_OIDC_SCOPE_LENGTH = 64;
-
+const VALID_OIDC_CONFIGURATION_BRAND: unique symbol = Symbol("ValidOidcConfiguration");
 export const OIDC_RUNTIME_IMPLEMENTED = false;
 export const SUPPORTED_OIDC_SCOPES = ["openid", "profile", "email"] as const;
 export const SUPPORTED_OIDC_CLIENT_AUTHENTICATION_METHOD = "CLIENT_SECRET_BASIC";
@@ -59,6 +59,10 @@ export type OidcConfiguration = {
   runtimeImplemented: false;
 };
 
+export type ValidOidcConfiguration = Readonly<Omit<OidcConfiguration, "scopes"> & {
+  scopes: readonly OidcScope[];
+  readonly [VALID_OIDC_CONFIGURATION_BRAND]: true;
+}>;
 export type OidcConfigurationStatus =
   | { state: "DISABLED"; enabled: false; runtimeImplemented: false }
   | {
@@ -348,8 +352,46 @@ function denyPublicSerialization<T extends OidcConfigurationStatus>(status: T): 
   return status;
 }
 
+function denyConfigurationSerialization<T extends OidcConfiguration>(configuration: T): T {
+  Object.defineProperty(configuration, "toJSON", {
+    value() {
+      throw new Error("OIDC_CONFIGURATION_NOT_PUBLIC");
+    },
+    enumerable: false
+  });
+  return configuration;
+}
+
 function invalid(reasonCode: OidcConfigErrorCode, enabled = true): OidcConfigurationStatus {
   return denyPublicSerialization({ state: "INVALID_CONFIGURATION", enabled, reasonCode, runtimeImplemented: false });
+}
+
+function brandValidConfiguration(configuration: OidcConfiguration): ValidOidcConfiguration {
+  const branded = denyConfigurationSerialization({
+    ...configuration,
+    scopes: [...configuration.scopes]
+  });
+  Object.freeze(branded.scopes);
+  Object.defineProperty(branded, VALID_OIDC_CONFIGURATION_BRAND, {
+    value: true,
+    enumerable: false
+  });
+  return Object.freeze(branded) as unknown as ValidOidcConfiguration;
+}
+
+export function validOidcConfiguration(status = readOidcConfigurationStatus()): ValidOidcConfiguration | null {
+  if (status.state !== "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED") {
+    return null;
+  }
+  return brandValidConfiguration(status.configuration);
+}
+
+export function isValidOidcConfiguration(value: unknown): value is ValidOidcConfiguration {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as { [VALID_OIDC_CONFIGURATION_BRAND]?: unknown })[VALID_OIDC_CONFIGURATION_BRAND] === true
+  );
 }
 
 export function readOidcConfigurationStatus(env: EnvironmentValues = process.env): OidcConfigurationStatus {
@@ -382,7 +424,7 @@ export function readOidcConfigurationStatus(env: EnvironmentValues = process.env
     state: "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED",
     enabled: true,
     runtimeImplemented: OIDC_RUNTIME_IMPLEMENTED,
-    configuration: {
+    configuration: denyConfigurationSerialization({
       issuer: issuer.issuer,
       clientId: clientId.clientId,
       clientSecret: clientSecret.clientSecret,
@@ -391,7 +433,7 @@ export function readOidcConfigurationStatus(env: EnvironmentValues = process.env
       scopes: scopes.scopes,
       clientAuthenticationMethod: clientAuthenticationMethod.clientAuthenticationMethod,
       runtimeImplemented: OIDC_RUNTIME_IMPLEMENTED
-    }
+    })
   });
 }
 

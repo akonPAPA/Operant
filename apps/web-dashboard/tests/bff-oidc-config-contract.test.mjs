@@ -8,7 +8,8 @@ import {
   oidcConfigurationDiagnostic,
   oidcReadinessState,
   publicAuthenticationCapability,
-  readOidcConfigurationStatus
+  readOidcConfigurationStatus,
+  validOidcConfiguration
 } from "../lib/bff/bff-oidc-config.ts";
 
 const root = process.cwd();
@@ -124,6 +125,7 @@ test("OIDC scopes and client authentication method are explicitly bounded", () =
 test("OIDC diagnostics and public capability expose only bounded readiness state", () => {
   const status = readOidcConfigurationStatus(validEnv());
   assert.throws(() => JSON.stringify(status), /OIDC_CONFIGURATION_STATUS_NOT_PUBLIC/);
+  assert.throws(() => JSON.stringify(validOidcConfiguration(status)), /OIDC_CONFIGURATION_NOT_PUBLIC/);
   const diagnostic = JSON.stringify(oidcConfigurationDiagnostic(status));
   const publicCapability = JSON.stringify(publicAuthenticationCapability(status));
   for (const sensitive of [VALID_SECRET, VALID_CLIENT_ID, VALID_ISSUER, `${VALID_PUBLIC_ORIGIN}/api/auth/oidc/callback`]) {
@@ -140,6 +142,12 @@ test("OIDC config stays out of public, browser, and Edge trust boundaries", () =
   assert.doesNotMatch(oidcSource, /NEXT_PUBLIC_/);
   assert.doesNotMatch(oidcSource, /next\/headers|Request\b|\bheaders\b|\bcookies\b/);
 
+  for (const file of ["lib/bff/bff-oidc-runtime.ts", "lib/bff/bff-oidc-runtime-network.ts"]) {
+    const source = readFileSync(join(root, file), "utf8");
+    assert.match(source, /import "server-only"/);
+    assert.doesNotMatch(source, /NEXT_PUBLIC_|next\/headers|\bcookies\b/);
+  }
+
   const publicConfig = readFileSync(join(root, "lib/bff/bff-public-config.ts"), "utf8");
   assert.doesNotMatch(publicConfig, /OIDC|CLIENT_SECRET|ISSUER|REDIRECT_URI/);
 
@@ -148,7 +156,7 @@ test("OIDC config stays out of public, browser, and Edge trust boundaries", () =
 
   for (const dir of ["app", "components"]) {
     for (const file of walk(join(root, dir))) {
-      assert.doesNotMatch(readFileSync(file, "utf8"), /bff-oidc-config|ORDERPILOT_OIDC_CLIENT_SECRET/);
+      assert.doesNotMatch(readFileSync(file, "utf8"), /bff-oidc-config|bff-oidc-runtime|openid-client|ORDERPILOT_OIDC_CLIENT_SECRET/);
     }
   }
 });
