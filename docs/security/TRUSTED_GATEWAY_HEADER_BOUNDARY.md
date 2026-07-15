@@ -64,6 +64,8 @@ X-OrderPilot-Actor-Id
 X-OrderPilot-Permissions
 X-OrderPilot-Gateway-Timestamp
 X-OrderPilot-Gateway-Nonce
+X-OrderPilot-Signature-Version
+X-OrderPilot-Content-SHA256
 X-OrderPilot-Gateway-Signature
 X-OrderPilot-Actor-Signature
 X-OrderPilot-Actor-Timestamp
@@ -128,8 +130,9 @@ Signer input source of truth:
 - Tenant id, actor id, permissions, role, status, approval, execution, risk, stock, margin, source,
   timestamp, nonce, and signature authority must not come from public client headers, request bodies,
   AI workers, bots, or connectors.
-- The signer may use request facts needed by the backend verifier: HTTP method and backend request
-  URI path.
+- The signer must use the request facts required by the backend verifier: uppercase HTTP method,
+  backend path, raw query string without a leading `?`, normalized content type, and the SHA-256 hash
+  of the exact forwarded body bytes.
 - The signer must generate fresh signing facts: current timestamp and a unique nonce/JTI for every
   signed backend request.
 
@@ -141,20 +144,35 @@ X-OrderPilot-Actor-Id
 X-OrderPilot-Permissions
 X-OrderPilot-Gateway-Timestamp
 X-OrderPilot-Gateway-Nonce
+X-OrderPilot-Signature-Version
+X-OrderPilot-Content-SHA256
 X-OrderPilot-Gateway-Signature
 ```
 
-Canonical string:
+Canonical string (LF-separated):
 
 ```text
-METHOD\nREQUEST_URI_PATH\ntenantId\nactorId\npermissions\ntimestamp\nnonce
+ORDERPILOT_GATEWAY_V2
+METHOD
+PATH
+RAW_QUERY
+CONTENT_TYPE
+BODY_SHA256_HEX
+tenantId
+actorId
+permissions
+timestamp
+nonce
 ```
 
-`METHOD` is upper-cased by the backend verifier. `REQUEST_URI_PATH` is the backend servlet request
-path used by `HttpServletRequest#getRequestURI()`. The current production verifier does not include
-query string, request body, or body hash in the canonical string. Adding query/body binding is a
-separate production-code security slice and must not be silently introduced by a gateway signer or
-test fixture.
+`METHOD` is upper-cased by the backend verifier. `PATH` is the backend servlet request path used by
+`HttpServletRequest#getRequestURI()`. `RAW_QUERY` is the backend raw query string from
+`HttpServletRequest#getQueryString()` without a leading `?`, or an empty string when absent.
+`CONTENT_TYPE` is the verifier-normalized content type, or an empty string for an empty body.
+`BODY_SHA256_HEX` is the lowercase SHA-256 of the exact forwarded bytes; the empty-body value is
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. Permissions are serialized as
+the single server-derived route permission used for the backend request. Fields are UTF-8 text joined
+by exactly one LF; CR/LF inside any field is rejected. There is no production legacy/v1 downgrade.
 
 Timestamp, nonce, and replay contract:
 
@@ -171,7 +189,7 @@ Deployment dependency:
 - The OP-CAP-43G header-strip boundary remains required. Public copies of all authority headers must
   be stripped before the signer runs, and core-api must remain private-only behind the trusted gateway.
 - The signer injects fresh signed headers only after authentication and authority resolution.
-- Core-api verifies signature, timestamp, nonce, and replay admission before trusting gateway
+- Core-api verifies signature version, content SHA-256, signature, timestamp, nonce, and replay admission before trusting gateway
   authority.
 
 ## Required production topology
@@ -256,8 +274,23 @@ start (`GatewayHeaderAuthProductionGuard`) when gateway-header auth is enabled i
 - Gateway/auth service derives tenant, actor, and permissions from authenticated identity/session/API
   key context, never from public request headers or request body authority fields.
 - Gateway/auth service generates a fresh timestamp and nonce per signed backend request.
-- Gateway/auth service computes `X-OrderPilot-Gateway-Signature` over exactly
-  `METHOD\nREQUEST_URI_PATH\ntenantId\nactorId\npermissions\ntimestamp\nnonce`.
+- Gateway/auth service sets `X-OrderPilot-Signature-Version: 2`, computes
+  `X-OrderPilot-Content-SHA256` over the exact forwarded bytes, and computes
+  `X-OrderPilot-Gateway-Signature` over exactly:
+
+```text
+ORDERPILOT_GATEWAY_V2
+METHOD
+PATH
+RAW_QUERY
+CONTENT_TYPE
+BODY_SHA256_HEX
+tenantId
+actorId
+permissions
+timestamp
+nonce
+```
 - Core-api production-like profile has `gateway-header-auth.enabled=true`,
   `signature-required=true`, a non-blank shared secret, and `replay-store=redis` for multi-instance
   deployments.

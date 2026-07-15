@@ -18,19 +18,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  ftruncateSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  statSync,
-  writeSync
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +30,6 @@ const playwrightBin = require.resolve("@playwright/test/cli");
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const prodDist = join(appRoot, ".next");
 const devDist = join(appRoot, ".next-e2e-dev");
-const NO_FOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
 
 const overrides = {
   NEXT_PUBLIC_ORDERPILOT_DEMO_MODE: "false",
@@ -69,92 +56,25 @@ function run(nodeArgs) {
   return result.status ?? 1;
 }
 
-/**
- * Open, verify, and read one regular file through a single descriptor.
- *
- * The descriptor pins the opened object, so there is no check-by-path followed by a second
- * path-based use. O_NOFOLLOW prevents a symlink swap where the platform supports it.
- */
-function readRegularFileSnapshot(path) {
-  const fd = openSync(path, constants.O_RDONLY | NO_FOLLOW);
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) {
-      throw new Error(`Expected a regular file: ${path}`);
-    }
-    return { bytes: readFileSync(fd), mode: stat.mode & 0o777 };
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/**
- * Restore through one read/write descriptor. Missing files are recreated with O_EXCL; if another
- * process wins that creation race, restoration fails instead of following or overwriting its path.
- */
-function restoreRegularFile(path, before, mode) {
-  let fd;
-  let created = false;
-  try {
-    try {
-      fd = openSync(path, constants.O_RDWR | NO_FOLLOW);
-    } catch (error) {
-      if (!error || typeof error !== "object" || error.code !== "ENOENT") {
-        throw error;
-      }
-      fd = openSync(
-        path,
-        constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
-        mode
-      );
-      created = true;
-    }
-
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) {
-      throw new Error(`Refusing to restore a non-regular file: ${path}`);
-    }
-
-    const current = created ? Buffer.alloc(0) : readFileSync(fd);
-    if (current.equals(before)) {
-      return false;
-    }
-
-    ftruncateSync(fd, 0);
-    writeSync(fd, before, 0, before.length, 0);
-    return true;
-  } finally {
-    if (fd !== undefined) {
-      closeSync(fd);
-    }
-  }
-}
-
 /** Deterministic content-hash manifest of every file under dir (relative path + SHA-256). */
 function artifactManifest(dir) {
   const entries = [];
   const stack = [dir];
   while (stack.length > 0) {
     const current = stack.pop();
-    const children = readdirSync(current, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name));
-    for (const child of children) {
-      const full = join(current, child.name);
-      const relativePath = relative(dir, full).replaceAll("\\", "/");
-      if (child.isDirectory()) {
+    for (const name of readdirSync(current).sort()) {
+      const full = join(current, name);
+      const stat = statSync(full);
+      if (stat.isDirectory()) {
         stack.push(full);
-      } else if (child.isFile()) {
-        const { bytes } = readRegularFileSnapshot(full);
-        const digest = createHash("sha256").update(bytes).digest("hex");
-        entries.push(`F ${relativePath} ${digest}`);
-      } else if (child.isSymbolicLink()) {
-        // Hash the link itself; do not follow it into an object outside the artifact tree.
-        entries.push(`L ${relativePath} ${readlinkSync(full)}`);
+      } else if (stat.isFile()) {
+        const digest = createHash("sha256").update(readFileSync(full)).digest("hex");
+        entries.push(`${relative(dir, full).replaceAll("\\", "/")} ${digest}`);
       }
     }
   }
   entries.sort();
-  return createHash("sha256").update(entries.join("\n")).digest("hex") + ` (${entries.length} entries)`;
+  return createHash("sha256").update(entries.join("\n")).digest("hex") + ` (${entries.length} files)`;
 }
 
 function cleanDevDist() {
@@ -163,17 +83,17 @@ function cleanDevDist() {
 
 // F15: `next dev` on the isolated distDir rewrites TRACKED generated-config sources in the app
 // root — next-env.d.ts (routes.d.ts import path) and tsconfig.json (distDir include globs).
-// Snapshot each required tracked file through a pinned descriptor and restore it through the same
-// descriptor model, so the cleanup has no check-then-use filesystem race.
+// Snapshot the canonical committed content now and restore it deterministically after the run
+// (success or failure), so E2E never leaves a modified tracked file in the main worktree.
 const TRACKED_GENERATED = ["next-env.d.ts", "tsconfig.json"].map((name) => {
   const path = join(appRoot, name);
-  const { bytes, mode } = readRegularFileSnapshot(path);
-  return { name, path, before: bytes, mode };
+  return { name, path, before: existsSync(path) ? readFileSync(path) : null };
 });
 
 function restoreTrackedGenerated() {
-  for (const { name, path, before, mode } of TRACKED_GENERATED) {
-    if (restoreRegularFile(path, before, mode)) {
+  for (const { name, path, before } of TRACKED_GENERATED) {
+    if (before !== null && (!existsSync(path) || !readFileSync(path).equals(before))) {
+      writeFileSync(path, before);
       console.log(`F15: restored canonical ${name} after the E2E dev runtime rewrote it`);
     }
   }
@@ -201,11 +121,7 @@ try {
     } else {
       console.log(`F13 production artifact unchanged after E2E: ${after}`);
     }
-    try {
-      if (!statSync(join(prodDist, "standalone")).isDirectory()) {
-        throw new Error("not a directory");
-      }
-    } catch {
+    if (existsSync(join(prodDist, "standalone")) === false) {
       console.error("F13: expected standalone output under .next/standalone");
       exitCode = exitCode === 0 ? 1 : exitCode;
     }

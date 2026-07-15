@@ -1,18 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  openSync,
-  readFileSync,
-  readdirSync
-} from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve, basename } from "node:path";
 
 const root = process.cwd();
-const NO_FOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
-const SOURCE_CACHE = new Map();
 
 /**
  * F06 — hard browser/server module separation.
@@ -51,52 +42,6 @@ const FORBIDDEN_SOURCE = [
   { re: /ORDERPILOT_BFF_REDIS_URL/, name: "redis url env" }
 ];
 
-function isMissingOrNonRegular(error) {
-  return Boolean(
-    error
-    && typeof error === "object"
-    && ["ENOENT", "EISDIR", "ELOOP"].includes(error.code)
-  );
-}
-
-/**
- * Open and read through one descriptor. The descriptor pins the object used by fstat/read, removing
- * the old exists/stat/read check-then-use race. O_NOFOLLOW blocks a symlink swap where supported.
- */
-function readRegularUtf8(path) {
-  if (SOURCE_CACHE.has(path)) {
-    return SOURCE_CACHE.get(path);
-  }
-
-  let fd;
-  try {
-    fd = openSync(path, constants.O_RDONLY | NO_FOLLOW);
-    if (!fstatSync(fd).isFile()) {
-      SOURCE_CACHE.set(path, null);
-      return null;
-    }
-    const source = readFileSync(fd, "utf8");
-    SOURCE_CACHE.set(path, source);
-    return source;
-  } catch (error) {
-    if (isMissingOrNonRegular(error)) {
-      SOURCE_CACHE.set(path, null);
-      return null;
-    }
-    throw error;
-  } finally {
-    if (fd !== undefined) {
-      closeSync(fd);
-    }
-  }
-}
-
-function requireSource(path) {
-  const source = readRegularUtf8(path);
-  assert.notEqual(source, null, `expected readable regular source file ${path.replaceAll("\\", "/")}`);
-  return source;
-}
-
 function resolveLocal(fromFile, specifier) {
   let base;
   if (specifier.startsWith("@/")) {
@@ -115,8 +60,15 @@ function resolveLocal(fromFile, specifier) {
     join(base, "index.ts"),
     join(base, "index.tsx")
   ]) {
-    if (readRegularUtf8(candidate) !== null) {
-      return { file: candidate };
+    if (existsSync(candidate)) {
+      try {
+        statSync(candidate).isFile() && readFileSync(candidate, "utf8");
+        if (statSync(candidate).isFile()) {
+          return { file: candidate };
+        }
+      } catch {
+        /* directory */
+      }
     }
   }
   return { unresolved: specifier };
@@ -135,7 +87,7 @@ function collectGraph(rootFiles) {
       continue;
     }
     visited.add(file);
-    const source = requireSource(file);
+    const source = readFileSync(file, "utf8");
     IMPORT_RE.lastIndex = 0;
     let match;
     while ((match = IMPORT_RE.exec(source)) !== null) {
@@ -157,15 +109,15 @@ function collectGraph(rootFiles) {
 }
 
 function walk(dir, out = []) {
-  const entries = readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === ".next" || entry.name === "dist") {
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry === ".next" || entry === "dist") {
       continue;
     }
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
+    const full = join(dir, entry);
+    const st = statSync(full);
+    if (st.isDirectory()) {
       walk(full, out);
-    } else if (entry.isFile() && /\.(ts|tsx|mts|mjs)$/.test(entry.name)) {
+    } else if (/\.(ts|tsx|mts|mjs)$/.test(entry)) {
       out.push(full);
     }
   }
@@ -182,18 +134,21 @@ function browserEntryPoints() {
     "lib/dashboard-fetch-headers.ts"
   ]) {
     const abs = join(root, rel);
-    if (readRegularUtf8(abs) !== null) {
+    if (existsSync(abs)) {
       roots.add(abs);
     }
   }
   // Every "use client" module and every browser API client (lib/*-api.ts, excluding *.server.ts).
   for (const dir of ["app", "components", "lib"]) {
     const abs = join(root, dir);
+    if (!existsSync(abs)) {
+      continue;
+    }
     for (const file of walk(abs)) {
       if (file.endsWith(".server.ts")) {
         continue;
       }
-      const source = requireSource(file);
+      const source = readFileSync(file, "utf8");
       const isUseClient = /^\s*["']use client["']/m.test(source);
       const isBrowserApiClient = /[/\\]lib[/\\][^/\\]*-api\.ts$/.test(file);
       if (isUseClient || isBrowserApiClient) {
@@ -222,7 +177,7 @@ test("F06: no browser entry point transitively reaches server-only config, secre
       !FORBIDDEN_FILE_BASENAMES.has(name),
       `browser graph transitively reaches server-only module ${file.replaceAll("\\", "/")}`
     );
-    const source = requireSource(file);
+    const source = readFileSync(file, "utf8");
     for (const { re, name: marker } of FORBIDDEN_SOURCE) {
       assert.ok(!re.test(source), `browser-reachable ${file.replaceAll("\\", "/")} contains ${marker}`);
     }
@@ -230,7 +185,7 @@ test("F06: no browser entry point transitively reaches server-only config, secre
 });
 
 test("F06: bff-public-config has no Node/secret imports and is the browser constant source", () => {
-  const source = requireSource(join(root, "lib/bff/bff-public-config.ts"));
+  const source = readFileSync(join(root, "lib/bff/bff-public-config.ts"), "utf8");
   // Check actual imports/usage (not doc-comment prose).
   assert.doesNotMatch(source, /from\s+["'][^"']*(gateway-key|gateway-signer|bff-session-store|bff-config)["']/);
   assert.doesNotMatch(source, /from\s+["'](redis|node:[a-z]+)["']/);
@@ -238,7 +193,7 @@ test("F06: bff-public-config has no Node/secret imports and is the browser const
   assert.doesNotMatch(source, /\bBuffer\s*[.(]/);
   assert.match(source, /BFF_SESSION_COOKIE|BFF_CSRF_COOKIE|BFF_CSRF_HEADER/);
   // No duplicate constant declarations: bff-config re-exports rather than redeclaring them.
-  const configSource = requireSource(join(root, "lib/bff/bff-config.ts"));
+  const configSource = readFileSync(join(root, "lib/bff/bff-config.ts"), "utf8");
   assert.doesNotMatch(configSource, /export const BFF_SESSION_COOKIE\s*=/);
   assert.match(configSource, /from "\.\/bff-public-config\.ts"/);
 });

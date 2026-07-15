@@ -8,6 +8,8 @@ const aiWorkWorkspace = readFileSync(join(root, "components", "ai-work-assistant
 const aiWorkSchemaView = readFileSync(join(root, "components", "ai-work-schema-v1-view.tsx"), "utf8");
 const conversionReviewCockpit = readFileSync(join(root, "components", "conversion-review-cockpit.tsx"), "utf8");
 const intakeUploadForm = readFileSync(join(root, "components", "intake-upload-form.tsx"), "utf8");
+const uploadPage = readFileSync(join(root, "app", "(dashboard)", "upload", "page.tsx"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
 const quoteReviewCockpit = readFileSync(join(root, "components", "quote-review-cockpit.tsx"), "utf8");
 const aiWorkApi = readFileSync(join(root, "lib", "ai-work-api.ts"), "utf8");
 const quoteReviewApi = readFileSync(join(root, "lib", "quote-review-api.ts"), "utf8");
@@ -42,6 +44,14 @@ test("user-facing forms do not ask operators to type backend identifiers", () =>
   }
 });
 
+test("production upload surface is capability-gated, not only visually hidden", () => {
+  assert.match(navigation, /navigationGroupsForUploadCapability/);
+  assert.match(navigation, /item\.href !== "\/upload"/);
+  assert.match(uploadPage, /isUploadAvailable\(capability\)/);
+  assert.match(uploadPage, /<IntakeUploadForm \/>/);
+  assert.match(intakeUploadForm, /if \(!isUploadAvailable\(capability\)\)/);
+  assert.match(intakeUploadForm, /uploadUnavailableMessage\(\)/);
+});
 test("conversion review UI does not render raw source identifiers or tenant ids", () => {
   assert.doesNotMatch(conversionReviewCockpit, /Tenant ID/i);
   assert.doesNotMatch(conversionReviewCockpit, /tenantId/i);
@@ -117,4 +127,28 @@ test("frontend command payloads do not expose client-supplied authority or calcu
   assert.doesNotMatch(aiWorkApi, /\b(createdByUserId|decidedByUserId)\??:/);
   assert.doesNotMatch(quoteReviewApi, /auditTimeline: Array<\{[^}]*\b(id|entityId|actorId)\??:/);
   assert.doesNotMatch(quoteReviewApi, /auditTimeline: Array<\{[^}]*\bmetadata\??:/);
+});
+
+test("production direct upload page renders unavailable state before mounting the active form", () => {
+  assert.match(uploadPage, /const capability = uploadCapability\(\)/);
+  assert.match(uploadPage, /if \(!isUploadAvailable\(capability\)\) \{/);
+  assert.match(uploadPage, /<h2>Not available<\/h2>/);
+  assert.match(uploadPage, /uploadUnavailableMessage\(\)/);
+  assert.match(uploadPage, /<IntakeUploadForm \/>/);
+  assert.ok(uploadPage.indexOf("if (!isUploadAvailable(capability))") < uploadPage.indexOf("<IntakeUploadForm />"));
+  assert.doesNotMatch(uploadPage.slice(0, uploadPage.indexOf("<IntakeUploadForm />")), /type="file"|onSubmit=|fetch\(/);
+});
+
+test("local demo upload form preserves multipart business-input request without browser authority fields", () => {
+  assert.match(intakeUploadForm, /<form className="panel upload-form" onSubmit=\{submit\}>/);
+  assert.match(intakeUploadForm, /<input name="file" type="file" accept=\{ACCEPTED_TYPES\} \/>/);
+  assert.match(intakeUploadForm, /<button className="button" disabled=\{state\.status === "working"\} type="submit">/);
+  assert.match(intakeUploadForm, /formData\.get\("file"\)/);
+  assert.match(intakeUploadForm, /new FormData\(form\)/);
+  assert.match(intakeUploadForm, /fetch\(`\$\{coreApiBaseUrl\(\)\}\/api\/v1\/intake\/documents\/upload`/);
+  assert.match(intakeUploadForm, /method: "POST"/);
+  assert.match(intakeUploadForm, /headers: demoScopeHeaders\(\)/);
+  assert.match(intakeUploadForm, /body: formData/);
+  assert.doesNotMatch(intakeUploadForm, /formData\.append\("tenantId"|formData\.append\("actorId"|formData\.append\("permissions"/);
+  assert.doesNotMatch(intakeUploadForm, /X-OrderPilot-Permissions|X-OrderPilot-Actor-Id/);
 });
