@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 public class ProductionConfigurationValidator implements InitializingBean {
 
   private static final Logger log = LoggerFactory.getLogger(ProductionConfigurationValidator.class);
+  static final String OIDC_RUNTIME_NOT_IMPLEMENTED = "OIDC_RUNTIME_NOT_IMPLEMENTED";
   private static final int MAX_PORT = 65535;
   private static final long MAX_CLOCK_SKEW_SECONDS = 86_400L;
 
@@ -124,8 +125,9 @@ public class ProductionConfigurationValidator implements InitializingBean {
     }
     if (oidcEnabled) {
       throw new IllegalStateException(
-          "orderpilot.security.oidc.enabled=true is not supported in this release "
-              + "(enterprise OIDC/SSO is not implemented; use gateway-signed header auth)");
+          OIDC_RUNTIME_NOT_IMPLEMENTED
+              + ": orderpilot.security.oidc.enabled=true cannot enable production authentication "
+              + "until the BFF OIDC runtime is implemented");
     }
   }
 
