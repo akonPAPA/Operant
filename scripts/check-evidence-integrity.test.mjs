@@ -15,10 +15,11 @@ function git(repo, args) {
   return execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-function run(repo, args = []) {
+function run(repo, args = [], env = {}) {
   const result = spawnSync(process.execPath, [scriptPath, "--repo-root", repo, ...args], {
     cwd: repo,
-    encoding: "utf8"
+    encoding: "utf8",
+    env: { ...process.env, ...env }
   });
   return {
     status: result.status,
@@ -38,7 +39,7 @@ function manifest({ finalReviewedHead = null, releaseComplete = "false" } = {}) 
 | --- | --- |
 | \`evidence_schema_version\` | \`2\` |
 | \`release_candidate\` | \`test-rc\` |
-| \`release_status\` | \`PENDING_FINAL_COMMIT\` |
+| \`release_status\` | \`SOURCE_POLICY_ONLY\` |
 | \`baseline_reviewed_parent_sha\` | \`${GOOD_SHA}\` |
 | \`runtime_attestation_path\` | \`build/evidence/local-head-attestation.json\` |
 
@@ -116,7 +117,7 @@ function writeAttestation(repo, overrides = {}, path = "build/evidence/local-hea
     generatedAt: "2026-07-14T00:00:00.000Z",
     worktreeClean: true,
     repository: "fixture/repo",
-    branchOrRef: "main",
+    branchOrRef: "refs/heads/main",
     verificationMode: "local-head",
     evidenceComplete: false,
     remainingUnproven: ["CI", "CodeQL"],
@@ -126,6 +127,15 @@ function writeAttestation(repo, overrides = {}, path = "build/evidence/local-hea
   return path;
 }
 
+
+function ciEnv(repo, overrides = {}) {
+  return {
+    GITHUB_REPOSITORY: "fixture/repo",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_SHA: head(repo),
+    ...overrides
+  };
+}
 function cleanup(repo) {
   rmSync(repo, { recursive: true, force: true });
 }
@@ -251,7 +261,7 @@ test("workflow run metadata pointing to another SHA fails CI validation", () => 
       remainingUnproven: [],
       workflowHeadSha: OTHER_SHA
     }, "build/evidence/ci-head-attestation.json");
-    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path]);
+    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path], ciEnv(repo));
     assert.notEqual(result.status, 0);
     assert.match(result.combined, /workflow metadata belongs to another SHA/);
   } finally {
@@ -273,7 +283,7 @@ test("successful workflow conclusion on another push SHA fails", () => {
       eventName: "push",
       githubSha: OTHER_SHA
     }, "build/evidence/ci-head-attestation.json");
-    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path]);
+    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path], ciEnv(repo));
     assert.notEqual(result.status, 0);
     assert.match(result.combined, /push github\.sha .* does not match/);
   } finally {
@@ -290,18 +300,18 @@ test("PR head and tested synthetic merge SHA are represented separately and acce
       workflowConclusion: "success",
       codeqlStatus: "success",
       verificationMode: "ci",
-      evidenceComplete: true,
-      remainingUnproven: [],
+      evidenceComplete: false,
+      remainingUnproven: ["independent release verifier"],
       eventName: "pull_request",
       prHeadSha: OTHER_SHA,
       testedMergeSha: head(repo),
       syntheticMergeAllowed: true,
       workflowHeadSha: head(repo)
     }, "build/evidence/ci-head-attestation.json");
-    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path]);
+    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path], ciEnv(repo));
     assert.equal(result.status, 0, result.combined);
     assert.match(result.stdout, /CURRENT_HEAD_CI_VERIFIED=true/);
-    assert.match(result.stdout, /FINAL_RELEASE_EVIDENCE_COMPLETE=true/);
+    assert.match(result.stdout, /FINAL_RELEASE_EVIDENCE_COMPLETE=false/);
   } finally {
     cleanup(repo);
   }
@@ -358,7 +368,20 @@ test("generated exact-head attestation path is ignored and not included in track
   }
 });
 
-test("syntactically valid tracked evidence alone cannot produce final GO state", () => {
+
+test("local-head mode runs structural validation before exact-head attestation checks", () => {
+  const repo = initRepo();
+  try {
+    const manifestPath = join(repo, "docs", "production", "RELEASE_EVIDENCE_MANIFEST.md");
+    writeFileSync(manifestPath, manifest().replace("SOURCE_POLICY_ONLY", "PENDING_FINAL_COMMIT"), "utf8");
+    const attestationPath = writeAttestation(repo);
+    const result = run(repo, ["--mode", "local-head", "--attestation-path", attestationPath]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.combined, /release_status must remain SOURCE_POLICY_ONLY/);
+  } finally {
+    cleanup(repo);
+  }
+});test("syntactically valid tracked evidence alone cannot produce final GO state", () => {
   const repo = initRepo();
   try {
     const result = run(repo, ["--mode", "structural"]);
@@ -366,6 +389,55 @@ test("syntactically valid tracked evidence alone cannot produce final GO state",
     assert.match(result.stdout, /CURRENT_HEAD_CI_VERIFIED=false/);
     assert.match(result.stdout, /CODEQL_CURRENT_HEAD_VERIFIED=false/);
     assert.match(result.stdout, /FINAL_RELEASE_EVIDENCE_COMPLETE=false/);
+  } finally {
+    cleanup(repo);
+  }
+});
+test("self-authored CI and CodeQL success strings cannot create final verification", () => {
+  const repo = initRepo();
+  try {
+    const path = writeAttestation(repo, {
+      workflowRunId: "123456789",
+      workflowName: "CI",
+      workflowConclusion: "success",
+      codeqlStatus: "success",
+      verificationMode: "ci",
+      evidenceComplete: true,
+      remainingUnproven: [],
+      eventName: "push",
+      githubSha: head(repo),
+      branchOrRef: "refs/heads/main"
+    }, "build/evidence/ci-head-attestation.json");
+    const result = run(repo, ["--mode", "ci", "--ci-metadata-path", path], ciEnv(repo));
+    assert.notEqual(result.status, 0);
+    assert.match(result.combined, /evidenceComplete=true final-release claim/);
+    assert.match(result.combined, /remainingUnproven/);
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("wrong CI repository or ref fails", () => {
+  const repo = initRepo();
+  try {
+    const path = writeAttestation(repo, {
+      workflowRunId: "123456789",
+      workflowName: "CI",
+      workflowConclusion: "success",
+      codeqlStatus: "success",
+      verificationMode: "ci",
+      evidenceComplete: false,
+      remainingUnproven: ["independent release verifier"],
+      eventName: "push",
+      githubSha: head(repo),
+      branchOrRef: "refs/heads/main"
+    }, "build/evidence/ci-head-attestation.json");
+    const wrongRepo = run(repo, ["--mode", "ci", "--ci-metadata-path", path], ciEnv(repo, { GITHUB_REPOSITORY: "evil/repo" }));
+    assert.notEqual(wrongRepo.status, 0);
+    assert.match(wrongRepo.combined, /does not match CI repository/);
+    const wrongRef = run(repo, ["--mode", "ci", "--ci-metadata-path", path], ciEnv(repo, { GITHUB_REF: "refs/heads/other" }));
+    assert.notEqual(wrongRef.status, 0);
+    assert.match(wrongRef.combined, /does not match CI ref/);
   } finally {
     cleanup(repo);
   }

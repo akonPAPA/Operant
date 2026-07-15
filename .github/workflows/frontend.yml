@@ -40,7 +40,7 @@ jobs:
           changed_files="$(git diff --name-only "$base" "$head")"
           printf '%s\n' "$changed_files"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web-dashboard/|apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$|\.github/workflows/frontend\.yml$)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web-dashboard/|apps/web-dashboard/package\.json$|apps/web-dashboard/package-lock\.json$|docs/production/RELEASE_EVIDENCE_MANIFEST\.md$|docs/security/(TRUSTED_GATEWAY_HEADER_BOUNDARY\.md|gateway-header-strip-nginx-example\.conf)$|scripts/check-evidence-integrity(\.test)?\.mjs$|\.github/workflows/frontend\.yml$)'; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
           else
             echo "frontend=false" >> "$GITHUB_OUTPUT"
@@ -83,6 +83,21 @@ jobs:
             apps/web-dashboard/test-results/
           if-no-files-found: ignore
 
+
+  release-evidence:
+    name: Release Evidence Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.18.0"
+      - name: Validate tracked release evidence policy
+        run: node scripts/check-evidence-integrity.mjs --mode structural
+      - name: Run release evidence checker tests
+        run: node --test scripts/check-evidence-integrity.test.mjs
   # Skip-safe required gate: "Frontend / Frontend Gate".
   # This job MUST always run and reach a terminal success/failure conclusion so it is
   # never reported as skipped/neutral. When there are no frontend changes it satisfies
@@ -93,6 +108,7 @@ jobs:
     needs:
       - changes
       - build
+      - release-evidence
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -106,8 +122,13 @@ jobs:
             exit 1
           fi
 
+          if [[ "${{ needs.release-evidence.result }}" != "success" ]]; then
+            echo "::error::Release evidence gate did not succeed."
+            exit 1
+          fi
+
           if [[ "${{ needs.changes.outputs.frontend }}" != "true" ]]; then
-            echo "No frontend changes detected; Frontend Gate satisfied (not applicable)."
+            echo "No frontend changes detected; evidence gate passed; Frontend Gate satisfied (not applicable)."
             exit 0
           fi
 

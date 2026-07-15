@@ -1,13 +1,22 @@
 import { usesBffTransport } from "./api-transport.ts";
+import { bffRuntimeMode } from "./bff/bff-public-config.ts";
 
-export type UploadCapability = "AVAILABLE" | "NOT_AVAILABLE_IN_PRODUCTION_BFF";
+export type UploadCapability =
+  | "AVAILABLE_LOCAL_DEMO"
+  | "NOT_AVAILABLE_PRODUCTION_BFF"
+  | "NOT_AVAILABLE_PRODUCTION_CONFIGURATION";
 
 export function uploadCapability(): UploadCapability {
-  return usesBffTransport() ? "NOT_AVAILABLE_IN_PRODUCTION_BFF" : "AVAILABLE";
+  if (usesBffTransport()) {
+    return "NOT_AVAILABLE_PRODUCTION_BFF";
+  }
+  return bffRuntimeMode() === "unavailable"
+    ? "NOT_AVAILABLE_PRODUCTION_CONFIGURATION"
+    : "AVAILABLE_LOCAL_DEMO";
 }
 
 export function isUploadAvailable(capability: UploadCapability = uploadCapability()): boolean {
-  return capability === "AVAILABLE";
+  return capability === "AVAILABLE_LOCAL_DEMO";
 }
 
 export function uploadUnavailableMessage(): string {

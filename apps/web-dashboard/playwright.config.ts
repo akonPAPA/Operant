@@ -82,6 +82,39 @@ export default defineConfig({
         ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID: "22222222-2222-4222-8222-222222222222",
         ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: "REVIEW_READ"
       }
+    },
+    {
+      command: "node e2e/standalone-server.mjs --port 3102",
+      url: "http://localhost:3102/api/bff/health",
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: {
+        ...sharedEnv,
+        NODE_ENV: "production",
+        ORDERPILOT_DEPLOY_PROFILE: "production",
+        ORDERPILOT_BFF_ENABLED: "false",
+        ORDERPILOT_DEMO_MODE: "false",
+        NEXT_PUBLIC_ORDERPILOT_DEMO_MODE: "false",
+        ORDERPILOT_PUBLIC_ORIGIN: "https://operant.example.com"
+      }
+    },
+    {
+      command: "node e2e/dev-server.mjs --port 3103",
+      url: "http://localhost:3103/upload",
+      reuseExistingServer: false,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        NODE_ENV: "test",
+        ORDERPILOT_DEPLOY_PROFILE: "local-test",
+        ORDERPILOT_BFF_ENABLED: "false",
+        ORDERPILOT_DEMO_MODE: "true",
+        NEXT_PUBLIC_ORDERPILOT_DEMO_MODE: "true",
+        NEXT_PUBLIC_CORE_API_URL: "http://127.0.0.1:18080",
+        CORE_API_BASE_URL: "http://127.0.0.1:18080",
+        ORDERPILOT_NEXT_DIST_DIR: ".next-e2e-demo"
+      }
     }
   ]
 });
