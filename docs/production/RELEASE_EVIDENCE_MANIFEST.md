@@ -13,7 +13,7 @@ generated after checkout of an immutable commit and stored as an external or gen
 | --- | --- |
 | `evidence_schema_version` | `2` |
 | `release_candidate` | `PR-267-runtime-root-causes` |
-| `release_status` | `PENDING_FINAL_COMMIT` |
+| `release_status` | `SOURCE_POLICY_ONLY` |
 | `baseline_reviewed_parent_sha` | `26f7168901932d49bed7dcd018377ac3a9629d70` |
 | `runtime_attestation_path` | `build/evidence/local-head-attestation.json` |
 | `evidence_semantics` | Tracked policy plus external/generated exact-head attestation; no self-referential commit SHA in source |

@@ -77,11 +77,15 @@ stripping is a gateway/proxy responsibility because the proxy configuration live
 repository.
 
 The review artifact `docs/security/gateway-header-strip-nginx-example.conf` demonstrates this
-boundary by using `proxy_pass_request_headers off` for the backend hop and explicitly re-adding only
-gateway-owned headers after authentication/signing. For the auth/signing subrequest, the artifact
-clears all currently known OrderPilot authority headers so spoofed public values cannot be reused.
-NGINX OSS cannot wildcard-clear arbitrary future header names; the auth/signing service must also
-ignore new `X-OrderPilot-*` authority/debug headers by policy.
+header-stripping/private-ingress boundary by using `proxy_pass_request_headers off` for the backend
+hop and explicitly re-adding only gateway-owned headers after authentication/signing. It is not a
+complete HMAC v2 signer for body-bearing mutations: its `auth_request` subrequest does not receive
+the request body, so it cannot independently compute SHA-256 over the exact forwarded body bytes.
+Body-bearing requests must be signed by the existing body-aware BFF/gateway path, or by a future
+trusted gateway/auth component that reads, hashes, signs, and forwards the exact same bytes. For the
+auth/signing subrequest, the artifact clears all currently known OrderPilot authority headers so
+spoofed public values cannot be reused. NGINX OSS cannot wildcard-clear arbitrary future header names;
+the auth/signing service must also ignore new `X-OrderPilot-*` authority/debug headers by policy.
 
 ## Rule 3 - the gateway derives trusted context, then re-signs
 
@@ -112,10 +116,12 @@ nonce
 The shared secret must be exactly 64 hexadecimal characters (`openssl rand -hex 32`). HMAC uses the
 decoded 32 raw bytes, never the ASCII hex text. There is no production v1 fallback.
 
-If the proxy layer cannot compute HMAC safely, it must not fake this step. A trusted gateway/auth
-service must perform signing and return only derived tenant, actor, permissions, timestamp, nonce,
-and signature values to the proxy. The sample NGINX artifact uses `auth_request` variables for that
-pattern and intentionally contains no signing secret.
+If the proxy layer cannot compute HMAC safely over the exact forwarded request facts and body bytes,
+it must not fake this step. A trusted gateway/auth service must perform signing and return only
+derived tenant, actor, permissions, timestamp, nonce, content hash, and signature values to the proxy.
+The sample NGINX artifact uses `auth_request` variables only as a header-strip/private-ingress
+reference and intentionally contains no signing secret; with `proxy_pass_request_body off`, it is
+complete only for empty-body/read requests unless paired with a body-aware signer in the request path.
 
 ## Trusted signer contract (OP-CAP-43H)
 

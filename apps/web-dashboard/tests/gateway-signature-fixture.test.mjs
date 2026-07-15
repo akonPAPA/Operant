@@ -148,3 +148,12 @@ test("authoritative gateway contract files define HMAC v2 and do not reintroduce
     }
   }
 });
+test("NGINX header-strip artifact does not claim complete body-bound mutation signing", () => {
+  const docs = readFileSync(join(repoRoot, "docs", "security", "TRUSTED_GATEWAY_HEADER_BOUNDARY.md"), "utf8");
+  const nginx = readFileSync(join(repoRoot, "docs", "security", "gateway-header-strip-nginx-example.conf"), "utf8");
+  assert.match(nginx, /proxy_pass_request_body off/);
+  assert.match(nginx, /cannot sign body-bearing\s+# mutations|cannot sign body-bearing mutations/i);
+  assert.match(docs, /cannot independently compute SHA-256 over the exact forwarded body bytes/i);
+  assert.match(docs, /Body-bearing requests must be signed by the existing body-aware BFF\/gateway path/i);
+  assert.doesNotMatch(nginx, /complete HMAC v2 signer for body-bearing mutations|complete body-bound mutation signer\./i);
+});

@@ -206,8 +206,8 @@ function checkReleaseManifest(rel, text, findings) {
     const value = fields.get(field);
     if (value && !SHA40.test(value)) findings.push(`${rel}: ${field} must be a 40-character lowercase SHA`);
   }
-  if (fields.get("release_status") !== "PENDING_FINAL_COMMIT") {
-    findings.push(`${rel}: release_status must remain PENDING_FINAL_COMMIT in tracked source`);
+  if (fields.get("release_status") !== "SOURCE_POLICY_ONLY") {
+    findings.push(`${rel}: release_status must remain SOURCE_POLICY_ONLY in tracked source`);
   }
   if (fields.get("FINAL_RELEASE_EVIDENCE_COMPLETE") !== "false") {
     findings.push(`${rel}: FINAL_RELEASE_EVIDENCE_COMPLETE must be false in tracked source`);
@@ -344,6 +344,24 @@ function ciValidation(repoRoot, ciMetadataPath) {
     if (attestation.workflowConclusion !== "success") findings.push("workflowConclusion must be success");
     if (attestation.codeqlStatus !== "success") findings.push("codeqlStatus must be success");
     if (!attestation.workflowRunId) findings.push("workflowRunId is required");
+
+    const githubRepository = process.env.GITHUB_REPOSITORY;
+    const githubRef = process.env.GITHUB_REF;
+    const githubSha = process.env.GITHUB_SHA;
+    if (!githubRepository || !githubRef || !githubSha) {
+      findings.push("CI mode requires trusted GITHUB_REPOSITORY, GITHUB_REF, and GITHUB_SHA environment facts");
+    } else {
+      if (attestation.repository !== githubRepository) findings.push(`repository ${attestation.repository} does not match CI repository ${githubRepository}`);
+      if (attestation.branchOrRef !== githubRef) findings.push(`branchOrRef ${attestation.branchOrRef} does not match CI ref ${githubRef}`);
+      if (githubSha !== head) findings.push(`GITHUB_SHA ${githubSha} does not match checked-out HEAD ${head}`);
+    }
+
+    if (attestation.evidenceComplete !== false) {
+      findings.push("CI mode cannot accept a self-authored evidenceComplete=true final-release claim");
+    }
+    if (!Array.isArray(attestation.remainingUnproven) || attestation.remainingUnproven.length === 0) {
+      findings.push("CI mode must retain remainingUnproven until an independent release verifier exists");
+    }
     if (attestation.eventName === "pull_request" && attestation.prHeadSha && attestation.testedMergeSha) {
       if (attestation.testedMergeSha !== head) findings.push("pull_request testedMergeSha must equal the checked-out HEAD");
       if (attestation.prHeadSha === attestation.testedMergeSha && attestation.syntheticMergeAllowed === true) {
@@ -364,7 +382,7 @@ function ciValidation(repoRoot, ciMetadataPath) {
       CURRENT_HEAD_LOCALLY_VERIFIED: false,
       CURRENT_HEAD_CI_VERIFIED: ciVerified,
       CODEQL_CURRENT_HEAD_VERIFIED: ciVerified,
-      FINAL_RELEASE_EVIDENCE_COMPLETE: ciVerified
+      FINAL_RELEASE_EVIDENCE_COMPLETE: false
     },
     diagnostics: { actualHeadSha: head, branchOrRef: currentBranchOrRef(repoRoot) }
   };
@@ -386,9 +404,16 @@ function printResult(result) {
 try {
   const args = parseArgs(process.argv.slice(2));
   let result;
-  if (args.mode === "structural") result = structuralValidation(args.repoRoot);
-  else if (args.mode === "local-head") result = localHeadValidation(args.repoRoot, args.attestationPath);
-  else result = ciValidation(args.repoRoot, args.ciMetadataPath);
+  if (args.mode === "structural") {
+    result = structuralValidation(args.repoRoot);
+  } else {
+    const structural = structuralValidation(args.repoRoot);
+    result = structural.ok
+      ? args.mode === "local-head"
+        ? localHeadValidation(args.repoRoot, args.attestationPath)
+        : ciValidation(args.repoRoot, args.ciMetadataPath)
+      : structural;
+  }
   printResult(result);
   process.exit(result.ok ? 0 : 1);
 } catch (error) {
