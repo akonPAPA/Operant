@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProductionAuthenticationReadinessGuard implements InitializingBean {
 
+  static final String OIDC_RUNTIME_NOT_IMPLEMENTED = "OIDC_RUNTIME_NOT_IMPLEMENTED";
+
   private final Environment environment;
   private final boolean oidcEnabled;
 
@@ -32,8 +34,9 @@ public class ProductionAuthenticationReadinessGuard implements InitializingBean 
     }
     if (oidcEnabled) {
       throw new IllegalStateException(
-          "orderpilot.security.oidc.enabled=true is not supported in this release "
-              + "(enterprise OIDC/SSO is not implemented; use gateway-signed header auth)");
+          OIDC_RUNTIME_NOT_IMPLEMENTED
+              + ": orderpilot.security.oidc.enabled=true cannot enable production authentication "
+              + "until the BFF OIDC runtime is implemented");
     }
   }
 
