@@ -91,6 +91,9 @@ function isUseClient(source) {
 // are permitted in Server Components; the tenant clients below are the ones that must use the
 // lib/server/*.server.ts variant instead.
 const FORBIDDEN_BASENAMES = new Set([
+  "bff-oidc-config.ts",
+  "bff-oidc-runtime.ts",
+  "bff-oidc-runtime-network.ts",
   "intake-api.ts",
   "stage2-data-api.ts",
   "draft-review-api.ts",

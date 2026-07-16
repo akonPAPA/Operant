@@ -67,6 +67,24 @@ class ProductionConfigurationValidatorTest {
   }
 
   @Test
+  void productionProfileRejectsOidcEnabledBecauseRuntimeIsNotImplemented() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues("orderpilot.security.oidc.enabled=true")
+        .run(
+            context ->
+                assertThat(context)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("OIDC_RUNTIME_NOT_IMPLEMENTED")
+                    .hasMessageNotContaining(GATEWAY_SECRET)
+                    .hasMessageNotContaining(ACTOR_SECRET)
+                    .hasMessageNotContaining(DB_PASSWORD));
+  }
+
+  @Test
   void productionProfileRejectsUnsignedGatewayTrust() {
     productionRunner()
         .withPropertyValues(validProductionProperties())
