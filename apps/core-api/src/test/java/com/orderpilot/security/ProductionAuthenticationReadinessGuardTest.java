@@ -23,7 +23,8 @@ class ProductionAuthenticationReadinessGuardTest {
             .getFailure()
             .rootCause()
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("OIDC/SSO is not implemented"));
+            .hasMessageContaining("OIDC_RUNTIME_NOT_IMPLEMENTED")
+            .hasMessageNotContaining("client-secret"));
   }
 
   @Test
