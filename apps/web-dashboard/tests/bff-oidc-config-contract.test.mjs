@@ -156,7 +156,7 @@ test("OIDC config stays out of public, browser, and Edge trust boundaries", () =
 
   for (const dir of ["app", "components"]) {
     for (const file of walk(join(root, dir))) {
-      assert.doesNotMatch(readFileSync(file, "utf8"), /bff-oidc-config|bff-oidc-runtime|openid-client|ORDERPILOT_OIDC_CLIENT_SECRET/);
+      assert.doesNotMatch(readFileSync(file, "utf8"), /bff-oidc-config|bff-oidc-identity-mapping|bff-oidc-runtime|openid-client|ORDERPILOT_OIDC_CLIENT_SECRET/);
     }
   }
 });

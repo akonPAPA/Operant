@@ -15,6 +15,7 @@ const FORBIDDEN_SPECIFIERS = [
   "bff-gateway-signer",
   "bff-session",
   "bff-auth-handlers",
+  "bff-oidc-identity-mapping",
   "bff-oidc-config",
   "bff-oidc-runtime",
   "bff-oidc-runtime-network",
@@ -109,7 +110,7 @@ test("edge entry import graph contains no Node-only or session/proxy/signer modu
   }
   for (const file of files) {
     const normalized = file.replaceAll("\\", "/");
-    for (const forbidden of ["bff-proxy", "bff-session-store", "bff-gateway-signer", "bff-auth-handlers", "bff-oidc-config", "bff-oidc-runtime", "bff-oidc-runtime-network"]) {
+    for (const forbidden of ["bff-proxy", "bff-session-store", "bff-gateway-signer", "bff-auth-handlers", "bff-oidc-identity-mapping", "bff-oidc-config", "bff-oidc-runtime", "bff-oidc-runtime-network"]) {
       assert.ok(
         !normalized.includes(forbidden),
         `edge entry transitively reaches ${forbidden}: ${normalized}`

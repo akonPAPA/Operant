@@ -66,6 +66,7 @@ const FORBIDDEN_FILE_BASENAMES = new Set([
   "bff-session-store.ts",
   "bff-session.ts",
   "bff-auth-handlers.ts",
+  "bff-oidc-identity-mapping.ts",
   "bff-oidc-config.ts",
   "bff-oidc-runtime.ts",
   "bff-oidc-runtime-network.ts",
