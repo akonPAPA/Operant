@@ -1,64 +1,93 @@
-document_version: 3
-updated_at: 2026-07-12T21:15:00Z
+document_version: 4
+updated_at: 2026-07-16T00:00:00Z
 repository: akonPAPA/Operant
 phase: 1
 controller_prompt: docs/prompts/production/01_SERVER_PLATFORM_AND_CONTROL_PLANE.md
-branch: feature/p1-b-browser-bff-boundary
-current_pr: "#267"
-last_merged_pr: "#266 p1-a-production-truth-and-config"
-base_sha: cae9603c870eeb0e87216d0f4707169b64eb2ea3
-# implementation_anchor_sha is the code commit locally verified before this evidence update.
-# final_pr_head is recorded in the PR comment after evidence push + exact-head CI — not self-referenced here.
-implementation_anchor_sha: d90748307fdeabcf49d146db7f355adeed5bbfb1
-evidence_basis: docs/production/RELEASE_EVIDENCE_MANIFEST.md (EV-P1B-030+)
+branch: feat/p1-c-full-rebuilt
+head_sha: 740f369a17bb6494931d59340194980c9b59c1dd
+worktree_clean: false
+current_pr: "#277"
+last_merged_pr: "#271"
+evidence_basis: build/review/pr266-pr277-closure-ledger.md
 production_authentication:
   CURRENT_PRODUCTION_AUTH_MODE: SIGNED_GATEWAY_HEADERS
-  OIDC_STATUS: NOT_IMPLEMENTED
+  P1-C OIDC CONFIGURATION AND DISCOVERY FOUNDATION: LOCAL_PROOF_COMPLETE_PENDING_COMMIT_AND_REMOTE_EXACT_HEAD_PROOF
+  P1-C PRODUCTION IDENTITY: NOT_COMPLETE
   OIDC_ENABLED_IN_PRODUCTION: FAIL_CLOSED
-  p1_c_replacement: Real OIDC/session identity mapping must replace temporary local/test bootstrap
-verified_gates: []
+  OIDC_RUNTIME_IMPLEMENTED: false
+  login_route: NOT_IMPLEMENTED
+  callback_route: NOT_IMPLEMENTED
+  token_exchange: NOT_IMPLEMENTED
+  id_token_validation: NOT_IMPLEMENTED
+  tenant_membership_mapping: NOT_IMPLEMENTED
+  staff_identity_flow: NOT_IMPLEMENTED
+  service_account_separation: NOT_FULLY_INTEGRATED
+  production_session_issuance: NOT_IMPLEMENTED
+  controlled_connection_pinned_egress: NOT_IMPLEMENTED
+verified_gates:
+  - id: P1-C-OIDC-CONFIGURATION-AND-DISCOVERY-FOUNDATION-LOCAL
+    status: LOCAL_PROOF_COMPLETE_PENDING_COMMIT_AND_REMOTE_EXACT_HEAD_PROOF
+    evidence:
+      - apps/web-dashboard/.logs/node-oidc-targeted.log
+      - apps/web-dashboard/.logs/npm-typecheck-p1c.log
+      - apps/web-dashboard/.logs/npm-lint-p1c.log
+      - apps/web-dashboard/.logs/npm-test-p1c.log
+      - apps/web-dashboard/.logs/npm-build-p1c.log
+      - apps/web-dashboard/.logs/npm-e2e-p1c.log
+    note: Local dirty-worktree proof only; no commit or remote exact-head CI proof yet.
 failed_gates:
   - id: P1-GATE-01
     status: PARTIAL_NOT_PASS
-    evidence: [EV-P1A-001, EV-P1A-002]
-    note: Production-like Core config fail-closed proven; clean-host deploy not proven.
+    note: Production-like Core config fail-closed proven historically; clean-host deploy not proven.
   - id: P1-GATE-02
     status: PARTIAL_NOT_PASS
-    evidence: [EV-P1B-025, EV-P1B-026, EV-P1B-027, EV-P1B-028, EV-P1B-029, EV-P1B-030]
-    note: Browser BFF boundary + production bootstrap elimination verified locally; live Redis topology and P1-C identity not proven.
+    note: Browser BFF boundary proven historically and current web gates pass locally; live Redis topology and full P1-C identity not complete.
   - id: P1-GATE-03
     status: FAIL
-    note: Direct Core exposure not remediated (P1-D)
+    note: Direct Core exposure not remediated; belongs to P1-D.
   - id: P1-GATE-04
     status: PARTIAL_NOT_PASS
-    evidence: [EV-P1B-022]
-    note: Session TTL/expiry/revocation proven in unit/fake-store; live Redis not proven.
+    note: Unit/fake-store session TTL/expiry/revocation proven historically; live Redis not proven.
+  - id: P1-GATE-05
+    status: PARTIAL_NOT_PASS
+    note: Full tenant/staff/service identity separation is not complete until production OIDC identity and membership mapping are implemented.
 blocked_gates: []
 not_proven:
+  - Remote exact-head PR #277 CI, review-thread and workflow evidence
+  - Commit-linked immutable evidence for the current local P1-C hardening patch
+  - Login route
+  - Callback route
+  - Token exchange
+  - ID-token validation
+  - Tenant membership mapping
+  - Staff identity flow
+  - Service-account separation fully integrated with production identity
+  - Production authenticated session issuance
+  - Controlled connection-pinned egress / DNS rebinding resistance
   - Live Redis session TTL/expiry/revocation in deployed topology
-  - Real production identity/OIDC and tenant membership mapping (P1-C)
   - Direct public Core ingress closure (P1-D)
-  - Full Phase 1 gate matrix PASS
-  - Human approval on PR #267 (process requirement)
 explicit_non_claims:
-  - P1-C OIDC not implemented
-  - Live production Redis topology not proven
-  - Public Core ingress closure belongs to P1-D
-  - Full production deployment not proven
-  - Full Phase 1 production gate is NOT PASS merely because P1-B code is ready
-  - MERGE READY is not claimed while reviewDecision remains REVIEW_REQUIRED
+  - P1-C complete
+  - production OIDC complete
+  - production identity complete
+  - OIDC runtime complete
+  - DNS rebinding solved
+  - connection pinning proven
+  - production authenticated sessions implemented
 open_p0: []
 open_p1:
-  - P1-B Browser/BFF boundary (code ready pending human approval on PR #267)
   - P1-C Production OIDC identity
-  - P1-D Linux deployment
+  - P1-D Linux deployment / public Core ingress closure
   - P1-E operantctl
   - P1-F Connector Gateway protocol
   - P1-G operant-agent
   - P1-H Recovery and observability
 open_infra: []
 owner_decisions_required:
-  - operantctl implementation language
-  - operant-agent implementation language
-next_bounded_action: Exact-head CI on final PR head; request human review; do not merge without APPROVED reviewDecision.
+  - Controlled connection-pinned egress transport design for production OIDC discovery
+  - P1-C2 transaction store choice if existing Redis/session semantics cannot provide atomic one-time state consumption
+next_bounded_action: P1-C2 OIDC Authorization Transaction Foundation; do not implement P1-D.
 evidence_manifest_path: docs/production/RELEASE_EVIDENCE_MANIFEST.md
+manual_commit_command: |
+  git add apps/web-dashboard/lib/bff/bff-oidc-config.ts apps/web-dashboard/lib/bff/bff-oidc-runtime-network.ts apps/web-dashboard/lib/bff/bff-oidc-runtime.ts apps/web-dashboard/tests/bff-oidc-config-contract.test.mjs apps/web-dashboard/tests/bff-oidc-runtime-contract.test.mjs OPERANT_PRODUCTION_EXECUTION_STATE.md
+  git commit -m "fix(identity): harden OIDC discovery provenance, egress and cache"
