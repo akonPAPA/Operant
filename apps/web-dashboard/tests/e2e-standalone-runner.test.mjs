@@ -24,10 +24,11 @@ test("E2E standalone harness uses process env and no production-module runtime d
   const playwright = readFileSync(join(root, "playwright.config.ts"), "utf8");
   assert.match(playwright, /NODE_ENV:\s*"test"/);
   assert.doesNotMatch(playwright, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
-  assert.doesNotMatch(
-    playwright.split("port 3101")[1] ?? "",
-    /NODE_ENV:\s*"test"/
-  );
+  for (const port of [3101, 3102]) {
+    const block = playwright.split(`standalone-server.mjs --port ${port}`)[1]?.split("command:")[0] ?? "";
+    assert.doesNotMatch(block, /NODE_ENV:\s*"test"/);
+    assert.match(block, /NODE_ENV:\s*"production"/);
+  }
   const profile = readFileSync(join(root, "lib/bff/bff-deployment-profile.ts"), "utf8");
   assert.doesNotMatch(profile, /ORDERPILOT_E2E_RUNTIME_NODE_ENV/);
   assert.match(profile, /\["NODE", "ENV"\]\.join\("_"\)/);
