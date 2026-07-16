@@ -1,9 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve, basename } from "node:path";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, basename } from "node:path";
 
 const root = process.cwd();
+const NOFOLLOW = process.platform === "win32" ? 0 : (constants.O_NOFOLLOW ?? 0);
+
+function assertInsideRoot(path) {
+  const absolute = resolve(path);
+  const rel = relative(root, absolute);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return absolute;
+  throw new Error(`refusing out-of-tree path: ${path}`);
+}
+
+function lstatNoSymlink(path) {
+  const absolute = assertInsideRoot(path);
+  const stat = lstatSync(absolute);
+  if (stat.isSymbolicLink()) throw new Error(`refusing symlink path: ${relative(root, absolute)}`);
+  return { absolute, stat };
+}
+
+function pathIsFile(path) {
+  try {
+    const { absolute } = lstatNoSymlink(path);
+    const fd = openSync(absolute, constants.O_RDONLY | NOFOLLOW);
+    try { return fstatSync(fd).isFile(); }
+    finally { closeSync(fd); }
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+function pathIsDirectory(path) {
+  try { return lstatNoSymlink(path).stat.isDirectory(); }
+  catch (error) { if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return false; throw error; }
+}
+
+function readTextNoSymlink(path) {
+  const { absolute } = lstatNoSymlink(path);
+  const fd = openSync(absolute, constants.O_RDONLY | NOFOLLOW);
+  try {
+    if (!fstatSync(fd).isFile()) throw new Error(`expected file: ${relative(root, absolute)}`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /**
  * F06 — hard browser/server module separation.
@@ -60,15 +103,8 @@ function resolveLocal(fromFile, specifier) {
     join(base, "index.ts"),
     join(base, "index.tsx")
   ]) {
-    if (existsSync(candidate)) {
-      try {
-        statSync(candidate).isFile() && readFileSync(candidate, "utf8");
-        if (statSync(candidate).isFile()) {
-          return { file: candidate };
-        }
-      } catch {
-        /* directory */
-      }
+    if (pathIsFile(candidate)) {
+      return { file: candidate };
     }
   }
   return { unresolved: specifier };
@@ -87,7 +123,7 @@ function collectGraph(rootFiles) {
       continue;
     }
     visited.add(file);
-    const source = readFileSync(file, "utf8");
+    const source = readTextNoSymlink(file);
     IMPORT_RE.lastIndex = 0;
     let match;
     while ((match = IMPORT_RE.exec(source)) !== null) {
@@ -114,7 +150,7 @@ function walk(dir, out = []) {
       continue;
     }
     const full = join(dir, entry);
-    const st = statSync(full);
+    const st = lstatNoSymlink(full).stat;
     if (st.isDirectory()) {
       walk(full, out);
     } else if (/\.(ts|tsx|mts|mjs)$/.test(entry)) {
@@ -134,21 +170,21 @@ function browserEntryPoints() {
     "lib/dashboard-fetch-headers.ts"
   ]) {
     const abs = join(root, rel);
-    if (existsSync(abs)) {
+    if (pathIsFile(abs)) {
       roots.add(abs);
     }
   }
   // Every "use client" module and every browser API client (lib/*-api.ts, excluding *.server.ts).
   for (const dir of ["app", "components", "lib"]) {
     const abs = join(root, dir);
-    if (!existsSync(abs)) {
+    if (!pathIsDirectory(abs)) {
       continue;
     }
     for (const file of walk(abs)) {
       if (file.endsWith(".server.ts")) {
         continue;
       }
-      const source = readFileSync(file, "utf8");
+      const source = readTextNoSymlink(file);
       const isUseClient = /^\s*["']use client["']/m.test(source);
       const isBrowserApiClient = /[/\\]lib[/\\][^/\\]*-api\.ts$/.test(file);
       if (isUseClient || isBrowserApiClient) {
@@ -177,7 +213,7 @@ test("F06: no browser entry point transitively reaches server-only config, secre
       !FORBIDDEN_FILE_BASENAMES.has(name),
       `browser graph transitively reaches server-only module ${file.replaceAll("\\", "/")}`
     );
-    const source = readFileSync(file, "utf8");
+    const source = readTextNoSymlink(file);
     for (const { re, name: marker } of FORBIDDEN_SOURCE) {
       assert.ok(!re.test(source), `browser-reachable ${file.replaceAll("\\", "/")} contains ${marker}`);
     }
@@ -185,7 +221,7 @@ test("F06: no browser entry point transitively reaches server-only config, secre
 });
 
 test("F06: bff-public-config has no Node/secret imports and is the browser constant source", () => {
-  const source = readFileSync(join(root, "lib/bff/bff-public-config.ts"), "utf8");
+  const source = readTextNoSymlink(join(root, "lib/bff/bff-public-config.ts"));
   // Check actual imports/usage (not doc-comment prose).
   assert.doesNotMatch(source, /from\s+["'][^"']*(gateway-key|gateway-signer|bff-session-store|bff-config)["']/);
   assert.doesNotMatch(source, /from\s+["'](redis|node:[a-z]+)["']/);
@@ -193,7 +229,7 @@ test("F06: bff-public-config has no Node/secret imports and is the browser const
   assert.doesNotMatch(source, /\bBuffer\s*[.(]/);
   assert.match(source, /BFF_SESSION_COOKIE|BFF_CSRF_COOKIE|BFF_CSRF_HEADER/);
   // No duplicate constant declarations: bff-config re-exports rather than redeclaring them.
-  const configSource = readFileSync(join(root, "lib/bff/bff-config.ts"), "utf8");
+  const configSource = readTextNoSymlink(join(root, "lib/bff/bff-config.ts"));
   assert.doesNotMatch(configSource, /export const BFF_SESSION_COOKIE\s*=/);
   assert.match(configSource, /from "\.\/bff-public-config\.ts"/);
 });

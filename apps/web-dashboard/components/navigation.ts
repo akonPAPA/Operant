@@ -129,7 +129,7 @@ const baseNavigationGroups: NavigationGroup[] = [
 export function navigationGroupsForUploadCapability(
   capability: UploadCapability = uploadCapability()
 ): NavigationGroup[] {
-  if (capability === "AVAILABLE") {
+  if (capability === "AVAILABLE_LOCAL_DEMO") {
     return baseNavigationGroups;
   }
   return baseNavigationGroups.map((group) => ({

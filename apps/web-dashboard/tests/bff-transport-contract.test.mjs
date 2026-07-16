@@ -85,7 +85,7 @@ test("production browser bundle deterministically uses same-origin /api/bff", ()
 test("production BFF mode disables upload capability and navigation", () => {
   inBrowser(() =>
     withEnv({ NODE_ENV: "production" }, () => {
-      assert.equal(uploadCapability(), "NOT_AVAILABLE_IN_PRODUCTION_BFF");
+      assert.equal(uploadCapability(), "NOT_AVAILABLE_PRODUCTION_BFF");
       assert.equal(isUploadAvailable(), false);
       const hrefs = navigationGroupsForUploadCapability(uploadCapability()).flatMap((group) =>
         group.items.map((item) => item.href)
@@ -95,9 +95,20 @@ test("production BFF mode disables upload capability and navigation", () => {
   );
 });
 
+
+test("production server with unavailable BFF configuration disables upload capability", () => {
+  withEnv({ NODE_ENV: "production", ORDERPILOT_BFF_ENABLED: "false", ORDERPILOT_DEMO_MODE: "false" }, () => {
+    assert.equal(uploadCapability(), "NOT_AVAILABLE_PRODUCTION_CONFIGURATION");
+    assert.equal(isUploadAvailable(), false);
+    const hrefs = navigationGroupsForUploadCapability(uploadCapability()).flatMap((group) =>
+      group.items.map((item) => item.href)
+    );
+    assert.equal(hrefs.includes("/upload"), false);
+  });
+});
 test("local demo mode keeps upload capability available", () => {
   withEnv({ NODE_ENV: "development" }, () => {
-    assert.equal(uploadCapability(), "AVAILABLE");
+    assert.equal(uploadCapability(), "AVAILABLE_LOCAL_DEMO");
     assert.equal(isUploadAvailable(), true);
     const hrefs = navigationGroupsForUploadCapability(uploadCapability()).flatMap((group) =>
       group.items.map((item) => item.href)

@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const LOCAL_APP = "http://localhost:3100";
+const LOCAL_DEMO_APP = "http://localhost:3103";
 const PROD_APP = "http://localhost:3101";
+const PROD_UNAVAILABLE_APP = "http://localhost:3102";
 const FAKE_CORE = "http://127.0.0.1:18080";
 const BOOTSTRAP_TENANT = "11111111-1111-4111-8111-111111111111";
 
@@ -168,6 +170,37 @@ test("internal support routes cannot be reached through the tenant BFF", async (
   expect(upstream).toHaveLength(0);
 });
 
+
+test("production BFF upload is unavailable and issues zero upload requests", async ({ page, context, request }) => {
+  await context.addCookies([{ name: "op_session", value: "opaque-session-cookie-value-0123456789abcdef", domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+  await page.goto(`${PROD_APP}/upload`);
+  await expect(page.getByRole("heading", { name: "Not available" })).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^upload$/i })).toHaveCount(0);
+  await expect(page.locator('a[href="/upload"]')).toHaveCount(0);
+  const upstream = (await coreRequests(request)).filter((r) => r.path.includes("/intake/documents/upload"));
+  expect(upstream).toHaveLength(0);
+});
+
+test("production with unavailable BFF configuration keeps upload fail-closed", async ({ page, request }) => {
+  await page.goto(`${PROD_UNAVAILABLE_APP}/upload`);
+  await expect(page.getByRole("heading", { name: "Not available" })).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^upload$/i })).toHaveCount(0);
+  await expect(page.locator('a[href="/upload"]')).toHaveCount(0);
+  const upstream = (await coreRequests(request)).filter((r) => r.path.includes("/intake/documents/upload"));
+  expect(upstream).toHaveLength(0);
+});
+
+test("local demo upload remains visible with enabled form controls", async ({ page, request }) => {
+  await page.goto(`${LOCAL_DEMO_APP}/upload`);
+  await expect(page.getByRole("heading", { name: "Manual file intake" })).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^upload$/i })).toBeEnabled();
+  await expect(page.locator('a[href="/upload"]')).toHaveCount(1);
+  const upstream = (await coreRequests(request)).filter((r) => r.path.includes("/intake/documents/upload"));
+  expect(upstream).toHaveLength(0);
+});
 test("raw Core errors and internal headers are not exposed to the browser", async ({ page }) => {
   await signIn(page);
   const result = await page.evaluate(async () => {

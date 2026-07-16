@@ -1,9 +1,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const root = process.cwd();
+const NOFOLLOW = process.platform === "win32" ? 0 : (constants.O_NOFOLLOW ?? 0);
+
+function assertInsideRoot(path) {
+  const absolute = resolve(path);
+  const rel = relative(root, absolute);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return absolute;
+  throw new Error(`refusing out-of-tree path: ${path}`);
+}
+
+function lstatNoSymlink(path) {
+  const absolute = assertInsideRoot(path);
+  const stat = lstatSync(absolute);
+  if (stat.isSymbolicLink()) throw new Error(`refusing symlink path: ${relative(root, absolute)}`);
+  return { absolute, stat };
+}
+
+function pathIsFile(path) {
+  try {
+    const { absolute } = lstatNoSymlink(path);
+    const fd = openSync(absolute, constants.O_RDONLY | NOFOLLOW);
+    try { return fstatSync(fd).isFile(); }
+    finally { closeSync(fd); }
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+function readTextNoSymlink(path) {
+  const { absolute } = lstatNoSymlink(path);
+  const fd = openSync(absolute, constants.O_RDONLY | NOFOLLOW);
+  try {
+    if (!fstatSync(fd).isFile()) throw new Error(`expected file: ${relative(root, absolute)}`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /**
  * F14 — transitive RSC import guard.
@@ -33,7 +71,7 @@ function resolveSpecifier(fromFile, specifier) {
     join(base, "index.ts"),
     join(base, "index.tsx")
   ]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) {
+    if (pathIsFile(candidate)) {
       return candidate;
     }
   }
@@ -90,7 +128,7 @@ function findForbiddenChain(rootFile) {
       continue;
     }
     visited.add(file);
-    const source = readFileSync(file, "utf8");
+    const source = readTextNoSymlink(file);
     // Two valid boundaries are leaves from the server-render graph's perspective:
     //  - a "use client" module (separate client bundle), and
     //  - a lib/server/*.server.ts read wrapper (the designated server data layer — reaching it means
@@ -126,10 +164,10 @@ function findForbiddenChain(rootFile) {
 function walkServerEntries(dir, out = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
+    if (lstatNoSymlink(full).stat.isDirectory()) {
       walkServerEntries(full, out);
     } else if (entry === "page.tsx" || entry === "layout.tsx") {
-      const source = readFileSync(full, "utf8");
+      const source = readTextNoSymlink(full);
       if (!isUseClient(source)) {
         out.push(full);
       }
@@ -172,12 +210,12 @@ test("F14: legitimate Server Component -> Client Component composition is NOT fl
   const scan = (dir) => {
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
-      if (statSync(full).isDirectory()) scan(full);
-      else if (/\.(tsx|ts)$/.test(entry) && isUseClient(readFileSync(full, "utf8"))) useClientFiles.push(full);
+      if (lstatNoSymlink(full).stat.isDirectory()) scan(full);
+      else if (/\.(tsx|ts)$/.test(entry) && isUseClient(readTextNoSymlink(full))) useClientFiles.push(full);
     }
   };
   scan(join(root, "components"));
   assert.ok(useClientFiles.length > 0, "expected at least one client component");
   // Each real client component is a leaf: findForbiddenChain stops at it (does not traverse in).
-  assert.ok(existsSync(clientLeaf));
+  assert.ok(pathIsFile(clientLeaf));
 });
