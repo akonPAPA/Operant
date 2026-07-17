@@ -1,0 +1,52 @@
+name: PR279 Lint Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  lint-diagnostic:
+    if: github.event.pull_request.number == 279
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install frontend dependencies
+        working-directory: apps/web-dashboard
+        run: npm ci --silent
+      - name: Run lint and report exact errors
+        working-directory: apps/web-dashboard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set +e
+          output="$(npm run lint 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            {
+              echo '<!-- pr279-lint-diagnostic -->'
+              echo 'Exact frontend lint failure from diagnostic workflow:'
+              echo '```text'
+              printf '%s\n' "$output" | tail -n 120
+              echo '```'
+            } > /tmp/comment.md
+            jq -Rs '{body: .}' /tmp/comment.md > /tmp/comment.json
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --data-binary @/tmp/comment.json
+            exit "$status"
+          fi
