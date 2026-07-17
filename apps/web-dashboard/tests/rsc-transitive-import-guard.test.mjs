@@ -44,7 +44,7 @@ function readTextNoSymlink(path) {
 }
 
 /**
- * F14 — transitive RSC import guard.
+ * F14 â€” transitive RSC import guard.
  *
  * Build the module graph from every App Router Server Component page/layout and follow it through
  * server modules. Traversal STOPS at a "use client" boundary (a Server Component importing a Client
@@ -85,16 +85,19 @@ function isUseClient(source) {
 }
 
 // Browser tenant API clients that must never be reached from a Server Component render (same curated
-// contract as the direct rsc-page guard — this transitive guard strengthens it by catching the path
+// contract as the direct rsc-page guard â€” this transitive guard strengthens it by catching the path
 // through intermediate components/helpers). Lower-level isomorphic transport (api-transport, the CSRF
 // reader) is intentionally NOT listed: SSR-safe isomorphic clients (e.g. stage8-value-api) use it and
 // are permitted in Server Components; the tenant clients below are the ones that must use the
 // lib/server/*.server.ts variant instead.
 const FORBIDDEN_BASENAMES = new Set([
   "bff-oidc-config.ts",
-  "bff-oidc-identity-mapping.ts",
   "bff-oidc-runtime.ts",
   "bff-oidc-runtime-network.ts",
+  "bff-oidc-auth-code.ts",
+  "bff-oidc-identity-mapping.ts",
+  "bff-oidc-transaction-store.ts",
+  "bff-oidc-readiness.ts",
   "intake-api.ts",
   "stage2-data-api.ts",
   "draft-review-api.ts",
@@ -135,7 +138,7 @@ function findForbiddenChain(rootFile) {
     const source = readTextNoSymlink(file);
     // Two valid boundaries are leaves from the server-render graph's perspective:
     //  - a "use client" module (separate client bundle), and
-    //  - a lib/server/*.server.ts read wrapper (the designated server data layer — reaching it means
+    //  - a lib/server/*.server.ts read wrapper (the designated server data layer â€” reaching it means
     //    the page correctly entered the server layer rather than bypassing it to a browser client).
     // The guard's purpose is to catch a page/component reaching a browser tenant client through plain
     // (non-server, non-client) modules; those boundaries are where compliant paths terminate.

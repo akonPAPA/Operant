@@ -49,12 +49,12 @@ function readTextNoSymlink(path) {
 }
 
 /**
- * F06 — hard browser/server module separation.
+ * F06 â€” hard browser/server module separation.
  *
  * Build the TRANSITIVE import graph from every browser entry point ("use client" modules, the
  * browser transport, and browser API clients) and prove none of them can reach server-only runtime
  * configuration, secrets, Node crypto/buffer, Redis, or the gateway signer/key decoder. This is a
- * real module-graph check — not a single-file grep — so a deep transitive path is still caught.
+ * real module-graph check â€” not a single-file grep â€” so a deep transitive path is still caught.
  */
 
 // Resolved files whose presence in a browser graph is a violation.
@@ -66,10 +66,13 @@ const FORBIDDEN_FILE_BASENAMES = new Set([
   "bff-session-store.ts",
   "bff-session.ts",
   "bff-auth-handlers.ts",
-  "bff-oidc-identity-mapping.ts",
   "bff-oidc-config.ts",
   "bff-oidc-runtime.ts",
   "bff-oidc-runtime-network.ts",
+  "bff-oidc-auth-code.ts",
+  "bff-oidc-identity-mapping.ts",
+  "bff-oidc-transaction-store.ts",
+  "bff-oidc-readiness.ts",
   "bff-proxy.ts",
   "bff-server-read.ts",
   "bff-in-process-request.ts",

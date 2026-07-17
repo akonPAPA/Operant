@@ -1,366 +1,173 @@
-import { registeredBffRoutes } from "./bff-route-registry.ts";
+import "server-only";
 
-export type OidcAccessPlane =
-  | "TENANT_USER"
-  | "EXTERNAL_CUSTOMER"
-  | "SERVICE_ACCOUNT"
-  | "OPERANT_SUPPORT";
+export * from "./bff-oidc-identity-types.ts";
 
-export type VerifiedOidcPrincipal = Readonly<{
-  issuer: string;
-  subject: string;
-  audience: string;
-  email?: string;
-  emailVerified?: boolean;
-  claims?: Readonly<Record<string, unknown>>;
-  tokenExpiresAtEpochSec?: number;
-}>;
+import { normalizeConfiguredOidcMappingRecord } from "./bff-oidc-identity-record.ts";
+import { readConfiguredOidcIdentityMappingSource } from "./bff-oidc-identity-source.ts";
+import {
+  type ConfiguredSourceOptions,
+  type OidcAccessPlane,
+  type OidcIdentityMappingRecord,
+  type OidcMappingEnvironment,
+  type OperantIdentityMappingResult,
+  type ProductionOidcIdentityMappingResolver,
+  type VerifiedOidcPrincipal
+} from "./bff-oidc-identity-types.ts";
 
-export type OidcIdentityMappingStatus =
-  | "MAPPED"
-  | "DENIED_NOT_FOUND"
-  | "DENIED_AMBIGUOUS"
-  | "DENIED_DISABLED"
-  | "DENIED_UNTRUSTED_ISSUER"
-  | "DENIED_UNVERIFIED_EMAIL"
-  | "DENIED_UNSUPPORTED_PLANE"
-  | "DENIED_UNTRUSTED_CLAIM";
+export { readConfiguredOidcIdentityMappingSource } from "./bff-oidc-identity-source.ts";
 
-export type OidcIdentityMappingRecord = Readonly<{
-  issuer: string;
-  subject: string;
-  audience: string;
-  enabled: boolean;
-  accessPlane: OidcAccessPlane;
-  tenantRef?: string;
-  actorRef?: string;
-  staffRef?: string;
-  serviceAccountRef?: string;
-  externalCustomerRef?: string;
-  bffPermissions?: readonly string[];
-  safeDisplayName?: string;
-  safeEmail?: string;
-  requireEmail?: string;
-  mappingVersion: string;
-  source: "STATIC_TEST_FIXTURE" | "CONFIGURED_MAPPING" | "PERSISTENT_STORE";
-}>;
-
-export type TenantUserSessionProjection = Readonly<{
-  accessPlane: "TENANT_USER";
-  tenantId: string;
-  actorId: string;
-  permissions: readonly string[];
-  displayName?: string;
-  email?: string;
-}>;
-
-export type SafeOidcIdentityProjection =
-  | TenantUserSessionProjection
-  | Readonly<{
-      accessPlane: "OPERANT_SUPPORT";
-      staffRef: string;
-      displayName?: string;
-      email?: string;
-    }>
-  | Readonly<{
-      accessPlane: "EXTERNAL_CUSTOMER";
-      externalCustomerRef: string;
-      displayName?: string;
-      email?: string;
-    }>
-  | Readonly<{
-      accessPlane: "SERVICE_ACCOUNT";
-      serviceAccountRef: string;
-      displayName?: string;
-    }>;
-
-export type MappedOidcIdentity = Readonly<{
-  status: "MAPPED";
-  accessPlane: OidcAccessPlane;
-  identityRef: string;
-  tenantRef?: string;
-  actorRef?: string;
-  staffRef?: string;
-  serviceAccountRef?: string;
-  externalCustomerRef?: string;
-  mappingVersion: string;
-  source: OidcIdentityMappingRecord["source"];
-  safeProjection: SafeOidcIdentityProjection;
-}>;
-
-export type DeniedOidcIdentityMapping = Readonly<{
-  status: Exclude<OidcIdentityMappingStatus, "MAPPED">;
-  denialReason: Exclude<OidcIdentityMappingStatus, "MAPPED">;
-}>;
-
-export type OperantIdentityMappingResult = MappedOidcIdentity | DeniedOidcIdentityMapping;
-
-export type OidcIdentityMappingResolverOptions = Readonly<{
-  mappings?: readonly OidcIdentityMappingRecord[];
-  supportedAccessPlanes?: readonly OidcAccessPlane[];
-}>;
-
-const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const BOUNDED_TEXT = /^[^\x00-\x1f\x7f]{1,512}$/;
-const SAFE_DISPLAY_TEXT = /^[^\x00-\x1f\x7f]{1,160}$/;
-const SAFE_EMAIL_TEXT = /^[^\x00-\x1f\x7f]{3,254}$/;
-const AUTHORITY_CLAIM_NAMES = new Set([
-  "tenantId",
-  "actorId",
-  "roles",
-  "role",
-  "permissions",
-  "permission",
-  "staffUserId",
-  "serviceAccountId",
-  "approval",
-  "approvalStatus"
+const AUTHORITY_CLAIMS = new Set([
+  "tenantId", "tenant_id", "actorId", "actor_id", "userId", "user_id",
+  "staffUserId", "staff_user_id", "serviceAccountId", "service_account_id",
+  "permissions", "permission", "roles", "role", "groups", "group", "authorities",
+  "scope", "scp", "realm_access", "resource_access", "approval", "approvalStatus",
+  "approval_status", "approvedBy", "approved_by", "riskLevel", "risk_level", "margin",
+  "stock", "priceAuthority", "executionStatus", "supportRole", "support_role",
+  "staffRole", "staff_role", "externalWriteAuthority"
 ]);
-const DEFAULT_SUPPORTED_ACCESS_PLANES: readonly OidcAccessPlane[] = [
-  "TENANT_USER",
-  "EXTERNAL_CUSTOMER",
-  "OPERANT_SUPPORT"
-];
-const ALLOWED_BFF_PERMISSIONS = new Set(registeredBffRoutes().map((rule) => rule.permission));
 
-function deny(status: DeniedOidcIdentityMapping["status"]): DeniedOidcIdentityMapping {
-  return Object.freeze({ status, denialReason: status });
-}
-
-function boundedIdentityText(value: unknown): value is string {
-  return typeof value === "string" && BOUNDED_TEXT.test(value.trim());
-}
-
-function safeOptionalText(value: string | undefined, pattern: RegExp): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return pattern.test(trimmed) ? trimmed : undefined;
-}
-
-function hasAuthorityClaim(principal: VerifiedOidcPrincipal): boolean {
-  if (!principal.claims) {
-    return false;
-  }
-  return Object.keys(principal.claims).some((name) => AUTHORITY_CLAIM_NAMES.has(name));
-}
-
-function principalIsBounded(principal: VerifiedOidcPrincipal): boolean {
-  return (
-    boundedIdentityText(principal.issuer) &&
-    boundedIdentityText(principal.subject) &&
-    boundedIdentityText(principal.audience)
-  );
-}
-
-function mappingMatchesPrincipal(
-  principal: VerifiedOidcPrincipal,
-  mapping: OidcIdentityMappingRecord
-): boolean {
-  return (
-    principal.issuer === mapping.issuer &&
-    principal.subject === mapping.subject &&
-    principal.audience === mapping.audience
-  );
-}
-
-function validPermissionList(permissions: readonly string[] | undefined): permissions is readonly string[] {
-  if (!permissions || permissions.length === 0 || permissions.length > 64) {
-    return false;
-  }
-  const unique = new Set(permissions);
-  return (
-    unique.size === permissions.length &&
-    permissions.every(
-      (permission) =>
-        /^[A-Z][A-Z0-9_]{1,64}$/.test(permission) &&
-        ALLOWED_BFF_PERMISSIONS.has(permission) &&
-        !permission.startsWith("STAFF_") &&
-        !permission.startsWith("SUPPORT_") &&
-        !permission.startsWith("INTERNAL_")
-    )
-  );
-}
-
-function emailMatches(principal: VerifiedOidcPrincipal, mapping: OidcIdentityMappingRecord): boolean | "unverified" {
-  if (!mapping.requireEmail) {
-    return true;
-  }
-  if (principal.emailVerified !== true) {
-    return "unverified";
-  }
-  return principal.email?.trim().toLowerCase() === mapping.requireEmail.trim().toLowerCase();
-}
-
-function validatePlaneShape(mapping: OidcIdentityMappingRecord): boolean {
-  if (mapping.accessPlane === "TENANT_USER") {
-    return Boolean(
-      mapping.tenantRef &&
-        UUID_VALUE.test(mapping.tenantRef) &&
-        mapping.actorRef &&
-        UUID_VALUE.test(mapping.actorRef) &&
-        validPermissionList(mapping.bffPermissions) &&
-        !mapping.staffRef &&
-        !mapping.serviceAccountRef &&
-        !mapping.externalCustomerRef
-    );
-  }
-  if (mapping.accessPlane === "OPERANT_SUPPORT") {
-    return Boolean(
-      mapping.staffRef &&
-        UUID_VALUE.test(mapping.staffRef) &&
-        !mapping.tenantRef &&
-        !mapping.actorRef &&
-        !mapping.serviceAccountRef &&
-        !mapping.externalCustomerRef &&
-        !mapping.bffPermissions
-    );
-  }
-  if (mapping.accessPlane === "SERVICE_ACCOUNT") {
-    return Boolean(
-      mapping.serviceAccountRef &&
-        UUID_VALUE.test(mapping.serviceAccountRef) &&
-        !mapping.tenantRef &&
-        !mapping.actorRef &&
-        !mapping.staffRef &&
-        !mapping.externalCustomerRef &&
-        !mapping.bffPermissions
-    );
-  }
-  return Boolean(
-    mapping.externalCustomerRef &&
-      UUID_VALUE.test(mapping.externalCustomerRef) &&
-      !mapping.tenantRef &&
-      !mapping.actorRef &&
-      !mapping.staffRef &&
-      !mapping.serviceAccountRef &&
-      !mapping.bffPermissions
-  );
-}
-
-function projectionFor(mapping: OidcIdentityMappingRecord): SafeOidcIdentityProjection | null {
-  const displayName = safeOptionalText(mapping.safeDisplayName, SAFE_DISPLAY_TEXT);
-  const email = safeOptionalText(mapping.safeEmail, SAFE_EMAIL_TEXT);
-  if (mapping.accessPlane === "TENANT_USER" && mapping.tenantRef && mapping.actorRef && mapping.bffPermissions) {
-    return Object.freeze({
-      accessPlane: "TENANT_USER" as const,
-      tenantId: mapping.tenantRef,
-      actorId: mapping.actorRef,
-      permissions: Object.freeze([...mapping.bffPermissions]),
-      ...(displayName ? { displayName } : {}),
-      ...(email ? { email } : {})
-    });
-  }
-  if (mapping.accessPlane === "OPERANT_SUPPORT" && mapping.staffRef) {
-    return Object.freeze({
-      accessPlane: "OPERANT_SUPPORT" as const,
-      staffRef: mapping.staffRef,
-      ...(displayName ? { displayName } : {}),
-      ...(email ? { email } : {})
-    });
-  }
-  if (mapping.accessPlane === "SERVICE_ACCOUNT" && mapping.serviceAccountRef) {
-    return Object.freeze({
-      accessPlane: "SERVICE_ACCOUNT" as const,
-      serviceAccountRef: mapping.serviceAccountRef,
-      ...(displayName ? { displayName } : {})
-    });
-  }
-  if (mapping.accessPlane === "EXTERNAL_CUSTOMER" && mapping.externalCustomerRef) {
-    return Object.freeze({
-      accessPlane: "EXTERNAL_CUSTOMER" as const,
-      externalCustomerRef: mapping.externalCustomerRef,
-      ...(displayName ? { displayName } : {}),
-      ...(email ? { email } : {})
-    });
-  }
-  return null;
-}
-
-function identityRefFor(mapping: OidcIdentityMappingRecord): string {
-  return mapping.actorRef ?? mapping.staffRef ?? mapping.serviceAccountRef ?? mapping.externalCustomerRef ?? "";
-}
-
-function mapped(mapping: OidcIdentityMappingRecord, safeProjection: SafeOidcIdentityProjection): MappedOidcIdentity {
-  return Object.freeze({
-    status: "MAPPED" as const,
-    accessPlane: mapping.accessPlane,
-    identityRef: identityRefFor(mapping),
-    ...(mapping.tenantRef ? { tenantRef: mapping.tenantRef } : {}),
-    ...(mapping.actorRef ? { actorRef: mapping.actorRef } : {}),
-    ...(mapping.staffRef ? { staffRef: mapping.staffRef } : {}),
-    ...(mapping.serviceAccountRef ? { serviceAccountRef: mapping.serviceAccountRef } : {}),
-    ...(mapping.externalCustomerRef ? { externalCustomerRef: mapping.externalCustomerRef } : {}),
-    mappingVersion: mapping.mappingVersion,
-    source: mapping.source,
-    safeProjection
-  });
+function hasAuthorityClaim(claims: Readonly<Record<string, unknown>>): boolean {
+  return Object.keys(claims).some((claim) => AUTHORITY_CLAIMS.has(claim));
 }
 
 export function resolveOidcIdentityMapping(
   principal: VerifiedOidcPrincipal,
-  options: OidcIdentityMappingResolverOptions = {}
+  options?: {
+    mappings: readonly OidcIdentityMappingRecord[];
+    supportedAccessPlanes?: readonly OidcAccessPlane[];
+  }
 ): OperantIdentityMappingResult {
-  if (!principalIsBounded(principal)) {
-    return deny("DENIED_NOT_FOUND");
+  if (!options) return { status: "DENIED_UNTRUSTED_ISSUER" };
+  if (hasAuthorityClaim(principal.claims)) return { status: "DENIED_UNTRUSTED_CLAIM" };
+  const candidates = options.mappings.filter(
+    (mapping) =>
+      mapping.issuer === principal.issuer &&
+      mapping.audience === principal.audience &&
+      mapping.subject === principal.subject
+  );
+  if (candidates.length === 0) return { status: "DENIED_NOT_FOUND" };
+  if (candidates.length > 1) return { status: "DENIED_AMBIGUOUS" };
+  const mapping = candidates[0];
+  if (!mapping.enabled) return { status: "DENIED_DISABLED" };
+  if (mapping.requireEmail && principal.emailVerified !== true) {
+    return { status: "DENIED_UNVERIFIED_EMAIL" };
   }
-  if (hasAuthorityClaim(principal)) {
-    return deny("DENIED_UNTRUSTED_CLAIM");
+  if (mapping.requireEmail && mapping.requireEmail.toLowerCase() !== principal.email?.toLowerCase()) {
+    return { status: "DENIED_EMAIL_MISMATCH" };
   }
-  const mappings = options.mappings ?? [];
-  const issuerMatches = mappings.filter((mapping) => mapping.issuer === principal.issuer);
-  if (issuerMatches.length === 0) {
-    return deny("DENIED_UNTRUSTED_ISSUER");
-  }
-  const audienceMatches = issuerMatches.filter((mapping) => mapping.audience === principal.audience);
-  if (audienceMatches.length === 0) {
-    return deny("DENIED_UNTRUSTED_ISSUER");
-  }
-  const subjectMatches = audienceMatches.filter((mapping) => mappingMatchesPrincipal(principal, mapping));
-  if (subjectMatches.length === 0) {
-    return deny("DENIED_NOT_FOUND");
-  }
-  if (subjectMatches.every((mapping) => !mapping.enabled)) {
-    return deny("DENIED_DISABLED");
-  }
-  const enabledMatches = subjectMatches.filter((mapping) => mapping.enabled);
-  const emailFiltered: OidcIdentityMappingRecord[] = [];
-  for (const mapping of enabledMatches) {
-    const match = emailMatches(principal, mapping);
-    if (match === "unverified") {
-      return deny("DENIED_UNVERIFIED_EMAIL");
-    }
-    if (match) {
-      emailFiltered.push(mapping);
-    }
-  }
-  if (emailFiltered.length === 0) {
-    return deny("DENIED_NOT_FOUND");
-  }
-  if (emailFiltered.length !== 1) {
-    return deny("DENIED_AMBIGUOUS");
+  if (options.supportedAccessPlanes && !options.supportedAccessPlanes.includes(mapping.accessPlane)) {
+    return { status: "DENIED_UNSUPPORTED_PLANE" };
   }
 
-  const mapping = emailFiltered[0];
-  const supported = new Set(options.supportedAccessPlanes ?? DEFAULT_SUPPORTED_ACCESS_PLANES);
-  if (!supported.has(mapping.accessPlane)) {
-    return deny("DENIED_UNSUPPORTED_PLANE");
+  if (mapping.accessPlane === "TENANT_USER") {
+    return Object.freeze({
+      status: "MAPPED" as const,
+      source: "CONFIGURED_MAPPING" as const,
+      mappingVersion: mapping.mappingVersion,
+      accessPlane: "TENANT_USER" as const,
+      tenantRef: mapping.tenantRef,
+      actorRef: mapping.actorRef,
+      safeProjection: Object.freeze({
+        accessPlane: "TENANT_USER",
+        tenantId: mapping.tenantRef,
+        actorId: mapping.actorRef,
+        permissions: Object.freeze([...(mapping.bffPermissions ?? [])]),
+        ...(mapping.safeDisplayName ? { displayName: mapping.safeDisplayName } : {}),
+        ...(mapping.safeEmail ? { email: mapping.safeEmail } : {})
+      })
+    });
   }
-  if (!validatePlaneShape(mapping)) {
-    return deny("DENIED_UNSUPPORTED_PLANE");
+
+  if (mapping.accessPlane === "OPERANT_SUPPORT") {
+    return Object.freeze({
+      status: "MAPPED" as const,
+      source: "CONFIGURED_MAPPING" as const,
+      mappingVersion: mapping.mappingVersion,
+      accessPlane: "OPERANT_SUPPORT" as const,
+      staffRef: mapping.staffRef,
+      safeProjection: Object.freeze({
+        accessPlane: "OPERANT_SUPPORT",
+        staffRef: mapping.staffRef,
+        ...(mapping.safeDisplayName ? { displayName: mapping.safeDisplayName } : {}),
+        ...(mapping.safeEmail ? { email: mapping.safeEmail } : {})
+      })
+    });
   }
-  const safeProjection = projectionFor(mapping);
-  if (!safeProjection) {
-    return deny("DENIED_UNSUPPORTED_PLANE");
+
+  if (mapping.accessPlane === "EXTERNAL_CUSTOMER") {
+    return Object.freeze({
+      status: "MAPPED" as const,
+      source: "CONFIGURED_MAPPING" as const,
+      mappingVersion: mapping.mappingVersion,
+      accessPlane: "EXTERNAL_CUSTOMER" as const,
+      externalCustomerRef: mapping.externalCustomerRef,
+      safeProjection: Object.freeze({
+        accessPlane: "EXTERNAL_CUSTOMER",
+        externalCustomerRef: mapping.externalCustomerRef,
+        ...(mapping.safeDisplayName ? { displayName: mapping.safeDisplayName } : {}),
+        ...(mapping.safeEmail ? { email: mapping.safeEmail } : {})
+      })
+    });
   }
-  return mapped(mapping, safeProjection);
+
+  return { status: "DENIED_UNSUPPORTED_PLANE" };
 }
 
 export function createStaticOidcIdentityMappingResolver(
-  mappings: readonly OidcIdentityMappingRecord[],
-  options: Omit<OidcIdentityMappingResolverOptions, "mappings"> = {}
-): (principal: VerifiedOidcPrincipal) => OperantIdentityMappingResult {
-  const frozenMappings = Object.freeze([...mappings]);
-  return (principal) => resolveOidcIdentityMapping(principal, { ...options, mappings: frozenMappings });
+  rawMappings: readonly Record<string, unknown>[]
+): ProductionOidcIdentityMappingResolver {
+  const normalized = rawMappings.map((raw) =>
+    normalizeConfiguredOidcMappingRecord({ ...raw, source: "CONFIGURED_MAPPING" })
+  );
+  return (principal) => {
+    const issuerAudienceMatches = rawMappings.filter(
+      (mapping) => mapping.issuer === principal.issuer && mapping.audience === principal.audience
+    );
+    if (issuerAudienceMatches.length === 0) return { status: "DENIED_UNTRUSTED_ISSUER" };
+    const subjectIndexes = rawMappings
+      .map((mapping, index) => ({ mapping, index }))
+      .filter(({ mapping }) =>
+        mapping.issuer === principal.issuer &&
+        mapping.audience === principal.audience &&
+        mapping.subject === principal.subject
+      );
+    if (subjectIndexes.length === 0) return { status: "DENIED_NOT_FOUND" };
+    if (subjectIndexes.some(({ index }) => !normalized[index])) {
+      return { status: "DENIED_UNSUPPORTED_PLANE" };
+    }
+    return resolveOidcIdentityMapping(principal, {
+      mappings: subjectIndexes.map(({ index }) => normalized[index] as OidcIdentityMappingRecord),
+      supportedAccessPlanes: ["TENANT_USER", "EXTERNAL_CUSTOMER", "OPERANT_SUPPORT"]
+    });
+  };
+}
+
+export function createProductionOidcIdentityMappingResolver(
+  env: OidcMappingEnvironment = process.env,
+  options: ConfiguredSourceOptions = {}
+): ProductionOidcIdentityMappingResolver {
+  const sourceResult = readConfiguredOidcIdentityMappingSource(env, options);
+  if (!sourceResult.ok) return () => ({ status: "DENIED_UNTRUSTED_ISSUER" });
+  const source = sourceResult.source;
+  return (principal) => resolveOidcIdentityMapping(principal, {
+    mappings: source.resolveCandidates(principal.issuer, principal.audience, principal.subject),
+    supportedAccessPlanes: ["TENANT_USER", "EXTERNAL_CUSTOMER", "OPERANT_SUPPORT"]
+  });
+}
+
+export function createMemoizedProductionOidcIdentityMappingResolverLoader(
+  env: OidcMappingEnvironment = process.env,
+  options: ConfiguredSourceOptions = {}
+): () => ProductionOidcIdentityMappingResolver {
+  let resolver: ProductionOidcIdentityMappingResolver | undefined;
+  return () => {
+    if (!resolver) resolver = createProductionOidcIdentityMappingResolver(env, options);
+    return resolver;
+  };
+}
+
+const productionResolverLoader = createMemoizedProductionOidcIdentityMappingResolverLoader();
+
+export function getProductionOidcIdentityMappingResolver(): ProductionOidcIdentityMappingResolver {
+  return productionResolverLoader();
 }
