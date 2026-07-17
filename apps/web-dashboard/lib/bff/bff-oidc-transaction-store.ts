@@ -3,6 +3,12 @@ import "server-only";
 import { createClient } from "redis";
 import { randomBytes } from "node:crypto";
 import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
+import {
+  BffRedisConfigurationError,
+  bffRedisConnectionOptions,
+  type BffRedisConnectionOptions,
+  type MinimalBffRedisClient
+} from "./bff-redis-connection.ts";
 
 export type OidcAuthorizationTransaction = Readonly<{
   state: string;
@@ -16,12 +22,9 @@ export type OidcAuthorizationTransaction = Readonly<{
   expiresAtEpochSec: number;
 }>;
 
-type MinimalRedisClient = {
-  isOpen: boolean;
-  connect(): Promise<unknown>;
+type MinimalRedisClient = MinimalBffRedisClient & {
   set(key: string, value: string, options: { EX: number; NX: true }): Promise<string | null>;
   getDel(key: string): Promise<string | null>;
-  on?(event: string, listener: (...args: unknown[]) => void): unknown;
 };
 
 const TRANSACTION_KEY_PREFIX = "op:oidc:tx:";
@@ -31,7 +34,7 @@ const TEXT_VALUE = /^[^\x00-\x1f\x7f]{1,1024}$/;
 const MAX_TRANSACTION_AGE_SECONDS = 600;
 const memoryStore = new Map<string, OidcAuthorizationTransaction>();
 let redisClient: MinimalRedisClient | null = null;
-let redisClientFactoryForTesting: ((url: string) => MinimalRedisClient) | null = null;
+let redisClientFactoryForTesting: ((options: BffRedisConnectionOptions) => MinimalRedisClient) | null = null;
 let redisConnectInFlight: Promise<void> | null = null;
 
 export class OidcTransactionStoreUnavailableError extends Error {
@@ -42,7 +45,7 @@ export class OidcTransactionStoreUnavailableError extends Error {
 }
 
 export function setOidcTransactionRedisClientFactoryForTesting(
-  factory: ((url: string) => MinimalRedisClient) | null
+  factory: ((options: BffRedisConnectionOptions) => MinimalRedisClient) | null
 ): void {
   redisClientFactoryForTesting = factory;
   redisClient = null;
@@ -60,23 +63,21 @@ function memoryTransactionStoreAllowed(): boolean {
   return process.env.ORDERPILOT_BFF_SESSION_STORE === "memory" && !isProductionLikeDeployment();
 }
 
-function redisUrl(): string {
-  return process.env.ORDERPILOT_BFF_REDIS_URL?.trim() || process.env.REDIS_URL?.trim() || "";
-}
-
 async function requireRedis(): Promise<MinimalRedisClient> {
-  const url = redisUrl();
-  if (!url) {
-    throw new OidcTransactionStoreUnavailableError(
-      "ORDERPILOT_BFF_REDIS_URL (or REDIS_URL) is required for OIDC transactions"
-    );
+  let options: BffRedisConnectionOptions;
+  try {
+    options = bffRedisConnectionOptions();
+  } catch (error) {
+    if (error instanceof BffRedisConfigurationError) {
+      throw new OidcTransactionStoreUnavailableError(error.message);
+    }
+    throw new OidcTransactionStoreUnavailableError("BFF Redis host, port, and password are required.");
   }
   if (!redisClient) {
     redisClient = redisClientFactoryForTesting
-      ? redisClientFactoryForTesting(url)
+      ? redisClientFactoryForTesting(options)
       : (createClient({
-          url,
-          socket: { reconnectStrategy: false, connectTimeout: 5000 }
+          ...options
         }) as unknown as MinimalRedisClient);
     redisClient.on?.("error", () => undefined);
   }

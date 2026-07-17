@@ -27,6 +27,9 @@ const ENV_KEYS = [
   "ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID",
   "ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID",
   "ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS",
+  "ORDERPILOT_BFF_REDIS_HOST",
+  "ORDERPILOT_BFF_REDIS_PORT",
+  "ORDERPILOT_BFF_REDIS_PASSWORD",
   "ORDERPILOT_BFF_REDIS_URL",
   "REDIS_URL",
   "ORDERPILOT_E2E_RUNTIME_NODE_ENV",
@@ -38,6 +41,11 @@ const ENV_KEYS = [
 const VALID_TENANT_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_ACTOR_ID = "22222222-2222-4222-8222-222222222222";
 const VALID_SESSION_ID = "S".repeat(43);
+const REDIS_ENV = {
+  ORDERPILOT_BFF_REDIS_HOST: "localhost",
+  ORDERPILOT_BFF_REDIS_PORT: "63790",
+  ORDERPILOT_BFF_REDIS_PASSWORD: "p/a?s#s@w:ord%25"
+};
 
 function nowEpoch() {
   return Math.floor(Date.now() / 1000);
@@ -216,7 +224,7 @@ test("production Node runtime denies bootstrap for every profile and sets no coo
       ORDERPILOT_BFF_SESSION_SECRET: "legacy-session-secret-must-not-enable-bootstrap-01234567",
       ORDERPILOT_LOCAL_BOOTSTRAP_SECRET: "legacy-local-secret-must-not-enable-bootstrap-01234567",
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     }
   ]) {
     await withEnv(productionEnv, async () => {
@@ -458,7 +466,7 @@ test("invalid Redis-backed issuance does not call setEx", async () => {
     {
       ...LOCAL_BOOTSTRAP_ENV,
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     },
     async () => {
       setRedisClientFactoryForTesting(() => redis);
@@ -508,7 +516,7 @@ test("expired stored Redis records fail closed", async () => {
     {
       ...LOCAL_BOOTSTRAP_ENV,
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     },
     async () => {
       setRedisClientFactoryForTesting(() => redisWithExpired);
@@ -627,7 +635,7 @@ test("Redis is mandatory for production-like sessions - no memory fallback", asy
         SessionStoreUnavailableError
       );
       const error = await requireRedisSessionBackend();
-      assert.match(error, /ORDERPILOT_BFF_REDIS_URL/);
+      assert.match(error, /BFF Redis host, port, and password/);
     }
   );
 });
@@ -651,7 +659,7 @@ test("Redis command errors fail closed on load and deny bootstrap without cookie
     {
       ...LOCAL_BOOTSTRAP_ENV,
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     },
     async () => {
       setRedisClientFactoryForTesting(() => failingRedis);
@@ -676,7 +684,7 @@ test("tampered Redis record with unknown permission fails closed", async () => {
     {
       ...LOCAL_BOOTSTRAP_ENV,
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     },
     async () => {
       setRedisClientFactoryForTesting(() => redisWithTamperedRecord);
@@ -698,7 +706,7 @@ test("tampered Redis record with invalid UUID fails closed", async () => {
     {
       ...LOCAL_BOOTSTRAP_ENV,
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     },
     async () => {
       setRedisClientFactoryForTesting(() => redisWithTamperedRecord);
@@ -720,11 +728,121 @@ test("revoked session records fail closed", async () => {
     {
       ...LOCAL_BOOTSTRAP_ENV,
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ...REDIS_ENV
     },
     async () => {
       setRedisClientFactoryForTesting(() => redisWithRevoked);
       assert.equal(await loadOperatorSession(VALID_SESSION_ID), null);
+    }
+  );
+});
+
+test("structured Redis connection preserves URI-reserved password characters exactly", async () => {
+  let capturedOptions;
+  const redis = countingRedis();
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ...REDIS_ENV
+    },
+    async () => {
+      setRedisClientFactoryForTesting((options) => {
+        capturedOptions = options;
+        return redis.client;
+      });
+      const error = await requireRedisSessionBackend();
+      assert.equal(error, null);
+      assert.equal(capturedOptions.password, "p/a?s#s@w:ord%25");
+      assert.equal(capturedOptions.socket.host, "localhost");
+      assert.equal(capturedOptions.socket.port, 63790);
+    }
+  );
+});
+
+test("malformed Redis host fails before connection and does not leak password", async () => {
+  let factoryCalls = 0;
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ...REDIS_ENV,
+      ORDERPILOT_BFF_REDIS_HOST: "redis:6379"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => {
+        factoryCalls += 1;
+        return countingRedis().client;
+      });
+      await assert.rejects(
+        () => persistOperatorSession({ tenantId: VALID_TENANT_ID, actorId: VALID_ACTOR_ID, permissions: ["REVIEW_READ"] }),
+        (error) => {
+          assert.equal(error instanceof SessionStoreUnavailableError, true);
+          assert.doesNotMatch(error.message, /p\/a\?s#s@w:ord%25/);
+          return true;
+        }
+      );
+      assert.equal(factoryCalls, 0);
+    }
+  );
+});
+
+test("malformed Redis port fails before connection", async () => {
+  let factoryCalls = 0;
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ...REDIS_ENV,
+      ORDERPILOT_BFF_REDIS_PORT: "6379x"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => {
+        factoryCalls += 1;
+        return countingRedis().client;
+      });
+      const error = await requireRedisSessionBackend();
+      assert.match(error, /BFF Redis host, port, and password/);
+      assert.equal(factoryCalls, 0);
+    }
+  );
+});
+
+test("credential-bearing Redis URL fallback is rejected before connection", async () => {
+  let factoryCalls = 0;
+  await withEnv(
+    {
+      ...LOCAL_BOOTSTRAP_ENV,
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ...REDIS_ENV,
+      ORDERPILOT_BFF_REDIS_URL: "redis://:secret@redis:6379"
+    },
+    async () => {
+      setRedisClientFactoryForTesting(() => {
+        factoryCalls += 1;
+        return countingRedis().client;
+      });
+      const error = await requireRedisSessionBackend();
+      assert.match(error, /Redis URL configuration is not supported/);
+      assert.doesNotMatch(error, /secret/);
+      assert.equal(factoryCalls, 0);
+    }
+  );
+});
+
+test("missing production Redis password fails closed", async () => {
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      ORDERPILOT_DEPLOY_PROFILE: "production",
+      ORDERPILOT_BFF_ENABLED: "true",
+      ORDERPILOT_BFF_SESSION_STORE: "redis",
+      ORDERPILOT_BFF_REDIS_HOST: "redis",
+      ORDERPILOT_BFF_REDIS_PORT: "6379"
+    },
+    async () => {
+      const error = await requireRedisSessionBackend();
+      assert.match(error, /BFF Redis host, port, and password/);
     }
   );
 });

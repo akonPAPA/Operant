@@ -12,7 +12,7 @@ Environment=OPERANT_ENV_FILE=/etc/operant/operant.production.env
 ExecStartPre=/opt/operant/OrderPilot-Core/scripts/deploy/operant-production.sh validate
 ExecStart=/opt/operant/OrderPilot-Core/scripts/deploy/operant-production.sh start
 ExecStop=/opt/operant/OrderPilot-Core/scripts/deploy/operant-production.sh stop
-TimeoutStartSec=300
+TimeoutStartSec=960
 TimeoutStopSec=120
 
 [Install]

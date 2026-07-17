@@ -10,6 +10,12 @@ import { newOpaqueSessionId } from "./bff-session.ts";
 import { sessionLifetimeWithinPolicy, sessionMaxAgeSecondsFromEnv } from "./bff-session-ttl-policy.ts";
 import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
 import { registeredBffRoutes } from "./bff-route-registry.ts";
+import {
+  BffRedisConfigurationError,
+  bffRedisConnectionOptions,
+  type BffRedisConnectionOptions,
+  type MinimalBffRedisClient
+} from "./bff-redis-connection.ts";
 
 export type StoredOperatorSession = OperatorSession & {
   sessionId: string;
@@ -32,13 +38,10 @@ export class InvalidSessionAuthorityError extends Error {
   }
 }
 
-type MinimalRedisClient = {
-  isOpen: boolean;
-  connect(): Promise<unknown>;
+type MinimalRedisClient = MinimalBffRedisClient & {
   get(key: string): Promise<string | null>;
   setEx(key: string, ttlSeconds: number, value: string): Promise<unknown>;
   del(key: string): Promise<unknown>;
-  on?(event: string, listener: (...args: unknown[]) => void): unknown;
 };
 
 const SESSION_KEY_PREFIX = "op:bff:session:";
@@ -49,13 +52,13 @@ const MAX_SESSION_PERMISSIONS = 64;
 const ALLOWED_BFF_PERMISSIONS = new Set(registeredBffRoutes().map((rule) => rule.permission));
 
 let redisClient: MinimalRedisClient | null = null;
-let redisClientFactoryForTesting: ((url: string) => MinimalRedisClient) | null = null;
+let redisClientFactoryForTesting: ((options: BffRedisConnectionOptions) => MinimalRedisClient) | null = null;
 /** Coalesces concurrent connect attempts into one in-flight promise (F04: no connect stampede). */
 let redisConnectInFlight: Promise<void> | null = null;
 const memoryStore = new Map<string, StoredOperatorSession>();
 
 export function setRedisClientFactoryForTesting(
-  factory: ((url: string) => MinimalRedisClient) | null
+  factory: ((options: BffRedisConnectionOptions) => MinimalRedisClient) | null
 ): void {
   redisClientFactoryForTesting = factory;
   redisClient = null;
@@ -166,25 +169,21 @@ function memorySessionStoreAllowed(): boolean {
   return process.env.ORDERPILOT_BFF_SESSION_STORE === "memory" && !isProductionLikeDeployment();
 }
 
-function redisUrl(): string {
-  return process.env.ORDERPILOT_BFF_REDIS_URL?.trim() || process.env.REDIS_URL?.trim() || "";
-}
-
 async function requireRedis(): Promise<MinimalRedisClient> {
-  const url = redisUrl();
-  if (!url) {
-    throw new SessionStoreUnavailableError(
-      "ORDERPILOT_BFF_REDIS_URL (or REDIS_URL) is required for BFF sessions"
-    );
+  let options: BffRedisConnectionOptions;
+  try {
+    options = bffRedisConnectionOptions();
+  } catch (error) {
+    if (error instanceof BffRedisConfigurationError) {
+      throw new SessionStoreUnavailableError(error.message);
+    }
+    throw new SessionStoreUnavailableError("BFF Redis host, port, and password are required.");
   }
   if (!redisClient) {
     redisClient = redisClientFactoryForTesting
-      ? redisClientFactoryForTesting(url)
+      ? redisClientFactoryForTesting(options)
       : (createClient({
-          url,
-          // F04: bound the failure mode — a single connect with a timeout and no tight
-          // background reconnect loop. Recovery happens on the next request after reset.
-          socket: { reconnectStrategy: false, connectTimeout: 5000 }
+          ...options
         }) as unknown as MinimalRedisClient);
     redisClient.on?.("error", () => {
       /* connection errors surface on command */
