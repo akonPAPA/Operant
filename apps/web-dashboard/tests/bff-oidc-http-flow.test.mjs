@@ -67,4 +67,77 @@ if (process.env[CHILD] !== "1") {
       store.resetOidcTransactionStoreForTesting();
     }
   });
+
+  test("OIDC Redis transaction store uses structured Redis options and preserves reserved password", async () => {
+    const prior = {};
+    for (const key of [
+      "NODE_ENV",
+      "ORDERPILOT_DEPLOY_PROFILE",
+      "ORDERPILOT_BFF_SESSION_STORE",
+      "ORDERPILOT_BFF_REDIS_HOST",
+      "ORDERPILOT_BFF_REDIS_PORT",
+      "ORDERPILOT_BFF_REDIS_PASSWORD",
+      "ORDERPILOT_BFF_REDIS_URL",
+      "REDIS_URL"
+    ]) {
+      prior[key] = process.env[key];
+      delete process.env[key];
+    }
+    process.env.NODE_ENV = "test";
+    process.env.ORDERPILOT_DEPLOY_PROFILE = "local-test";
+    process.env.ORDERPILOT_BFF_SESSION_STORE = "redis";
+    process.env.ORDERPILOT_BFF_REDIS_HOST = "redis";
+    process.env.ORDERPILOT_BFF_REDIS_PORT = "6379";
+    process.env.ORDERPILOT_BFF_REDIS_PASSWORD = "p/a?s#s@w:ord%25";
+    store.resetOidcTransactionStoreForTesting();
+    let capturedOptions;
+    const records = new Map();
+    try {
+      store.setOidcTransactionRedisClientFactoryForTesting((options) => {
+        capturedOptions = options;
+        return {
+          isOpen: true,
+          connect: async () => {},
+          set: async (key, value) => {
+            records.set(key, value);
+            return "OK";
+          },
+          getDel: async (key) => {
+            const value = records.get(key) ?? null;
+            records.delete(key);
+            return value;
+          },
+          on: () => {}
+        };
+      });
+      const now = Math.floor(Date.now() / 1000);
+      const state = store.newOidcTransactionSecret();
+      await store.persistOidcAuthorizationTransaction({
+        state,
+        nonce: store.newOidcTransactionSecret(),
+        pkceVerifier: store.newOidcTransactionSecret(),
+        browserBindingHash: binding.oidcBindingHash(store.newOidcTransactionSecret()),
+        redirectUri: "http://127.0.0.1/api/auth/oidc/callback",
+        issuer: "https://idp.example.test",
+        audience: "operant-dashboard-client",
+        createdAtEpochSec: now,
+        expiresAtEpochSec: now + 300
+      });
+      assert.equal(capturedOptions.password, "p/a?s#s@w:ord%25");
+      assert.deepEqual(capturedOptions.socket, {
+        host: "redis",
+        port: 6379,
+        reconnectStrategy: false,
+        connectTimeout: 5000
+      });
+      assert.ok(await store.consumeOidcAuthorizationTransaction(state));
+      assert.equal(await store.consumeOidcAuthorizationTransaction(state), null);
+    } finally {
+      for (const key of Object.keys(prior)) {
+        if (prior[key] === undefined) delete process.env[key];
+        else process.env[key] = prior[key];
+      }
+      store.resetOidcTransactionStoreForTesting();
+    }
+  });
 }

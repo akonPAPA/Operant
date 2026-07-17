@@ -89,7 +89,7 @@ const FORBIDDEN_SOURCE = [
   { re: /\bBuffer\s*\./, name: "Buffer usage" },
   { re: /ORDERPILOT_GATEWAY_SHARED_SECRET/, name: "gateway secret env" },
   { re: /ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET/, name: "gateway secret env" },
-  { re: /ORDERPILOT_BFF_REDIS_URL/, name: "redis url env" }
+  { re: /ORDERPILOT_BFF_REDIS_PASSWORD/, name: "redis password env" }
 ];
 
 function resolveLocal(fromFile, specifier) {

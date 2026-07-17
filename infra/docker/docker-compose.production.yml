@@ -60,7 +60,9 @@ services:
       ORDERPILOT_DEPLOY_PROFILE: production
       ORDERPILOT_BFF_ENABLED: "true"
       ORDERPILOT_BFF_SESSION_STORE: redis
-      ORDERPILOT_BFF_REDIS_URL: redis://:${ORDERPILOT_REDIS_PASSWORD:?set ORDERPILOT_REDIS_PASSWORD}@redis:6379
+      ORDERPILOT_BFF_REDIS_HOST: redis
+      ORDERPILOT_BFF_REDIS_PORT: 6379
+      ORDERPILOT_BFF_REDIS_PASSWORD: ${ORDERPILOT_REDIS_PASSWORD:?set ORDERPILOT_REDIS_PASSWORD}
       ORDERPILOT_PUBLIC_ORIGIN: https://${OPERANT_PUBLIC_HOST:?set OPERANT_PUBLIC_HOST}
       CORE_API_BASE_URL: http://core-api:8080
       ORDERPILOT_GATEWAY_SHARED_SECRET: ${ORDERPILOT_GATEWAY_SHARED_SECRET:?set ORDERPILOT_GATEWAY_SHARED_SECRET}
@@ -80,7 +82,6 @@ services:
     networks:
       - public_edge
       - application_private
-      - data_private
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
@@ -177,6 +178,12 @@ services:
       - operant_postgres_data:/var/lib/postgresql/data
     networks:
       - data_private
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 0.75
+    stop_grace_period: 45s
     healthcheck:
       test: ["CMD-SHELL", "PGPASSWORD=$${POSTGRES_PASSWORD} pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h 127.0.0.1 >/dev/null"]
       interval: 10s
@@ -199,7 +206,14 @@ services:
     volumes:
       - operant_redis_data:/data
     networks:
+      - application_private
       - data_private
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 256m
+    cpus: 0.5
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep -q PONG"]
       interval: 10s

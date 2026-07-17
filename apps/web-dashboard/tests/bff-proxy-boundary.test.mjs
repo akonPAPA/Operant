@@ -33,6 +33,9 @@ const ENV_KEYS = [
   "ORDERPILOT_GATEWAY_HEADER_AUTH_SHARED_SECRET",
   "ORDERPILOT_PUBLIC_ORIGIN",
   "CORE_API_BASE_URL",
+  "ORDERPILOT_BFF_REDIS_HOST",
+  "ORDERPILOT_BFF_REDIS_PORT",
+  "ORDERPILOT_BFF_REDIS_PASSWORD",
   "ORDERPILOT_BFF_REDIS_URL",
   "REDIS_URL",
   "ORDERPILOT_GATEWAY_HEADER_AUTH_CLOCK_SKEW_SECONDS",
@@ -615,7 +618,9 @@ test("production-like config requires explicit Core URL — no localhost fallbac
       ORDERPILOT_PUBLIC_ORIGIN: "https://operant.example.com",
       CORE_API_BASE_URL: "",
       ORDERPILOT_BFF_SESSION_STORE: "",
-      ORDERPILOT_BFF_REDIS_URL: "redis://localhost:63790"
+      ORDERPILOT_BFF_REDIS_HOST: "localhost",
+      ORDERPILOT_BFF_REDIS_PORT: "63790",
+      ORDERPILOT_BFF_REDIS_PASSWORD: "p/a?s#s@w:ord%25"
     },
     async () => {
       const error = await validateBffProductionConfig();
@@ -1047,7 +1052,9 @@ const PROD_ENV = {
   ORDERPILOT_GATEWAY_SHARED_SECRET: "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517",
   ORDERPILOT_PUBLIC_ORIGIN: "https://dashboard.test",
   CORE_API_BASE_URL: "http://127.0.0.1:8080",
-  ORDERPILOT_BFF_REDIS_URL: "redis://localhost:6379"
+  ORDERPILOT_BFF_REDIS_HOST: "localhost",
+  ORDERPILOT_BFF_REDIS_PORT: "6379",
+  ORDERPILOT_BFF_REDIS_PASSWORD: "p/a?s#s@w:ord%25"
 };
 
 const VALID_SYNTAX_SESSION = "T".repeat(43);

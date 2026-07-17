@@ -20,10 +20,17 @@ const forbiddenAuthorityHeaders = [
 ];
 
 const operantOwned = ["core-api", "web-dashboard"];
-const privateServices = ["core-api", "postgres", "redis"];
 const requiredServices = ["core-api", "ingress", "postgres", "redis", "web-dashboard"];
 const requiredNetworks = ["application_private", "data_private", "public_edge"];
+const expectedNetworkMembership = {
+  ingress: ["public_edge"],
+  "web-dashboard": ["application_private", "public_edge"],
+  "core-api": ["application_private", "data_private"],
+  postgres: ["data_private"],
+  redis: ["application_private", "data_private"]
+};
 const placeholderSecretPattern = /change-me-local-dev-only|your-secret-here|placeholder|changeme|password123/i;
+const credentialRedisUrlPattern = /ORDERPILOT_BFF_REDIS_URL|REDIS_URL|redis:\/\/:|@redis:|redis:\/\/[^\s"']*@/i;
 
 function asArray(value) {
   if (value === undefined || value === null) return [];
@@ -89,16 +96,31 @@ function hasApplicationSecretBuildArg(service) {
   return serviceBuildArgs(service).some((arg) => /(SECRET|PASSWORD|TOKEN|KEY|CREDENTIAL)/i.test(String(arg)));
 }
 
+function assertResourceControls(name, service) {
+  assert.ok(asArray(service?.security_opt).includes("no-new-privileges:true"), `${name} missing no-new-privileges`);
+  assert.equal(typeof service?.pids_limit, "number", `${name} missing pids_limit`);
+  assert.ok(service.pids_limit > 0 && service.pids_limit <= 1024, `${name} pids_limit is unbounded`);
+  assert.ok(service?.mem_limit, `${name} missing mem_limit`);
+  assert.ok(service?.cpus, `${name} missing cpus limit`);
+  assert.ok(service?.healthcheck, `${name} missing healthcheck`);
+  assert.ok(service?.logging?.options?.["max-size"], `${name} missing log max-size`);
+  assert.ok(service?.logging?.options?.["max-file"], `${name} missing log max-file`);
+}
+
 function loadTopology(repoRoot) {
   const composePath = join(repoRoot, "infra", "docker", "docker-compose.production.yml");
   const nginxTemplatePath = join(repoRoot, "infra", "nginx", "templates", "operant.conf.template");
+  const deployScriptPath = join(repoRoot, "scripts", "deploy", "operant-production.sh");
+  const systemdPath = join(repoRoot, "infra", "systemd", "operant-production.service");
   return {
     compose: yaml.load(readFileSync(composePath, "utf8")),
-    nginxTemplate: readFileSync(nginxTemplatePath, "utf8")
+    nginxTemplate: readFileSync(nginxTemplatePath, "utf8"),
+    deployScript: readFileSync(deployScriptPath, "utf8"),
+    systemdUnit: readFileSync(systemdPath, "utf8")
   };
 }
 
-export function validateP1dProductionTopologyDocument(compose, nginxTemplate) {
+export function validateP1dProductionTopologyDocument(compose, nginxTemplate, artifacts = {}) {
   const services = asObject(compose?.services);
   const failures = [];
 
@@ -116,7 +138,7 @@ export function validateP1dProductionTopologyDocument(compose, nginxTemplate) {
 
   check("only ingress publishes ports", () => {
     assert.ok(hasHostPorts(services.ingress), "ingress publishes no host ports");
-    for (const name of [...privateServices, "web-dashboard"]) {
+    for (const name of ["core-api", "postgres", "redis", "web-dashboard"]) {
       assert.equal(hasHostPorts(services[name]), false, `${name} publishes host ports`);
     }
   });
@@ -126,11 +148,10 @@ export function validateP1dProductionTopologyDocument(compose, nginxTemplate) {
     assert.deepEqual(Object.keys(networks).sort(), requiredNetworks);
     assert.equal(networks.application_private.internal, true);
     assert.equal(networks.data_private.internal, true);
-    assert.deepEqual(serviceNetworks(services.ingress), ["public_edge"]);
-    assert.deepEqual(serviceNetworks(services["web-dashboard"]).sort(), ["application_private", "data_private", "public_edge"]);
-    assert.deepEqual(serviceNetworks(services["core-api"]).sort(), ["application_private", "data_private"]);
-    assert.deepEqual(serviceNetworks(services.postgres), ["data_private"]);
-    assert.deepEqual(serviceNetworks(services.redis), ["data_private"]);
+    for (const [name, expected] of Object.entries(expectedNetworkMembership)) {
+      assert.deepEqual(serviceNetworks(services[name]).sort(), expected.slice().sort(), `${name} has wrong networks`);
+    }
+    assert.equal(serviceNetworks(services["web-dashboard"]).includes("data_private"), false, "web-dashboard can reach PostgreSQL network");
   });
 
   check("owned container hardening", () => {
@@ -139,12 +160,23 @@ export function validateP1dProductionTopologyDocument(compose, nginxTemplate) {
       assert.match(String(service?.user), /^[1-9][0-9]*:[1-9][0-9]*$/, `${name} is not explicit non-root uid/gid`);
       assert.equal(service?.read_only, true, `${name} root filesystem is not read-only`);
       assert.deepEqual(service?.cap_drop, ["ALL"], `${name} does not drop all capabilities`);
-      assert.ok(asArray(service?.security_opt).includes("no-new-privileges:true"), `${name} missing no-new-privileges`);
       assert.ok(asArray(service?.tmpfs).some((entry) => String(entry).startsWith("/tmp:")), `${name} missing /tmp tmpfs`);
       assert.notEqual(service?.privileged, true, `${name} is privileged`);
       assert.equal(serviceUsesHostNetwork(service), false, `${name} uses host networking`);
       assert.equal(service?.pid, undefined, `${name} shares pid namespace`);
       assert.equal(service?.ipc, undefined, `${name} shares ipc namespace`);
+      assertResourceControls(name, service);
+    }
+  });
+
+  check("stateful container controls", () => {
+    for (const name of ["postgres", "redis"]) {
+      const service = services[name];
+      assert.notEqual(service?.privileged, true, `${name} is privileged`);
+      assert.equal(serviceUsesHostNetwork(service), false, `${name} uses host networking`);
+      assert.equal(serviceMountsDockerSocket(service), false, `${name} mounts Docker socket`);
+      assert.equal(serviceMountsUnsafeSourceBind(service), false, `${name} uses unsafe source bind mount`);
+      assertResourceControls(name, service);
     }
   });
 
@@ -179,8 +211,14 @@ export function validateP1dProductionTopologyDocument(compose, nginxTemplate) {
     }
   });
 
-  check("Redis requires authentication", () => {
-    assert.match(JSON.stringify(services["web-dashboard"]?.environment?.ORDERPILOT_BFF_REDIS_URL), /ORDERPILOT_REDIS_PASSWORD/);
+  check("Redis uses structured authenticated configuration", () => {
+    const webEnv = asObject(services["web-dashboard"]?.environment);
+    assert.equal(webEnv.ORDERPILOT_BFF_REDIS_HOST, "redis");
+    assert.equal(webEnv.ORDERPILOT_BFF_REDIS_PORT, 6379);
+    assert.match(JSON.stringify(webEnv.ORDERPILOT_BFF_REDIS_PASSWORD), /ORDERPILOT_REDIS_PASSWORD/);
+    assert.equal("ORDERPILOT_BFF_REDIS_URL" in webEnv, false, "ORDERPILOT_BFF_REDIS_URL is not allowed");
+    assert.equal("REDIS_URL" in webEnv, false, "REDIS_URL is not allowed");
+    assert.doesNotMatch(JSON.stringify(compose), credentialRedisUrlPattern);
     assert.match(JSON.stringify(services["core-api"]?.environment?.ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PASSWORD), /ORDERPILOT_REDIS_PASSWORD/);
     assert.match(JSON.stringify(services.redis?.command), /--requirepass/);
     assert.match(JSON.stringify(services.redis?.healthcheck), /REDISCLI_AUTH/);
@@ -215,12 +253,33 @@ export function validateP1dProductionTopologyDocument(compose, nginxTemplate) {
     assert.deepEqual(services.redis?.volumes, ["operant_redis_data:/data"]);
   });
 
+  if (artifacts.deployScript) {
+    check("deployment lifecycle waits for health", () => {
+      assert.match(artifacts.deployScript, /OPERANT_STARTUP_TIMEOUT_SECONDS/);
+      assert.match(artifacts.deployScript, /STARTUP_TIMEOUT_MIN=30/);
+      assert.match(artifacts.deployScript, /STARTUP_TIMEOUT_MAX=900/);
+      assert.match(artifacts.deployScript, /compose up -d --remove-orphans --wait --wait-timeout "\$timeout"/);
+      assert.match(artifacts.deployScript, /compose up -d --force-recreate --remove-orphans --wait --wait-timeout "\$timeout"/);
+      assert.match(artifacts.deployScript, /docker compose up --help/);
+      assert.doesNotMatch(artifacts.deployScript, /compose down/);
+    });
+  }
+
+  if (artifacts.systemdUnit) {
+    check("systemd invokes executable deploy script", () => {
+      assert.match(artifacts.systemdUnit, /ExecStartPre=\/opt\/operant\/OrderPilot-Core\/scripts\/deploy\/operant-production\.sh validate/);
+      assert.match(artifacts.systemdUnit, /ExecStart=\/opt\/operant\/OrderPilot-Core\/scripts\/deploy\/operant-production\.sh start/);
+      assert.match(artifacts.systemdUnit, /ExecStop=\/opt\/operant\/OrderPilot-Core\/scripts\/deploy\/operant-production\.sh stop/);
+      assert.match(artifacts.systemdUnit, /TimeoutStartSec=960/);
+    });
+  }
+
   return failures;
 }
 
 export function validateP1dProductionTopology(repoRoot) {
-  const { compose, nginxTemplate } = loadTopology(repoRoot);
-  return validateP1dProductionTopologyDocument(compose, nginxTemplate);
+  const { compose, nginxTemplate, deployScript, systemdUnit } = loadTopology(repoRoot);
+  return validateP1dProductionTopologyDocument(compose, nginxTemplate, { deployScript, systemdUnit });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
