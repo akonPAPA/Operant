@@ -87,15 +87,15 @@ test("OIDC enabled flag fails closed on typo values", () => {
   expectInvalid({ ORDERPILOT_OIDC_ENABLED: "yes" }, "ENABLED_FLAG_INVALID");
 });
 
-test("valid OIDC configuration is not production-ready until runtime is implemented", () => {
+test("valid OIDC configuration is ready when runtime is implemented", () => {
   const env = validEnv({ ORDERPILOT_OIDC_SCOPES: "openid profile email profile" });
   const status = readOidcConfigurationStatus(env);
   const result = loadValidatedOidcConfiguration(env);
-  assert.equal(status.state, "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED");
-  assert.equal(status.runtimeImplemented, false);
-  assert.equal(OIDC_RUNTIME_IMPLEMENTED, false);
-  assert.notEqual(status.state, "READY");
-  assert.equal(oidcReadinessState(validEnv()), "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED");
+  assert.equal(status.state, "READY");
+  assert.equal(status.runtimeImplemented, true);
+  assert.equal(OIDC_RUNTIME_IMPLEMENTED, true);
+  assert.equal(status.state, "READY");
+  assert.equal(oidcReadinessState(validEnv()), "READY");
   assert.equal("configuration" in status, false);
   assert.equal(result.ok, true);
   assert.deepEqual(result.configuration.scopes, ["openid", "profile", "email"]);
@@ -174,8 +174,8 @@ test("OIDC status, diagnostics, and public capability expose only bounded readin
     assert.doesNotMatch(diagnosticFromEnv, new RegExp(escaped));
     assert.doesNotMatch(publicCapability, new RegExp(escaped));
   }
-  assert.match(diagnostic, /VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED/);
-  assert.match(publicCapability, /VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED/);
+  assert.match(diagnostic, /READY/);
+  assert.match(publicCapability, /READY/);
 });
 
 test("OIDC secret is absent from observable status and configuration object graphs", () => {

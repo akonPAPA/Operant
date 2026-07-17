@@ -7,7 +7,7 @@ const root = process.cwd();
 
 /**
  * P1-B: Edge entry (Next.js `proxy.ts` / legacy `middleware.ts`) must contain no
- * Node-runtime-only imports — directly or transitively.
+ * Node-runtime-only imports â€” directly or transitively.
  */
 const FORBIDDEN_SPECIFIERS = [
   "bff-proxy",
@@ -18,6 +18,10 @@ const FORBIDDEN_SPECIFIERS = [
   "bff-oidc-config",
   "bff-oidc-runtime",
   "bff-oidc-runtime-network",
+  "bff-oidc-auth-code",
+  "bff-oidc-identity-mapping",
+  "bff-oidc-transaction-store",
+  "bff-oidc-readiness",
   "openid-client",
   "oauth4webapi",
   "jose",
@@ -109,7 +113,7 @@ test("edge entry import graph contains no Node-only or session/proxy/signer modu
   }
   for (const file of files) {
     const normalized = file.replaceAll("\\", "/");
-    for (const forbidden of ["bff-proxy", "bff-session-store", "bff-gateway-signer", "bff-auth-handlers", "bff-oidc-config", "bff-oidc-runtime", "bff-oidc-runtime-network"]) {
+    for (const forbidden of ["bff-proxy", "bff-session-store", "bff-gateway-signer", "bff-auth-handlers", "bff-oidc-config", "bff-oidc-runtime", "bff-oidc-runtime-network", "bff-oidc-auth-code", "bff-oidc-identity-mapping", "bff-oidc-transaction-store", "bff-oidc-readiness"]) {
       assert.ok(
         !normalized.includes(forbidden),
         `edge entry transitively reaches ${forbidden}: ${normalized}`

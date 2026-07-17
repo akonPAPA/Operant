@@ -1,14 +1,13 @@
 const PRODUCTION_LIKE_DEPLOY_PROFILES = new Set(["prod", "production", "cloud", "staging"]);
 const MAX_OIDC_SCOPE_COUNT = 8;
 const MAX_OIDC_SCOPE_LENGTH = 64;
-export const OIDC_RUNTIME_IMPLEMENTED = false;
+export const OIDC_RUNTIME_IMPLEMENTED = true;
 export const SUPPORTED_OIDC_SCOPES = ["openid", "profile", "email"] as const;
 export const SUPPORTED_OIDC_CLIENT_AUTHENTICATION_METHOD = "CLIENT_SECRET_BASIC";
 
 export type OidcReadinessState =
   | "DISABLED"
   | "INVALID_CONFIGURATION"
-  | "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED"
   | "READY";
 
 export type OidcClientAuthenticationMethod = typeof SUPPORTED_OIDC_CLIENT_AUTHENTICATION_METHOD;
@@ -55,7 +54,7 @@ export type OidcConfiguration = Readonly<{
   scopes: readonly OidcScope[];
   clientAuthenticationMethod: OidcClientAuthenticationMethod;
   policyFingerprint: string;
-  runtimeImplemented: false;
+  runtimeImplemented: true;
 }>;
 
 export type ValidOidcConfiguration = OidcConfiguration & { readonly __validOidcConfigurationBrand?: never };
@@ -69,16 +68,16 @@ export type OidcConfigurationStatus =
       runtimeImplemented: false;
     }
   | {
-      state: "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED";
+      state: "READY";
       enabled: true;
-      runtimeImplemented: false;
+      runtimeImplemented: true;
       policyFingerprint: string;
     };
 
 export type OidcConfigurationDiagnostic = {
   enabled: boolean;
   state: OidcReadinessState;
-  runtimeImplemented: false;
+  runtimeImplemented: boolean;
   reasonCode?: OidcConfigErrorCode;
   policyFingerprint?: string;
 };
@@ -88,8 +87,8 @@ export type OidcValidatedConfigurationResult =
   | { ok: false; status: OidcConfigurationStatus };
 
 export type PublicAuthenticationCapability = {
-  authenticationAvailable: false;
-  runtimeImplemented: false;
+  authenticationAvailable: boolean;
+  runtimeImplemented: boolean;
   state: OidcReadinessState;
 };
 
@@ -508,7 +507,7 @@ export function readOidcConfigurationStatus(env: EnvironmentValues = process.env
     return result.status;
   }
   return denyPublicSerialization({
-    state: "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED",
+    state: "READY",
     enabled: true,
     runtimeImplemented: OIDC_RUNTIME_IMPLEMENTED,
     policyFingerprint: result.configuration.policyFingerprint
@@ -527,16 +526,16 @@ export function oidcConfigurationDiagnostic(status = readOidcConfigurationStatus
   return {
     enabled: status.enabled,
     state: status.state,
-    runtimeImplemented: false,
+    runtimeImplemented: status.runtimeImplemented,
     ...(status.state === "INVALID_CONFIGURATION" ? { reasonCode: status.reasonCode } : {}),
-    ...(status.state === "VALID_CONFIGURATION_RUNTIME_NOT_IMPLEMENTED" ? { policyFingerprint: status.policyFingerprint } : {})
+    ...(status.state === "READY" ? { policyFingerprint: status.policyFingerprint } : {})
   };
 }
 
 export function publicAuthenticationCapability(status = readOidcConfigurationStatus()): PublicAuthenticationCapability {
   return {
-    authenticationAvailable: false,
-    runtimeImplemented: false,
+    authenticationAvailable: status.state === "READY",
+    runtimeImplemented: status.runtimeImplemented,
     state: status.state
   };
 }
