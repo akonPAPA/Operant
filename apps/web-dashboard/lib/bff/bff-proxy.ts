@@ -501,7 +501,7 @@ export function validateImmutableBffConfig(): string | null {
     return "ORDERPILOT_PUBLIC_ORIGIN must be an exact origin URL (https in production-like profiles)";
   }
   if (!validatedCoreApiInternalBaseUrl()) {
-    return "CORE_API_BASE_URL must be an exact https origin or loopback http origin (127.0.0.1 / [::1]) for BFF production mode";
+    return "CORE_API_BASE_URL must be an exact https origin, loopback http origin (127.0.0.1 / [::1]), or private single-label Compose service http origin for BFF production mode";
   }
   try {
     bffGatewayClockSkewSeconds();

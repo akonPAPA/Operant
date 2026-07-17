@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
-    "test:e2e": "node e2e/run-e2e.mjs"
+    "test:e2e": "node e2e/run-e2e.mjs",
+    "test:p1d-topology": "node --test tests/p1d-production-topology.test.mjs",
+    "validate:p1d-topology": "node scripts/validate-p1d-production-topology.mjs"
   },
   "dependencies": {
     "next": "16.2.10",

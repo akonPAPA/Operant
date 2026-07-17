@@ -34,9 +34,13 @@ function isLiteralLoopbackHost(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
 }
 
+function isPrivateComposeServiceHost(hostname: string): boolean {
+  return /^[a-z][a-z0-9-]{0,62}$/.test(hostname) && hostname !== "localhost";
+}
+
 /**
  * Validated internal Core origin for the BFF proxy.
- * Production-like: https only, or http://127.0.0.1 / http://[::1] only.
+ * Production-like: https, literal loopback HTTP, or a single-label private Compose service DNS name.
  * Rejects userinfo, fragments, non-http(s), and plain-http non-loopback hosts.
  * `localhost` is intentionally NOT treated as loopback.
  */
@@ -60,8 +64,13 @@ export function validatedCoreApiInternalBaseUrl(): string | null {
       return null;
     }
     if (parsed.protocol === "http:") {
-      // Production-like: only literal loopback HTTP. Local/test may use explicit http Core URLs.
-      if (isProductionLikeDeployment() && !isLiteralLoopbackHost(parsed.hostname)) {
+      // Production-like: allow loopback for tests and single-label private service DNS for Docker
+      // networks. Dotted public-looking hostnames still require HTTPS.
+      if (
+        isProductionLikeDeployment() &&
+        !isLiteralLoopbackHost(parsed.hostname) &&
+        !isPrivateComposeServiceHost(parsed.hostname)
+      ) {
         return null;
       }
     }

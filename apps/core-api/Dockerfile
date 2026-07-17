@@ -17,8 +17,12 @@ RUN mvn -q -B -DskipTests package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app --home-dir /app --shell /usr/sbin/nologin app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app
 COPY --from=package --chown=app:app /workspace/apps/core-api/target/core-api-0.1.0-SNAPSHOT.jar app.jar
 EXPOSE 8080
-USER app
+USER 10001:10001
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
