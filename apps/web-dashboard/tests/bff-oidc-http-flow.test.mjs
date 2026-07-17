@@ -58,9 +58,12 @@ if (process.env[CHILD] !== "1") {
       assert.equal(consumed.browserBindingHash, binding.oidcBindingHash(browserA));
       assert.equal(await store.consumeOidcAuthorizationTransaction(state), null);
     } finally {
-      priorStore === undefined ? delete process.env.ORDERPILOT_BFF_SESSION_STORE : process.env.ORDERPILOT_BFF_SESSION_STORE = priorStore;
-      priorProfile === undefined ? delete process.env.ORDERPILOT_DEPLOY_PROFILE : process.env.ORDERPILOT_DEPLOY_PROFILE = priorProfile;
-      priorNode === undefined ? delete process.env.NODE_ENV : process.env.NODE_ENV = priorNode;
+      if (priorStore === undefined) delete process.env.ORDERPILOT_BFF_SESSION_STORE;
+      else process.env.ORDERPILOT_BFF_SESSION_STORE = priorStore;
+      if (priorProfile === undefined) delete process.env.ORDERPILOT_DEPLOY_PROFILE;
+      else process.env.ORDERPILOT_DEPLOY_PROFILE = priorProfile;
+      if (priorNode === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = priorNode;
       store.resetOidcTransactionStoreForTesting();
     }
   });

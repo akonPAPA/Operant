@@ -26,8 +26,13 @@ function withDeployment(vars, fn) {
   const prior = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of ENV_KEYS) delete process.env[key];
   Object.assign(process.env, vars);
-  try { return fn(); } finally {
-    for (const key of ENV_KEYS) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key];
+  try {
+    return fn();
+  } finally {
+    for (const key of ENV_KEYS) {
+      if (prior[key] === undefined) delete process.env[key];
+      else process.env[key] = prior[key];
+    }
   }
 }
 
@@ -41,8 +46,14 @@ test("F08: Secure cookie predicate matches the profile matrix", () => {
 });
 
 test("F08: auth and OIDC binding cookies share the fail-safe Secure predicate", () => {
-  const authWriter = readFileSync(fileURLToPath(new URL("../lib/bff/bff-auth-cookie-writer.ts", import.meta.url)), "utf8");
-  const bindingWriter = readFileSync(fileURLToPath(new URL("../lib/bff/bff-oidc-browser-binding.ts", import.meta.url)), "utf8");
+  const authWriter = readFileSync(
+    fileURLToPath(new URL("../lib/bff/bff-auth-cookie-writer.ts", import.meta.url)),
+    "utf8"
+  );
+  const bindingWriter = readFileSync(
+    fileURLToPath(new URL("../lib/bff/bff-oidc-browser-binding.ts", import.meta.url)),
+    "utf8"
+  );
   for (const source of [authWriter, bindingWriter]) {
     assert.match(source, /function cookieAttributes\([^)]*\)[^{]*\{[^}]*bffCookieSecure\(\)/s);
     assert.match(source, /Path=\/; Max-Age=/);
