@@ -1,0 +1,101 @@
+server_tokens off;
+
+
+server {
+  listen 8080;
+  server_name ${OPERANT_PUBLIC_HOST};
+
+  location = /healthz {
+    access_log off;
+    return 204;
+  }
+
+  location / {
+    return 308 https://$host$request_uri;
+  }
+}
+
+server {
+  listen 8080 default_server;
+  return 421;
+}
+
+server {
+  listen 8443 ssl;
+  http2 on;
+  server_name ${OPERANT_PUBLIC_HOST};
+
+  ssl_certificate /run/secrets/operant_tls_cert;
+  ssl_certificate_key /run/secrets/operant_tls_key;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_timeout 10m;
+
+  client_max_body_size 12m;
+  client_body_timeout 30s;
+  client_header_timeout 10s;
+  keepalive_timeout 30s;
+  send_timeout 30s;
+  large_client_header_buffers 4 8k;
+
+  add_header X-Content-Type-Options nosniff always;
+  add_header Referrer-Policy same-origin always;
+  add_header X-Frame-Options DENY always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  location = /api/bff/ready {
+    return 404;
+  }
+
+  location / {
+    proxy_pass http://web-dashboard:3000;
+    proxy_http_version 1.1;
+    proxy_pass_request_headers off;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_connect_timeout 5s;
+    proxy_buffering on;
+    proxy_request_buffering on;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Accept $http_accept;
+    proxy_set_header Content-Type $content_type;
+    proxy_set_header Content-Length $content_length;
+    proxy_set_header Origin $http_origin;
+    proxy_set_header Referer $http_referer;
+    proxy_set_header Idempotency-Key $http_idempotency_key;
+    proxy_set_header If-Match $http_if_match;
+    proxy_set_header X-OP-CSRF-Token $http_x_op_csrf_token;
+
+    proxy_set_header Authorization "";
+    proxy_set_header Proxy-Authorization "";
+    proxy_set_header Forwarded "";
+    proxy_set_header X-Tenant-Id "";
+    proxy_set_header X-OrderPilot-Tenant-Id "";
+    proxy_set_header X-OrderPilot-Actor-Id "";
+    proxy_set_header X-OrderPilot-Permissions "";
+    proxy_set_header X-OrderPilot-Gateway-Timestamp "";
+    proxy_set_header X-OrderPilot-Gateway-Nonce "";
+    proxy_set_header X-OrderPilot-Signature-Version "";
+    proxy_set_header X-OrderPilot-Content-SHA256 "";
+    proxy_set_header X-OrderPilot-Gateway-Signature "";
+    proxy_set_header X-OrderPilot-Actor-Signature "";
+    proxy_set_header X-OrderPilot-Actor-Timestamp "";
+    proxy_set_header X-OrderPilot-Staff-Grant "";
+  }
+}
+
+server {
+  listen 8443 ssl default_server;
+  server_name _;
+  ssl_certificate /run/secrets/operant_tls_cert;
+  ssl_certificate_key /run/secrets/operant_tls_key;
+  return 421;
+}

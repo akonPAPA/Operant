@@ -27,8 +27,13 @@ class GatewayHeaderReplayStoreConfiguration {
   @ConditionalOnProperty(name = "orderpilot.security.gateway-header-auth.replay-store", havingValue = "redis")
   LettuceConnectionFactory gatewayHeaderReplayRedisConnectionFactory(
       @Value("${orderpilot.security.gateway-header-auth.redis.host:localhost}") String host,
-      @Value("${orderpilot.security.gateway-header-auth.redis.port:6379}") int port) {
-    return new LettuceConnectionFactory(new RedisStandaloneConfiguration(host, port));
+      @Value("${orderpilot.security.gateway-header-auth.redis.port:6379}") int port,
+      @Value("${orderpilot.security.gateway-header-auth.redis.password:}") String password) {
+    RedisStandaloneConfiguration configuration = new RedisStandaloneConfiguration(host, port);
+    if (password != null && !password.isBlank()) {
+      configuration.setPassword(password);
+    }
+    return new LettuceConnectionFactory(configuration);
   }
 
   @Bean("gatewayHeaderReplayRedisTemplate")

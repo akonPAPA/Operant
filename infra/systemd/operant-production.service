@@ -1,0 +1,19 @@
+[Unit]
+Description=Operant production Docker Compose topology
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/operant/OrderPilot-Core
+Environment=OPERANT_ENV_FILE=/etc/operant/operant.production.env
+ExecStartPre=/opt/operant/OrderPilot-Core/scripts/deploy/operant-production.sh validate
+ExecStart=/opt/operant/OrderPilot-Core/scripts/deploy/operant-production.sh start
+ExecStop=/opt/operant/OrderPilot-Core/scripts/deploy/operant-production.sh stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

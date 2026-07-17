@@ -37,4 +37,18 @@ class GatewayHeaderReplayStoreConfigurationTest {
               .isInstanceOf(RedisGatewayHeaderReplayAdmissionStore.class);
         });
   }
+  @Test
+  void redisReplayStoreConfigurationAcceptsPasswordProperty() {
+    runner
+        .withPropertyValues(
+            "orderpilot.security.gateway-header-auth.replay-store=redis",
+            "orderpilot.security.gateway-header-auth.redis.password=redis-secret-for-test")
+        .run(context -> {
+          assertThat(context).hasNotFailed();
+          LettuceConnectionFactory factory = context.getBean(LettuceConnectionFactory.class);
+          assertThat(factory.getStandaloneConfiguration().getPassword().isPresent()).isTrue();
+          assertThat(new String(factory.getStandaloneConfiguration().getPassword().get()))
+              .isEqualTo("redis-secret-for-test");
+        });
+  }
 }

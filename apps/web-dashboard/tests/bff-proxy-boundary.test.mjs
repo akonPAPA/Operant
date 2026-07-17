@@ -656,6 +656,10 @@ test("Core API base URL validation requires an exact origin", async () => {
     () => assert.equal(validatedCoreApiInternalBaseUrl(), null)
   );
   await withEnv(
+    { ...BFF_ENV, ORDERPILOT_DEPLOY_PROFILE: "production", CORE_API_BASE_URL: "http://core-api:8080" },
+    () => assert.equal(validatedCoreApiInternalBaseUrl(), "http://core-api:8080")
+  );
+  await withEnv(
     { ...BFF_ENV, ORDERPILOT_DEPLOY_PROFILE: "production", CORE_API_BASE_URL: "http://core.internal.test:8080" },
     () => assert.equal(validatedCoreApiInternalBaseUrl(), null)
   );

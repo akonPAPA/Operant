@@ -68,6 +68,7 @@ orderpilot:
       redis:
         host: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_HOST:localhost}"
         port: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PORT:6379}"
+        password: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PASSWORD:}"
         key-prefix: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_KEY_PREFIX:op:gw-replay}"
     # OP-CAP-16K signed actor verification for runtime entitlement admin mutations. Empty = no
     # signing secret configured → local/dev trusted-header fallback (16J behavior). When set, admin
