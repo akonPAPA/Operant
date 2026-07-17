@@ -65,13 +65,13 @@ export async function handleSessionBootstrap(request: Request): Promise<Response
 }
 
 export async function handleOidcLogin(request: Request, options: unknown = {}): Promise<Response> {
-  const module = await import("./bff-oidc-login-handler.ts");
-  return module.handleOidcLogin(request, options as never);
+  const oidcLoginModule = await import("./bff-oidc-login-handler.ts");
+  return oidcLoginModule.handleOidcLogin(request, options as never);
 }
 
 export async function handleOidcCallback(request: Request, options: unknown = {}): Promise<Response> {
-  const module = await import("./bff-oidc-callback-handler.ts");
-  return module.handleOidcCallback(request, options as never);
+  const oidcCallbackModule = await import("./bff-oidc-callback-handler.ts");
+  return oidcCallbackModule.handleOidcCallback(request, options as never);
 }
 
 export async function handleLogout(request: Request): Promise<Response> {
