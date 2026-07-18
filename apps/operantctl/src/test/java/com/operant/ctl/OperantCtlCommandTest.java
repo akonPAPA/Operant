@@ -30,7 +30,7 @@ class OperantCtlCommandTest {
       "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"NOT_CONFIGURED\"}]}";
   private static final String VALID_HEALTH = "{\"status\":\"UP\"}";
   private static final String VALID_READY =
-      "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"}]}";
+      "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"NOT_CONFIGURED\"}]}";
   private static final String VALID_DIAGNOSTICS =
       "{\"version\":\"unknown\",\"activeProfiles\":[\"production\"],\"database\":{\"state\":\"UP\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":true,\"state\":\"UP\"},\"jvm\":{\"heapUsedMb\":1,\"heapMaxMb\":256}}";
 
@@ -93,6 +93,91 @@ class OperantCtlCommandTest {
     return new RunResult(exit, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
   }
 
+  private RunResult runWithReader(OperantCtl.SecretReader reader, String... args) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    int exit = OperantCtl.run(
+        args,
+        env,
+        credentialStore,
+        reader,
+        Clock.systemUTC(),
+        new PrintStream(out, true),
+        new PrintStream(err, true));
+    return new RunResult(exit, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+  }
+  @Test
+  void credentialImportStoresNewCredentialWithoutPrintingSecret() {
+    credentialStore.delete("new-ops");
+    RunResult result = runWithReader(prompt -> SECRET.toCharArray(), "credential", "import", "new-ops");
+
+    assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+    assertThat(result.out()).contains("new-ops").doesNotContain(SECRET);
+    assertThat(result.err()).doesNotContain(SECRET);
+    assertThat(credentialStore.metadata("new-ops")).isPresent();
+  }
+
+  @Test
+  void credentialImportRequiresValidAliasMatchingConfirmationAndExplicitReplace() {
+    RunResult invalidAlias = runWithReader(prompt -> SECRET.toCharArray(), "credential", "import", " bad");
+    assertThat(invalidAlias.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+
+    RunResult mismatch = runWithReader(new SequenceSecretReader(SECRET,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        "credential", "import", "new-mismatch");
+    assertThat(mismatch.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+    assertThat(mismatch.out() + mismatch.err()).doesNotContain(SECRET);
+
+    RunResult invalidSecret = runWithReader(prompt -> "not-a-secret".toCharArray(), "credential", "import", "new-invalid");
+    assertThat(invalidSecret.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+    assertThat(invalidSecret.out() + invalidSecret.err()).doesNotContain("not-a-secret");
+
+    RunResult existing = runWithReader(prompt -> SECRET.toCharArray(), "credential", "import", ALIAS);
+    assertThat(existing.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+
+    RunResult replaced = runWithReader(prompt -> SECRET.toCharArray(), "credential", "import", ALIAS, "--replace");
+    assertThat(replaced.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+  }
+
+  @Test
+  void credentialImportHandlesStoreAndConsoleFailuresWithoutSecretLeak() {
+    RunResult noConsole = runWithReader(prompt -> null, "credential", "import", "new-null");
+    assertThat(noConsole.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+
+    ControlCredentialStore failingStore = new ControlCredentialStore() {
+      @Override public ControlCredential load(String alias) { throw new ControlCredentialStoreException("load failed"); }
+      @Override public void store(String alias, ControlCredential credential) { throw new ControlCredentialStoreException("store failed"); }
+      @Override public void delete(String alias) {}
+      @Override public java.util.Optional<ControlCredentialMetadata> metadata(String alias) { return java.util.Optional.empty(); }
+    };
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    int exit = OperantCtl.run(new String[] {"credential", "import", "new-fail"}, env, failingStore,
+        prompt -> SECRET.toCharArray(), Clock.systemUTC(), new PrintStream(out, true), new PrintStream(err, true));
+    assertThat(exit).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+    assertThat(out.toString(StandardCharsets.UTF_8) + err.toString(StandardCharsets.UTF_8)).doesNotContain(SECRET);
+  }
+
+  @Test
+  void semanticResponseContradictionsAreRejectedBeforePrinting() {
+    for (String invalid : List.of(
+        "{\"ready\":true,\"dependencies\":[]}",
+        "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"database\",\"state\":\"UP\"}]}",
+        "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"DOWN\"}]}",
+        "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"UP\"},{\"name\":\"extra\",\"state\":\"UP\"}]}",
+        "{\"version\":\"http://internal\",\"uptimeSeconds\":1,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"UP\"}]}",
+        "{\"version\":\"unknown\",\"activeProfiles\":[\"production\",\"production\"],\"database\":{\"state\":\"UP\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":false,\"state\":\"UP\"},\"jvm\":{\"heapUsedMb\":1,\"heapMaxMb\":256}}",
+        "{\"version\":\"unknown\",\"activeProfiles\":[\"production\"],\"database\":{\"state\":\"UP\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":true,\"state\":\"NOT_CONFIGURED\"},\"jvm\":{\"heapUsedMb\":1,\"heapMaxMb\":256}}",
+        "{\"version\":\"unknown\",\"activeProfiles\":[\"production\"],\"database\":{\"state\":\"UP\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":true,\"state\":\"UP\"},\"jvm\":{\"heapUsedMb\":257,\"heapMaxMb\":256}}")) {
+      responseByPath.put(ControlApiClient.READINESS_PATH, invalid);
+      responseByPath.put(ControlApiClient.STATUS_PATH, invalid);
+      responseByPath.put(ControlApiClient.DIAGNOSTICS_PATH, invalid);
+      RunResult result = invalid.contains("ready") ? run("readiness") : invalid.contains("uptimeSeconds") ? run("status") : run("diagnose");
+      assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+      assertThat(result.out()).isBlank();
+      assertThat(result.err()).contains("response failed validation");
+    }
+  }
   @Test
   void versionIsLocalAndStructured() {
     RunResult result = run("version");
@@ -152,11 +237,10 @@ class OperantCtlCommandTest {
 
   @Test
   void readinessMapsReadyFlagToExitCode() {
-    responseByPath.put(ControlApiClient.READINESS_PATH,
-        "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"}]}");
+    responseByPath.put(ControlApiClient.READINESS_PATH, VALID_READY);
     assertThat(run("readiness").exitCode()).isEqualTo(OperantCtl.EXIT_OK);
     responseByPath.put(ControlApiClient.READINESS_PATH,
-        "{\"ready\":false,\"dependencies\":[{\"name\":\"database\",\"state\":\"DOWN\"}]}");
+        "{\"ready\":false,\"dependencies\":[{\"name\":\"database\",\"state\":\"DOWN\"},{\"name\":\"redis\",\"state\":\"NOT_CONFIGURED\"}]}");
     assertThat(run("readiness").exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
   }
 
@@ -291,6 +375,20 @@ class OperantCtlCommandTest {
         List.of("version"), List.of("config", "validate"), List.of("status"))) {
       RunResult result = run(command.toArray(String[]::new));
       assertThat(result.out() + result.err()).doesNotContain(SECRET);
+    }
+  }
+
+  private static final class SequenceSecretReader implements OperantCtl.SecretReader {
+    private final String[] values;
+    private int index;
+
+    private SequenceSecretReader(String... values) {
+      this.values = values;
+    }
+
+    @Override
+    public char[] readSecret(String prompt) {
+      return values[index++].toCharArray();
     }
   }
 }

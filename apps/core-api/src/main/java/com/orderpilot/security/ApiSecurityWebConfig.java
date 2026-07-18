@@ -109,14 +109,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       GatewayHeaderSignatureVerifier.SIGNATURE_HEADER,
       GatewayHeaderSignatureVerifier.NONCE_HEADER,
       GatewayHeaderSignatureVerifier.VERSION_HEADER,
-      GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER,
-      ControlPlaneProtocol.CREDENTIAL_HEADER,
-      ControlPlaneProtocol.AUDIENCE_HEADER,
-      ControlPlaneProtocol.TIMESTAMP_HEADER,
-      ControlPlaneProtocol.NONCE_HEADER,
-      ControlPlaneProtocol.VERSION_HEADER,
-      ControlPlaneProtocol.CONTENT_SHA256_HEADER,
-      ControlPlaneProtocol.SIGNATURE_HEADER);
+      GatewayHeaderSignatureVerifier.CONTENT_SHA256_HEADER);
   /** Absolute max body bytes for gateway signature content-hash verification (fail-closed). */
   private static final int GATEWAY_SIGNED_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -387,12 +380,13 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       ApiPermission required = routePolicy.requiredPermissionFor(request.getMethod(), request.getRequestURI())
           .orElse(null);
       CachedBodyHttpServletRequest cached = CachedBodyHttpServletRequest.wrap(request, GATEWAY_SIGNED_MAX_BODY_BYTES);
-      if (required == null || cached == null || !verify(cached, required)) {
+      ControlPlanePrincipal principal = required == null || cached == null ? null : verify(cached, required);
+      if (principal == null) {
         filterChain.doFilter(request, response);
         return;
       }
       var authentication = new PreAuthenticatedAuthenticationToken(
-          ControlPlaneCredentialRegistry.PRINCIPAL_TYPE,
+          principal,
           "N/A",
           List.of(new SimpleGrantedAuthority("ORDERPILOT_" + required.name())));
       SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -404,7 +398,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
           && request.getHeader(ControlPlaneProtocol.CREDENTIAL_HEADER) != null;
     }
 
-    private boolean verify(HttpServletRequest request, ApiPermission required) {
+    private ControlPlanePrincipal verify(HttpServletRequest request, ApiPermission required) {
       String credential = requiredHeader(request, ControlPlaneProtocol.CREDENTIAL_HEADER);
       String audience = requiredHeader(request, ControlPlaneProtocol.AUDIENCE_HEADER);
       String timestamp = requiredHeader(request, ControlPlaneProtocol.TIMESTAMP_HEADER);
@@ -422,35 +416,35 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
           || !ControlPlaneProtocol.AUDIENCE.equals(audience)
           || !ControlPlaneProtocol.SIGNATURE_VERSION.equals(version)
           || !GatewayV2Canonical.isValidContentSha256Hex(contentShaHeader)) {
-        return false;
+        return null;
       }
       var record = credentialRegistry.findActive(credential, audience);
       if (record.isEmpty() || !record.get().permissions().contains(required)) {
-        return false;
+        return null;
       }
       long timestampEpoch;
       try {
         timestampEpoch = Long.parseLong(timestamp);
       } catch (NumberFormatException invalid) {
-        return false;
+        return null;
       }
       long nowEpoch = clock.instant().getEpochSecond();
       if (Math.abs(nowEpoch - timestampEpoch) > maxSkewSeconds) {
-        return false;
+        return null;
       }
       byte[] bodyBytes = bodyBytes(request);
       if (bodyBytes == null) {
-        return false;
+        return null;
       }
       String actualBodySha = GatewayV2Canonical.sha256Hex(bodyBytes);
       if (!MessageDigest.isEqual(
           actualBodySha.getBytes(StandardCharsets.US_ASCII),
           contentShaHeader.toLowerCase(java.util.Locale.ROOT).getBytes(StandardCharsets.US_ASCII))) {
-        return false;
+        return null;
       }
       String path = request.getRequestURI();
       if (ControlPlaneMethodAuthorityFilter.requiredPermissionForKnownControlRoute(path) == null) {
-        return false;
+        return null;
       }
       String canonical = ControlPlaneProtocol.canonical(
           request.getMethod(),
@@ -463,13 +457,14 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
           timestampEpoch,
           nonce);
       if (!SignedActorVerifier.matchesHmacHex(record.get().keyMaterialCopy(), canonical, signature)) {
-        return false;
+        return null;
       }
-      return replayAdmissionStore.admitFirstUse(
+      boolean admitted = replayAdmissionStore.admitFirstUse(
           "control-plane:" + audience,
           "credential:" + credential,
           nonce,
           Duration.ofSeconds(Math.max(1L, maxSkewSeconds * 2)));
+      return admitted ? record.get().principal() : null;
     }
 
     private static byte[] bodyBytes(HttpServletRequest request) {

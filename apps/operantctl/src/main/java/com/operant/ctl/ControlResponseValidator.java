@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 final class ControlResponseValidator {
   private static final JsonFactory JSON_FACTORY = JsonFactory.builder()
@@ -24,7 +25,8 @@ final class ControlResponseValidator {
       .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
       .build();
   private static final int MAX_STRING_LENGTH = 128;
-  private static final int MAX_DEPENDENCIES = 16;
+  private static final Pattern SAFE_VERSION_TOKEN = Pattern.compile("^(unknown|[A-Za-z0-9][A-Za-z0-9_.+-]{0,63})$");
+  private static final int MAX_DEPENDENCIES = 2;
   private static final int MAX_PROFILES = 16;
   private static final Set<String> DEPENDENCY_NAMES = Set.of("database", "redis");
   private static final Set<String> DEPENDENCY_STATES = Set.of("UP", "DOWN", "NOT_CONFIGURED");
@@ -51,7 +53,7 @@ final class ControlResponseValidator {
 
   private static ValidatedResponse validateStatus(JsonNode root) {
     requireFields(root, Set.of("version", "uptimeSeconds", "dependencies"));
-    requireSafeString(root.get("version"));
+    requireSafeVersionToken(root.get("version"));
     requireNonNegativeLong(root.get("uptimeSeconds"));
     validateDependencies(root.get("dependencies"));
     return normalized(root, true);
@@ -70,28 +72,39 @@ final class ControlResponseValidator {
     if (!root.get("ready").isBoolean()) {
       throw invalid();
     }
-    validateDependencies(root.get("dependencies"));
-    return normalized(root, root.get("ready").asBoolean());
+    boolean derivedReady = validateDependencies(root.get("dependencies"));
+    if (root.get("ready").asBoolean() != derivedReady) {
+      throw invalid();
+    }
+    return normalized(root, derivedReady);
   }
 
   private static ValidatedResponse validateDiagnostics(JsonNode root) {
     requireFields(root, Set.of("version", "activeProfiles", "database", "redis", "jvm"));
-    requireSafeString(root.get("version"));
+    requireSafeVersionToken(root.get("version"));
     validateProfiles(root.get("activeProfiles"));
     JsonNode database = requireObject(root.get("database"));
     requireFields(database, Set.of("state", "migrationVersion"));
     requireDependencyState(database.get("state"));
-    requireSafeString(database.get("migrationVersion"));
+    requireSafeVersionToken(database.get("migrationVersion"));
     JsonNode redis = requireObject(root.get("redis"));
     requireFields(redis, Set.of("configured", "state"));
     if (!redis.get("configured").isBoolean()) {
       throw invalid();
     }
-    requireDependencyState(redis.get("state"));
+    String redisState = requireDependencyState(redis.get("state"));
+    boolean redisConfigured = redis.get("configured").asBoolean();
+    if ((!redisConfigured && !"NOT_CONFIGURED".equals(redisState))
+        || (redisConfigured && "NOT_CONFIGURED".equals(redisState))) {
+      throw invalid();
+    }
     JsonNode jvm = requireObject(root.get("jvm"));
     requireFields(jvm, Set.of("heapUsedMb", "heapMaxMb"));
-    requireNonNegativeLong(jvm.get("heapUsedMb"));
-    requireNonNegativeLong(jvm.get("heapMaxMb"));
+    long heapUsedMb = requireNonNegativeLong(jvm.get("heapUsedMb"));
+    long heapMaxMb = requireNonNegativeLong(jvm.get("heapMaxMb"));
+    if (heapMaxMb <= 0 || heapUsedMb > heapMaxMb) {
+      throw invalid();
+    }
     return normalized(root, true);
   }
 
@@ -103,11 +116,12 @@ final class ControlResponseValidator {
     }
   }
 
-  private static void validateDependencies(JsonNode dependencies) {
-    if (!dependencies.isArray() || dependencies.size() > MAX_DEPENDENCIES) {
+  private static boolean validateDependencies(JsonNode dependencies) {
+    if (!dependencies.isArray() || dependencies.size() != DEPENDENCY_NAMES.size()) {
       throw invalid();
     }
     java.util.HashSet<String> names = new java.util.HashSet<>();
+    boolean ready = true;
     for (JsonNode dependency : dependencies) {
       JsonNode object = requireObject(dependency);
       requireFields(object, Set.of("name", "state"));
@@ -115,17 +129,25 @@ final class ControlResponseValidator {
       if (!DEPENDENCY_NAMES.contains(name) || !names.add(name)) {
         throw invalid();
       }
-      requireDependencyState(object.get("state"));
+      String state = requireDependencyState(object.get("state"));
+      if ("DOWN".equals(state)) {
+        ready = false;
+      }
     }
+    if (!names.equals(DEPENDENCY_NAMES)) {
+      throw invalid();
+    }
+    return ready;
   }
 
   private static void validateProfiles(JsonNode profiles) {
     if (!profiles.isArray() || profiles.size() > MAX_PROFILES) {
       throw invalid();
     }
+    java.util.HashSet<String> values = new java.util.HashSet<>();
     for (JsonNode profile : profiles) {
       String value = requireSafeString(profile);
-      if (!value.matches("[A-Za-z0-9_.-]{1,64}")) {
+      if (!value.matches("[A-Za-z0-9_.-]{1,64}") || !values.add(value)) {
         throw invalid();
       }
     }
@@ -166,18 +188,38 @@ final class ControlResponseValidator {
     return value;
   }
 
-  private static void requireDependencyState(JsonNode node) {
+  private static String requireDependencyState(JsonNode node) {
     if (node == null || !node.isTextual() || !DEPENDENCY_STATES.contains(node.asText())) {
       throw invalid();
     }
+    return node.asText();
   }
 
-  private static void requireNonNegativeLong(JsonNode node) {
+  private static long requireNonNegativeLong(JsonNode node) {
     if (node == null || !node.isIntegralNumber() || !node.canConvertToLong() || node.asLong() < 0) {
       throw invalid();
     }
+    return node.asLong();
   }
 
+
+  private static String requireSafeVersionToken(JsonNode node) {
+    String value = requireSafeString(node);
+    String lower = value.toLowerCase(java.util.Locale.ROOT);
+    if (!SAFE_VERSION_TOKEN.matcher(value).matches()
+        || value.contains("/")
+        || value.contains("\\")
+        || lower.contains("://")
+        || lower.contains("jdbc")
+        || lower.contains("redis")
+        || lower.contains("postgres")
+        || lower.contains("password")
+        || lower.contains("secret")
+        || lower.contains("token")) {
+      throw invalid();
+    }
+    return value;
+  }
   private static void rejectForbiddenFields(JsonNode object) {
     Iterator<String> names = object.fieldNames();
     while (names.hasNext()) {

@@ -284,3 +284,16 @@ expectInvalid("placeholder secret", ({ compose }) => {
 expectInvalid("malformed Compose", (fixture) => {
   delete fixture.compose.services;
 }, "Expected values to be strictly deep-equal");
+for (const header of [
+  "X-OrderPilot-Control-Credential",
+  "X-OrderPilot-Control-Audience",
+  "X-OrderPilot-Control-Timestamp",
+  "X-OrderPilot-Control-Nonce",
+  "X-OrderPilot-Control-Signature-Version",
+  "X-OrderPilot-Control-Content-SHA256",
+  "X-OrderPilot-Control-Signature"
+]) {
+  expectInvalid(`public ingress forwarding ${header}`, (fixture) => {
+    fixture.nginxTemplate = fixture.nginxTemplate.replace(`    proxy_set_header ${header} "";`, "");
+  }, `${header} is not stripped`);
+}

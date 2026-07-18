@@ -90,6 +90,13 @@ server {
     proxy_set_header X-OrderPilot-Actor-Timestamp "";
     proxy_set_header X-OrderPilot-Staff-Grant "";
     proxy_set_header X-OrderPilot-Gateway-Key "";
+    proxy_set_header X-OrderPilot-Control-Credential "";
+    proxy_set_header X-OrderPilot-Control-Audience "";
+    proxy_set_header X-OrderPilot-Control-Timestamp "";
+    proxy_set_header X-OrderPilot-Control-Nonce "";
+    proxy_set_header X-OrderPilot-Control-Signature-Version "";
+    proxy_set_header X-OrderPilot-Control-Content-SHA256 "";
+    proxy_set_header X-OrderPilot-Control-Signature "";
   }
 }
 

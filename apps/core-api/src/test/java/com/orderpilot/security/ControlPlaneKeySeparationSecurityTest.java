@@ -22,6 +22,7 @@ import java.util.HexFormat;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -84,13 +86,52 @@ class ControlPlaneKeySeparationSecurityTest {
   @MockBean private ControlPlaneStatusService statusService;
 
   @Test
-  void controlCredentialAuthenticatesAsControlPrincipalAndCoreResolvesPermission() throws Exception {
-    when(statusService.health()).thenReturn(new ControlHealthResponse("UP"));
+  void controlCredentialAuthenticatesAsAttributedControlPrincipalAndCoreResolvesPermission() throws Exception {
+    AtomicReference<Object> principal = new AtomicReference<>();
+    when(statusService.health()).thenAnswer(invocation -> {
+      principal.set(SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+      return new ControlHealthResponse("UP");
+    });
+
     mockMvc.perform(controlSigned(HEALTH))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("UP"));
+
+    assertThat(principal.get()).isInstanceOf(ControlPlanePrincipal.class);
+    ControlPlanePrincipal controlPrincipal = (ControlPlanePrincipal) principal.get();
+    assertThat(controlPrincipal.credentialAlias()).isEqualTo(CREDENTIAL);
+    assertThat(controlPrincipal.keyVersion()).isEqualTo("control-v1");
+    assertThat(controlPrincipal.principalType()).isEqualTo(ControlPlaneCredentialRegistry.PRINCIPAL_TYPE);
+    assertThat(controlPrincipal.toString())
+        .doesNotContain(CONTROL_SECRET)
+        .doesNotContain(GATEWAY_SECRET)
+        .doesNotContain("001122")
+        .doesNotContain("a3f91");
   }
 
+  @Test
+  void differentServerCredentialRecordsProduceDistinguishablePrincipals() {
+    Clock clock = Clock.fixed(Instant.parse("2026-07-18T00:00:00Z"), ZoneOffset.UTC);
+    var first = new ControlPlaneCredentialRegistry(
+        "ops-prod-a", CONTROL_SECRET, ControlPlaneProtocol.AUDIENCE, "ENABLED",
+        "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", false,
+        "STAFF_CONTROL_READ", "control-v1", clock)
+        .findActive("ops-prod-a", ControlPlaneProtocol.AUDIENCE)
+        .orElseThrow()
+        .principal();
+    var second = new ControlPlaneCredentialRegistry(
+        "ops-prod-b", "11112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        ControlPlaneProtocol.AUDIENCE, "ENABLED", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", false,
+        "STAFF_CONTROL_READ", "control-v2", clock)
+        .findActive("ops-prod-b", ControlPlaneProtocol.AUDIENCE)
+        .orElseThrow()
+        .principal();
+
+    assertThat(first).isNotEqualTo(second);
+    assertThat(first.credentialAlias()).isEqualTo("ops-prod-a");
+    assertThat(second.credentialAlias()).isEqualTo("ops-prod-b");
+    assertThat(second.keyVersion()).isEqualTo("control-v2");
+  }
   @Test
   void controlCredentialCannotAuthenticateTenantBusinessRoutes() throws Exception {
     mockMvc.perform(controlSigned(QUOTES))

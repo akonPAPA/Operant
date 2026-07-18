@@ -73,6 +73,10 @@ final class ControlPlaneCredentialRegistry {
       return keyMaterial.clone();
     }
 
+    ControlPlanePrincipal principal() {
+      return new ControlPlanePrincipal(alias, keyVersion, principalType);
+    }
+
     String keyMaterialFingerprintForTests() {
       return HexFormat.of().formatHex(keyMaterial);
     }

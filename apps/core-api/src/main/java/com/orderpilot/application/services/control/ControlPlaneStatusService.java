@@ -45,8 +45,8 @@ public class ControlPlaneStatusService {
       DataSource dataSource,
       @Qualifier("gatewayHeaderReplayRedisTemplate") ObjectProvider<StringRedisTemplate> replayRedisTemplate,
       Environment environment) {
-    // Dedicated probe template with a bounded query timeout so a wedged pool cannot hang the
-    // control surface past the probe budget.
+    // Dedicated probe template with a bounded SQL query timeout. This bounds query execution after
+    // a connection is acquired; it does not prove a total deadline for wedged pool acquisition.
     this.probeJdbcTemplate = new JdbcTemplate(dataSource);
     this.probeJdbcTemplate.setQueryTimeout(PROBE_QUERY_TIMEOUT_SECONDS);
     this.replayRedisTemplate = replayRedisTemplate;
