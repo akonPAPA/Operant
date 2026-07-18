@@ -89,6 +89,7 @@ server {
     proxy_set_header X-OrderPilot-Actor-Signature "";
     proxy_set_header X-OrderPilot-Actor-Timestamp "";
     proxy_set_header X-OrderPilot-Staff-Grant "";
+    proxy_set_header X-OrderPilot-Gateway-Key "";
   }
 }
 

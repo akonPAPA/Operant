@@ -1,16 +1,29 @@
-document_version: 7
-updated_at: 2026-07-17T14:45:00Z
+document_version: 10
+updated_at: 2026-07-18T11:25:00Z
 repository: akonPAPA/Operant
 phase: 1
-branch: fix/p1d-post-merge-root-causes
-current_main_sha: 52e23746f23289b0a74f4ee5c0fccef3e2984812
-last_merged_pr: "#281"
-last_closed_capability: P1-D initial topology (merged, corrective delta pending)
-active_capability: P1-D-CORRECTIVE
-active_branch: fix/p1d-post-merge-root-causes
-active_start_sha: 52e23746f23289b0a74f4ee5c0fccef3e2984812
-active_head_sha: 52e23746f23289b0a74f4ee5c0fccef3e2984812 (corrective delta staged, uncommitted)
-next_capability: P1-E operantctl and bounded Control API (after P1-D corrective merge)
+branch: feature/p1e-bounded-control-api
+current_main_sha: b08f64163c156e1b8158301aa378d06b0fb57492
+last_merged_pr: "#282"
+last_closed_capability: P1-D (initial topology #281 + corrective root causes #282)
+active_capability: P1-E bounded Control API and operantctl
+active_branch: feature/p1e-bounded-control-api
+active_start_sha: b08f64163c156e1b8158301aa378d06b0fb57492
+next_capability: P1-F Connector Gateway protocol
+p1d_closure:
+  merged_pr: "#282"
+  merge_commit: b08f64163c156e1b8158301aa378d06b0fb57492
+  reviewed_head: e9aa39e685b0c2ea268b378d1deaf847f970d7ff
+  tree_identity: a32e5274e0971ec15646371438dae85ff6133cf5 (reviewed head tree == merged main tree, byte-identical)
+  exact_main_verification_at_b08f641:
+    git_diff_head_check: PASS
+    frontend_full_suite: 745/745 PASS
+    p1d_topology_suite: 34/34 PASS
+    typecheck: PASS
+    lint: PASS
+    backend_security_package: 525/525 PASS
+    real_compose_validate: PASS (Docker 29.6.1 / Compose v5.3.0, synthetic env, exit 0)
+  ci_at_reviewed_head: ALL PASS (backend, integration, frontend, build, compose config, release docker guard, CodeQL x3, Semgrep, Snyk, evidence gate)
 production_authentication:
   core_auth_mode: SIGNED_GATEWAY_HEADERS
   browser_auth_mode: BFF_OIDC_AUTHORIZATION_CODE
@@ -23,56 +36,58 @@ production_authentication:
   bff_to_core_authority: SERVER_RESOLVED_AND_SIGNED
   liveness_route: /api/bff/health
   readiness_route: /api/bff/ready
-p1d_corrective:
-  state: IMPLEMENTED_LOCAL_VERIFIED_COMMIT_BLOCKED
-  staged_patch_digest_sha256: 6243e1124bfbba3fe350568200ab71bafb9582a12ec1b1dedb20069236cb9582
-  patch_artifact: .git/operant-recovery/p1d-interrupted/corrective-final.patch
-  root_causes_closed:
-    - executable deployment script (index mode 100755, test-asserted)
-    - bounded startup timeout validation (30..900s, default 240, fail-closed parse)
-    - compose up --wait health-gated startup, unhealthy exit propagated to systemd
-    - systemd TimeoutStartSec=960 coherent with script max 900
-    - structured ORDERPILOT_BFF_REDIS_HOST/PORT/PASSWORD replaces credential-bearing URL
-    - credential-bearing Redis URL rejected fail-closed before connection
-    - reserved-character password preserved exactly (no URL decode corruption)
-    - no password leakage in error messages (test-asserted)
-    - web-dashboard removed from data_private (BFF cannot reach PostgreSQL)
-    - redis joined application_private (BFF and Core reachability)
-    - exact network membership enforced by validator with negative mutations
-    - stateful postgres/redis resource controls (no-new-privileges, pids, mem, cpus)
-    - stop uses compose stop (no compose down, named volumes preserved)
-    - fake-Docker lifecycle fault injection (unhealthy propagation, secret non-leak)
-  verification:
-    frontend_full_suite: 745/745 PASS
-    p1d_topology_suite: 34/34 PASS
-    typecheck: PASS
-    lint: PASS
-    backend_security_package: 525/525 PASS (com.orderpilot.security.**)
-    real_compose_validate: PASS (Docker 29.6.1 / Compose v5.3.0, synthetic env, exit 0)
-  blocked_transitions:
-    - git commit (denied by .claude/settings.local.json permissions.deny)
-    - git push (denied by .claude/settings.local.json permissions.deny)
-    - gh pr create (denied by .claude/settings.local.json permissions.deny)
-reconciliation_audit_2026_07_17:
-  p1_a_config: CODE_PROVEN (backend production guards + validator tests green; frontend fail-closed config tests green)
-  p1_b_bff_boundary: CODE_PROVEN (browser-server static boundary, proxy boundary, transport isolation green)
-  p1_c_identity_planes: CODE_PROVEN (OIDC flow, session lifecycle, STAFF_*/tenant/service plane separation green)
-  p1_d_topology: CODE_PROVEN_WITH_LOCAL_CORRECTIVE (validator + negative mutations + lifecycle fault injection green; corrective delta staged)
+reconciliation_p1_a_d:
+  p1_a_config: CODE_PROVEN at a32e5274 (production guards, fail-closed config, placeholder rejection)
+  p1_b_bff_boundary: CODE_PROVEN at a32e5274 (static browser boundary, proxy boundary, transport isolation, redis credential isolation)
+  p1_c_identity_planes: CODE_PROVEN at a32e5274 (OIDC flow, session lifecycle, STAFF/tenant/service plane separation)
+  p1_d_topology: CODE_PROVEN at a32e5274 (exact network membership, negative mutations, lifecycle fault injection, real compose validate)
 not_proven:
   - real identity-provider interoperability
   - deployed Redis failover and expiry behavior
   - DNS-pinned outbound identity-provider connections
-  - clean-host Linux deployment and reboot lifecycle
+  - clean-host Linux deployment and reboot lifecycle (scheduled for P1-H drills)
   - public Core ingress closure on a real host
   - independent external-customer authentication flow
   - independent service-account authentication flow
   - independent Operant support and maintenance authentication flow
+p1e_current_working_tree:
+  decision: P1-E PARTIAL
+  scope: bounded control read API, dedicated control credential protocol, Windows DPAPI-backed operantctl read client
+  gates_0_to_5: LOCALLY_PROVEN_ON_WORKING_TREE
+  gate_6_lifecycle_commands: NOT_IMPLEMENTED
+  server:
+    routes: GET/HEAD /api/v1/internal/control/{status,health,readiness,diagnostics}; OPTIONS advertises GET,HEAD,OPTIONS; write-shaped methods and unknown paths remain denied or method-not-allowed after authorization
+    permissions: STAFF_CONTROL_READ and STAFF_CONTROL_DIAGNOSE, resolved server-side from a control credential registry
+    credential_protocol: OPERANT_CONTROL_V1 binds method, path, raw query, content type, body SHA256, audience, credential alias, timestamp, and nonce
+    registry: alias selects a server-owned CONTROL record with key material, audience, status, valid-from, expiry, revocation, permissions, and key-version metadata; empty/disabled config fails closed
+    replay: existing shared gateway replay admission store with separate control-plane/credential namespace
+    ingress: retired X-OrderPilot-Gateway-Key control selector fails closed and is stripped at the public proxy boundary
+  client:
+    module: apps/operantctl (Java 21)
+    commands: version, config validate, status, health, readiness, diagnose
+    absent_commands: logs, backup, restore, upgrade, rollback
+    credential_store: Windows current-user DPAPI, owner-only ACL, versioned blob, strict alias encoding, symlink/reparse rejection, bounded file size, atomic replacement, no plaintext fallback
+    tls: production requires HTTPS, localhost HTTP only in explicit local mode, no insecure toggle, optional PKCS12 trust store overrides default JVM trust for the client
+  dependency_decision:
+    jna_platform: 5.19.1
+    transitive_dependencies: net.java.dev.jna:jna 5.19.1
+    ci_scanning: operantctl added to CI tests and Snyk dependency scan path
+  local_verification:
+    core_targeted_security_tests: 369 tests PASS
+    core_full_mvn_test: PASS
+    operantctl_mvn_test: 29 tests PASS
+    operantctl_mvn_package: PASS target/operantctl-0.1.0-SNAPSHOT.jar
+    p1d_topology_validator: PASS
+    git_diff_check: PASS
+    git_diff_cached_check: PASS
+  exact_head_proof_before_commit: UNAVAILABLE_BEFORE_COMMIT
+  staged_index_note: stale document_version_8 index entry was removed; document_version_10 is staged explicitly
 open_p1:
-  - P1-D corrective merge (implemented, blocked on owner git permissions)
-  - P1-E operantctl
+  - P1-E lifecycle operations slice: logs, backup, restore, upgrade, rollback with state machine, idempotency, concurrency control, audit, redaction, fixed executor contracts, and P1-H runtime recovery proof
+  - P1-F/P1-G real agent registry and agent status source
+  - real AI/provider registry and provider status source
+  - final operantctl wiring after real lifecycle, agent, and provider sources exist
   - P1-F Connector Gateway protocol
   - P1-G operant-agent
   - P1-H Recovery and observability
-owner_decisions_required:
-  - execute commit/push/PR of fix/p1d-post-merge-root-causes, or grant git commit/push/gh permissions for the program session
-next_bounded_action: Merge P1-D corrective PR, then start P1-E operantctl and bounded Control API.
+next_bounded_action: Create the P1-E foundation commit, run exact-head verification, then owner opens the PR when satisfied.

@@ -59,6 +59,28 @@ jobs:
       - name: Run backend tests
         run: mvn test "-Dtest=!*IntegrationTest"
 
+  operantctl:
+    name: operantctl tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/operantctl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run operantctl tests
+        run: mvn test
+
   core-api-release-docker-guard:
     name: Core API release Docker guard
     runs-on: ubuntu-latest

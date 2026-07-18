@@ -70,6 +70,19 @@ orderpilot:
         port: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PORT:6379}"
         password: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PASSWORD:}"
         key-prefix: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_KEY_PREFIX:op:gw-replay}"
+    # P1-E: config-backed single-record control credential registry for operantctl. The alias only
+    # selects a server-owned record; Core owns status, validity, expiry, revocation, audience,
+    # server-side permissions, and key-version metadata. Empty or disabled config fails closed.
+    control-plane-auth:
+      credential-alias: "${ORDERPILOT_CONTROL_PLANE_CREDENTIAL_ALIAS:}"
+      shared-secret: "${ORDERPILOT_CONTROL_PLANE_SHARED_SECRET:}"
+      audience: "${ORDERPILOT_CONTROL_PLANE_AUDIENCE:orderpilot-control-plane}"
+      status: "${ORDERPILOT_CONTROL_PLANE_STATUS:DISABLED}"
+      valid-from: "${ORDERPILOT_CONTROL_PLANE_VALID_FROM:}"
+      expires-at: "${ORDERPILOT_CONTROL_PLANE_EXPIRES_AT:}"
+      revoked: "${ORDERPILOT_CONTROL_PLANE_REVOKED:false}"
+      permissions: "${ORDERPILOT_CONTROL_PLANE_PERMISSIONS:STAFF_CONTROL_READ,STAFF_CONTROL_DIAGNOSE}"
+      key-version: "${ORDERPILOT_CONTROL_PLANE_KEY_VERSION:1}"
     # OP-CAP-16K signed actor verification for runtime entitlement admin mutations. Empty = no
     # signing secret configured → local/dev trusted-header fallback (16J behavior). When set, admin
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).

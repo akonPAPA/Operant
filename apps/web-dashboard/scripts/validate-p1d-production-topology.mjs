@@ -16,7 +16,8 @@ const forbiddenAuthorityHeaders = [
   "X-OrderPilot-Gateway-Signature",
   "X-OrderPilot-Actor-Signature",
   "X-OrderPilot-Actor-Timestamp",
-  "X-OrderPilot-Staff-Grant"
+  "X-OrderPilot-Staff-Grant",
+  "X-OrderPilot-Gateway-Key"
 ];
 
 const operantOwned = ["core-api", "web-dashboard"];

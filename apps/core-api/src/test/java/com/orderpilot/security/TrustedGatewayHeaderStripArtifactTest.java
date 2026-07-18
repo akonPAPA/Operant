@@ -23,7 +23,8 @@ class TrustedGatewayHeaderStripArtifactTest {
       "X-OrderPilot-Gateway-Nonce",
       "X-OrderPilot-Gateway-Signature",
       "X-OrderPilot-Actor-Signature",
-      "X-OrderPilot-Actor-Timestamp");
+      "X-OrderPilot-Actor-Timestamp",
+      "X-OrderPilot-Gateway-Key");
 
   @Test
   void gatewayHeaderStripArtifactMentionsAndClearsTrustedAuthorityHeaders() throws Exception {
