@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +27,8 @@ class OperantCtlCommandTest {
   private static final String SECRET =
       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
   private static final String ALIAS = "ops-prod";
+  private static final String REPLACEMENT_SECRET =
+      "11112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
   private static final String VALID_STATUS =
       "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"NOT_CONFIGURED\"}]}";
   private static final String VALID_HEALTH = "{\"status\":\"UP\"}";
@@ -132,6 +135,20 @@ class OperantCtlCommandTest {
     assertThat(invalidSecret.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
     assertThat(invalidSecret.out() + invalidSecret.err()).doesNotContain("not-a-secret");
 
+    RunResult emptySecret = runWithReader(prompt -> "".toCharArray(), "credential", "import", "new-empty");
+    assertThat(emptySecret.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+
+    String oversizedSecret = SECRET + "00";
+    RunResult oversized = runWithReader(prompt -> oversizedSecret.toCharArray(), "credential", "import", "new-large");
+    assertThat(oversized.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+    assertThat(oversized.out() + oversized.err()).doesNotContain(oversizedSecret);
+
+    String secretWithControl = SECRET.substring(0, 32) + "\r\n" + SECRET.substring(34);
+    RunResult controlCharacter = runWithReader(
+        prompt -> secretWithControl.toCharArray(), "credential", "import", "new-control");
+    assertThat(controlCharacter.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+    assertThat(controlCharacter.out() + controlCharacter.err()).doesNotContain(secretWithControl);
+
     RunResult existing = runWithReader(prompt -> SECRET.toCharArray(), "credential", "import", ALIAS);
     assertThat(existing.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
 
@@ -139,6 +156,33 @@ class OperantCtlCommandTest {
     assertThat(replaced.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
   }
 
+  @Test
+  void failedReplacementPreservesExistingCredential() {
+    InMemoryControlCredentialStore delegate = new InMemoryControlCredentialStore();
+    delegate.store(ALIAS, new ControlCredential(SECRET));
+    ControlCredentialStore rejectingStore = new ControlCredentialStore() {
+      @Override public ControlCredential load(String alias) { return delegate.load(alias); }
+      @Override public void store(String alias, ControlCredential credential) { throw new ControlCredentialStoreException("store failed"); }
+      @Override public void delete(String alias) { delegate.delete(alias); }
+      @Override public java.util.Optional<ControlCredentialMetadata> metadata(String alias) { return delegate.metadata(alias); }
+    };
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+    int exit = OperantCtl.run(new String[] {"credential", "import", ALIAS, "--replace"}, env, rejectingStore,
+        prompt -> REPLACEMENT_SECRET.toCharArray(), Clock.systemUTC(), new PrintStream(out, true), new PrintStream(err, true));
+
+    assertThat(exit).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+    assertThat(out.toString(StandardCharsets.UTF_8) + err.toString(StandardCharsets.UTF_8))
+        .doesNotContain(REPLACEMENT_SECRET)
+        .doesNotContain(SECRET);
+    ControlCredential preserved = delegate.load(ALIAS);
+    try {
+      assertThat(HexFormat.of().formatHex(preserved.keyMaterialCopy())).isEqualTo(SECRET);
+    } finally {
+      preserved.close();
+    }
+  }
   @Test
   void credentialImportHandlesStoreAndConsoleFailuresWithoutSecretLeak() {
     RunResult noConsole = runWithReader(prompt -> null, "credential", "import", "new-null");

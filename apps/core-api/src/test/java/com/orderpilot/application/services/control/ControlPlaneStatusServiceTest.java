@@ -3,6 +3,11 @@ package com.orderpilot.application.services.control;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.time.Duration;
 import com.orderpilot.api.dto.ControlInternalDtos.ControlDiagnosticsResponse;
 import com.orderpilot.api.dto.ControlInternalDtos.ControlReadinessResponse;
 import com.orderpilot.api.dto.ControlInternalDtos.ControlStatusResponse;
@@ -10,6 +15,11 @@ import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
@@ -20,7 +30,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.env.MockEnvironment;
 
 /**
- * P1-E — behavioral truth and leak-contract proof for the bounded control-plane status service:
+ * P1-E - behavioral truth and leak-contract proof for the bounded control-plane status service:
  * readiness reflects required dependencies only (an unconfigured Redis never fails readiness, a
  * configured-but-down Redis does), probe failures map to the fixed DOWN token without any raw error
  * text, and no serialized control response can disclose hosts, URLs, paths, configuration values,
@@ -93,10 +103,18 @@ class ControlPlaneStatusServiceTest {
   }
 
   private static ControlPlaneStatusService service(
-      javax.sql.DataSource dataSource, ObjectProvider<StringRedisTemplate> redis) {
+      DataSource dataSource, ObjectProvider<StringRedisTemplate> redis) {
+    return service(dataSource, redis, Duration.ofSeconds(6), null);
+  }
+
+  private static ControlPlaneStatusService service(
+      DataSource dataSource,
+      ObjectProvider<StringRedisTemplate> redis,
+      Duration deadline,
+      ControlPlaneStatusService.ProbeObserver observer) {
     MockEnvironment environment = new MockEnvironment();
     environment.setActiveProfiles("test");
-    return new ControlPlaneStatusService(dataSource, redis, environment);
+    return new ControlPlaneStatusService(dataSource, redis, environment, deadline, observer);
   }
 
   @Test
@@ -115,6 +133,29 @@ class ControlPlaneStatusServiceTest {
     assertThat(readiness.ready()).isFalse();
     assertThat(readiness.dependencies())
         .contains(new DependencyStatus("database", DependencyState.DOWN));
+  }
+  @Test
+  void readinessTimesOutBlockedConnectionAcquisitionAndEmitsBoundedSignal() throws Exception {
+    BlockingDataSource dataSource = new BlockingDataSource();
+    RecordingProbeObserver observer = new RecordingProbeObserver();
+    ControlPlaneStatusService statusService = service(dataSource, noRedis(), Duration.ofMillis(50), observer);
+    try {
+      long started = System.nanoTime();
+      ControlReadinessResponse readiness = statusService.readiness();
+      long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+      assertThat(readiness.ready()).isFalse();
+      assertThat(readiness.dependencies())
+          .containsExactly(
+              new DependencyStatus("database", DependencyState.DOWN),
+              new DependencyStatus("redis", DependencyState.NOT_CONFIGURED));
+      assertThat(elapsedMillis).isLessThan(1_000L);
+      assertThat(dataSource.entered.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(dataSource.interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(observer.events()).contains("timeout:database:50");
+    } finally {
+      statusService.shutdownProbeExecutor();
+    }
   }
 
   @Test
@@ -189,6 +230,84 @@ class ControlPlaneStatusServiceTest {
         assertThat(json).as("control response must not contain '%s'", forbidden)
             .doesNotContain(forbidden);
       }
+    }
+  }
+
+  private static final class RecordingProbeObserver implements ControlPlaneStatusService.ProbeObserver {
+    private final CopyOnWriteArrayList<String> events = new CopyOnWriteArrayList<>();
+
+    @Override
+    public void timedOut(String dependency, Duration deadline) {
+      events.add("timeout:" + dependency + ":" + deadline.toMillis());
+    }
+
+    @Override
+    public void interrupted(String dependency) {
+      events.add("interrupted:" + dependency);
+    }
+
+    @Override
+    public void failed(String dependency, String failureType) {
+      events.add("failed:" + dependency + ":" + failureType);
+    }
+
+    private java.util.List<String> events() {
+      return events;
+    }
+  }
+
+  private static final class BlockingDataSource implements DataSource {
+    private final CountDownLatch entered = new CountDownLatch(1);
+    private final CountDownLatch interrupted = new CountDownLatch(1);
+
+    @Override
+    public Connection getConnection() throws SQLException {
+      entered.countDown();
+      try {
+        while (true) {
+          Thread.sleep(1_000L);
+        }
+      } catch (InterruptedException cancellation) {
+        interrupted.countDown();
+        Thread.currentThread().interrupt();
+        throw new SQLException("interrupted");
+      }
+    }
+
+    @Override
+    public Connection getConnection(String username, String password) throws SQLException {
+      return getConnection();
+    }
+
+    @Override
+    public PrintWriter getLogWriter() {
+      return null;
+    }
+
+    @Override
+    public void setLogWriter(PrintWriter out) {}
+
+    @Override
+    public void setLoginTimeout(int seconds) {}
+
+    @Override
+    public int getLoginTimeout() {
+      return 0;
+    }
+
+    @Override
+    public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+      throw new SQLFeatureNotSupportedException();
+    }
+
+    @Override
+    public <T> T unwrap(Class<T> iface) throws SQLException {
+      throw new SQLException("not a wrapper");
+    }
+
+    @Override
+    public boolean isWrapperFor(Class<?> iface) {
+      return false;
     }
   }
 }

@@ -25,6 +25,7 @@ public final class OperantCtl {
   static final int EXIT_DENIED = 3;
   static final int EXIT_TRANSPORT = 4;
   private static final Pattern CREDENTIAL_ALIAS = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$");
+  private static final int CONTROL_SECRET_HEX_CHARS = 64;
 
   private OperantCtl() {}
 
@@ -136,6 +137,10 @@ public final class OperantCtl {
           err.println("credential import failed: confirmation does not match");
           return EXIT_USAGE_OR_CONFIG;
         }
+        if (!isControlCredentialSecret(secret)) {
+          err.println("credential import failed: secret is invalid");
+          return EXIT_USAGE_OR_CONFIG;
+        }
         try (ControlCredential credential = new ControlCredential(new String(secret))) {
           credentialStore.store(resolvedAlias, credential);
         }
@@ -153,6 +158,20 @@ public final class OperantCtl {
       err.println("credential import failed: " + failure.getMessage());
       return EXIT_USAGE_OR_CONFIG;
     }
+  }
+  private static boolean isControlCredentialSecret(char[] secret) {
+    if (secret.length != CONTROL_SECRET_HEX_CHARS) {
+      return false;
+    }
+    for (char value : secret) {
+      boolean hex = (value >= '0' && value <= '9')
+          || (value >= 'a' && value <= 'f')
+          || (value >= 'A' && value <= 'F');
+      if (!hex) {
+        return false;
+      }
+    }
+    return true;
   }
   private static int remoteRead(
       Map<String, String> env,

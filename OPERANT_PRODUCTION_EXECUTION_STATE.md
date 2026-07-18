@@ -1,8 +1,9 @@
-document_version: 10
-updated_at: 2026-07-18T14:36:00Z
+document_version: 11
+updated_at: 2026-07-18T20:45:00Z
 repository: akonPAPA/Operant
 phase: 1
 branch: feature/p1e-bounded-control-api
+committed_head: 8e82517a06bf824823b0e357c9c088caeca3e1f1
 current_main_sha: b08f64163c156e1b8158301aa378d06b0fb57492
 last_merged_pr: "#282"
 last_closed_capability: P1-D (initial topology #281 + corrective root causes #282)
@@ -10,6 +11,41 @@ active_capability: P1-E bounded Control API and operantctl
 active_branch: feature/p1e-bounded-control-api
 active_start_sha: b08f64163c156e1b8158301aa378d06b0fb57492
 next_capability: P1-F Connector Gateway protocol
+pr_283_final_local_verification:
+  local_verdict: READY_FOR_OWNER_CORRECTIVE_COMMIT
+  remote: NOT_INSPECTED
+  production_runtime: NOT_PROVEN
+  dirty_working_tree_correction: present (unstaged corrective delta on HEAD 8e82517)
+  corrective_files:
+    - apps/core-api/src/main/java/com/orderpilot/application/services/control/ControlPlaneStatusService.java
+    - apps/core-api/src/test/java/com/orderpilot/application/services/control/ControlPlaneStatusServiceTest.java
+    - apps/core-api/src/test/java/com/orderpilot/security/TrustedGatewayHeaderStripArtifactTest.java
+    - apps/operantctl/src/main/java/com/operant/ctl/OperantCtl.java
+    - apps/operantctl/src/test/java/com/operant/ctl/OperantCtlCommandTest.java
+    - docs/product/OPERANT_WORLD_CLASS_FRONTEND_MASTER_PLAN_V1.md (deletion)
+    - docs/security/gateway-header-strip-nginx-example.conf
+    - OPERANT_PRODUCTION_EXECUTION_STATE.md
+  finding_h: PASS (aggregate dependency-probe deadline, Future cancel, interrupt preserve, @PreDestroy shutdownNow, bounded System.Logger; @Autowired on production constructor to keep Spring context wiring)
+  owner_document_preservation:
+    path: C:\OrderPilot\owner-artifacts\OPERANT_WORLD_CLASS_FRONTEND_MASTER_PLAN_V1.md
+    sha256: 0F4322B3AE39245154820E60740189D062E50F727D4CEC77EC52A614ECDDC2EB
+  operantctl:
+    clean_verify: PASS (43/43)
+    version_smoke: PASS
+    jar_sha256: BB0E508913252C6FD00890E2A058991196A23F4761B15DB7EA156483E07BDFAC
+    jar_bytes: 5784836
+    packaged_behavioural_smokes: PASS (8/8 cases; secret leak false)
+  core:
+    targeted_p1e: PASS (394/394)
+    full_suite: PASS (2700 tests, 0 failures, 0 errors, 45 skipped)
+  frontend:
+    topology_validate: PASS
+    topology_tests: PASS (41/41)
+    npm_test: PASS (752/752)
+    lint: PASS
+    typecheck: PASS
+    build: PASS
+  exact_next_owner_action: Stage the corrective working-tree set (including this execution-state update and the frontend-plan deletion), create the owner corrective commit locally, then run exact-head CI/PR review. Do not claim remote green or production proven until corresponding evidence exists.
 p1d_closure:
   merged_pr: "#282"
   merge_commit: b08f64163c156e1b8158301aa378d06b0fb57492
@@ -51,10 +87,11 @@ not_proven:
   - independent service-account authentication flow
   - independent Operant support and maintenance authentication flow
 p1e_current_working_tree:
-  decision: P1-E PARTIAL
+  decision: P1-E LOCAL_CORRECTIVE_READY_FOR_OWNER_COMMIT
   scope: bounded control read API, dedicated control credential protocol, Windows DPAPI-backed operantctl read client
-  gates_0_to_5: CORRECTIVE_LOCAL_PARTIAL_PROOF
+  gates_0_to_5: CORRECTIVE_LOCAL_PROOF_COMPLETE
   gate_6_lifecycle_commands: NOT_IMPLEMENTED
+  finding_h_aggregate_dependency_deadline: PASS
   server:
     routes: GET/HEAD /api/v1/internal/control/{status,health,readiness,diagnostics}; OPTIONS advertises GET,HEAD,OPTIONS; write-shaped methods and unknown paths remain denied or method-not-allowed after authorization
     permissions: STAFF_CONTROL_READ and STAFF_CONTROL_DIAGNOSE, resolved server-side from a control credential registry
@@ -62,9 +99,10 @@ p1e_current_working_tree:
     registry: DISABLED remains inactive with blank authority fields; ENABLED requires explicit alias, 64-hex random control secret, fixed audience, valid-from, finite future expiry, non-revoked state, allowlisted STAFF_CONTROL_* permissions, key version, and gateway/control key separation
     replay: existing shared gateway replay admission store with separate control-plane/credential namespace
     ingress: retired X-OrderPilot-Gateway-Key control selector fails closed and is stripped at the public proxy boundary
+    readiness_deadline: aggregate dependency-probe deadline bounds DB/Redis acquisition; timeout returns DOWN and never READY; futures cancelled; probe executor shut down on destroy
   client:
     module: apps/operantctl (Java 21)
-    commands: version, config validate, status, health, readiness, diagnose
+    commands: version, config validate, credential import, status, health, readiness, diagnose
     absent_commands: logs, backup, restore, upgrade, rollback
     credential_store: Windows current-user DPAPI, owner-only ACL, versioned blob, strict alias encoding, symlink/reparse rejection, bounded file size, atomic replacement, no plaintext fallback
     tls: production requires HTTPS, localhost HTTP only in explicit local mode, no insecure toggle, optional PKCS12 trust store overrides default JVM trust for the client
@@ -73,25 +111,21 @@ p1e_current_working_tree:
     transitive_dependencies: net.java.dev.jna:jna 5.19.1
     jackson: 2.22.1 (databind/core resolved by local dependency tree; GitHub Snyk exact-head result NOT_PROVEN)
   corrective_local_verification:
-    starting_head: ff40c637a8c817ec016a772a7e81950f016504d6
-    corrective_commit: NOT_CREATED_BY_CODEX_HIGHER_PRIORITY_GIT_INSTRUCTION
-    core_control_credential_tests: ControlPlaneKeySeparationSecurityTest + ProductionConfigurationValidatorTest = 32/32 PASS
-    core_route_status_security_tests: InternalControlControllerSecurityTest + ApiInternalRouteDefaultDenyTest + ApiRouteSecurityClassificationTest + GatewayHeaderAuthProductionGuardTest + ControlPlaneStatusServiceTest = 367/367 PASS
-    operantctl_targeted_mvn_test: ControlApiClientResponseBoundTest + OperantCtlCommandTest + ControlApiClientTlsTest + CtlConfigTest = 36/36 PASS
-    operantctl_full_mvn_test: 38/38 PASS
-    operantctl_mvn_package: PASS target/operantctl-0.1.0-SNAPSHOT.jar
-    operantctl_dependency_tree: jackson-databind 2.22.1, jackson-core 2.22.1, jackson-annotations 2.22
-    local_snyk: NOT_PROVEN (blocked by external data-exfiltration policy for snyk test)
-    github_snyk_exact_head: NOT_PROVEN
-    p1d_topology_validator: PASS (node scripts/validate-p1d-production-topology.mjs)
-    core_full_mvn_test: PASS exit 0; Surefire XML totals 2698 tests, 0 failures, 0 errors, 45 skipped
-    frontend_full_verification: npm test 745/745 PASS; npm run lint PASS; npm run typecheck PASS; npm run build PASS
+    committed_head: 8e82517a06bf824823b0e357c9c088caeca3e1f1
+    corrective_commit: NOT_CREATED
+    core_targeted_p1e: 394/394 PASS
+    core_full_mvn_test: PASS 2700 tests, 0 failures, 0 errors, 45 skipped
+    operantctl_clean_verify: 43/43 PASS
+    operantctl_packaged_behavioural_smokes: 8/8 PASS
+    operantctl_jar_sha256: BB0E508913252C6FD00890E2A058991196A23F4761B15DB7EA156483E07BDFAC
+    p1d_topology_validator: PASS
+    frontend_full_verification: npm test 752/752 PASS; lint PASS; typecheck PASS; build PASS
   corrective_not_proven:
     production_management_ingress: NOT_PROVEN
     clean_host_runtime: NOT_PROVEN
     lifecycle_commands: NOT_IMPLEMENTED
-    connection_acquisition_total_readiness_deadline: NOT_PROVEN
     exact_head_ci: NOT_PROVEN
+    remote_pr_checks: NOT_INSPECTED
     merge: NOT_PERFORMED
 open_p1:
   - P1-E lifecycle operations slice: logs, backup, restore, upgrade, rollback with state machine, idempotency, concurrency control, audit, redaction, fixed executor contracts, and P1-H runtime recovery proof
@@ -101,4 +135,4 @@ open_p1:
   - P1-F Connector Gateway protocol
   - P1-G operant-agent
   - P1-H Recovery and observability
-next_bounded_action: Owner reviews the local corrective patch, creates the corrective commit if accepted, runs exact-head verification/CI/PR review, and makes the merge decision. GitHub Snyk, private production management ingress, clean-host runtime, and lifecycle commands remain NOT_PROVEN/NOT_IMPLEMENTED.
+next_bounded_action: Owner stages the unstaged corrective set (Finding H + Autowired wiring fix, credential import hardening, control-header strip completeness, frontend-plan deletion, execution-state update), creates the corrective commit, then runs exact-head CI/PR review. GitHub remote status, production runtime, and lifecycle commands remain NOT_INSPECTED/NOT_PROVEN/NOT_IMPLEMENTED.
