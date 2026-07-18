@@ -1,11 +1,16 @@
 package com.operant.ctl;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.time.Clock;
@@ -30,7 +35,23 @@ final class ControlApiClient {
 
   static final int MAX_RESPONSE_BYTES = 64 * 1024;
 
-  record ControlResponse(int statusCode, String body) {}
+  record ControlResponse(int statusCode, byte[] bodyBytes) {
+    ControlResponse {
+      bodyBytes = bodyBytes.clone();
+    }
+
+    String body() {
+      try {
+        return StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bodyBytes))
+            .toString();
+      } catch (CharacterCodingException invalidUtf8) {
+        throw new InvalidControlResponseException();
+      }
+    }
+  }
 
   /** Transport-level failure (connect/timeout/protocol/TLS) that never carries a secret. */
   static final class ControlTransportException extends RuntimeException {
@@ -38,6 +59,8 @@ final class ControlApiClient {
       super(message);
     }
   }
+
+  static final class InvalidControlResponseException extends RuntimeException {}
 
   private final CtlConfig config;
   private final ControlPlaneSigner signer;
@@ -62,6 +85,13 @@ final class ControlApiClient {
     }
   }
 
+
+  ControlApiClient(CtlConfig config, ControlPlaneSigner signer, HttpClient httpClient, Clock clock) {
+    this.config = config;
+    this.signer = signer;
+    this.httpClient = httpClient;
+    this.clock = clock;
+  }
   ControlResponse get(String path) {
     HttpRequest.Builder request = HttpRequest.newBuilder()
         .uri(URI.create(config.coreBaseUrl() + path))
@@ -70,13 +100,10 @@ final class ControlApiClient {
     signer.signedGetHeaders(path, clock.instant().getEpochSecond())
         .forEach(request::header);
     try {
-      HttpResponse<byte[]> response =
-          httpClient.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
-      byte[] body = response.body();
-      if (body.length > MAX_RESPONSE_BYTES) {
-        throw new ControlTransportException("control response exceeds the bounded size");
-      }
-      return new ControlResponse(response.statusCode(), new String(body, java.nio.charset.StandardCharsets.UTF_8));
+      HttpResponse<InputStream> response =
+          httpClient.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
+      byte[] body = readBounded(response.body());
+      return new ControlResponse(response.statusCode(), body);
     } catch (IOException transportFailure) {
       throw new ControlTransportException(
           "control API request failed: " + transportFailure.getClass().getSimpleName());
@@ -86,6 +113,22 @@ final class ControlApiClient {
     }
   }
 
+
+  private static byte[] readBounded(InputStream input) throws IOException {
+    try (InputStream body = input; ByteArrayOutputStream out = new ByteArrayOutputStream(MAX_RESPONSE_BYTES)) {
+      byte[] buffer = new byte[8192];
+      int total = 0;
+      int read;
+      while ((read = body.read(buffer, 0, Math.min(buffer.length, MAX_RESPONSE_BYTES + 1 - total))) != -1) {
+        total += read;
+        if (total > MAX_RESPONSE_BYTES) {
+          throw new ControlTransportException("control response exceeds the bounded size");
+        }
+        out.write(buffer, 0, read);
+      }
+      return out.toByteArray();
+    }
+  }
   Map<String, String> commandPaths() {
     return Map.of(
         "status", STATUS_PATH,

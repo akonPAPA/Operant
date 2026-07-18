@@ -76,15 +76,15 @@ orderpilot:
     control-plane-auth:
       credential-alias: "${ORDERPILOT_CONTROL_PLANE_CREDENTIAL_ALIAS:}"
       shared-secret: "${ORDERPILOT_CONTROL_PLANE_SHARED_SECRET:}"
-      audience: "${ORDERPILOT_CONTROL_PLANE_AUDIENCE:orderpilot-control-plane}"
+      audience: "${ORDERPILOT_CONTROL_PLANE_AUDIENCE:}"
       status: "${ORDERPILOT_CONTROL_PLANE_STATUS:DISABLED}"
       valid-from: "${ORDERPILOT_CONTROL_PLANE_VALID_FROM:}"
       expires-at: "${ORDERPILOT_CONTROL_PLANE_EXPIRES_AT:}"
       revoked: "${ORDERPILOT_CONTROL_PLANE_REVOKED:false}"
-      permissions: "${ORDERPILOT_CONTROL_PLANE_PERMISSIONS:STAFF_CONTROL_READ,STAFF_CONTROL_DIAGNOSE}"
-      key-version: "${ORDERPILOT_CONTROL_PLANE_KEY_VERSION:1}"
+      permissions: "${ORDERPILOT_CONTROL_PLANE_PERMISSIONS:}"
+      key-version: "${ORDERPILOT_CONTROL_PLANE_KEY_VERSION:}"
     # OP-CAP-16K signed actor verification for runtime entitlement admin mutations. Empty = no
-    # signing secret configured → local/dev trusted-header fallback (16J behavior). When set, admin
+    # signing secret configured â†’ local/dev trusted-header fallback (16J behavior). When set, admin
     # mutations require a valid X-OrderPilot-Actor-Signature over (tenantId\nactorId\ntimestamp).
     actor-signing-secret: "${ORDERPILOT_ACTOR_SIGNING_SECRET:}"
     actor-signature-max-skew-seconds: 300
@@ -107,7 +107,7 @@ orderpilot:
     default-max-sync-cost-units: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_MAX_SYNC_COST_UNITS:100}"
     default-backpressure-queue-depth: "${ORDERPILOT_RUNTIME_CONTROL_DEFAULT_BACKPRESSURE_QUEUE_DEPTH:1000}"
   runtime:
-    # OP-CAP-25: controlled Order Journey projection drain. Disabled by default — the runtime stays on
+    # OP-CAP-25: controlled Order Journey projection drain. Disabled by default â€” the runtime stays on
     # explicit/manual projection processing (OP-CAP-23) and the bounded current-tenant drain endpoint until
     # this is turned on. When enabled=true a single config-gated, fixed-delay Spring scheduled task drains a
     # clamped number of tenants/events per cycle through the existing projector runner. No daemon, no queue,

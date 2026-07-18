@@ -1,5 +1,5 @@
 document_version: 10
-updated_at: 2026-07-18T11:25:00Z
+updated_at: 2026-07-18T14:36:00Z
 repository: akonPAPA/Operant
 phase: 1
 branch: feature/p1e-bounded-control-api
@@ -53,13 +53,13 @@ not_proven:
 p1e_current_working_tree:
   decision: P1-E PARTIAL
   scope: bounded control read API, dedicated control credential protocol, Windows DPAPI-backed operantctl read client
-  gates_0_to_5: LOCALLY_PROVEN_ON_WORKING_TREE
+  gates_0_to_5: CORRECTIVE_LOCAL_PARTIAL_PROOF
   gate_6_lifecycle_commands: NOT_IMPLEMENTED
   server:
     routes: GET/HEAD /api/v1/internal/control/{status,health,readiness,diagnostics}; OPTIONS advertises GET,HEAD,OPTIONS; write-shaped methods and unknown paths remain denied or method-not-allowed after authorization
     permissions: STAFF_CONTROL_READ and STAFF_CONTROL_DIAGNOSE, resolved server-side from a control credential registry
     credential_protocol: OPERANT_CONTROL_V1 binds method, path, raw query, content type, body SHA256, audience, credential alias, timestamp, and nonce
-    registry: alias selects a server-owned CONTROL record with key material, audience, status, valid-from, expiry, revocation, permissions, and key-version metadata; empty/disabled config fails closed
+    registry: DISABLED remains inactive with blank authority fields; ENABLED requires explicit alias, 64-hex random control secret, fixed audience, valid-from, finite future expiry, non-revoked state, allowlisted STAFF_CONTROL_* permissions, key version, and gateway/control key separation
     replay: existing shared gateway replay admission store with separate control-plane/credential namespace
     ingress: retired X-OrderPilot-Gateway-Key control selector fails closed and is stripped at the public proxy boundary
   client:
@@ -71,17 +71,28 @@ p1e_current_working_tree:
   dependency_decision:
     jna_platform: 5.19.1
     transitive_dependencies: net.java.dev.jna:jna 5.19.1
-    ci_scanning: operantctl added to CI tests and Snyk dependency scan path
-  local_verification:
-    core_targeted_security_tests: 369 tests PASS
-    core_full_mvn_test: PASS
-    operantctl_mvn_test: 29 tests PASS
+    jackson: 2.22.1 (databind/core resolved by local dependency tree; GitHub Snyk exact-head result NOT_PROVEN)
+  corrective_local_verification:
+    starting_head: ff40c637a8c817ec016a772a7e81950f016504d6
+    corrective_commit: NOT_CREATED_BY_CODEX_HIGHER_PRIORITY_GIT_INSTRUCTION
+    core_control_credential_tests: ControlPlaneKeySeparationSecurityTest + ProductionConfigurationValidatorTest = 32/32 PASS
+    core_route_status_security_tests: InternalControlControllerSecurityTest + ApiInternalRouteDefaultDenyTest + ApiRouteSecurityClassificationTest + GatewayHeaderAuthProductionGuardTest + ControlPlaneStatusServiceTest = 367/367 PASS
+    operantctl_targeted_mvn_test: ControlApiClientResponseBoundTest + OperantCtlCommandTest + ControlApiClientTlsTest + CtlConfigTest = 36/36 PASS
+    operantctl_full_mvn_test: 38/38 PASS
     operantctl_mvn_package: PASS target/operantctl-0.1.0-SNAPSHOT.jar
-    p1d_topology_validator: PASS
-    git_diff_check: PASS
-    git_diff_cached_check: PASS
-  exact_head_proof_before_commit: UNAVAILABLE_BEFORE_COMMIT
-  staged_index_note: stale document_version_8 index entry was removed; document_version_10 is staged explicitly
+    operantctl_dependency_tree: jackson-databind 2.22.1, jackson-core 2.22.1, jackson-annotations 2.22
+    local_snyk: NOT_PROVEN (blocked by external data-exfiltration policy for snyk test)
+    github_snyk_exact_head: NOT_PROVEN
+    p1d_topology_validator: PASS (node scripts/validate-p1d-production-topology.mjs)
+    core_full_mvn_test: PASS exit 0; Surefire XML totals 2698 tests, 0 failures, 0 errors, 45 skipped
+    frontend_full_verification: npm test 745/745 PASS; npm run lint PASS; npm run typecheck PASS; npm run build PASS
+  corrective_not_proven:
+    production_management_ingress: NOT_PROVEN
+    clean_host_runtime: NOT_PROVEN
+    lifecycle_commands: NOT_IMPLEMENTED
+    connection_acquisition_total_readiness_deadline: NOT_PROVEN
+    exact_head_ci: NOT_PROVEN
+    merge: NOT_PERFORMED
 open_p1:
   - P1-E lifecycle operations slice: logs, backup, restore, upgrade, rollback with state machine, idempotency, concurrency control, audit, redaction, fixed executor contracts, and P1-H runtime recovery proof
   - P1-F/P1-G real agent registry and agent status source
@@ -90,4 +101,4 @@ open_p1:
   - P1-F Connector Gateway protocol
   - P1-G operant-agent
   - P1-H Recovery and observability
-next_bounded_action: Create the P1-E foundation commit, run exact-head verification, then owner opens the PR when satisfied.
+next_bounded_action: Owner reviews the local corrective patch, creates the corrective commit if accepted, runs exact-head verification/CI/PR review, and makes the merge decision. GitHub Snyk, private production management ingress, clean-host runtime, and lifecycle commands remain NOT_PROVEN/NOT_IMPLEMENTED.

@@ -26,12 +26,20 @@ class OperantCtlCommandTest {
   private static final String SECRET =
       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
   private static final String ALIAS = "ops-prod";
+  private static final String VALID_STATUS =
+      "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"},{\"name\":\"redis\",\"state\":\"NOT_CONFIGURED\"}]}";
+  private static final String VALID_HEALTH = "{\"status\":\"UP\"}";
+  private static final String VALID_READY =
+      "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"}]}";
+  private static final String VALID_DIAGNOSTICS =
+      "{\"version\":\"unknown\",\"activeProfiles\":[\"production\"],\"database\":{\"state\":\"UP\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":true,\"state\":\"UP\"},\"jvm\":{\"heapUsedMb\":1,\"heapMaxMb\":256}}";
 
   private HttpServer server;
   private Map<String, String> env;
   private InMemoryControlCredentialStore credentialStore;
   private final Map<String, Map<String, String>> capturedHeadersByPath = new ConcurrentHashMap<>();
   private final Map<String, String> responseByPath = new ConcurrentHashMap<>();
+  private final Map<String, byte[]> responseBytesByPath = new ConcurrentHashMap<>();
   private int responseStatus = 200;
 
   @BeforeEach
@@ -41,9 +49,12 @@ class OperantCtlCommandTest {
       Map<String, String> headers = new HashMap<>();
       exchange.getRequestHeaders().forEach((name, values) -> headers.put(name, values.getFirst()));
       capturedHeadersByPath.put(exchange.getRequestURI().getPath(), headers);
-      byte[] body = responseByPath
-          .getOrDefault(exchange.getRequestURI().getPath(), "{}")
-          .getBytes(StandardCharsets.UTF_8);
+      byte[] body = responseBytesByPath.get(exchange.getRequestURI().getPath());
+      if (body == null) {
+        body = responseByPath
+            .getOrDefault(exchange.getRequestURI().getPath(), "{}")
+            .getBytes(StandardCharsets.UTF_8);
+      }
       exchange.sendResponseHeaders(responseStatus, body.length);
       exchange.getResponseBody().write(body);
       exchange.close();
@@ -56,6 +67,10 @@ class OperantCtlCommandTest {
     env.put(CtlConfig.ENV_CORE_BASE_URL, "http://127.0.0.1:" + server.getAddress().getPort());
     env.put(CtlConfig.ENV_CREDENTIAL_ALIAS, ALIAS);
     env.put(CtlConfig.ENV_MODE, "local");
+    responseByPath.put(ControlApiClient.STATUS_PATH, VALID_STATUS);
+    responseByPath.put(ControlApiClient.HEALTH_PATH, VALID_HEALTH);
+    responseByPath.put(ControlApiClient.READINESS_PATH, VALID_READY);
+    responseByPath.put(ControlApiClient.DIAGNOSTICS_PATH, VALID_DIAGNOSTICS);
   }
 
   @AfterEach
@@ -97,10 +112,9 @@ class OperantCtlCommandTest {
 
   @Test
   void statusSendsVerifiableControlCredentialRequestWithoutTenantActorOrPermissions() {
-    responseByPath.put(ControlApiClient.STATUS_PATH, "{\"version\":\"unknown\"}");
     RunResult result = run("status");
     assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
-    assertThat(result.out()).contains("\"version\":\"unknown\"");
+    assertThat(result.out()).contains("\"version\":\"unknown\"").contains("\"dependencies\"");
 
     Map<String, String> headers = capturedHeadersByPath.get(ControlApiClient.STATUS_PATH);
     assertThat(headers).isNotNull();
@@ -129,7 +143,6 @@ class OperantCtlCommandTest {
 
   @Test
   void diagnoseChoosesOnlyTheFixedDiagnosticsPath() {
-    responseByPath.put(ControlApiClient.DIAGNOSTICS_PATH, "{\"version\":\"unknown\"}");
     RunResult result = run("diagnose");
     assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
     assertThat(capturedHeadersByPath).containsKey(ControlApiClient.DIAGNOSTICS_PATH);
@@ -139,9 +152,11 @@ class OperantCtlCommandTest {
 
   @Test
   void readinessMapsReadyFlagToExitCode() {
-    responseByPath.put(ControlApiClient.READINESS_PATH, "{\"ready\":true,\"dependencies\":[]}");
+    responseByPath.put(ControlApiClient.READINESS_PATH,
+        "{\"ready\":true,\"dependencies\":[{\"name\":\"database\",\"state\":\"UP\"}]}");
     assertThat(run("readiness").exitCode()).isEqualTo(OperantCtl.EXIT_OK);
-    responseByPath.put(ControlApiClient.READINESS_PATH, "{\"ready\":false,\"dependencies\":[]}");
+    responseByPath.put(ControlApiClient.READINESS_PATH,
+        "{\"ready\":false,\"dependencies\":[{\"name\":\"database\",\"state\":\"DOWN\"}]}");
     assertThat(run("readiness").exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
   }
 
@@ -171,8 +186,107 @@ class OperantCtlCommandTest {
   }
 
   @Test
+  void successfulCommandsRejectInvalidHttp200BodiesBeforePrinting() {
+    for (String invalid : List.of(
+        "{",
+        "{}",
+        "{\"version\":\"unknown\"}",
+        "{\"version\":\"unknown\",\"uptimeSeconds\":-1,\"dependencies\":[]}",
+        "{\"version\":\"unknown\",\"uptimeSeconds\":123456789012345678901234567890123,\"dependencies\":[]}",
+        "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[{\"name\":\"database\",\"state\":\"MAYBE\"}]}",
+        "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[],\"controlSecret\":\"do-not-print\"}",
+        "{\"version\":\"unknown\",\"uptimeSeconds\":1,\"dependencies\":[]} trailing")) {
+      responseByPath.put(ControlApiClient.STATUS_PATH, invalid);
+      RunResult result = run("status");
+      assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+      assertThat(result.out()).isBlank();
+      assertThat(result.err()).contains("response failed validation").doesNotContain("do-not-print");
+    }
+  }
+
+  @Test
+  void duplicateFieldsMalformedUtf8AndExcessiveNestingAreRejectedBeforePrinting() {
+    responseByPath.put(ControlApiClient.STATUS_PATH,
+        "{\"version\":\"unknown\",\"version\":\"other\",\"uptimeSeconds\":1,\"dependencies\":[]}");
+    RunResult duplicate = run("status");
+    assertThat(duplicate.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(duplicate.out()).isBlank();
+    assertThat(duplicate.err()).contains("response failed validation");
+
+    responseByPath.put(ControlApiClient.DIAGNOSTICS_PATH,
+        "{\"version\":\"unknown\",\"activeProfiles\":[\"production\"],\"database\":{\"state\":\"UP\",\"state\":\"DOWN\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":true,\"state\":\"UP\"},\"jvm\":{\"heapUsedMb\":1,\"heapMaxMb\":256}}");
+    RunResult nestedDuplicate = run("diagnose");
+    assertThat(nestedDuplicate.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(nestedDuplicate.out()).isBlank();
+    assertThat(nestedDuplicate.err()).contains("response failed validation");
+
+    byte[] prefix = "{\"version\":\"".getBytes(StandardCharsets.UTF_8);
+    byte[] invalid = new byte[] {(byte) 0xc3, (byte) 0x28};
+    byte[] suffix = "\",\"uptimeSeconds\":1,\"dependencies\":[]}".getBytes(StandardCharsets.UTF_8);
+    byte[] body = new byte[prefix.length + invalid.length + suffix.length];
+    System.arraycopy(prefix, 0, body, 0, prefix.length);
+    System.arraycopy(invalid, 0, body, prefix.length, invalid.length);
+    System.arraycopy(suffix, 0, body, prefix.length + invalid.length, suffix.length);
+    responseBytesByPath.put(ControlApiClient.STATUS_PATH, body);
+    RunResult malformedUtf8 = run("status");
+    assertThat(malformedUtf8.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(malformedUtf8.out()).isBlank();
+    assertThat(malformedUtf8.err()).contains("response failed validation");
+    responseBytesByPath.remove(ControlApiClient.STATUS_PATH);
+
+    responseByPath.put(ControlApiClient.STATUS_PATH,
+        "{\"version\":" + "[".repeat(40) + "0" + "]".repeat(40)
+            + ",\"uptimeSeconds\":1,\"dependencies\":[]}");
+    RunResult excessiveNesting = run("status");
+    assertThat(excessiveNesting.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(excessiveNesting.out()).isBlank();
+    assertThat(excessiveNesting.err()).contains("response failed validation");
+  }
+
+  @Test
+  void nonSuccessHttpBodyIsNotPrintedRaw() {
+    responseStatus = 500;
+    responseByPath.put(ControlApiClient.STATUS_PATH,
+        "{\"stackTrace\":\"internal-host:5432 secret do-not-print\"}");
+
+    RunResult result = run("status");
+
+    assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(result.out()).isBlank();
+    assertThat(result.err())
+        .contains("HTTP 500")
+        .doesNotContain("internal-host")
+        .doesNotContain("secret")
+        .doesNotContain("do-not-print");
+  }
+  @Test
+  void terminalControlCharactersAndOversizedStringsAreRejectedBeforePrinting() {
+    responseByPath.put(ControlApiClient.STATUS_PATH,
+        "{\"version\":\"bad\\u001b[31m\",\"uptimeSeconds\":1,\"dependencies\":[]}");
+    RunResult control = run("status");
+    assertThat(control.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(control.out()).isBlank();
+
+    responseByPath.put(ControlApiClient.STATUS_PATH,
+        "{\"version\":\"" + "x".repeat(129) + "\",\"uptimeSeconds\":1,\"dependencies\":[]}");
+    RunResult oversized = run("status");
+    assertThat(oversized.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+    assertThat(oversized.out()).isBlank();
+  }
+
+  @Test
+  void validHealthAndDiagnosticsPrintNormalizedValidatedJson() {
+    RunResult health = run("health");
+    assertThat(health.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+    assertThat(health.out()).contains("\"status\":\"UP\"");
+
+    RunResult diagnose = run("diagnose");
+    assertThat(diagnose.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+    assertThat(diagnose.out()).contains("\"activeProfiles\"").contains("\"jvm\"");
+  }
+
+  @Test
   void noCommandEverLeaksTheSecretToOutput() {
-    responseByPath.put(ControlApiClient.STATUS_PATH, "{\"version\":\"unknown\"}");
     for (List<String> command : List.of(
         List.of("version"), List.of("config", "validate"), List.of("status"))) {
       RunResult result = run(command.toArray(String[]::new));

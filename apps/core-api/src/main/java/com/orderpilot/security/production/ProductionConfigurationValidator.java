@@ -1,7 +1,9 @@
 package com.orderpilot.security.production;
 
 import com.orderpilot.infrastructure.config.ProductionDeploymentProperties;
+import com.orderpilot.security.ControlPlaneCredentialConfigurationValidator;
 import java.net.URI;
+import java.time.Clock;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +48,16 @@ public class ProductionConfigurationValidator implements InitializingBean {
   private final long orderJourneyDrainFixedDelayMs;
   private final String runtimeRateStore;
   private final String malwareScanMode;
+  private final String controlPlaneCredentialAlias;
+  private final String controlPlaneSharedSecret;
+  private final String controlPlaneAudience;
+  private final String controlPlaneStatus;
+  private final String controlPlaneValidFrom;
+  private final String controlPlaneExpiresAt;
+  private final boolean controlPlaneRevoked;
+  private final String controlPlanePermissions;
+  private final String controlPlaneKeyVersion;
+  private final Clock clock;
 
   public ProductionConfigurationValidator(
       Environment environment,
@@ -78,7 +90,17 @@ public class ProductionConfigurationValidator implements InitializingBean {
       @Value("${orderpilot.runtime.order-journey-projection.fixed-delay-ms:30000}")
           long orderJourneyDrainFixedDelayMs,
       @Value("${orderpilot.runtime.rate.store:in-memory}") String runtimeRateStore,
-      @Value("${orderpilot.intake.malware-scan.mode:pass-through}") String malwareScanMode) {
+      @Value("${orderpilot.intake.malware-scan.mode:pass-through}") String malwareScanMode,
+      @Value("${orderpilot.security.control-plane-auth.credential-alias:}") String controlPlaneCredentialAlias,
+      @Value("${orderpilot.security.control-plane-auth.shared-secret:}") String controlPlaneSharedSecret,
+      @Value("${orderpilot.security.control-plane-auth.audience:}") String controlPlaneAudience,
+      @Value("${orderpilot.security.control-plane-auth.status:DISABLED}") String controlPlaneStatus,
+      @Value("${orderpilot.security.control-plane-auth.valid-from:}") String controlPlaneValidFrom,
+      @Value("${orderpilot.security.control-plane-auth.expires-at:}") String controlPlaneExpiresAt,
+      @Value("${orderpilot.security.control-plane-auth.revoked:false}") boolean controlPlaneRevoked,
+      @Value("${orderpilot.security.control-plane-auth.permissions:}") String controlPlanePermissions,
+      @Value("${orderpilot.security.control-plane-auth.key-version:}") String controlPlaneKeyVersion,
+      Clock clock) {
     this.environment = environment;
     this.deploymentProperties = deploymentProperties;
     this.gatewayHeaderAuthEnabled = gatewayHeaderAuthEnabled;
@@ -103,6 +125,16 @@ public class ProductionConfigurationValidator implements InitializingBean {
     this.orderJourneyDrainFixedDelayMs = orderJourneyDrainFixedDelayMs;
     this.runtimeRateStore = runtimeRateStore;
     this.malwareScanMode = malwareScanMode;
+    this.controlPlaneCredentialAlias = controlPlaneCredentialAlias;
+    this.controlPlaneSharedSecret = controlPlaneSharedSecret;
+    this.controlPlaneAudience = controlPlaneAudience;
+    this.controlPlaneStatus = controlPlaneStatus;
+    this.controlPlaneValidFrom = controlPlaneValidFrom;
+    this.controlPlaneExpiresAt = controlPlaneExpiresAt;
+    this.controlPlaneRevoked = controlPlaneRevoked;
+    this.controlPlanePermissions = controlPlanePermissions;
+    this.controlPlaneKeyVersion = controlPlaneKeyVersion;
+    this.clock = clock;
   }
 
   @Override
@@ -112,6 +144,7 @@ public class ProductionConfigurationValidator implements InitializingBean {
     }
     rejectDemoAuthority();
     rejectUnsignedGatewayTrust();
+    validateControlPlaneCredential();
     rejectPlaceholderSecrets();
     validateRequiredUrlsAndOrigins();
     validatePortsTimeoutsAndLimits();
@@ -138,6 +171,21 @@ public class ProductionConfigurationValidator implements InitializingBean {
         gatewaySharedSecret,
         gatewayReplayStore,
         singleInstanceReplayStoreAllowed);
+  }
+
+  private void validateControlPlaneCredential() {
+    ControlPlaneCredentialConfigurationValidator.validateProductionConfiguration(
+        controlPlaneCredentialAlias,
+        controlPlaneSharedSecret,
+        controlPlaneAudience,
+        controlPlaneStatus,
+        controlPlaneValidFrom,
+        controlPlaneExpiresAt,
+        controlPlaneRevoked,
+        controlPlanePermissions,
+        controlPlaneKeyVersion,
+        gatewaySharedSecret,
+        clock);
   }
 
   private void rejectPlaceholderSecrets() {

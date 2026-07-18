@@ -40,8 +40,26 @@ function expectInvalid(name, mutate, expected) {
   });
 }
 
+const bashDrivePrefixes = new Map();
+
+function bashDrivePrefix(drive) {
+  const normalizedDrive = drive.toLowerCase();
+  if (bashDrivePrefixes.has(normalizedDrive)) return bashDrivePrefixes.get(normalizedDrive);
+  for (const candidate of [`/${normalizedDrive}`, `/mnt/${normalizedDrive}`]) {
+    const probe = spawnSync("bash", ["-lc", `test -d '${candidate}'`], { encoding: "utf8" });
+    if (probe.status === 0) {
+      bashDrivePrefixes.set(normalizedDrive, candidate);
+      return candidate;
+    }
+  }
+  bashDrivePrefixes.set(normalizedDrive, `/${normalizedDrive}`);
+  return `/${normalizedDrive}`;
+}
+
 function toBashPath(path) {
-  return path.replace(/^([A-Za-z]):\\/, (_match, drive) => `/${drive.toLowerCase()}/`).replaceAll("\\", "/");
+  return path
+    .replace(/^([A-Za-z]):\\/, (_match, drive) => `${bashDrivePrefix(drive)}/`)
+    .replaceAll("\\", "/");
 }
 
 function fakeDockerHarness() {
@@ -77,11 +95,13 @@ exit 0
   return { dir, logFile, envFile, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
 function runDeploy(action, options = {}) {
   const harness = fakeDockerHarness();
-  const env = {
-    ...process.env,
-    PATH: `${toBashPath(harness.dir)}:${process.env.PATH ?? ""}`,
+  const scriptEnv = {
     OPERANT_ENV_FILE: toBashPath(harness.envFile),
     OPERANT_DOCKER_LOG: toBashPath(harness.logFile),
     OPERANT_COMPOSE_PROJECT: "operant-test",
@@ -89,13 +109,14 @@ function runDeploy(action, options = {}) {
     ...(options.env ?? {})
   };
   if (options.missingEnvFile) {
-    env.OPERANT_ENV_FILE = toBashPath(join(harness.dir, "missing.env"));
+    scriptEnv.OPERANT_ENV_FILE = toBashPath(join(harness.dir, "missing.env"));
   }
-  const result = spawnSync("bash", [toBashPath(deployScript), action], {
-    cwd: repoRoot,
-    env,
-    encoding: "utf8"
-  });
+  const assignments = [
+    `PATH=${shellQuote(toBashPath(harness.dir))}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+    ...Object.entries(scriptEnv).map(([key, value]) => `${key}=${shellQuote(value)}`)
+  ].join(" ");
+  const command = `cd ${shellQuote(toBashPath(repoRoot))} && ${assignments} ${shellQuote(toBashPath(deployScript))} ${shellQuote(action)}`;
+  const result = spawnSync("bash", ["-lc", command], { encoding: "utf8" });
   const log = existsSync(harness.logFile) ? readFileSync(harness.logFile, "utf8") : "";
   harness.cleanup();
   return { ...result, log };

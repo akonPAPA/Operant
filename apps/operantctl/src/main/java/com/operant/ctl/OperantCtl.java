@@ -1,7 +1,5 @@
 package com.operant.ctl;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.PrintStream;
 import java.time.Clock;
 import java.util.Map;
@@ -23,8 +21,6 @@ public final class OperantCtl {
   static final int EXIT_USAGE_OR_CONFIG = 2;
   static final int EXIT_DENIED = 3;
   static final int EXIT_TRANSPORT = 4;
-
-  private static final ObjectMapper JSON = new ObjectMapper();
 
   private OperantCtl() {}
 
@@ -119,17 +115,17 @@ public final class OperantCtl {
       err.println("control API returned HTTP " + response.statusCode());
       return EXIT_NEGATIVE;
     }
-    out.println(response.body());
-    if (negativeWhenFalseField != null) {
-      try {
-        JsonNode body = JSON.readTree(response.body());
-        if (!body.path(negativeWhenFalseField).asBoolean(false)) {
-          return EXIT_NEGATIVE;
-        }
-      } catch (Exception unparseable) {
-        err.println("control API response was not parseable");
-        return EXIT_NEGATIVE;
-      }
+    ControlResponseValidator.ValidatedResponse validated;
+    try {
+      validated = ControlResponseValidator.validate(command, response.body());
+    } catch (ControlResponseValidator.InvalidControlResponseException
+        | ControlApiClient.InvalidControlResponseException invalid) {
+      err.println("control API response failed validation");
+      return EXIT_NEGATIVE;
+    }
+    out.println(validated.normalizedJson());
+    if (negativeWhenFalseField != null && !validated.ready()) {
+      return EXIT_NEGATIVE;
     }
     return EXIT_OK;
   }

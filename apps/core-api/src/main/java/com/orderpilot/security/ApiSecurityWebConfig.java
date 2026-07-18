@@ -145,13 +145,13 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       @Value("${orderpilot.security.gateway-header-auth.shared-secret:}") String gatewayHeaderSharedSecret,
       @Value("${orderpilot.security.control-plane-auth.credential-alias:}") String controlPlaneCredentialAlias,
       @Value("${orderpilot.security.control-plane-auth.shared-secret:}") String controlPlaneSharedSecret,
-      @Value("${orderpilot.security.control-plane-auth.audience:orderpilot-control-plane}") String controlPlaneAudience,
+      @Value("${orderpilot.security.control-plane-auth.audience:}") String controlPlaneAudience,
       @Value("${orderpilot.security.control-plane-auth.status:DISABLED}") String controlPlaneStatus,
       @Value("${orderpilot.security.control-plane-auth.valid-from:}") String controlPlaneValidFrom,
       @Value("${orderpilot.security.control-plane-auth.expires-at:}") String controlPlaneExpiresAt,
       @Value("${orderpilot.security.control-plane-auth.revoked:false}") boolean controlPlaneRevoked,
-      @Value("${orderpilot.security.control-plane-auth.permissions:STAFF_CONTROL_READ,STAFF_CONTROL_DIAGNOSE}") String controlPlanePermissions,
-      @Value("${orderpilot.security.control-plane-auth.key-version:1}") String controlPlaneKeyVersion,
+      @Value("${orderpilot.security.control-plane-auth.permissions:}") String controlPlanePermissions,
+      @Value("${orderpilot.security.control-plane-auth.key-version:}") String controlPlaneKeyVersion,
       @Value("${orderpilot.security.gateway-header-auth.clock-skew-seconds:300}") long gatewayHeaderClockSkewSeconds,
       Clock clock) {
     this.interceptor = interceptor;

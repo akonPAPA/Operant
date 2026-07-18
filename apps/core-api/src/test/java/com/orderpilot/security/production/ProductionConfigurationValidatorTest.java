@@ -3,16 +3,21 @@ package com.orderpilot.security.production;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.orderpilot.infrastructure.config.ProductionDeploymentProperties;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 class ProductionConfigurationValidatorTest {
 
   private static final String GATEWAY_SECRET = "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
+  private static final String CONTROL_SECRET = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
   private static final String ACTOR_SECRET = "p1a-actor-signing-secret-value-32";
   private static final String DB_PASSWORD = "p1a-database-password-value-32";
 
@@ -25,7 +30,12 @@ class ProductionConfigurationValidatorTest {
 
   @Configuration
   @EnableConfigurationProperties(ProductionDeploymentProperties.class)
-  static class PropertiesHarness {}
+  static class PropertiesHarness {
+    @Bean
+    Clock clock() {
+      return Clock.fixed(Instant.parse("2026-07-18T00:00:00Z"), ZoneOffset.UTC);
+    }
+  }
 
   private String[] validProductionProperties() {
     return new String[] {
@@ -42,6 +52,88 @@ class ProductionConfigurationValidatorTest {
       "orderpilot.security.oidc.enabled=false",
       "orderpilot.production.emit-diagnostics=false"
     };
+  }
+
+  private String[] validEnabledControlCredentialProperties() {
+    return new String[] {
+      "orderpilot.security.control-plane-auth.credential-alias=ops-prod",
+      "orderpilot.security.control-plane-auth.shared-secret=" + CONTROL_SECRET,
+      "orderpilot.security.control-plane-auth.audience=orderpilot-control-plane",
+      "orderpilot.security.control-plane-auth.status=ENABLED",
+      "orderpilot.security.control-plane-auth.valid-from=2026-01-01T00:00:00Z",
+      "orderpilot.security.control-plane-auth.expires-at=2099-01-01T00:00:00Z",
+      "orderpilot.security.control-plane-auth.revoked=false",
+      "orderpilot.security.control-plane-auth.permissions=STAFF_CONTROL_READ",
+      "orderpilot.security.control-plane-auth.key-version=control-v1"
+    };
+  }
+
+  @Test
+  void productionProfileAllowsDisabledBlankControlCredential() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues(
+            "orderpilot.security.control-plane-auth.status=DISABLED",
+            "orderpilot.security.control-plane-auth.credential-alias=",
+            "orderpilot.security.control-plane-auth.shared-secret=",
+            "orderpilot.security.control-plane-auth.audience=",
+            "orderpilot.security.control-plane-auth.valid-from=",
+            "orderpilot.security.control-plane-auth.expires-at=",
+            "orderpilot.security.control-plane-auth.permissions=",
+            "orderpilot.security.control-plane-auth.key-version=")
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void productionProfileAcceptsExplicitValidEnabledControlCredential() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues(validEnabledControlCredentialProperties())
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void productionProfileRejectsEnabledControlCredentialInvalidProperties() {
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.credential-alias=", "credential-alias");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.shared-secret=", "shared-secret");
+    assertInvalidControlProperty(
+        "orderpilot.security.control-plane-auth.shared-secret=0000000000000000000000000000000000000000000000000000000000000000",
+        "shared-secret");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.shared-secret=" + GATEWAY_SECRET, "shared-secret");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.valid-from=", "valid-from");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.valid-from=not-an-instant", "valid-from");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.expires-at=", "expires-at");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.expires-at=not-an-instant", "expires-at");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.expires-at=2026-01-01T00:00:00Z", "expires-at");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.expires-at=2026-01-01T00:00:00Z", "expires-at");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.permissions=", "permissions");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.permissions=UNKNOWN", "permissions");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.permissions=ADMIN_SETTINGS_READ", "permissions");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.status=UNKNOWN", "status");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.audience=other-audience", "audience");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.key-version=", "key-version");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.key-version=bad version", "key-version");
+    assertInvalidControlProperty("orderpilot.security.control-plane-auth.revoked=true", "revoked");
+  }
+
+  private void assertInvalidControlProperty(String propertyOverride, String propertyName) {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues(validEnabledControlCredentialProperties())
+        .withPropertyValues(propertyOverride)
+        .run(context -> assertControlFailure(context, propertyName));
+  }
+
+  private static void assertControlFailure(org.springframework.boot.test.context.assertj.AssertableApplicationContext context,
+      String propertyName) {
+    assertThat(context)
+        .hasFailed()
+        .getFailure()
+        .rootCause()
+        .isInstanceOf(RuntimeException.class)
+        .hasMessageContaining("control-plane-auth." + propertyName)
+        .hasMessageNotContaining(GATEWAY_SECRET)
+        .hasMessageNotContaining(CONTROL_SECRET);
   }
 
   @Test

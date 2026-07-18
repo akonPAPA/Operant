@@ -59,9 +59,12 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
         + ControlPlaneKeySeparationSecurityTest.CREDENTIAL,
     "orderpilot.security.control-plane-auth.shared-secret="
         + ControlPlaneKeySeparationSecurityTest.CONTROL_SECRET,
+    "orderpilot.security.control-plane-auth.audience=orderpilot-control-plane",
     "orderpilot.security.control-plane-auth.status=ENABLED",
-    "orderpilot.security.control-plane-auth.expires-at=9999-12-31T23:59:59Z",
+    "orderpilot.security.control-plane-auth.valid-from=2026-01-01T00:00:00Z",
+    "orderpilot.security.control-plane-auth.expires-at=2099-01-01T00:00:00Z",
     "orderpilot.security.control-plane-auth.permissions=STAFF_CONTROL_READ,STAFF_CONTROL_DIAGNOSE",
+    "orderpilot.security.control-plane-auth.key-version=control-v1",
     "orderpilot.security.gateway-header-auth.clock-skew-seconds=300"
 })
 class ControlPlaneKeySeparationSecurityTest {
@@ -140,8 +143,28 @@ class ControlPlaneKeySeparationSecurityTest {
             "STAFF_CONTROL_READ").findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE))
         .isEmpty();
     assertThat(new ControlPlaneCredentialRegistry(
-            CREDENTIAL, CONTROL_SECRET, "other-audience", "ENABLED", "", "9999-12-31T23:59:59Z", false,
+            CREDENTIAL, CONTROL_SECRET, "other-audience", "ENABLED", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", false,
             "STAFF_CONTROL_READ", "1", clock).findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE))
+        .isEmpty();
+  }
+
+  @Test
+  void registryRejectsWhitespacePaddedEnabledAuthorityProperties() {
+    Clock clock = Clock.fixed(Instant.parse("2026-07-18T00:00:00Z"), ZoneOffset.UTC);
+    assertThat(new ControlPlaneCredentialRegistry(
+            " ops-prod", CONTROL_SECRET, ControlPlaneProtocol.AUDIENCE, "ENABLED",
+            "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", false,
+            "STAFF_CONTROL_READ", "1", clock).findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE))
+        .isEmpty();
+    assertThat(new ControlPlaneCredentialRegistry(
+            CREDENTIAL, CONTROL_SECRET, ControlPlaneProtocol.AUDIENCE, "ENABLED",
+            " 2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", false,
+            "STAFF_CONTROL_READ", "1", clock).findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE))
+        .isEmpty();
+    assertThat(new ControlPlaneCredentialRegistry(
+            CREDENTIAL, CONTROL_SECRET, ControlPlaneProtocol.AUDIENCE, "ENABLED",
+            "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", false,
+            " STAFF_CONTROL_READ", "1", clock).findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE))
         .isEmpty();
   }
 
