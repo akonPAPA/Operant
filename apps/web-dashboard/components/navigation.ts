@@ -38,10 +38,12 @@ export function navigationGroupsForUploadCapability(
   if (capability === "AVAILABLE_LOCAL_DEMO") {
     return groups;
   }
-  return groups.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.href !== "/upload")
-  }));
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.href !== "/upload")
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 export const navigationGroups: NavigationGroup[] = navigationGroupsForUploadCapability();

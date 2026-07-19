@@ -8,7 +8,8 @@ import {
   tenantPrimaryDestinations,
   paletteDestinations,
   breadcrumbTrailForPath,
-  breadcrumbTrailForTitle
+  breadcrumbTrailForTitle,
+  UNIVERSAL_TENANT_PATHS
 } from "../components/navigation-registry.ts";
 import { navigationItems, navigationGroupsForUploadCapability } from "../components/navigation.ts";
 
@@ -70,7 +71,10 @@ test("every destination declares plane, capability and availability metadata", (
       `${dest.id} plane`
     );
     assert.ok(dest.capability === null || typeof dest.capability === "string", `${dest.id} capability`);
-    assert.ok(["AVAILABLE", "UPLOAD_CAPABILITY_GATED"].includes(dest.availability), `${dest.id} availability`);
+    assert.ok(
+      ["AVAILABLE", "UPLOAD_CAPABILITY_GATED", "UNSUPPORTED"].includes(dest.availability),
+      `${dest.id} availability`
+    );
     assert.equal(typeof dest.section, "string");
     assert.ok(dest.section.length > 0);
   }
@@ -145,4 +149,33 @@ test("upload capability filtering is preserved through the registry-backed nav v
     group.items.map((item) => item.href)
   );
   assert.equal(productionHrefs.includes("/upload"), false);
+});
+
+test("unsupported destinations are never offered in primary nav or palette", () => {
+  const primary = tenantPrimaryDestinations().map((dest) => dest.path);
+  const palette = paletteDestinations("TENANT").map((dest) => dest.path);
+  assert.equal(primary.includes("/extractions"), false);
+  assert.equal(primary.includes("/pricing"), false);
+  assert.equal(primary.includes("/imports"), false);
+  assert.equal(primary.includes("/audit-log"), false);
+  assert.equal(palette.includes("/extractions"), false);
+  assert.equal(palette.includes("/audit-log"), false);
+});
+
+test("TENANT capability null is reserved for proven universal destinations only", () => {
+  for (const dest of navigationDestinations.filter((entry) => entry.plane === "TENANT")) {
+    if (dest.capability === null) {
+      assert.equal(
+        UNIVERSAL_TENANT_PATHS.has(dest.path),
+        true,
+        `${dest.path} has capability null but is not in UNIVERSAL_TENANT_PATHS`
+      );
+    } else if (dest.availability !== "UNSUPPORTED") {
+      assert.equal(
+        UNIVERSAL_TENANT_PATHS.has(dest.path),
+        false,
+        `${dest.path} is universal-listed but declares a capability`
+      );
+    }
+  }
 });

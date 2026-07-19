@@ -5,25 +5,34 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   deniedProjection,
+  mappedBackendPermissions,
   offerFilterCapabilities,
   parseUiCapabilityProjection,
+  PERMISSION_TO_UI_CAPABILITY,
   projectPermissionsToUiCapabilities,
   projectionFromPermissions,
+  UI_CAPABILITIES,
   unavailableProjection
 } from "../lib/ui-capability-model.ts";
 import { handleUiCapabilityProjection } from "../lib/bff/bff-ui-capability-handlers.ts";
+import { registeredBffRoutes } from "../lib/bff/bff-route-registry.ts";
 import {
   persistOperatorSession,
   resetSessionStoreForTesting,
   setRedisClientFactoryForTesting,
-  expireOperatorSessionForTesting
+  expireOperatorSessionForTesting,
+  loadOperatorSessionResult
 } from "../lib/bff/bff-session-store.ts";
 import {
   sessionCookieHeaderForCapabilityFetch,
   trustedCapabilityFetchOrigin,
   UI_CAPABILITY_RESPONSE_MAX_BYTES
 } from "../lib/server/ui-capability-fetch-policy.server.ts";
-import { tenantPrimaryDestinations } from "../components/navigation-registry.ts";
+import {
+  navigationDestinations,
+  tenantPrimaryDestinations,
+  UNIVERSAL_TENANT_PATHS
+} from "../components/navigation-registry.ts";
 import { BFF_SESSION_COOKIE } from "../lib/bff/bff-config.ts";
 
 const VALID_TENANT = "11111111-1111-4111-8111-111111111111";
@@ -66,11 +75,16 @@ async function withEnv(env, fn) {
   }
 }
 
-function fakeRedis(store = new Map()) {
+function fakeRedis(store = new Map(), hooks = {}) {
   return {
     isOpen: true,
-    connect: async () => {},
-    get: async (key) => (store.has(key) ? store.get(key) : null),
+    connect: async () => {
+      if (hooks.connectError) throw hooks.connectError;
+    },
+    get: async (key) => {
+      if (hooks.getError) throw hooks.getError;
+      return store.has(key) ? store.get(key) : null;
+    },
     setEx: async (key, _ttl, value) => {
       store.set(key, value);
     },
@@ -81,8 +95,29 @@ function fakeRedis(store = new Map()) {
   };
 }
 
+function assertSafeProjectionBody(body, sessionId) {
+  assert.equal("tenantId" in body, false);
+  assert.equal("actorId" in body, false);
+  assert.equal("permissions" in body, false);
+  assert.equal("role" in body, false);
+  assert.equal(JSON.stringify(body).includes(VALID_TENANT), false);
+  assert.equal(JSON.stringify(body).includes(VALID_ACTOR), false);
+  assert.equal(JSON.stringify(body).includes("ANALYTICS_READ"), false);
+  if (sessionId) {
+    assert.equal(JSON.stringify(body).includes(sessionId), false);
+  }
+}
+
+async function assertHeadEmpty(response) {
+  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+  assert.equal(response.headers.get("Vary"), "Cookie");
+  assert.match(response.headers.get("Content-Type") ?? "", /application\/json/);
+  const text = await response.text();
+  assert.equal(text, "");
+}
+
 test("unknown backend permissions grant no UI capability", () => {
-  const caps = projectPermissionsToUiCapabilities(["BOT_READ", "NOT_A_REAL_PERMISSION", "CONTROL_READ"]);
+  const caps = projectPermissionsToUiCapabilities(["NOT_A_REAL_PERMISSION", "CONTROL_READ", "STAFF_SUPPORT_READ"]);
   assert.equal(caps.size, 0);
 });
 
@@ -97,12 +132,27 @@ test("staff and support permissions never map into tenant UI capabilities", () =
 });
 
 test("known permissions map to allowlisted UI capabilities only", () => {
-  const caps = projectPermissionsToUiCapabilities(["ANALYTICS_READ", "REVIEW_READ", "REVIEW_ACTION", "INTAKE_READ"]);
+  const caps = projectPermissionsToUiCapabilities([
+    "ANALYTICS_READ",
+    "REVIEW_READ",
+    "REVIEW_ACTION",
+    "INTAKE_READ",
+    "ADMIN_SETTINGS_READ",
+    "BOT_READ",
+    "QUOTE_READ",
+    "VALIDATION_READ",
+    "CHANGE_REQUEST_READ"
+  ]);
   assert.deepEqual([...caps].sort(), [
     "PERFORM_REVIEW_ACTION",
     "VIEW_ANALYTICS",
+    "VIEW_BOT",
+    "VIEW_CHANGE_REQUESTS",
+    "VIEW_CONFIGURATION",
     "VIEW_DOCUMENTS",
-    "VIEW_REVIEW_QUEUE"
+    "VIEW_QUOTES",
+    "VIEW_REVIEW_QUEUE",
+    "VIEW_VALIDATION"
   ]);
 });
 
@@ -112,6 +162,9 @@ test("allowed projection offers gated destinations; denied/unavailable do not", 
   assert.equal(paths.includes("/analytics"), true);
   assert.equal(paths.includes("/quote-review"), true);
   assert.equal(paths.includes("/command-center"), true);
+  assert.equal(paths.includes("/documents"), false, "INTAKE_READ absent → documents withheld");
+  assert.equal(paths.includes("/bot-runtime"), false, "BOT_READ absent → bot withheld");
+  assert.equal(paths.includes("/customers"), false, "ADMIN_SETTINGS_READ absent → catalog withheld");
 
   const deniedPaths = tenantPrimaryDestinations(offerFilterCapabilities(deniedProjection())).map((d) => d.path);
   assert.equal(deniedPaths.includes("/analytics"), false);
@@ -122,12 +175,17 @@ test("allowed projection offers gated destinations; denied/unavailable do not", 
     offerFilterCapabilities(unavailableProjection())
   ).map((d) => d.path);
   assert.equal(unavailablePaths.includes("/analytics"), false);
+  assert.equal(unavailablePaths.includes("/documents"), false);
+  assert.equal(unavailablePaths.includes("/bot-runtime"), false);
   assert.equal(unavailablePaths.includes("/command-center"), true);
+  assert.equal(unavailablePaths.includes("/settings"), true);
 });
 
 test("tenant primary destinations never include staff/customer/service/internal planes", () => {
   const paths = tenantPrimaryDestinations(
-    offerFilterCapabilities(projectionFromPermissions(["ANALYTICS_READ", "REVIEW_READ", "SETTINGS_READ"]))
+    offerFilterCapabilities(
+      projectionFromPermissions(["ANALYTICS_READ", "REVIEW_READ", "ADMIN_SETTINGS_READ", "BOT_READ", "INTAKE_READ"])
+    )
   ).map((d) => d.path);
   assert.equal(paths.includes("/internal-support"), false);
   assert.equal(paths.includes("/internal-support/operations"), false);
@@ -167,18 +225,12 @@ test("API handler projects session permissions without leaking authority fields"
     );
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    assert.equal(response.headers.get("Vary"), "Cookie");
     assert.match(response.headers.get("Content-Type") ?? "", /application\/json/);
     const body = await response.json();
     assert.equal(body.status, "ALLOWED");
     assert.deepEqual(body.capabilities.sort(), ["VIEW_ANALYTICS", "VIEW_REVIEW_QUEUE"]);
-    assert.equal("tenantId" in body, false);
-    assert.equal("actorId" in body, false);
-    assert.equal("permissions" in body, false);
-    assert.equal("role" in body, false);
-    assert.equal(JSON.stringify(body).includes(VALID_TENANT), false);
-    assert.equal(JSON.stringify(body).includes(VALID_ACTOR), false);
-    assert.equal(JSON.stringify(body).includes("ANALYTICS_READ"), false);
-    assert.equal(JSON.stringify(body).includes(sessionId), false);
+    assertSafeProjectionBody(body, sessionId);
   });
 });
 
@@ -202,6 +254,46 @@ test("API handler denies missing and expired sessions without leaking internals"
     assert.equal(expired.status, 401);
     assert.deepEqual(await expired.json(), { status: "DENIED", capabilities: [] });
   });
+});
+
+test("HEAD returns same status and safe headers with empty body for allowed, denied, unavailable", async () => {
+  await withEnv(MEMORY_ENV, async () => {
+    const { sessionId } = await persistOperatorSession({
+      tenantId: VALID_TENANT,
+      actorId: VALID_ACTOR,
+      permissions: ["ANALYTICS_READ"]
+    });
+    const allowed = await handleUiCapabilityProjection(
+      new Request("http://localhost/api/ui/capabilities", {
+        method: "HEAD",
+        headers: { cookie: `op_session=${sessionId}` }
+      })
+    );
+    assert.equal(allowed.status, 200);
+    await assertHeadEmpty(allowed);
+
+    const denied = await handleUiCapabilityProjection(
+      new Request("http://localhost/api/ui/capabilities", { method: "HEAD" })
+    );
+    assert.equal(denied.status, 401);
+    await assertHeadEmpty(denied);
+  });
+
+  await withEnv(
+    {
+      ...MEMORY_ENV,
+      ORDERPILOT_BFF_ENABLED: "true",
+      ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
+      ORDERPILOT_BFF_FORCE_CAPABILITY_UNAVAILABLE: "true"
+    },
+    async () => {
+      const unavailable = await handleUiCapabilityProjection(
+        new Request("http://localhost/api/ui/capabilities", { method: "HEAD" })
+      );
+      assert.equal(unavailable.status, 503);
+      await assertHeadEmpty(unavailable);
+    }
+  );
 });
 
 test("local-test force-unavailable flag returns UNAVAILABLE; production Node ignores it", async () => {
@@ -239,7 +331,6 @@ test("local-test force-unavailable flag returns UNAVAILABLE; production Node ign
       ORDERPILOT_BFF_SESSION_STORE: ""
     },
     async () => {
-      // Production Node runtime must ignore the force flag.
       const response = await handleUiCapabilityProjection(new Request("http://localhost/api/ui/capabilities"));
       assert.equal(response.status, 401);
       assert.deepEqual(await response.json(), { status: "DENIED", capabilities: [] });
@@ -285,7 +376,7 @@ test("two sessions never observe each other's capability projection", async () =
   });
 });
 
-test("Redis-backed session resolves the same allowlisted projection as memory", async () => {
+test("Redis-backed valid session resolves allowlisted projection without authority leaks", async () => {
   const store = new Map();
   await withEnv(REDIS_ENV, async () => {
     setRedisClientFactoryForTesting(() => fakeRedis(store));
@@ -303,8 +394,138 @@ test("Redis-backed session resolves the same allowlisted projection as memory", 
     const body = await response.json();
     assert.equal(body.status, "ALLOWED");
     assert.deepEqual(body.capabilities.sort(), ["VIEW_ANALYTICS", "VIEW_REVIEW_QUEUE"]);
-    assert.equal("permissions" in body, false);
-    assert.equal(JSON.stringify(body).includes(VALID_TENANT), false);
+    assertSafeProjectionBody(body, sessionId);
+  });
+});
+
+test("Redis connect failure yields 503 UNAVAILABLE not 401", async () => {
+  await withEnv(REDIS_ENV, async () => {
+    setRedisClientFactoryForTesting(() =>
+      fakeRedis(new Map(), { connectError: new Error("ECONNREFUSED") })
+    );
+    // Force a non-open client so connect is attempted.
+    setRedisClientFactoryForTesting(() => ({
+      isOpen: false,
+      connect: async () => {
+        throw new Error("ECONNREFUSED");
+      },
+      get: async () => null,
+      setEx: async () => {},
+      del: async () => {},
+      on: () => {}
+    }));
+    const response = await handleUiCapabilityProjection(
+      new Request("http://localhost/api/ui/capabilities", {
+        headers: { cookie: "op_session=abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV" }
+      })
+    );
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.deepEqual(body, { status: "UNAVAILABLE", capabilities: [] });
+    assert.equal(JSON.stringify(body).includes("ECONNREFUSED"), false);
+  });
+});
+
+test("Redis GET failure yields 503 UNAVAILABLE not 401", async () => {
+  await withEnv(REDIS_ENV, async () => {
+    setRedisClientFactoryForTesting(() => fakeRedis(new Map(), { getError: new Error("GET failed") }));
+    const response = await handleUiCapabilityProjection(
+      new Request("http://localhost/api/ui/capabilities", {
+        headers: { cookie: "op_session=abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV" }
+      })
+    );
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { status: "UNAVAILABLE", capabilities: [] });
+  });
+});
+
+test("missing Redis configuration yields 503 UNAVAILABLE not 401", async () => {
+  await withEnv(
+    {
+      ORDERPILOT_BFF_SESSION_STORE: "",
+      ORDERPILOT_DEPLOY_PROFILE: "production",
+      NODE_ENV: "production",
+      ORDERPILOT_PUBLIC_ORIGIN: "https://dashboard.test"
+    },
+    async () => {
+      const response = await handleUiCapabilityProjection(
+        new Request("http://localhost/api/ui/capabilities", {
+          headers: { cookie: "op_session=abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV" }
+        })
+      );
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { status: "UNAVAILABLE", capabilities: [] });
+    }
+  );
+});
+
+test("Redis missing session record yields 401 DENIED", async () => {
+  await withEnv(REDIS_ENV, async () => {
+    setRedisClientFactoryForTesting(() => fakeRedis(new Map()));
+    const response = await handleUiCapabilityProjection(
+      new Request("http://localhost/api/ui/capabilities", {
+        headers: { cookie: "op_session=abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV" }
+      })
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { status: "DENIED", capabilities: [] });
+  });
+});
+
+test("Redis revoked session yields 401 DENIED", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const sessionId = "abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV";
+  const record = {
+    sessionId,
+    tenantId: VALID_TENANT,
+    actorId: VALID_ACTOR,
+    permissions: ["ANALYTICS_READ"],
+    issuedAtEpochSec: now - 10,
+    expiresAtEpochSec: now + 3600,
+    sessionVersion: 1,
+    revoked: true
+  };
+  const store = new Map([[`op:bff:session:${sessionId}`, JSON.stringify(record)]]);
+  await withEnv(REDIS_ENV, async () => {
+    setRedisClientFactoryForTesting(() => fakeRedis(store));
+    const result = await loadOperatorSessionResult(sessionId);
+    assert.equal(result.status, "MISSING_OR_INACTIVE");
+    const response = await handleUiCapabilityProjection(
+      new Request("http://localhost/api/ui/capabilities", {
+        headers: { cookie: `op_session=${sessionId}` }
+      })
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { status: "DENIED", capabilities: [] });
+  });
+});
+
+test("loadOperatorSessionResult distinguishes ACTIVE, MISSING, and STORE_UNAVAILABLE", async () => {
+  await withEnv(MEMORY_ENV, async () => {
+    const { sessionId } = await persistOperatorSession({
+      tenantId: VALID_TENANT,
+      actorId: VALID_ACTOR,
+      permissions: ["ANALYTICS_READ"]
+    });
+    const active = await loadOperatorSessionResult(sessionId);
+    assert.equal(active.status, "ACTIVE");
+    const missing = await loadOperatorSessionResult("abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV");
+    assert.equal(missing.status, "MISSING_OR_INACTIVE");
+  });
+
+  await withEnv(REDIS_ENV, async () => {
+    setRedisClientFactoryForTesting(() => ({
+      isOpen: false,
+      connect: async () => {
+        throw new Error("down");
+      },
+      get: async () => null,
+      setEx: async () => {},
+      del: async () => {},
+      on: () => {}
+    }));
+    const unavailable = await loadOperatorSessionResult("abcdefghijklmnopqrstuvwxABCDEFGHIJKLMNOPQRSTUV");
+    assert.equal(unavailable.status, "STORE_UNAVAILABLE");
   });
 });
 
@@ -361,4 +582,41 @@ test("capability route is force-dynamic with private no-store handler contract",
   assert.match(route, /runtime\s*=\s*["']nodejs["']/);
   assert.match(handler, /private, no-store/);
   assert.match(handler, /Content-Type.*application\/json/);
+  assert.match(handler, /loadOperatorSessionResult/);
+  assert.doesNotMatch(handler, /\bloadOperatorSession\s*\(/);
+  assert.match(handler, /method === ["']HEAD["']/);
+});
+
+test("navigation-registry capability-gated destinations join registeredBffRoutes permission map", () => {
+  const registeredPermissions = new Set(registeredBffRoutes().map((rule) => rule.permission));
+  for (const permission of mappedBackendPermissions()) {
+    assert.equal(
+      registeredPermissions.has(permission),
+      true,
+      `mapped permission ${permission} must exist in registeredBffRoutes()`
+    );
+    assert.ok(PERMISSION_TO_UI_CAPABILITY[permission], `permission ${permission} must map`);
+    assert.ok(UI_CAPABILITIES.includes(PERMISSION_TO_UI_CAPABILITY[permission]));
+  }
+
+  const mappedCapabilities = new Set(Object.values(PERMISSION_TO_UI_CAPABILITY));
+  for (const dest of navigationDestinations) {
+    if (dest.plane !== "TENANT") {
+      continue;
+    }
+    if (dest.capability === null) {
+      assert.equal(
+        UNIVERSAL_TENANT_PATHS.has(dest.path),
+        true,
+        `${dest.path} null capability must be universal`
+      );
+      continue;
+    }
+    assert.ok(UI_CAPABILITIES.includes(dest.capability), `${dest.path} unknown capability`);
+    assert.equal(
+      mappedCapabilities.has(dest.capability),
+      true,
+      `${dest.path} capability ${dest.capability} has no server-owned permission mapping`
+    );
+  }
 });

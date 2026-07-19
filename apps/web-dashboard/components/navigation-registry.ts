@@ -12,7 +12,15 @@
  *   if the session lacks the capability.
  * - Only TENANT-plane destinations are ever surfaced in the tenant operator navigation. STAFF,
  *   CUSTOMER, and SERVICE planes are physically separate and are never mixed into tenant nav.
+ * - `capability: null` is allowed only for destinations proven universally safe for every
+ *   authenticated tenant operator (shell landing / static hubs). Data destinations must declare
+ *   an allowlisted UI capability backed by a server-owned permission→capability mapping.
  */
+
+import {
+  isUiCapability,
+  type UiCapability
+} from "../lib/ui-capability-model.ts";
 
 /**
  * Access-plane classification for every destination.
@@ -31,15 +39,10 @@ export type LegacyCustomerPlane = "CUSTOMER";
 /** @deprecated Alias retained for older tests/comments — prefer OPERANT_STAFF. */
 export type LegacyStaffPlane = "STAFF";
 
-export type NavigationAvailability = "AVAILABLE" | "UPLOAD_CAPABILITY_GATED";
+export type NavigationAvailability = "AVAILABLE" | "UPLOAD_CAPABILITY_GATED" | "UNSUPPORTED";
 
 /** Allowlisted UI capability required to *offer* this destination (never authorization). */
-export type NavigationUiCapability =
-  | "VIEW_ANALYTICS"
-  | "VIEW_DOCUMENTS"
-  | "VIEW_REVIEW_QUEUE"
-  | "VIEW_CONFIGURATION"
-  | "PERFORM_REVIEW_ACTION";
+export type NavigationUiCapability = UiCapability;
 
 export type NavigationDestination = {
   /** Stable identifier (kebab-case), unique across the registry. */
@@ -57,9 +60,10 @@ export type NavigationDestination = {
   /**
    * Required UI capability for offer filtering (metadata only — Core enforces).
    * `null` means any authenticated session of this plane may be *offered* the destination.
+   * Only universally safe authenticated destinations may use null.
    */
   capability: NavigationUiCapability | null;
-  /** Availability gate. Most destinations are always available; upload is deployment-gated. */
+  /** Availability gate. UNSUPPORTED destinations are never offered. */
   availability: NavigationAvailability;
   /** Legacy/duplicate paths that resolve to this canonical destination. */
   aliases: string[];
@@ -75,68 +79,124 @@ export type NavigationDestination = {
  * Canonical destinations. Duplicate navigation destinations that previously existed
  * (`Business Value` -> /analytics, `Bot Conversations` -> /bot/conversations, `Audit` -> /audit)
  * are represented as aliases of a single canonical destination, not as separate entries.
+ *
+ * Classification notes (TENANT plane):
+ * - VIEW_ANALYTICS ← ANALYTICS_READ (analytics, pilot, commerce, runtime, reconciliation, journeys)
+ * - VIEW_DOCUMENTS ← INTAKE_READ (inbox, documents, messages, inbound events, jobs)
+ * - VIEW_REVIEW_QUEUE ← REVIEW_READ (validation/quote/conversion/draft review queues)
+ * - VIEW_VALIDATION ← VALIDATION_READ (review-origin validation drafts)
+ * - VIEW_CONFIGURATION ← ADMIN_SETTINGS_READ (catalog, channels, identities, sync, messenger)
+ * - VIEW_BOT ← BOT_READ (bot runtime / conversations / settings)
+ * - VIEW_QUOTES ← QUOTE_READ (quote workspace read surfaces)
+ * - VIEW_CHANGE_REQUESTS ← CHANGE_REQUEST_READ (integrations mixes this with ADMIN_SETTINGS_READ —
+ *   destination is UNSUPPORTED in primary offer until a coherent single-permission contract exists)
+ * - Universal (capability null): command-center landing, settings hub, upload (deployment-gated)
  */
 const destinations: readonly NavigationDestination[] = Object.freeze([
   // --- Command Center (CC) ---
   d({ id: "command-center", path: "/command-center", label: "Command Center", section: "Command Center", sectionCode: "CC" }),
   d({ id: "analytics", path: "/analytics", label: "Analytics", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS", searchAliases: ["business value", "roi", "metrics", "kpi"] }),
-  d({ id: "pilot-readiness", path: "/pilot-readiness", label: "Pilot Readiness", section: "Command Center", sectionCode: "CC" }),
-  d({ id: "pilot-evidence-report", path: "/pilot-readiness/evidence-report", label: "Pilot Evidence Report", section: "Command Center", sectionCode: "CC" }),
-  d({ id: "pilot-demo-scenarios", path: "/pilot-readiness/demo-scenarios", label: "Pilot Demo Scenarios", section: "Command Center", sectionCode: "CC" }),
-  d({ id: "demo", path: "/demo", label: "Investor Demo", section: "Command Center", sectionCode: "CC", searchAliases: ["sandbox", "investor demo"] }),
+  d({ id: "pilot-readiness", path: "/pilot-readiness", label: "Pilot Readiness", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS" }),
+  d({ id: "pilot-evidence-report", path: "/pilot-readiness/evidence-report", label: "Pilot Evidence Report", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS" }),
+  d({ id: "pilot-demo-scenarios", path: "/pilot-readiness/demo-scenarios", label: "Pilot Demo Scenarios", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS" }),
+  d({ id: "demo", path: "/demo", label: "Investor Demo", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS", searchAliases: ["sandbox", "investor demo"] }),
 
   // --- Inbox (IN) ---
-  d({ id: "inbox", path: "/inbox", label: "Inbox", section: "Inbox", sectionCode: "IN" }),
+  d({ id: "inbox", path: "/inbox", label: "Inbox", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
   d({ id: "upload", path: "/upload", label: "Upload", section: "Inbox", sectionCode: "IN", availability: "UPLOAD_CAPABILITY_GATED" }),
-  d({ id: "documents", path: "/documents", label: "Documents", section: "Inbox", sectionCode: "IN" }),
-  d({ id: "messages", path: "/messages", label: "Messages", section: "Inbox", sectionCode: "IN" }),
-  d({ id: "extractions", path: "/extractions", label: "Extractions", section: "Inbox", sectionCode: "IN" }),
-  d({ id: "processing-jobs", path: "/processing-jobs", label: "Processing Jobs", section: "Inbox", sectionCode: "IN" }),
+  d({ id: "documents", path: "/documents", label: "Documents", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
+  d({ id: "messages", path: "/messages", label: "Messages", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
+  d({
+    id: "extractions",
+    path: "/extractions",
+    label: "Extractions",
+    section: "Inbox",
+    sectionCode: "IN",
+    capability: "VIEW_DOCUMENTS",
+    availability: "UNSUPPORTED",
+    paletteVisible: false,
+    showInPrimaryNav: false
+  }),
+  d({ id: "processing-jobs", path: "/processing-jobs", label: "Processing Jobs", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
 
   // --- Work Queue (WQ) ---
   d({ id: "validation-review", path: "/validation-review", label: "Validation Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "exception-cockpit", path: "/exception-cockpit", label: "Exception Cockpit", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "conversion-review", path: "/conversion-review", label: "Conversion Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "quote-review", path: "/quote-review", label: "Quote Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
-  d({ id: "review-origin-drafts", path: "/workspace/review-drafts", label: "Review-Origin Drafts", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
-  d({ id: "rfq-handoffs", path: "/channels/rfq-handoffs", label: "RFQ Handoffs", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "review-origin-drafts", path: "/workspace/review-drafts", label: "Review-Origin Drafts", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_VALIDATION" }),
+  d({ id: "rfq-handoffs", path: "/channels/rfq-handoffs", label: "RFQ Handoffs", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_CONFIGURATION" }),
 
   // --- Transactions (TX) ---
-  d({ id: "quotes", path: "/quotes", label: "Draft Quotes", section: "Transactions", sectionCode: "TX" }),
-  d({ id: "orders", path: "/orders", label: "Draft Orders", section: "Transactions", sectionCode: "TX" }),
+  d({ id: "quotes", path: "/quotes", label: "Draft Quotes", section: "Transactions", sectionCode: "TX", capability: "VIEW_QUOTES" }),
+  d({ id: "orders", path: "/orders", label: "Draft Orders", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "draft-quote-review", path: "/workspace/draft-quotes", label: "Draft Quote Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "draft-order-review", path: "/workspace/draft-orders", label: "Draft Order Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
-  d({ id: "order-journey", path: "/order-journey", label: "Order Journey", section: "Transactions", sectionCode: "TX" }),
+  d({ id: "order-journey", path: "/order-journey", label: "Order Journey", section: "Transactions", sectionCode: "TX", capability: "VIEW_ANALYTICS" }),
 
   // --- Catalog (CA) ---
-  d({ id: "customers", path: "/customers", label: "Customers", section: "Catalog", sectionCode: "CA" }),
-  d({ id: "products", path: "/products", label: "Products", section: "Catalog", sectionCode: "CA" }),
-  d({ id: "inventory", path: "/inventory", label: "Inventory", section: "Catalog", sectionCode: "CA" }),
-  d({ id: "pricing", path: "/pricing", label: "Pricing", section: "Catalog", sectionCode: "CA" }),
-  d({ id: "imports", path: "/imports", label: "Imports", section: "Catalog", sectionCode: "CA" }),
+  d({ id: "customers", path: "/customers", label: "Customers", section: "Catalog", sectionCode: "CA", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "products", path: "/products", label: "Products", section: "Catalog", sectionCode: "CA", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "inventory", path: "/inventory", label: "Inventory", section: "Catalog", sectionCode: "CA", capability: "VIEW_CONFIGURATION" }),
+  d({
+    id: "pricing",
+    path: "/pricing",
+    label: "Pricing",
+    section: "Catalog",
+    sectionCode: "CA",
+    capability: "VIEW_CONFIGURATION",
+    availability: "UNSUPPORTED",
+    paletteVisible: false,
+    showInPrimaryNav: false
+  }),
+  d({
+    id: "imports",
+    path: "/imports",
+    label: "Imports",
+    section: "Catalog",
+    sectionCode: "CA",
+    capability: "VIEW_CONFIGURATION",
+    availability: "UNSUPPORTED",
+    paletteVisible: false,
+    showInPrimaryNav: false
+  }),
 
   // --- Intelligence (AI) ---
-  d({ id: "commerce-intelligence", path: "/commerce-intelligence", label: "Commerce Intelligence", section: "Intelligence", sectionCode: "AI" }),
-  d({ id: "runtime-control", path: "/runtime-control", label: "Runtime Control Telemetry", section: "Intelligence", sectionCode: "AI" }),
-  d({ id: "ai-work", path: "/ai-work", label: "AI Work Assistant", section: "Intelligence", sectionCode: "AI" }),
-  d({ id: "reconciliation", path: "/reconciliation", label: "Reconciliation", section: "Intelligence", sectionCode: "AI" }),
+  d({ id: "commerce-intelligence", path: "/commerce-intelligence", label: "Commerce Intelligence", section: "Intelligence", sectionCode: "AI", capability: "VIEW_ANALYTICS" }),
+  d({ id: "runtime-control", path: "/runtime-control", label: "Runtime Control Telemetry", section: "Intelligence", sectionCode: "AI", capability: "VIEW_ANALYTICS" }),
+  d({ id: "ai-work", path: "/ai-work", label: "AI Work Assistant", section: "Intelligence", sectionCode: "AI", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "reconciliation", path: "/reconciliation", label: "Reconciliation", section: "Intelligence", sectionCode: "AI", capability: "VIEW_ANALYTICS" }),
 
   // --- Channels (CH) --- (`/bot/conversations` is a legacy alias of `/bot-conversations`)
-  d({ id: "channels", path: "/channels", label: "Channels", section: "Channels", sectionCode: "CH" }),
-  d({ id: "bot-conversations", path: "/bot-conversations", label: "Bot / Conversations", section: "Channels", sectionCode: "CH", aliases: ["/bot/conversations"] }),
-  d({ id: "messenger-bridge", path: "/messenger-bridge", label: "Messenger Bridge", section: "Channels", sectionCode: "CH" }),
-  d({ id: "channel-identities", path: "/channel-identities", label: "Channel Identities", section: "Channels", sectionCode: "CH" }),
-  d({ id: "inbound-events", path: "/inbound-events", label: "Inbound Events", section: "Channels", sectionCode: "CH" }),
-  d({ id: "webhook-events", path: "/webhook-events", label: "Webhook Events", section: "Channels", sectionCode: "CH" }),
-  d({ id: "bot-runtime", path: "/bot-runtime", label: "Bot Runtime", section: "Channels", sectionCode: "CH" }),
-  d({ id: "bot-settings", path: "/bot-settings", label: "Bot Settings", section: "Channels", sectionCode: "CH" }),
+  d({ id: "channels", path: "/channels", label: "Channels", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "bot-conversations", path: "/bot-conversations", label: "Bot / Conversations", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT", aliases: ["/bot/conversations"] }),
+  d({ id: "messenger-bridge", path: "/messenger-bridge", label: "Messenger Bridge", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "channel-identities", path: "/channel-identities", label: "Channel Identities", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "inbound-events", path: "/inbound-events", label: "Inbound Events", section: "Channels", sectionCode: "CH", capability: "VIEW_DOCUMENTS" }),
+  d({ id: "webhook-events", path: "/webhook-events", label: "Webhook Events", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "bot-runtime", path: "/bot-runtime", label: "Bot Runtime", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT" }),
+  d({ id: "bot-settings", path: "/bot-settings", label: "Bot Settings", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT" }),
 
   // --- Control Center (CT) --- (`/audit` is a legacy alias of the canonical `/audit-log`)
-  d({ id: "integrations", path: "/integrations", label: "Integrations", section: "Control Center", sectionCode: "CT" }),
-  d({ id: "sync-events", path: "/sync-events", label: "Sync Events", section: "Control Center", sectionCode: "CT" }),
-  d({ id: "audit", path: "/audit-log", label: "Audit / Security", section: "Control Center", sectionCode: "CT", aliases: ["/audit"] }),
+  // Integrations combines ADMIN_SETTINGS_READ + CHANGE_REQUEST_READ client calls. Offer on the
+  // primary admin-settings capability; CHANGE_REQUEST_READ remains BFF/Core-enforced per request.
+  // VIEW_CHANGE_REQUESTS is reserved for a future coherent change-request-only surface.
+  d({ id: "integrations", path: "/integrations", label: "Integrations", section: "Control Center", sectionCode: "CT", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "sync-events", path: "/sync-events", label: "Sync Events", section: "Control Center", sectionCode: "CT", capability: "VIEW_CONFIGURATION" }),
+  d({
+    id: "audit",
+    path: "/audit-log",
+    label: "Audit / Security",
+    section: "Control Center",
+    sectionCode: "CT",
+    aliases: ["/audit"],
+    capability: "VIEW_CONFIGURATION",
+    availability: "UNSUPPORTED",
+    paletteVisible: false,
+    showInPrimaryNav: false
+  }),
 
-  // --- Settings (ST) ---
+  // --- Settings (ST) — static hub; no BFF data call; universally safe for authenticated operators ---
   d({ id: "settings", path: "/settings", label: "Settings", section: "Settings", sectionCode: "ST" }),
 
   // --- OPERANT_STAFF plane (Operant Support & Maintenance) — never surfaced in tenant nav or palette ---
@@ -165,6 +225,10 @@ function d(input: {
   paletteVisible?: boolean;
   showInPrimaryNav?: boolean;
 }): NavigationDestination {
+  const capability = input.capability ?? null;
+  if (capability !== null && !isUiCapability(capability)) {
+    throw new Error(`Unknown navigation UI capability for ${input.id}: ${capability}`);
+  }
   return {
     id: input.id,
     path: input.path,
@@ -172,7 +236,7 @@ function d(input: {
     section: input.section,
     sectionCode: input.sectionCode,
     plane: input.plane ?? "TENANT",
-    capability: input.capability ?? null,
+    capability,
     availability: input.availability ?? "AVAILABLE",
     aliases: input.aliases ?? [],
     searchAliases: input.searchAliases ?? [],
@@ -183,6 +247,16 @@ function d(input: {
 
 /** All registered destinations across every access plane. */
 export const navigationDestinations: readonly NavigationDestination[] = destinations;
+
+/**
+ * Proven universally safe TENANT destinations (capability null allowed).
+ * All other TENANT destinations must declare an allowlisted UI capability.
+ */
+export const UNIVERSAL_TENANT_PATHS: ReadonlySet<string> = new Set([
+  "/command-center",
+  "/settings",
+  "/upload"
+]);
 
 /** Legacy alias path -> canonical path (used for safe redirects and palette resolution). */
 export const legacyAliasMap: Readonly<Record<string, string>> = Object.freeze(
@@ -214,11 +288,21 @@ export function destinationForPath(path: string): NavigationDestination | null {
   return destinations.find((dest) => dest.path === canonical) ?? null;
 }
 
+function isOfferable(dest: NavigationDestination, capabilities?: ReadonlySet<string>): boolean {
+  if (dest.availability === "UNSUPPORTED") {
+    return false;
+  }
+  if (capabilities && dest.capability !== null) {
+    return capabilities.has(dest.capability);
+  }
+  return true;
+}
+
 /**
  * Tenant primary navigation destinations. When `capabilities` is provided, destinations whose
  * required UI capability is absent are omitted from what is *offered* (never a security boundary —
  * Core still authorizes). When omitted, all tenant primary destinations are returned.
- * Unknown required capabilities are fail-closed (not offered).
+ * Unknown required capabilities are fail-closed (not offered). Unsupported destinations are never offered.
  */
 export function tenantPrimaryDestinations(
   capabilities?: ReadonlySet<string>
@@ -227,10 +311,7 @@ export function tenantPrimaryDestinations(
     if (dest.plane !== "TENANT" || !dest.showInPrimaryNav) {
       return false;
     }
-    if (capabilities && dest.capability !== null) {
-      return capabilities.has(dest.capability);
-    }
-    return true;
+    return isOfferable(dest, capabilities);
   });
 }
 
@@ -243,10 +324,7 @@ export function paletteDestinations(
     if (dest.plane !== plane || !dest.paletteVisible) {
       return false;
     }
-    if (capabilities && dest.capability !== null) {
-      return capabilities.has(dest.capability);
-    }
-    return true;
+    return isOfferable(dest, capabilities);
   });
 }
 

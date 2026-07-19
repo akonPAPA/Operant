@@ -5,13 +5,16 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * responsive/accessible application shell. Reuses the existing P1-B dev runtime (:3100) and its
  * local-test bootstrap session; it starts no new server harness.
  *
- * Bootstrap actor permissions at :3100 are REVIEW_READ, REVIEW_ACTION, ANALYTICS_READ, so
- * capability-gated tenant destinations are offered here. :3104 is REVIEW_* only (no ANALYTICS_READ)
- * for denied-capability and direct-URL authorization proofs.
+ * Bootstrap actor permissions:
+ * - :3100 REVIEW_READ, REVIEW_ACTION, ANALYTICS_READ — offers analytics + review; no INTAKE/BOT/ADMIN
+ * - :3104 REVIEW_* only — no ANALYTICS_READ (denied analytics + direct-URL proof)
+ * - :3105 force UNAVAILABLE capability projection
+ * - :3106 ANALYTICS_READ only — no REVIEW_READ (denied review queue)
  */
 const LOCAL_APP = "http://localhost:3100";
 const DENIED_APP = "http://localhost:3104";
 const UNAVAILABLE_APP = "http://localhost:3105";
+const NO_REVIEW_APP = "http://localhost:3106";
 const FAKE_CORE = "http://127.0.0.1:18080";
 const SHELL_PAGE = `${LOCAL_APP}/command-center`;
 
@@ -246,6 +249,85 @@ test.describe("capability offer filtering — denied session (:3104)", () => {
   });
 });
 
+test.describe("capability offer filtering — category denials on :3100 (no INTAKE/BOT/ADMIN)", () => {
+  test("Documents, Inbound Events, Bot Runtime, and catalog admin surfaces are absent", async ({ page }) => {
+    await gotoShell(page);
+    const capabilityResponse = await page.request.get(`${LOCAL_APP}/api/ui/capabilities`);
+    const body = await capabilityResponse.json();
+    expect(body.status).toBe("ALLOWED");
+    expect(body.capabilities ?? []).not.toContain("VIEW_DOCUMENTS");
+    expect(body.capabilities ?? []).not.toContain("VIEW_BOT");
+    expect(body.capabilities ?? []).not.toContain("VIEW_CONFIGURATION");
+    expect(JSON.stringify(body)).not.toContain("INTAKE_READ");
+    expect(JSON.stringify(body)).not.toContain("BOT_READ");
+    expect(JSON.stringify(body)).not.toContain("ADMIN_SETTINGS_READ");
+
+    const nav = page.getByRole("navigation", { name: /primary navigation/i });
+    await expect(nav.getByRole("link", { name: "Documents" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Inbound Events" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Bot Runtime" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Bot / Conversations" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Customers" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Products" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Channel Identities" })).toHaveCount(0);
+
+    await openWithCtrlK(page);
+    for (const query of ["Documents", "Inbound Events", "Bot Runtime", "Customers"]) {
+      await searchInput(page).fill(query);
+      await expect(page.locator('[role="option"]')).toHaveCount(0);
+    }
+  });
+
+  test("direct intake BFF URL remains Core/BFF-denied without INTAKE_READ", async ({ page, request }) => {
+    await resetCoreRequests(request);
+    await signIn(page, LOCAL_APP);
+    const result = await page.evaluate(async () => {
+      const response = await fetch("/api/bff/api/v1/intake/documents");
+      return { status: response.status, body: await response.text() };
+    });
+    expect(result.status).toBe(403);
+    const upstream = (await coreRequests(request)).filter((r) => r.path === "/api/v1/intake/documents");
+    expect(upstream).toHaveLength(0);
+  });
+});
+
+test.describe("capability offer filtering — no REVIEW_READ (:3106)", () => {
+  test("review queue destinations absent; analytics remains; direct review URL denied", async ({
+    page,
+    request
+  }) => {
+    await signIn(page, NO_REVIEW_APP);
+    await page.goto(`${NO_REVIEW_APP}/command-center`);
+    await expect(page.getByRole("heading", { level: 1, name: "Command Center" })).toBeVisible();
+
+    const capabilityResponse = await page.request.get(`${NO_REVIEW_APP}/api/ui/capabilities`);
+    expect(capabilityResponse.ok()).toBeTruthy();
+    const body = await capabilityResponse.json();
+    expect(body.status).toBe("ALLOWED");
+    expect(body.capabilities ?? []).toContain("VIEW_ANALYTICS");
+    expect(body.capabilities ?? []).not.toContain("VIEW_REVIEW_QUEUE");
+
+    const nav = page.getByRole("navigation", { name: /primary navigation/i });
+    await expect(nav.getByRole("link", { name: "Analytics" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Quote Review" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Validation Review" })).toHaveCount(0);
+
+    await openWithCtrlK(page);
+    await searchInput(page).fill("Quote Review");
+    await expect(page.locator('[role="option"]')).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await resetCoreRequests(request);
+    const result = await page.evaluate(async () => {
+      const response = await fetch("/api/bff/api/v1/quote-review/queue");
+      return { status: response.status };
+    });
+    expect(result.status).toBe(403);
+    const upstream = (await coreRequests(request)).filter((r) => r.path === "/api/v1/quote-review/queue");
+    expect(upstream).toHaveLength(0);
+  });
+});
+
 test.describe("capability projection unavailable (:3105)", () => {
   test("gated destinations disappear; universal routes and degraded notice remain", async ({ page }) => {
     await signIn(page, UNAVAILABLE_APP);
@@ -253,15 +335,27 @@ test.describe("capability projection unavailable (:3105)", () => {
     expect(capabilityResponse.status()).toBe(503);
     expect(await capabilityResponse.json()).toEqual({ status: "UNAVAILABLE", capabilities: [] });
 
+    const headResponse = await page.request.fetch(`${UNAVAILABLE_APP}/api/ui/capabilities`, {
+      method: "HEAD"
+    });
+    expect(headResponse.status()).toBe(503);
+    expect(headResponse.headers()["cache-control"]).toContain("no-store");
+    expect(await headResponse.text()).toBe("");
+
     await page.goto(`${UNAVAILABLE_APP}/command-center`);
     await expect(page.getByRole("heading", { level: 1, name: "Command Center" })).toBeVisible();
     await expect(page.getByRole("status")).toContainText(/temporarily unavailable/i);
     const nav = page.getByRole("navigation", { name: /primary navigation/i });
     await expect(nav.getByRole("link", { name: "Analytics" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Quote Review" })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Command Center" })).toBeVisible();
+    await nav.locator("details.nav-group").filter({ hasText: "Settings" }).locator("summary").click();
+    await expect(nav.getByRole("link", { name: "Settings" })).toBeVisible();
     await openWithCtrlK(page);
     await searchInput(page).fill("Analytics");
     await expect(page.locator('[role="option"]')).toHaveCount(0);
+    await searchInput(page).fill("Settings");
+    await expect(page.getByRole("option", { name: /Settings/i })).toHaveCount(1);
   });
 });
 

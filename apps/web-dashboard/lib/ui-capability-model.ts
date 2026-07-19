@@ -10,7 +10,11 @@ export const UI_CAPABILITIES = Object.freeze([
   "VIEW_ANALYTICS",
   "VIEW_DOCUMENTS",
   "VIEW_REVIEW_QUEUE",
+  "VIEW_VALIDATION",
   "VIEW_CONFIGURATION",
+  "VIEW_BOT",
+  "VIEW_QUOTES",
+  "VIEW_CHANGE_REQUESTS",
   "PERFORM_REVIEW_ACTION"
 ] as const);
 
@@ -27,17 +31,29 @@ export type UiCapabilityProjection = Readonly<{
 
 const UI_CAPABILITY_SET: ReadonlySet<string> = new Set(UI_CAPABILITIES);
 
-/** Server-owned allowlist: backend permission → UI capability. Unknown permissions ignored. */
-const PERMISSION_TO_UI_CAPABILITY: Readonly<Record<string, UiCapability>> = Object.freeze({
+/**
+ * Server-owned allowlist: backend permission → UI capability.
+ * Unknown permissions ignored. Staff/support/control permissions never appear here.
+ */
+export const PERMISSION_TO_UI_CAPABILITY: Readonly<Record<string, UiCapability>> = Object.freeze({
   ANALYTICS_READ: "VIEW_ANALYTICS",
   INTAKE_READ: "VIEW_DOCUMENTS",
   REVIEW_READ: "VIEW_REVIEW_QUEUE",
+  VALIDATION_READ: "VIEW_VALIDATION",
   REVIEW_ACTION: "PERFORM_REVIEW_ACTION",
-  SETTINGS_READ: "VIEW_CONFIGURATION"
+  ADMIN_SETTINGS_READ: "VIEW_CONFIGURATION",
+  BOT_READ: "VIEW_BOT",
+  QUOTE_READ: "VIEW_QUOTES",
+  CHANGE_REQUEST_READ: "VIEW_CHANGE_REQUESTS"
 });
 
 export function isUiCapability(value: string): value is UiCapability {
   return UI_CAPABILITY_SET.has(value);
+}
+
+/** Backend permissions that map into tenant UI capabilities (for contract tests). */
+export function mappedBackendPermissions(): readonly string[] {
+  return Object.freeze(Object.keys(PERMISSION_TO_UI_CAPABILITY));
 }
 
 /**
