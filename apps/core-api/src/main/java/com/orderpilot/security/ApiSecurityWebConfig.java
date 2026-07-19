@@ -219,9 +219,6 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
                     clock,
                     replayAdmissionStore)),
             AnonymousAuthenticationFilter.class)
-        .addFilterAfter(
-            new ControlPlaneMethodAuthorityFilter(objectMapper),
-            ApiHeaderAuthenticationFilter.class)
         .exceptionHandling(exceptions -> exceptions
             .authenticationEntryPoint((request, response, ex) ->
                 writeSecurityError(objectMapper, request, response, HttpStatus.UNAUTHORIZED,
@@ -443,9 +440,6 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         return null;
       }
       String path = request.getRequestURI();
-      if (ControlPlaneMethodAuthorityFilter.requiredPermissionForKnownControlRoute(path) == null) {
-        return null;
-      }
       String canonical = ControlPlaneProtocol.canonical(
           request.getMethod(),
           path,
@@ -456,7 +450,14 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
           credential,
           timestampEpoch,
           nonce);
-      if (!SignedActorVerifier.matchesHmacHex(record.get().keyMaterialCopy(), canonical, signature)) {
+      byte[] verificationKey = record.get().keyMaterialCopy();
+      boolean signatureMatches;
+      try {
+        signatureMatches = SignedActorVerifier.matchesHmacHex(verificationKey, canonical, signature);
+      } finally {
+        java.util.Arrays.fill(verificationKey, (byte) 0);
+      }
+      if (!signatureMatches) {
         return null;
       }
       boolean admitted = replayAdmissionStore.admitFirstUse(
@@ -480,70 +481,6 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         return null;
       }
       return value.trim();
-    }
-  }
-
-  private static final class ControlPlaneMethodAuthorityFilter extends OncePerRequestFilter {
-    private static final String CONTROL_BASE = "/api/v1/internal/control";
-
-    private final ObjectMapper objectMapper;
-
-    private ControlPlaneMethodAuthorityFilter(ObjectMapper objectMapper) {
-      this.objectMapper = objectMapper;
-    }
-
-    @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-        throws ServletException, IOException {
-      ApiPermission required = requiredPermissionForKnownControlRoute(request.getRequestURI());
-      if (required == null
-          || HttpMethod.GET.matches(request.getMethod())
-          || HttpMethod.HEAD.matches(request.getMethod())
-          || HttpMethod.OPTIONS.matches(request.getMethod())) {
-        filterChain.doFilter(request, response);
-        return;
-      }
-      String permissions = request.getHeader(ApiPermissionGuard.PERMISSIONS_HEADER);
-      boolean allowed = hasAuthority(required)
-          || (permissions != null && !permissions.isBlank() && Arrays.stream(permissions.split(","))
-              .map(String::trim)
-              .anyMatch(required.name()::equals));
-      if (permissions == null || permissions.isBlank()) {
-        filterChain.doFilter(request, response);
-        return;
-      }
-      if (!allowed) {
-        writeSecurityError(
-            objectMapper,
-            request,
-            response,
-            HttpStatus.FORBIDDEN,
-            "TENANT_POLICY_DENIED",
-            "Control-plane permission denied");
-        return;
-      }
-      filterChain.doFilter(request, response);
-    }
-
-    private static boolean hasAuthority(ApiPermission permission) {
-      var authentication = SecurityContextHolder.getContext().getAuthentication();
-      if (authentication == null || !authentication.isAuthenticated()) {
-        return false;
-      }
-      String required = "ORDERPILOT_" + permission.name();
-      return authentication.getAuthorities().stream()
-          .anyMatch(authority -> required.equals(authority.getAuthority()));
-    }
-    private static ApiPermission requiredPermissionForKnownControlRoute(String path) {
-      if ((CONTROL_BASE + "/status").equals(path)
-          || (CONTROL_BASE + "/health").equals(path)
-          || (CONTROL_BASE + "/readiness").equals(path)) {
-        return ApiPermission.STAFF_CONTROL_READ;
-      }
-      if ((CONTROL_BASE + "/diagnostics").equals(path)) {
-        return ApiPermission.STAFF_CONTROL_DIAGNOSE;
-      }
-      return null;
     }
   }
 }

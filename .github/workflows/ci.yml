@@ -78,8 +78,14 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Run operantctl tests
-        run: mvn test
+      - name: Build and verify operantctl (packaged shaded JAR + full tests)
+        run: mvn --batch-mode --no-transfer-progress clean verify
+
+      - name: Verify executable artifact starts
+        run: java -jar target/operantctl-0.1.0-SNAPSHOT.jar version
+
+      - name: Packaged behavioural smoke
+        run: bash scripts/packaged-smoke.sh
 
   core-api-release-docker-guard:
     name: Core API release Docker guard

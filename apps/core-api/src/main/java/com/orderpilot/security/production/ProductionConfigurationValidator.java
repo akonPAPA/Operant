@@ -23,6 +23,10 @@ public class ProductionConfigurationValidator implements InitializingBean {
   static final String OIDC_RUNTIME_NOT_IMPLEMENTED = "OIDC_RUNTIME_NOT_IMPLEMENTED";
   private static final int MAX_PORT = 65535;
   private static final long MAX_CLOCK_SKEW_SECONDS = 86_400L;
+  // WP-3: native dependency-acquisition timeouts must stay at or below the control-plane aggregate
+  // dependency probe deadline (ControlPlaneStatusService default 6s), so the driver-level bound always
+  // fires before the aggregate probe out-waits it.
+  private static final long CONTROL_PROBE_DEADLINE_MS = 6_000L;
 
   private final Environment environment;
   private final ProductionDeploymentProperties deploymentProperties;
@@ -57,6 +61,9 @@ public class ProductionConfigurationValidator implements InitializingBean {
   private final boolean controlPlaneRevoked;
   private final String controlPlanePermissions;
   private final String controlPlaneKeyVersion;
+  private final long dbConnectionTimeoutMs;
+  private final long redisConnectTimeoutMs;
+  private final long redisCommandTimeoutMs;
   private final Clock clock;
 
   public ProductionConfigurationValidator(
@@ -100,6 +107,9 @@ public class ProductionConfigurationValidator implements InitializingBean {
       @Value("${orderpilot.security.control-plane-auth.revoked:false}") boolean controlPlaneRevoked,
       @Value("${orderpilot.security.control-plane-auth.permissions:}") String controlPlanePermissions,
       @Value("${orderpilot.security.control-plane-auth.key-version:}") String controlPlaneKeyVersion,
+      @Value("${spring.datasource.hikari.connection-timeout:5000}") long dbConnectionTimeoutMs,
+      @Value("${orderpilot.security.gateway-header-auth.redis.connect-timeout-ms:2000}") long redisConnectTimeoutMs,
+      @Value("${orderpilot.security.gateway-header-auth.redis.command-timeout-ms:2000}") long redisCommandTimeoutMs,
       Clock clock) {
     this.environment = environment;
     this.deploymentProperties = deploymentProperties;
@@ -134,6 +144,9 @@ public class ProductionConfigurationValidator implements InitializingBean {
     this.controlPlaneRevoked = controlPlaneRevoked;
     this.controlPlanePermissions = controlPlanePermissions;
     this.controlPlaneKeyVersion = controlPlaneKeyVersion;
+    this.dbConnectionTimeoutMs = dbConnectionTimeoutMs;
+    this.redisConnectTimeoutMs = redisConnectTimeoutMs;
+    this.redisCommandTimeoutMs = redisCommandTimeoutMs;
     this.clock = clock;
   }
 
@@ -148,6 +161,7 @@ public class ProductionConfigurationValidator implements InitializingBean {
     rejectPlaceholderSecrets();
     validateRequiredUrlsAndOrigins();
     validatePortsTimeoutsAndLimits();
+    validateDependencyProbeNativeTimeouts();
     emitRedactedDiagnostics();
   }
 
@@ -246,6 +260,25 @@ public class ProductionConfigurationValidator implements InitializingBean {
       log.warn(
           "orderpilot.runtime.rate.store=in-memory in a production-like profile is single-instance only");
     }
+  }
+
+  private void validateDependencyProbeNativeTimeouts() {
+    // WP-3: database connection acquisition and Redis connect/command must be bounded natively (not by
+    // library defaults) and the DB acquisition bound must not exceed the aggregate control probe budget.
+    requirePositive("spring.datasource.hikari.connection-timeout", dbConnectionTimeoutMs);
+    requireMax("spring.datasource.hikari.connection-timeout", dbConnectionTimeoutMs, CONTROL_PROBE_DEADLINE_MS);
+    requirePositive(
+        "orderpilot.security.gateway-header-auth.redis.connect-timeout-ms", redisConnectTimeoutMs);
+    requireMax(
+        "orderpilot.security.gateway-header-auth.redis.connect-timeout-ms",
+        redisConnectTimeoutMs,
+        CONTROL_PROBE_DEADLINE_MS);
+    requirePositive(
+        "orderpilot.security.gateway-header-auth.redis.command-timeout-ms", redisCommandTimeoutMs);
+    requireMax(
+        "orderpilot.security.gateway-header-auth.redis.command-timeout-ms",
+        redisCommandTimeoutMs,
+        CONTROL_PROBE_DEADLINE_MS);
   }
 
   private void emitRedactedDiagnostics() {

@@ -301,6 +301,77 @@ class ProductionConfigurationValidatorTest {
   }
 
   @Test
+  void productionProfileAcceptsBoundedDependencyProbeNativeTimeouts() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues(
+            "spring.datasource.hikari.connection-timeout=5000",
+            "orderpilot.security.gateway-header-auth.redis.connect-timeout-ms=2000",
+            "orderpilot.security.gateway-header-auth.redis.command-timeout-ms=2000")
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void productionProfileRejectsNonPositiveDatabaseConnectionTimeout() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues("spring.datasource.hikari.connection-timeout=0")
+        .run(
+            context ->
+                assertThat(context)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("spring.datasource.hikari.connection-timeout"));
+  }
+
+  @Test
+  void productionProfileRejectsDatabaseConnectionTimeoutAboveProbeDeadline() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues("spring.datasource.hikari.connection-timeout=30000")
+        .run(
+            context ->
+                assertThat(context)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("spring.datasource.hikari.connection-timeout"));
+  }
+
+  @Test
+  void productionProfileRejectsNonPositiveRedisConnectTimeout() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues("orderpilot.security.gateway-header-auth.redis.connect-timeout-ms=0")
+        .run(
+            context ->
+                assertThat(context)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("redis.connect-timeout-ms"));
+  }
+
+  @Test
+  void productionProfileRejectsNonPositiveRedisCommandTimeout() {
+    productionRunner()
+        .withPropertyValues(validProductionProperties())
+        .withPropertyValues("orderpilot.security.gateway-header-auth.redis.command-timeout-ms=-1")
+        .run(
+            context ->
+                assertThat(context)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("redis.command-timeout-ms"));
+  }
+
+  @Test
   void productionProfileRejectsNonPositiveMalwareScanTimeout() {
     productionRunner()
         .withPropertyValues(validProductionProperties())

@@ -48,8 +48,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * P1-E HTTP-level security proof for the bounded platform control-plane read surface through the
  * real security stack. The routes are never public; tenant, customer, ordinary service-account, and
  * wrong staff/control grants are denied before the mocked service is reached. Diagnostics require a
- * stronger dedicated permission than status reads. Non-GET control requests stay outside the
- * controller and use centralized bounded method handling only after route authority is proven.
+ * stronger dedicated permission than status reads. Route authority is single-sourced from
+ * {@link ApiRouteSecurityPolicy}: only GET/HEAD control routes carry a control permission, so
+ * write-shaped methods are unmapped and fail closed with a native 405 (unauthenticated callers get
+ * 401) without ever reaching the control service.
  */
 @WebMvcTest(controllers = InternalControlController.class)
 @Import({
@@ -68,7 +70,6 @@ class InternalControlControllerSecurityTest {
   private static final String DIAGNOSTICS = "/api/v1/internal/control/diagnostics";
   private static final String READ_PERMISSION = "STAFF_CONTROL_READ";
   private static final String DIAGNOSE_PERMISSION = "STAFF_CONTROL_DIAGNOSE";
-  private static final String SAFE_DENIAL_MESSAGE = "Control-plane permission denied";
 
   @Autowired private MockMvc mockMvc;
 
@@ -122,9 +123,6 @@ class InternalControlControllerSecurityTest {
     }
     if ("METHOD_NOT_ALLOWED".equals(expectedCode)) {
       result.andExpect(jsonPath("$.message").value("HTTP method is not supported for this API route"));
-    }
-    if ("TENANT_POLICY_DENIED".equals(expectedCode) && !HttpMethod.GET.equals(method)) {
-      result.andExpect(jsonPath("$.message").value(SAFE_DENIAL_MESSAGE));
     }
     if (expectedAllowHeader != null) {
       assertAllowHeader(result, expectedAllowHeader);
@@ -216,16 +214,13 @@ class InternalControlControllerSecurityTest {
     if (caller.permissions() == null) {
       return 401;
     }
-    if (HttpMethod.GET.equals(method)) {
+    if (HttpMethod.GET.equals(method) || HttpMethod.HEAD.equals(method)) {
       return route.requiredPermission().equals(caller.permissions()) ? 200 : 403;
     }
-    if (HttpMethod.HEAD.equals(method)) {
-      return route.requiredPermission().equals(caller.permissions()) ? 200 : 403;
-    }
-    if (route.requiredPermission().equals(caller.permissions())) {
-      return 405;
-    }
-    return 403;
+    // Write-shaped control methods are unmapped. Route authority is single-sourced from
+    // ApiRouteSecurityPolicy (GET/HEAD only), so an authenticated caller reaches the dispatcher and
+    // gets a native 405 fail-closed; the control service is never invoked, regardless of permission.
+    return 405;
   }
   private static String expectedCode(HttpMethod method, Caller caller, int status) {
     if (HttpMethod.OPTIONS.equals(method)) {

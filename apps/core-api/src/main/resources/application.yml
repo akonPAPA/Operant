@@ -14,6 +14,11 @@ spring:
     url: "${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:${ORDERPILOT_DB_HOST_PORT:15432}/${ORDERPILOT_DB_NAME:orderpilot_local}}"
     username: "${SPRING_DATASOURCE_USERNAME:${ORDERPILOT_DB_USER:orderpilot_local_user}}"
     password: "${SPRING_DATASOURCE_PASSWORD:${ORDERPILOT_DB_PASSWORD:change-me-local-dev-only}}"
+    hikari:
+      # WP-3: bound connection acquisition natively so a saturated/unavailable database fails fast at
+      # the pool rather than relying on the 30s Hikari default. Must stay <= the control-plane aggregate
+      # dependency probe deadline (6s) so the control readiness/diagnostics probe never out-waits it.
+      connection-timeout: "${ORDERPILOT_DB_CONNECTION_TIMEOUT_MS:5000}"
   flyway:
     enabled: true
   jpa:
@@ -70,6 +75,10 @@ orderpilot:
         port: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PORT:6379}"
         password: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_PASSWORD:}"
         key-prefix: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_KEY_PREFIX:op:gw-replay}"
+        # WP-3: explicit native Lettuce connect + command timeouts (never the library defaults) so a
+        # stalled Redis replay store fails closed at the driver level. Bounded and server-owned.
+        connect-timeout-ms: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_CONNECT_TIMEOUT_MS:2000}"
+        command-timeout-ms: "${ORDERPILOT_GATEWAY_HEADER_AUTH_REDIS_COMMAND_TIMEOUT_MS:2000}"
     # P1-E: config-backed single-record control credential registry for operantctl. The alias only
     # selects a server-owned record; Core owns status, validity, expiry, revocation, audience,
     # server-side permissions, and key-version metadata. Empty or disabled config fails closed.

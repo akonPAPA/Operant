@@ -8,7 +8,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.orderpilot.api.dto.ControlInternalDtos.ControlDiagnosticsResponse;
 import com.orderpilot.api.dto.ControlInternalDtos.ControlHealthResponse;
+import com.orderpilot.api.dto.ControlInternalDtos.ControlStatusResponse;
+import com.orderpilot.api.dto.ControlInternalDtos.DatabaseDiagnostics;
+import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
+import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
+import com.orderpilot.api.dto.ControlInternalDtos.JvmDiagnostics;
+import com.orderpilot.api.dto.ControlInternalDtos.RedisDiagnostics;
 import com.orderpilot.api.rest.InternalControlController;
 import com.orderpilot.application.services.control.ControlPlaneStatusService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -19,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -79,6 +87,8 @@ class ControlPlaneKeySeparationSecurityTest {
   private static final String ACTOR = UUID.randomUUID().toString();
   private static final String HEALTH = "/api/v1/internal/control/health";
   private static final String READINESS = "/api/v1/internal/control/readiness";
+  private static final String STATUS = "/api/v1/internal/control/status";
+  private static final String DIAGNOSTICS = "/api/v1/internal/control/diagnostics";
   private static final String QUOTES = "/api/v1/quotes";
 
   @Autowired private MockMvc mockMvc;
@@ -133,10 +143,121 @@ class ControlPlaneKeySeparationSecurityTest {
     assertThat(second.keyVersion()).isEqualTo("control-v2");
   }
   @Test
+  void keyMaterialAccessorIsNotExposedAndCopyIsDefensive() throws Exception {
+    var record = registry(CREDENTIAL, "ENABLED", false, "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
+            "STAFF_CONTROL_READ")
+        .findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE)
+        .orElseThrow();
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> ControlPlaneCredentialRegistry.ControlPlaneCredentialRecord.class.getDeclaredMethod("keyMaterial"))
+        .isInstanceOf(NoSuchMethodException.class);
+
+    byte[] firstCopy = record.keyMaterialCopy();
+    java.util.Arrays.fill(firstCopy, (byte) 0);
+    assertThat(HexFormat.of().formatHex(record.keyMaterialCopy())).isEqualTo(CONTROL_SECRET);
+  }
+
+  @Test
+  void recordToStringAndFingerprintNeverRevealKeyMaterial() {
+    var record = registry(CREDENTIAL, "ENABLED", false, "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
+            "STAFF_CONTROL_READ")
+        .findActive(CREDENTIAL, ControlPlaneProtocol.AUDIENCE)
+        .orElseThrow();
+
+    assertThat(record.toString())
+        .doesNotContain(CONTROL_SECRET)
+        .doesNotContain("001122")
+        .doesNotContain("ccddeeff");
+
+    String fingerprint = record.keyMaterialFingerprintForTests();
+    assertThat(fingerprint).isNotEqualTo(CONTROL_SECRET);
+    assertThat(HexFormat.of().parseHex(fingerprint)).hasSize(32);
+  }
+
+  @Test
   void controlCredentialCannotAuthenticateTenantBusinessRoutes() throws Exception {
     mockMvc.perform(controlSigned(QUOTES))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    verifyNoInteractions(statusService);
+  }
+
+  @Test
+  void signedGetStatusSucceedsWithControlReadPermission() throws Exception {
+    when(statusService.status()).thenReturn(new ControlStatusResponse(
+        "unknown", 12L, List.of(new DependencyStatus("database", DependencyState.UP))));
+
+    mockMvc.perform(controlSigned(STATUS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.version").value("unknown"));
+  }
+
+  @Test
+  void signedHeadStatusSucceeds() throws Exception {
+    when(statusService.status()).thenReturn(new ControlStatusResponse(
+        "unknown", 12L, List.of(new DependencyStatus("database", DependencyState.UP))));
+
+    mockMvc.perform(controlSigned(STATUS, HttpMethod.HEAD, STATUS, "", Instant.now().getEpochSecond(),
+            "nonce-" + UUID.randomUUID(), ControlPlaneProtocol.AUDIENCE, CREDENTIAL,
+            ControlPlaneProtocol.SIGNATURE_VERSION, ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX, null))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void signedGetDiagnosticsSucceedsWithDiagnosePermission() throws Exception {
+    when(statusService.diagnostics()).thenReturn(new ControlDiagnosticsResponse(
+        "unknown",
+        List.of("test"),
+        new DatabaseDiagnostics(DependencyState.UP, "65"),
+        new RedisDiagnostics(false, DependencyState.NOT_CONFIGURED),
+        new JvmDiagnostics(12L, 512L)));
+
+    mockMvc.perform(controlSigned(DIAGNOSTICS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.database.state").value("UP"));
+  }
+
+  @Test
+  void signedWriteShapedRequestsToKnownRoutesFailClosed() throws Exception {
+    for (HttpMethod method : List.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE)) {
+      mockMvc.perform(controlSigned(STATUS, method, STATUS, "", Instant.now().getEpochSecond(),
+              "nonce-" + UUID.randomUUID(), ControlPlaneProtocol.AUDIENCE, CREDENTIAL,
+              ControlPlaneProtocol.SIGNATURE_VERSION, ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX, null))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+    verifyNoInteractions(statusService);
+  }
+
+  @Test
+  void signedRequestToUnknownControlRouteFailsClosed() throws Exception {
+    String unknown = "/api/v1/internal/control/shutdown";
+    mockMvc.perform(controlSigned(unknown, HttpMethod.GET, unknown, "", Instant.now().getEpochSecond(),
+            "nonce-" + UUID.randomUUID(), ControlPlaneProtocol.AUDIENCE, CREDENTIAL,
+            ControlPlaneProtocol.SIGNATURE_VERSION, ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX, null))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    verifyNoInteractions(statusService);
+  }
+
+  @Test
+  void signedTrailingSlashControlRouteFailsClosed() throws Exception {
+    String trailing = STATUS + "/";
+    mockMvc.perform(controlSigned(trailing, HttpMethod.GET, trailing, "", Instant.now().getEpochSecond(),
+            "nonce-" + UUID.randomUUID(), ControlPlaneProtocol.AUDIENCE, CREDENTIAL,
+            ControlPlaneProtocol.SIGNATURE_VERSION, ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX, null))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    verifyNoInteractions(statusService);
+  }
+
+  @Test
+  void optionsControlRouteGrantsNoServiceInteractionOrReusableAuthentication() throws Exception {
+    mockMvc.perform(request(HttpMethod.OPTIONS, STATUS)
+            .header(ControlPlaneProtocol.CREDENTIAL_HEADER, CREDENTIAL)
+            .header(ControlPlaneProtocol.AUDIENCE_HEADER, ControlPlaneProtocol.AUDIENCE))
+        .andExpect(status().isOk());
     verifyNoInteractions(statusService);
   }
 
