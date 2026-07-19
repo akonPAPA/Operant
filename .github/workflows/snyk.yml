@@ -1,11 +1,11 @@
 name: Snyk Dependency Scan
 
 on:
-  # PRs: run a skip-safe dependency gate that only enforces Snyk when dependency
-  # files or the workflow itself change. Docs-only PRs succeed as not applicable.
+  # PRs: enforce a secretless GitHub dependency-delta review for every dependency
+  # change. Trusted non-Dependabot same-repository PRs additionally run Snyk.
   pull_request:
     branches: [ "main" ]
-  # Scheduled/manual: keep the existing weekly sweep + manual runs.
+  # Scheduled/manual: keep the existing authenticated full Snyk sweep.
   schedule:
     - cron: "37 3 * * 1"
   workflow_dispatch:
@@ -100,10 +100,21 @@ jobs:
             echo "snyk_web_dashboard_dependency_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+  dependency-review:
+    name: GitHub Dependency Review
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.snyk_dependency_relevant == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Review introduced dependency risk
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
   snyk-web-dashboard:
     name: Snyk Open Source - web-dashboard
     needs: changes
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_web_dashboard_dependency_changed == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_web_dashboard_dependency_changed == 'true' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -164,7 +175,7 @@ jobs:
   snyk-core-api:
     name: Snyk Open Source - core-api
     needs: changes
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_core_api_dependency_changed == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_core_api_dependency_changed == 'true' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -226,7 +237,7 @@ jobs:
   snyk-operantctl:
     name: Snyk Open Source - operantctl
     needs: changes
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_operantctl_dependency_changed == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (needs.changes.outputs.snyk_dependency_relevant == 'true' && needs.changes.outputs.snyk_operantctl_dependency_changed == 'true' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -286,16 +297,15 @@ jobs:
         run: snyk test --file=pom.xml --severity-threshold=high
 
   # Skip-safe required gate: "Snyk Dependency Scan / Snyk Gate".
-  # This job MUST always run and reach a terminal success/failure conclusion so it is
-  # never reported as skipped/neutral. When there are no Snyk-relevant changes it
-  # satisfies the required check with a no-op step; when Snyk-relevant changes exist
-  # it fails unless the real Snyk jobs completed successfully. On fork pull_request
-  # events with dependency changes and no secrets, it fails closed with an explicit
-  # message instead of pretending Snyk ran.
+  # Every dependency-changing PR must pass GitHub Dependency Review. Trusted
+  # same-repository non-Dependabot PRs also require the corresponding Snyk scan.
+  # Dependabot and fork PRs never receive SNYK_TOKEN, so they are accepted only
+  # when the secretless dependency review completed successfully.
   snyk-gate:
     name: Snyk Gate
     needs:
       - changes
+      - dependency-review
       - snyk-web-dashboard
       - snyk-core-api
       - snyk-operantctl
@@ -320,16 +330,26 @@ jobs:
 
           if [[ "$dep_relevant" != "true" ]]; then
             if [[ "$wf_relevant" == "true" ]]; then
-              echo "::notice::Snyk workflow changed, but no dependency manifests changed; dependency scan enforcement is not applicable in this PR. Scheduled/manual Snyk still covers full baseline."
+              echo "::notice::Dependency-security workflow changed, but no dependency manifests changed; dependency scan enforcement is not applicable in this PR. Scheduled/manual Snyk still covers the full baseline."
               exit 0
             fi
-            echo "No Snyk-relevant dependency changes detected; Snyk Gate satisfied (not applicable)."
+            echo "No dependency-relevant changes detected; Snyk Gate satisfied (not applicable)."
             exit 0
           fi
 
-          if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.head.repo.fork }}" == "true" ]]; then
-            echo "::error::Snyk cannot run on fork PRs with dependency changes because secrets are unavailable; Snyk Gate fails closed."
-            exit 1
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            dependency_review_result="${{ needs.dependency-review.result }}"
+            echo "GitHub Dependency Review result: $dependency_review_result"
+
+            if [[ "$dependency_review_result" != "success" ]]; then
+              echo "::error::Dependency files changed but GitHub Dependency Review did not succeed."
+              exit 1
+            fi
+
+            if [[ "${{ github.actor }}" == "dependabot[bot]" || "${{ github.event.pull_request.head.repo.fork }}" == "true" ]]; then
+              echo "Dependency Review succeeded. Snyk was intentionally skipped because Dependabot/fork pull_request events do not receive repository Actions secrets."
+              exit 0
+            fi
           fi
 
           web_result="${{ needs.snyk-web-dashboard.result }}"
@@ -355,4 +375,4 @@ jobs:
             exit 1
           fi
 
-          echo "Snyk-relevant changes detected and all Snyk jobs succeeded; Snyk Gate satisfied."
+          echo "Dependency-relevant changes detected and all required dependency-security jobs succeeded; Snyk Gate satisfied."
