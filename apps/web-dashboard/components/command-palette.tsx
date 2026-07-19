@@ -59,8 +59,12 @@ export function CommandPalette({ entries }: Readonly<{ entries: readonly Palette
     setOpen(false);
     setQuery("");
     setActiveIndex(0);
-    const toRestore = restoreFocusRef.current ?? triggerRef.current;
-    // Return focus to where it was, or the trigger, after the dialog unmounts.
+    // Return focus to the invoker if it was a real, still-connected focusable element; otherwise
+    // (e.g. opened via the global Ctrl/Cmd+K shortcut from document.body) fall back to the trigger,
+    // so focus never lands on <body> after close.
+    const previous = restoreFocusRef.current;
+    const toRestore =
+      previous && previous !== document.body && previous.isConnected ? previous : triggerRef.current;
     window.requestAnimationFrame(() => toRestore?.focus());
   }, []);
 
