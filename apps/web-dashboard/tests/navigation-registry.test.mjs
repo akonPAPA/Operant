@@ -158,8 +158,19 @@ test("unsupported destinations are never offered in primary nav or palette", () 
   assert.equal(primary.includes("/pricing"), false);
   assert.equal(primary.includes("/imports"), false);
   assert.equal(primary.includes("/audit-log"), false);
+  assert.equal(primary.includes("/integrations"), false);
   assert.equal(palette.includes("/extractions"), false);
   assert.equal(palette.includes("/audit-log"), false);
+  assert.equal(palette.includes("/integrations"), false);
+});
+
+test("upload requires VIEW_DOCUMENTS and is excluded from UNIVERSAL_TENANT_PATHS", () => {
+  const upload = destinationForPath("/upload");
+  assert.equal(upload?.capability, "VIEW_DOCUMENTS");
+  assert.equal(upload?.availability, "UPLOAD_CAPABILITY_GATED");
+  assert.equal(UNIVERSAL_TENANT_PATHS.has("/upload"), false);
+  assert.equal(tenantPrimaryDestinations(new Set()).some((d) => d.path === "/upload"), false);
+  assert.equal(tenantPrimaryDestinations(new Set(["VIEW_DOCUMENTS"])).some((d) => d.path === "/upload"), true);
 });
 
 test("TENANT capability null is reserved for proven universal destinations only", () => {

@@ -88,9 +88,9 @@ export type NavigationDestination = {
  * - VIEW_CONFIGURATION ← ADMIN_SETTINGS_READ (catalog, channels, identities, sync, messenger)
  * - VIEW_BOT ← BOT_READ (bot runtime / conversations / settings)
  * - VIEW_QUOTES ← QUOTE_READ (quote workspace read surfaces)
- * - VIEW_CHANGE_REQUESTS ← CHANGE_REQUEST_READ (integrations mixes this with ADMIN_SETTINGS_READ —
- *   destination is UNSUPPORTED in primary offer until a coherent single-permission contract exists)
- * - Universal (capability null): command-center landing, settings hub, upload (deployment-gated)
+ * - VIEW_CHANGE_REQUESTS ← CHANGE_REQUEST_READ (reserved; integrations remains UNSUPPORTED until split)
+ * - Universal (capability null): command-center landing (static shell only), settings hub
+ * - Upload: VIEW_DOCUMENTS + UPLOAD_CAPABILITY_GATED (local-demo only; never universal)
  */
 const destinations: readonly NavigationDestination[] = Object.freeze([
   // --- Command Center (CC) ---
@@ -103,7 +103,15 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
 
   // --- Inbox (IN) ---
   d({ id: "inbox", path: "/inbox", label: "Inbox", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
-  d({ id: "upload", path: "/upload", label: "Upload", section: "Inbox", sectionCode: "IN", availability: "UPLOAD_CAPABILITY_GATED" }),
+  d({
+    id: "upload",
+    path: "/upload",
+    label: "Upload",
+    section: "Inbox",
+    sectionCode: "IN",
+    capability: "VIEW_DOCUMENTS",
+    availability: "UPLOAD_CAPABILITY_GATED"
+  }),
   d({ id: "documents", path: "/documents", label: "Documents", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
   d({ id: "messages", path: "/messages", label: "Messages", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
   d({
@@ -178,10 +186,19 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   d({ id: "bot-settings", path: "/bot-settings", label: "Bot Settings", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT" }),
 
   // --- Control Center (CT) --- (`/audit` is a legacy alias of the canonical `/audit-log`)
-  // Integrations combines ADMIN_SETTINGS_READ + CHANGE_REQUEST_READ client calls. Offer on the
-  // primary admin-settings capability; CHANGE_REQUEST_READ remains BFF/Core-enforced per request.
-  // VIEW_CHANGE_REQUESTS is reserved for a future coherent change-request-only surface.
-  d({ id: "integrations", path: "/integrations", label: "Integrations", section: "Control Center", sectionCode: "CT", capability: "VIEW_CONFIGURATION" }),
+  // Integrations previously mixed ADMIN_SETTINGS_READ + CHANGE_REQUEST_READ and converted denied
+  // change-request reads into empty lists. Unsupported in primary offer until split/composite.
+  d({
+    id: "integrations",
+    path: "/integrations",
+    label: "Integrations",
+    section: "Control Center",
+    sectionCode: "CT",
+    capability: "VIEW_CONFIGURATION",
+    availability: "UNSUPPORTED",
+    paletteVisible: false,
+    showInPrimaryNav: false
+  }),
   d({ id: "sync-events", path: "/sync-events", label: "Sync Events", section: "Control Center", sectionCode: "CT", capability: "VIEW_CONFIGURATION" }),
   d({
     id: "audit",
@@ -254,8 +271,7 @@ export const navigationDestinations: readonly NavigationDestination[] = destinat
  */
 export const UNIVERSAL_TENANT_PATHS: ReadonlySet<string> = new Set([
   "/command-center",
-  "/settings",
-  "/upload"
+  "/settings"
 ]);
 
 /** Legacy alias path -> canonical path (used for safe redirects and palette resolution). */

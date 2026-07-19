@@ -211,10 +211,35 @@ test.describe("capability offer filtering — denied session (:3104)", () => {
     await expect(nav.getByRole("link", { name: "Analytics" })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Command Center" })).toBeVisible();
 
+    // Analytics-backed panels must not render (no misleading n/a empty analytics).
+    await expect(page.getByRole("heading", { name: "Commerce Intelligence" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Transaction Command Center" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Business Value" })).toHaveCount(0);
+
     await openWithCtrlK(page);
     await searchInput(page).fill("Analytics");
     await expect(page.locator('[role="option"]')).toHaveCount(0);
     await page.keyboard.press("Escape");
+  });
+
+  test("command-center universal render makes zero protected analytics Core calls", async ({
+    page,
+    request
+  }) => {
+    await resetCoreRequests(request);
+    await signIn(page, DENIED_APP);
+    await page.goto(`${DENIED_APP}/command-center`);
+    await expect(page.getByRole("heading", { level: 1, name: "Command Center" })).toBeVisible();
+    const upstream = await coreRequests(request);
+    const protectedAnalytics = upstream.filter(
+      (r) =>
+        r.path.includes("/command-center/summary") ||
+        r.path.includes("/stage8/analytics") ||
+        r.path.includes("/stage8/value") ||
+        r.path.includes("/stage8/reconciliation") ||
+        r.path.includes("/api/v1/analytics/")
+    );
+    expect(protectedAnalytics).toHaveLength(0);
   });
 
   test("direct analytics BFF URL is denied by BFF with no Core side effect", async ({ page, request }) => {
@@ -345,6 +370,8 @@ test.describe("capability projection unavailable (:3105)", () => {
     await page.goto(`${UNAVAILABLE_APP}/command-center`);
     await expect(page.getByRole("heading", { level: 1, name: "Command Center" })).toBeVisible();
     await expect(page.getByRole("status")).toContainText(/temporarily unavailable/i);
+    await expect(page.getByRole("heading", { name: "Commerce Intelligence" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Transaction Command Center" })).toHaveCount(0);
     const nav = page.getByRole("navigation", { name: /primary navigation/i });
     await expect(nav.getByRole("link", { name: "Analytics" })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Quote Review" })).toHaveCount(0);

@@ -29,9 +29,10 @@ test("stage9 integration API client exposes tenant-scoped control endpoints", ()
   assert.doesNotMatch(api, /connectorIdempotencyKeyHash\s*\??\s*:/);
 });
 
-test("integrations page renders Stage 9A integration control sections", () => {
+test("integrations page is unsupported and does not mount IntegrationControl", () => {
   assert.equal(existsSync(controlPath), true);
-  assert.match(page, /IntegrationControl/);
+  assert.match(page, /UnavailableState/);
+  assert.doesNotMatch(page, /IntegrationControl/);
   assert.match(control, /Integration Control/);
   assert.match(control, /Demo ERP connection/);
   assert.match(queue, /ChangeRequest queue/);
