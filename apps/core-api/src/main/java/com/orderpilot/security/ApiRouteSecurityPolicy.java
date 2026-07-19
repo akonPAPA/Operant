@@ -10,6 +10,7 @@ import org.springframework.util.AntPathMatcher;
 public class ApiRouteSecurityPolicy {
   private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
   private static final String INTERNAL_SUPPORT_BASE = "/api/v1/internal/support";
+  private static final String INTERNAL_CONTROL_BASE = "/api/v1/internal/control";
 
   private static final List<PrefixRule> PREFIX_RULES = List.of(
       rule("/api/v1/analytics", ApiPermission.ANALYTICS_READ, ApiPermission.ANALYTICS_MANAGE),
@@ -121,6 +122,9 @@ public class ApiRouteSecurityPolicy {
     }
     if (path.equals(INTERNAL_SUPPORT_BASE) || path.startsWith(INTERNAL_SUPPORT_BASE + "/")) {
       return supportDecision(method, path);
+    }
+    if (path.equals(INTERNAL_CONTROL_BASE) || path.startsWith(INTERNAL_CONTROL_BASE + "/")) {
+      return controlDecision(method, path);
     }
     // OP-CAP-27D follow-up (PR #253): the read-only runtime-control telemetry surface must never inherit
     // the generic runtime-governance write rule below. "/api/v1/runtime-control" starts with
@@ -332,6 +336,26 @@ public class ApiRouteSecurityPolicy {
       return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_SUPPORT_READ);
     }
     // Fail closed: only the explicit controller route/method matrix above is classified.
+    return Optional.empty();
+  }
+
+  // P1-E: bounded platform control-plane reads consumed by operantctl. GET and explicit HEAD are
+  // supported read methods and require dedicated STAFF_CONTROL_* permissions; tenant permissions and
+  // STAFF_SUPPORT_* grants cannot read platform control state. Diagnostics require the stronger
+  // STAFF_CONTROL_DIAGNOSE permission. Write-shaped variants and unknown sub-paths remain
+  // unclassified and hit the global /api/** default-deny.
+  private Optional<RouteDecision> controlDecision(String method, String path) {
+    if (!HttpMethod.GET.matches(method) && !HttpMethod.HEAD.matches(method)) {
+      return Optional.empty();
+    }
+    if (path.equals(INTERNAL_CONTROL_BASE + "/status")
+        || path.equals(INTERNAL_CONTROL_BASE + "/health")
+        || path.equals(INTERNAL_CONTROL_BASE + "/readiness")) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_CONTROL_READ);
+    }
+    if (path.equals(INTERNAL_CONTROL_BASE + "/diagnostics")) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_CONTROL_DIAGNOSE);
+    }
     return Optional.empty();
   }
 

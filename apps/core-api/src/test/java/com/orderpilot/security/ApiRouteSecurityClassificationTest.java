@@ -305,6 +305,28 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/order-journeys/123e4567-e89b-12d3-a456-426614174000/operator-timeline",
             SecurityClassification.PROTECTED_READ,
             ApiPermission.ANALYTICS_READ),
+        // P1-E: the internal control plane is a distinct Operant support/maintenance access plane,
+        // protected by STAFF_CONTROL_* permissions rather than tenant/support grants.
+        new RouteExpectation(
+            "GET",
+            "/api/v1/internal/control/status",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_CONTROL_READ),
+        new RouteExpectation(
+            "GET",
+            "/api/v1/internal/control/diagnostics",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_CONTROL_DIAGNOSE),
+        new RouteExpectation(
+            "HEAD",
+            "/api/v1/internal/control/status",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_CONTROL_READ),
+        new RouteExpectation(
+            "HEAD",
+            "/api/v1/internal/control/diagnostics",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_CONTROL_DIAGNOSE),
         // OP-CAP-51: the internal owner-company support surface. Each verb maps to a dedicated STAFF_*
         // permission (never a tenant business permission), proving the route-edge separation.
         new RouteExpectation(
@@ -368,10 +390,6 @@ class ApiRouteSecurityClassificationTest {
             SecurityClassification.PROTECTED_EXECUTE,
             ApiPermission.STAFF_PROCESSING_JOB_REPAIR_EXECUTE));
   }
-
-  // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
-  // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the
-  // opaque expiring token, not by any request authority field.
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while
   // its sibling minting/read order-journey routes remain permission-protected. Scope is proven by the

@@ -23,7 +23,15 @@ class TrustedGatewayHeaderStripArtifactTest {
       "X-OrderPilot-Gateway-Nonce",
       "X-OrderPilot-Gateway-Signature",
       "X-OrderPilot-Actor-Signature",
-      "X-OrderPilot-Actor-Timestamp");
+      "X-OrderPilot-Actor-Timestamp",
+      "X-OrderPilot-Gateway-Key",
+      "X-OrderPilot-Control-Credential",
+      "X-OrderPilot-Control-Audience",
+      "X-OrderPilot-Control-Timestamp",
+      "X-OrderPilot-Control-Nonce",
+      "X-OrderPilot-Control-Signature-Version",
+      "X-OrderPilot-Control-Content-SHA256",
+      "X-OrderPilot-Control-Signature");
 
   @Test
   void gatewayHeaderStripArtifactMentionsAndClearsTrustedAuthorityHeaders() throws Exception {
@@ -37,6 +45,13 @@ class TrustedGatewayHeaderStripArtifactTest {
 
     for (String header : TRUSTED_HEADERS) {
       assertThat(artifact).contains(header);
+    }
+    for (String header : TRUSTED_HEADERS.stream()
+        .filter(header -> header.startsWith("X-OrderPilot-Control-"))
+        .toList()) {
+      assertThat(countOccurrences(artifact, "proxy_set_header " + header + " \"\";"))
+          .as(header + " is stripped on both public request legs")
+          .isEqualTo(2);
     }
 
     assertThat(artifact)
@@ -90,5 +105,15 @@ class TrustedGatewayHeaderStripArtifactTest {
         .doesNotContain("a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517")
         .doesNotContain("change-me")
         .doesNotContain("password");
+  }
+
+  private static int countOccurrences(String value, String token) {
+    int count = 0;
+    int index = 0;
+    while ((index = value.indexOf(token, index)) >= 0) {
+      count++;
+      index += token.length();
+    }
+    return count;
   }
 }

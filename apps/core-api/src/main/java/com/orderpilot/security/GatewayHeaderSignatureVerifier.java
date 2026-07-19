@@ -14,6 +14,13 @@ final class GatewayHeaderSignatureVerifier {
   static final String NONCE_HEADER = "X-OrderPilot-Gateway-Nonce";
   static final String VERSION_HEADER = GatewayV2Canonical.VERSION_HEADER;
   static final String CONTENT_SHA256_HEADER = GatewayV2Canonical.CONTENT_SHA256_HEADER;
+  // P1-E: the historical gateway "control" key selector is retired. Control-plane credentials use
+  // the separate OPERANT_CONTROL_V1 protocol; any request that tries to mint STAFF_CONTROL_* through
+  // the browser-gateway signature path fails closed.
+  static final String KEY_ID_HEADER = "X-OrderPilot-Gateway-Key";
+  static final String KEY_ID_GATEWAY = "gateway";
+  static final String KEY_ID_CONTROL = "control";
+  private static final String CONTROL_PERMISSION_PREFIX = "STAFF_CONTROL_";
 
   private final byte[] sharedSecretKey;
   private final long maxSkewSeconds;
@@ -32,7 +39,8 @@ final class GatewayHeaderSignatureVerifier {
   }
 
   boolean verify(HttpServletRequest request) {
-    if (sharedSecretKey == null) {
+    byte[] verifyingKey = verifyingKeyFor(request);
+    if (verifyingKey == null) {
       return false;
     }
     String tenantId = requiredHeader(request, TENANT_HEADER);
@@ -103,7 +111,10 @@ final class GatewayHeaderSignatureVerifier {
     } catch (IllegalArgumentException ex) {
       return false;
     }
-    if (!SignedActorVerifier.matchesHmacHex(sharedSecretKey, canonical, signature)) {
+    if (!SignedActorVerifier.matchesHmacHex(verifyingKey, canonical, signature)) {
+      return false;
+    }
+    if (!permissionsAllowedForGateway(permissions)) {
       return false;
     }
     // Single-use admission runs only after the signature and freshness checks pass, so a forged or
@@ -111,6 +122,31 @@ final class GatewayHeaderSignatureVerifier {
     // of the same fresh, signed request is rejected here even though its signature is valid.
     return replayAdmissionStore.admitFirstUse(
         tenantId, actorId, nonce, Duration.ofSeconds(Math.max(1L, maxSkewSeconds * 2)));
+  }
+
+  /** Resolve the verifying secret from the key-id header; unknown or unconfigured keys fail closed. */
+  private byte[] verifyingKeyFor(HttpServletRequest request) {
+    String keyId = request.getHeader(KEY_ID_HEADER);
+    if (keyId == null || keyId.isBlank() || KEY_ID_GATEWAY.equals(keyId)) {
+      return sharedSecretKey;
+    }
+    if (KEY_ID_CONTROL.equals(keyId)) {
+      return null;
+    }
+    return null;
+  }
+
+  private boolean permissionsAllowedForGateway(String permissions) {
+    for (String permission : permissions.split(",")) {
+      String trimmed = permission.trim();
+      if (trimmed.isEmpty()) {
+        continue;
+      }
+      if (trimmed.startsWith(CONTROL_PERMISSION_PREFIX)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -125,7 +161,7 @@ final class GatewayHeaderSignatureVerifier {
       String permissions,
       long timestampEpoch,
       String nonce) {
-    // Compatibility shim used by older unit tests during migration — rebuilds v2 empty-body form.
+    // Compatibility shim used by older unit tests during migration - rebuilds v2 empty-body form.
     String rawQuery = request.getQueryString() == null ? "" : request.getQueryString();
     return GatewayV2Canonical.build(
         request.getMethod(),
