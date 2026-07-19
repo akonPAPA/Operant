@@ -1,5 +1,18 @@
 import { type UploadCapability, uploadCapability } from "../lib/upload-capability.ts";
 
+/**
+ * WP1 — shell-facing tenant navigation view.
+ *
+ * This file is the backward-compatible grouped view consumed by `DashboardShell` and the BFF
+ * transport contract test. The rich single source of truth (access plane, capability, aliases,
+ * palette visibility, breadcrumbs) lives in `navigation-registry.ts`. `navigation-registry.test.mjs`
+ * asserts these two stay consistent (every primary href here is a TENANT primary destination there),
+ * so duplicate destinations cannot silently reappear. Duplicate entries removed in WP1:
+ *   - "Business Value" -> /analytics   (duplicate of "Analytics")
+ *   - "Bot Conversations" -> /bot/conversations (legacy alias of "/bot-conversations")
+ *   - "Audit" -> /audit                (legacy alias of the canonical "/audit-log")
+ */
+
 export type NavigationItem = {
   label: string;
   href: string;
@@ -85,8 +98,7 @@ const baseNavigationGroups: NavigationGroup[] = [
       { label: "Commerce Intelligence", href: "/commerce-intelligence" },
       { label: "Runtime Control Telemetry", href: "/runtime-control" },
       { label: "AI Work Assistant", href: "/ai-work" },
-      { label: "Reconciliation", href: "/reconciliation" },
-      { label: "Business Value", href: "/analytics" }
+      { label: "Reconciliation", href: "/reconciliation" }
     ]
   },
   {
@@ -96,7 +108,6 @@ const baseNavigationGroups: NavigationGroup[] = [
     items: [
       { label: "Channels", href: "/channels" },
       { label: "Bot / Conversations", href: "/bot-conversations" },
-      { label: "Bot Conversations", href: "/bot/conversations" },
       { label: "Messenger Bridge", href: "/messenger-bridge" },
       { label: "Channel Identities", href: "/channel-identities" },
       { label: "Inbound Events", href: "/inbound-events" },
@@ -112,8 +123,7 @@ const baseNavigationGroups: NavigationGroup[] = [
     items: [
       { label: "Integrations", href: "/integrations" },
       { label: "Sync Events", href: "/sync-events" },
-      { label: "Audit", href: "/audit" },
-      { label: "Audit / Security", href: "/audit-log" },
+      { label: "Audit / Security", href: "/audit-log" }
     ]
   },
   {
