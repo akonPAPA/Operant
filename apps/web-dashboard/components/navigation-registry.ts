@@ -125,11 +125,11 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
     paletteVisible: false,
     showInPrimaryNav: false
   }),
-  d({ id: "processing-jobs", path: "/processing-jobs", label: "Processing Jobs", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
+  d({ id: "processing-jobs", path: "/processing-jobs", label: "Processing Jobs", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
 
   // --- Work Queue (WQ) ---
   d({ id: "validation-review", path: "/validation-review", label: "Validation Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
-  d({ id: "exception-cockpit", path: "/exception-cockpit", label: "Exception Cockpit", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "exception-cockpit", path: "/exception-cockpit", label: "Exception Cockpit", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "conversion-review", path: "/conversion-review", label: "Conversion Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "quote-review", path: "/quote-review", label: "Quote Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "review-origin-drafts", path: "/workspace/review-drafts", label: "Review-Origin Drafts", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_VALIDATION" }),
@@ -137,7 +137,7 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
 
   // --- Transactions (TX) ---
   d({ id: "quotes", path: "/quotes", label: "Draft Quotes", section: "Transactions", sectionCode: "TX", capability: "VIEW_QUOTES" }),
-  d({ id: "orders", path: "/orders", label: "Draft Orders", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "orders", path: "/orders", label: "Draft Orders", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "draft-quote-review", path: "/workspace/draft-quotes", label: "Draft Quote Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "draft-order-review", path: "/workspace/draft-orders", label: "Draft Order Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "order-journey", path: "/order-journey", label: "Order Journey", section: "Transactions", sectionCode: "TX", capability: "VIEW_ANALYTICS" }),
@@ -176,12 +176,12 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   d({ id: "reconciliation", path: "/reconciliation", label: "Reconciliation", section: "Intelligence", sectionCode: "AI", capability: "VIEW_ANALYTICS" }),
 
   // --- Channels (CH) --- (`/bot/conversations` is a legacy alias of `/bot-conversations`)
-  d({ id: "channels", path: "/channels", label: "Channels", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "channels", path: "/channels", label: "Channels", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "bot-conversations", path: "/bot-conversations", label: "Bot / Conversations", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT", aliases: ["/bot/conversations"] }),
   d({ id: "messenger-bridge", path: "/messenger-bridge", label: "Messenger Bridge", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
   d({ id: "channel-identities", path: "/channel-identities", label: "Channel Identities", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
   d({ id: "inbound-events", path: "/inbound-events", label: "Inbound Events", section: "Channels", sectionCode: "CH", capability: "VIEW_DOCUMENTS" }),
-  d({ id: "webhook-events", path: "/webhook-events", label: "Webhook Events", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "webhook-events", path: "/webhook-events", label: "Webhook Events", section: "Channels", sectionCode: "CH", capability: "VIEW_CONFIGURATION", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "bot-runtime", path: "/bot-runtime", label: "Bot Runtime", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT" }),
   d({ id: "bot-settings", path: "/bot-settings", label: "Bot Settings", section: "Channels", sectionCode: "CH", capability: "VIEW_BOT" }),
 
@@ -199,7 +199,7 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
     paletteVisible: false,
     showInPrimaryNav: false
   }),
-  d({ id: "sync-events", path: "/sync-events", label: "Sync Events", section: "Control Center", sectionCode: "CT", capability: "VIEW_CONFIGURATION" }),
+  d({ id: "sync-events", path: "/sync-events", label: "Sync Events", section: "Control Center", sectionCode: "CT", capability: "VIEW_CONFIGURATION", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({
     id: "audit",
     path: "/audit-log",

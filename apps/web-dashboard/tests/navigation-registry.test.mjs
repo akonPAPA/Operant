@@ -159,6 +159,12 @@ test("unsupported destinations are never offered in primary nav or palette", () 
   assert.equal(primary.includes("/imports"), false);
   assert.equal(primary.includes("/audit-log"), false);
   assert.equal(primary.includes("/integrations"), false);
+  assert.equal(primary.includes("/orders"), false);
+  assert.equal(primary.includes("/exception-cockpit"), false);
+  assert.equal(primary.includes("/channels"), false);
+  assert.equal(primary.includes("/webhook-events"), false);
+  assert.equal(primary.includes("/processing-jobs"), false);
+  assert.equal(primary.includes("/sync-events"), false);
   assert.equal(palette.includes("/extractions"), false);
   assert.equal(palette.includes("/audit-log"), false);
   assert.equal(palette.includes("/integrations"), false);

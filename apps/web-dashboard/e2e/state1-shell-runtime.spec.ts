@@ -401,11 +401,11 @@ test.describe("first-five-minutes tenant journey", () => {
     await expect(page.getByText(/tenant scoped/i)).toBeVisible();
 
     await openWithCtrlK(page);
-    await searchInput(page).fill("Reconciliation");
-    await expect(page.getByRole("option", { name: /Reconciliation/i })).toHaveCount(1);
+    await searchInput(page).fill("Validation Review");
+    await expect(page.getByRole("option", { name: /Validation Review/i })).toHaveCount(1);
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(`${LOCAL_APP}/reconciliation`);
-    await expect(page.getByRole("heading", { level: 1, name: "Reconciliation" })).toBeVisible();
+    await expect(page).toHaveURL(`${LOCAL_APP}/validation-review`);
+    await expect(page.getByRole("heading", { level: 1, name: "Validation Review" })).toBeVisible();
 
     await page.goto(`${LOCAL_APP}/quote-review`);
     await expect(page.getByRole("heading", { level: 1, name: "Quote Review" })).toBeVisible();
