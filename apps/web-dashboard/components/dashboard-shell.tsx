@@ -3,23 +3,38 @@ import { productBrand } from "@/lib/brand";
 import { navigationGroupsForUploadCapability } from "./navigation";
 import { breadcrumbTrailForTitle, paletteDestinations } from "./navigation-registry.ts";
 import { CommandPalette, type PaletteEntry } from "./command-palette.tsx";
+import { loadUiCapabilityProjection } from "@/lib/server/load-ui-capability-projection.server";
+import { offerFilterCapabilities } from "@/lib/ui-capability-model";
 
-export function DashboardShell({
+/**
+ * Tenant operator shell.
+ *
+ * Capability projection is loaded via a request-safe path (trusted public-origin self-fetch for
+ * memory sessions; in-process handler for Redis) so local memory sessions stay consistent with
+ * authentication. Projection failure (UNAVAILABLE) fail-closes gated destinations but keeps
+ * universally safe (null-capability) routes. UI offer filtering is never authorization — Core
+ * re-checks every request.
+ *
+ * Calling headers()/capability resolution makes dashboard routes request-dynamic; that is the
+ * intentional security/session-consistency trade-off for State 1.
+ */
+export async function DashboardShell({
   title,
   children,
   inspector
 }: Readonly<{ title: string; children: React.ReactNode; inspector?: React.ReactNode }>) {
-  const navigationGroups = navigationGroupsForUploadCapability();
+  const projection = await loadUiCapabilityProjection();
+  const offerCapabilities = offerFilterCapabilities(projection);
+  const navigationGroups = navigationGroupsForUploadCapability(undefined, offerCapabilities);
   const breadcrumbs = breadcrumbTrailForTitle(title);
-  // Tenant-plane, palette-visible destinations resolved on the server; passed to the client palette
-  // as plain data. UI visibility is not authorization — Core still authorizes every route.
-  const paletteEntries: PaletteEntry[] = paletteDestinations("TENANT").map((dest) => ({
+  const paletteEntries: PaletteEntry[] = paletteDestinations("TENANT", offerCapabilities).map((dest) => ({
     id: dest.id,
     path: dest.path,
     label: dest.label,
     section: dest.section,
     searchAliases: dest.searchAliases
   }));
+  const showDegradedNotice = projection.status === "UNAVAILABLE";
 
   return (
     <div className="shell">
@@ -77,6 +92,12 @@ export function DashboardShell({
             <span className="tenant-pill system-ok">External execution disabled</span>
           </div>
         </header>
+        {showDegradedNotice ? (
+          <p className="risk-note shell-capability-notice" role="status">
+            Some workspace destinations are temporarily unavailable while access details cannot be confirmed.
+            Universal destinations remain available. Direct access is still authorized by the server.
+          </p>
+        ) : null}
         <section className={inspector ? "content content-with-inspector" : "content"}>
           <div className="content-main">{children}</div>
           {inspector ? <aside className="right-inspector">{inspector}</aside> : null}

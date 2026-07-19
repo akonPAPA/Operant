@@ -11,13 +11,13 @@ const apiClient = readFileSync(join(root, "lib", "validation-review-api.ts"), "u
 const botApiClient = readFileSync(join(root, "lib", "bot-runtime-api.ts"), "utf8");
 const botPage = readFileSync(join(root, "app", "(dashboard)", "bot-conversations", "page.tsx"), "utf8");
 const botWorkspace = readFileSync(join(root, "components", "bot-conversations-workspace.tsx"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 
 test("validation review routes are present in dashboard navigation", () => {
   assert.equal(existsSync(join(root, "app", "(dashboard)", "validation-review", "page.tsx")), true);
   assert.equal(existsSync(join(root, "app", "(dashboard)", "validation-review", "[reviewCaseId]", "page.tsx")), true);
   assert.match(navigation, /label: "Validation Review"/);
-  assert.match(navigation, /href: "\/validation-review"/);
+  assert.match(navigation, /path: "\/validation-review"/);
 });
 
 test("review detail renders validation issues and risk sections", () => {

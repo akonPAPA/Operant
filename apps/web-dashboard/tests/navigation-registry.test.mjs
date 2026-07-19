@@ -37,8 +37,8 @@ test("tenant primary navigation never surfaces staff or customer planes", () => 
   assert.equal(paths.includes("/public/order-tracking"), false);
 });
 
-test("staff support destinations are STAFF plane, hidden from nav and palette (plane separation)", () => {
-  const support = navigationDestinations.filter((dest) => dest.plane === "STAFF");
+test("staff support destinations are OPERANT_STAFF plane, hidden from nav and palette (plane separation)", () => {
+  const support = navigationDestinations.filter((dest) => dest.plane === "OPERANT_STAFF");
   assert.ok(support.length >= 1, "expected at least one staff destination");
   for (const dest of support) {
     assert.equal(dest.showInPrimaryNav, false, `${dest.path} must not be in tenant primary nav`);
@@ -65,7 +65,10 @@ test("resolveCanonicalPath returns null for unknown paths", () => {
 
 test("every destination declares plane, capability and availability metadata", () => {
   for (const dest of navigationDestinations) {
-    assert.ok(["TENANT", "CUSTOMER", "SERVICE", "STAFF"].includes(dest.plane), `${dest.id} plane`);
+    assert.ok(
+      ["TENANT", "EXTERNAL_CUSTOMER", "SERVICE", "OPERANT_STAFF", "PUBLIC", "INTERNAL_ONLY"].includes(dest.plane),
+      `${dest.id} plane`
+    );
     assert.ok(dest.capability === null || typeof dest.capability === "string", `${dest.id} capability`);
     assert.ok(["AVAILABLE", "UPLOAD_CAPABILITY_GATED"].includes(dest.availability), `${dest.id} availability`);
     assert.equal(typeof dest.section, "string");
@@ -78,10 +81,10 @@ test("capability-aware filtering offers null-capability items and gates capabili
   const offered = tenantPrimaryDestinations(none).map((dest) => dest.path);
   // Command Center requires no capability and is always offered.
   assert.equal(offered.includes("/command-center"), true);
-  // Quote Review requires REVIEW_READ and must be withheld when the capability is absent.
+  // Quote Review requires VIEW_REVIEW_QUEUE and must be withheld when the capability is absent.
   assert.equal(offered.includes("/quote-review"), false);
 
-  const withReview = new Set(["REVIEW_READ"]);
+  const withReview = new Set(["VIEW_REVIEW_QUEUE"]);
   const offeredWithReview = tenantPrimaryDestinations(withReview).map((dest) => dest.path);
   assert.equal(offeredWithReview.includes("/quote-review"), true);
   assert.equal(offeredWithReview.includes("/command-center"), true);

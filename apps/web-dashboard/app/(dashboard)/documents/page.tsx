@@ -5,9 +5,10 @@ import Link from "next/link";
 
 export default async function Page() {
   const { data: documents, error, code } = await getIntakeDocuments();
-  // Distinguish authorization denial from a dependency/read failure (shared state language).
+  // Distinguish authorization denial, contract drift, and dependency/read failure.
   // `error`/`code` come from the redacted public-error mapper — never a raw Core body/stack/URL.
   const accessDenied = code === "ACCESS_DENIED" || code === "AUTH_REQUIRED";
+  const contractError = code === "CONTRACT_ERROR";
 
   return (
     <DashboardShell title="Documents">
@@ -17,6 +18,16 @@ export default async function Page() {
       </section>
       {error && accessDenied ? (
         <AccessDeniedState description="You do not have access to tenant document intake." />
+      ) : error && contractError ? (
+        <ErrorState
+          title="Response could not be understood"
+          description="The documents response did not match the expected contract. No raw server body is shown."
+          action={
+            <Link className="secondary-button table-link-button" href="/documents">
+              Retry
+            </Link>
+          }
+        />
       ) : error ? (
         <ErrorState
           title="Backend data unavailable"

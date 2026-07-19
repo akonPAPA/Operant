@@ -1,5 +1,6 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { IntakeUploadForm } from "@/components/intake-upload-form";
+import { UnavailableState } from "@/components/page-states";
 import { isUploadAvailable, uploadCapability, uploadUnavailableMessage } from "@/lib/upload-capability";
 
 export default function Page() {
@@ -7,10 +8,11 @@ export default function Page() {
   if (!isUploadAvailable(capability)) {
     return (
       <DashboardShell title="Document Upload">
-        <section className="panel">
-          <h2>Not available</h2>
-          <p>{uploadUnavailableMessage()}</p>
-        </section>
+        <UnavailableState
+          title="Upload not available"
+          description={uploadUnavailableMessage()}
+          reason="Manual upload is disabled for this deployment profile. Intake continues through supported channel paths when configured."
+        />
       </DashboardShell>
     );
   }

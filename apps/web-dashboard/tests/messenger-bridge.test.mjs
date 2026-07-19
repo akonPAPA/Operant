@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "channel-bot-api.ts"), "utf8");
 const page = readFileSync(join(root, "app", "(dashboard)", "messenger-bridge", "page.tsx"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 
 test("messenger bridge client uses the read-only bridged-events endpoint with tenant scoping", () => {
   assert.match(apiClient, /getChannelBotEvents/);

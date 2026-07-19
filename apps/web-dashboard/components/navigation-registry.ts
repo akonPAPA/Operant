@@ -14,9 +14,32 @@
  *   CUSTOMER, and SERVICE planes are physically separate and are never mixed into tenant nav.
  */
 
-export type AccessPlane = "TENANT" | "CUSTOMER" | "SERVICE" | "STAFF";
+/**
+ * Access-plane classification for every destination.
+ * Tenant shell may only offer TENANT-plane destinations.
+ */
+export type AccessPlane =
+  | "TENANT"
+  | "EXTERNAL_CUSTOMER"
+  | "SERVICE"
+  | "OPERANT_STAFF"
+  | "PUBLIC"
+  | "INTERNAL_ONLY";
+
+/** @deprecated Alias retained for older tests/comments — prefer EXTERNAL_CUSTOMER. */
+export type LegacyCustomerPlane = "CUSTOMER";
+/** @deprecated Alias retained for older tests/comments — prefer OPERANT_STAFF. */
+export type LegacyStaffPlane = "STAFF";
 
 export type NavigationAvailability = "AVAILABLE" | "UPLOAD_CAPABILITY_GATED";
+
+/** Allowlisted UI capability required to *offer* this destination (never authorization). */
+export type NavigationUiCapability =
+  | "VIEW_ANALYTICS"
+  | "VIEW_DOCUMENTS"
+  | "VIEW_REVIEW_QUEUE"
+  | "VIEW_CONFIGURATION"
+  | "PERFORM_REVIEW_ACTION";
 
 export type NavigationDestination = {
   /** Stable identifier (kebab-case), unique across the registry. */
@@ -32,10 +55,10 @@ export type NavigationDestination = {
   /** Access plane that owns this destination. */
   plane: AccessPlane;
   /**
-   * Required backend capability (metadata only — Core enforces). `null` means any authenticated
-   * session of this plane may be *offered* the destination; Core still authorizes the request.
+   * Required UI capability for offer filtering (metadata only — Core enforces).
+   * `null` means any authenticated session of this plane may be *offered* the destination.
    */
-  capability: string | null;
+  capability: NavigationUiCapability | null;
   /** Availability gate. Most destinations are always available; upload is deployment-gated. */
   availability: NavigationAvailability;
   /** Legacy/duplicate paths that resolve to this canonical destination. */
@@ -56,7 +79,7 @@ export type NavigationDestination = {
 const destinations: readonly NavigationDestination[] = Object.freeze([
   // --- Command Center (CC) ---
   d({ id: "command-center", path: "/command-center", label: "Command Center", section: "Command Center", sectionCode: "CC" }),
-  d({ id: "analytics", path: "/analytics", label: "Analytics", section: "Command Center", sectionCode: "CC", capability: "ANALYTICS_READ", searchAliases: ["business value", "roi", "metrics", "kpi"] }),
+  d({ id: "analytics", path: "/analytics", label: "Analytics", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS", searchAliases: ["business value", "roi", "metrics", "kpi"] }),
   d({ id: "pilot-readiness", path: "/pilot-readiness", label: "Pilot Readiness", section: "Command Center", sectionCode: "CC" }),
   d({ id: "pilot-evidence-report", path: "/pilot-readiness/evidence-report", label: "Pilot Evidence Report", section: "Command Center", sectionCode: "CC" }),
   d({ id: "pilot-demo-scenarios", path: "/pilot-readiness/demo-scenarios", label: "Pilot Demo Scenarios", section: "Command Center", sectionCode: "CC" }),
@@ -71,18 +94,18 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   d({ id: "processing-jobs", path: "/processing-jobs", label: "Processing Jobs", section: "Inbox", sectionCode: "IN" }),
 
   // --- Work Queue (WQ) ---
-  d({ id: "validation-review", path: "/validation-review", label: "Validation Review", section: "Work Queue", sectionCode: "WQ", capability: "REVIEW_READ" }),
-  d({ id: "exception-cockpit", path: "/exception-cockpit", label: "Exception Cockpit", section: "Work Queue", sectionCode: "WQ", capability: "REVIEW_READ" }),
-  d({ id: "conversion-review", path: "/conversion-review", label: "Conversion Review", section: "Work Queue", sectionCode: "WQ", capability: "REVIEW_READ" }),
-  d({ id: "quote-review", path: "/quote-review", label: "Quote Review", section: "Work Queue", sectionCode: "WQ", capability: "REVIEW_READ" }),
-  d({ id: "review-origin-drafts", path: "/workspace/review-drafts", label: "Review-Origin Drafts", section: "Work Queue", sectionCode: "WQ", capability: "REVIEW_READ" }),
-  d({ id: "rfq-handoffs", path: "/channels/rfq-handoffs", label: "RFQ Handoffs", section: "Work Queue", sectionCode: "WQ", capability: "REVIEW_READ" }),
+  d({ id: "validation-review", path: "/validation-review", label: "Validation Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "exception-cockpit", path: "/exception-cockpit", label: "Exception Cockpit", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "conversion-review", path: "/conversion-review", label: "Conversion Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "quote-review", path: "/quote-review", label: "Quote Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "review-origin-drafts", path: "/workspace/review-drafts", label: "Review-Origin Drafts", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "rfq-handoffs", path: "/channels/rfq-handoffs", label: "RFQ Handoffs", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
 
   // --- Transactions (TX) ---
   d({ id: "quotes", path: "/quotes", label: "Draft Quotes", section: "Transactions", sectionCode: "TX" }),
   d({ id: "orders", path: "/orders", label: "Draft Orders", section: "Transactions", sectionCode: "TX" }),
-  d({ id: "draft-quote-review", path: "/workspace/draft-quotes", label: "Draft Quote Review", section: "Transactions", sectionCode: "TX", capability: "REVIEW_READ" }),
-  d({ id: "draft-order-review", path: "/workspace/draft-orders", label: "Draft Order Review", section: "Transactions", sectionCode: "TX", capability: "REVIEW_READ" }),
+  d({ id: "draft-quote-review", path: "/workspace/draft-quotes", label: "Draft Quote Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
+  d({ id: "draft-order-review", path: "/workspace/draft-orders", label: "Draft Order Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "order-journey", path: "/order-journey", label: "Order Journey", section: "Transactions", sectionCode: "TX" }),
 
   // --- Catalog (CA) ---
@@ -116,12 +139,12 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   // --- Settings (ST) ---
   d({ id: "settings", path: "/settings", label: "Settings", section: "Settings", sectionCode: "ST" }),
 
-  // --- STAFF plane (Operant Support & Maintenance) — never surfaced in tenant nav or palette ---
-  d({ id: "internal-support", path: "/internal-support", label: "Internal Support", section: "Operant Support", sectionCode: "SP", plane: "STAFF", capability: "STAFF_INCIDENT_READ", paletteVisible: false, showInPrimaryNav: false }),
-  d({ id: "internal-support-operations", path: "/internal-support/operations", label: "Support Operations", section: "Operant Support", sectionCode: "SP", plane: "STAFF", capability: "STAFF_INCIDENT_READ", paletteVisible: false, showInPrimaryNav: false }),
+  // --- OPERANT_STAFF plane (Operant Support & Maintenance) — never surfaced in tenant nav or palette ---
+  d({ id: "internal-support", path: "/internal-support", label: "Internal Support", section: "Operant Support", sectionCode: "SP", plane: "OPERANT_STAFF", paletteVisible: false, showInPrimaryNav: false }),
+  d({ id: "internal-support-operations", path: "/internal-support/operations", label: "Support Operations", section: "Operant Support", sectionCode: "SP", plane: "OPERANT_STAFF", paletteVisible: false, showInPrimaryNav: false }),
 
-  // --- CUSTOMER plane (buyer-safe) — never surfaced in tenant nav or palette ---
-  d({ id: "public-order-tracking", path: "/public/order-tracking", label: "Order Tracking", section: "Customer Portal", sectionCode: "PT", plane: "CUSTOMER", paletteVisible: false, showInPrimaryNav: false })
+  // --- EXTERNAL_CUSTOMER plane (buyer-safe) — never surfaced in tenant nav or palette ---
+  d({ id: "public-order-tracking", path: "/public/order-tracking", label: "Order Tracking", section: "Customer Portal", sectionCode: "PT", plane: "EXTERNAL_CUSTOMER", paletteVisible: false, showInPrimaryNav: false })
 ]);
 
 /**
@@ -135,7 +158,7 @@ function d(input: {
   section: string;
   sectionCode: string;
   plane?: AccessPlane;
-  capability?: string | null;
+  capability?: NavigationUiCapability | null;
   availability?: NavigationAvailability;
   aliases?: string[];
   searchAliases?: string[];
@@ -193,8 +216,9 @@ export function destinationForPath(path: string): NavigationDestination | null {
 
 /**
  * Tenant primary navigation destinations. When `capabilities` is provided, destinations whose
- * required capability is absent are omitted from what is *offered* (never a security boundary —
+ * required UI capability is absent are omitted from what is *offered* (never a security boundary —
  * Core still authorizes). When omitted, all tenant primary destinations are returned.
+ * Unknown required capabilities are fail-closed (not offered).
  */
 export function tenantPrimaryDestinations(
   capabilities?: ReadonlySet<string>
@@ -224,6 +248,43 @@ export function paletteDestinations(
     }
     return true;
   });
+}
+
+/**
+ * Build section-grouped navigation from the registry (single source of truth).
+ * Optional capability filter applies offer filtering only.
+ */
+export function tenantNavigationGroupsFromRegistry(
+  capabilities?: ReadonlySet<string>
+): Array<{
+  label: string;
+  href: string;
+  code: string;
+  items: Array<{ label: string; href: string }>;
+}> {
+  const offered = tenantPrimaryDestinations(capabilities);
+  const groups: Array<{
+    label: string;
+    href: string;
+    code: string;
+    items: Array<{ label: string; href: string }>;
+  }> = [];
+  const indexBySection = new Map<string, number>();
+  for (const dest of offered) {
+    let index = indexBySection.get(dest.section);
+    if (index === undefined) {
+      index = groups.length;
+      indexBySection.set(dest.section, index);
+      groups.push({
+        label: dest.section,
+        href: dest.path,
+        code: dest.sectionCode,
+        items: []
+      });
+    }
+    groups[index].items.push({ label: dest.label, href: dest.path });
+  }
+  return groups.filter((group) => group.items.length > 0);
 }
 
 export type Breadcrumb = { label: string; path?: string };

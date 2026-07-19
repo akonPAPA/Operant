@@ -5,14 +5,25 @@ import Link from "next/link";
 
 export default async function Page() {
   const { data: events, error, code } = await getInboundEvents();
-  // Authorization denial is distinct from a dependency/read failure. `error`/`code` are already
-  // redacted public values — no raw Core body, stack trace, internal URL, or identifier is rendered.
+  // Authorization denial, contract drift, and dependency failure stay distinct.
+  // `error`/`code` are already redacted public values — no raw Core body is rendered.
   const accessDenied = code === "ACCESS_DENIED" || code === "AUTH_REQUIRED";
+  const contractError = code === "CONTRACT_ERROR";
 
   return (
     <DashboardShell title="Inbound Events">
       {error && accessDenied ? (
         <AccessDeniedState description="You do not have access to tenant inbound events." />
+      ) : error && contractError ? (
+        <ErrorState
+          title="Response could not be understood"
+          description="The inbound-events response did not match the expected contract. No raw server body is shown."
+          action={
+            <Link className="secondary-button table-link-button" href="/inbound-events">
+              Retry
+            </Link>
+          }
+        />
       ) : error ? (
         <ErrorState
           title="Backend data unavailable"

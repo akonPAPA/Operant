@@ -26,12 +26,25 @@ export type TenantServerNullableJsonResult<T> = {
   correlationId?: string;
 };
 
+function parseJsonOrContractError(text: string): { ok: true; value: unknown } | { ok: false } {
+  if (!text) {
+    return { ok: true, value: null };
+  }
+  try {
+    return { ok: true, value: JSON.parse(text) as unknown };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /** Server Component / RSC read path: in-process BFF only (no relative `/api/bff` HTTP). */
 export async function tenantServerGetJson<T>(
-  path: string
+  path: string,
+  isValid?: (value: unknown) => value is T
 ): Promise<TenantServerJsonResult<T>> {
   try {
     const response = await serverTenantFetch(path, { cache: "no-store" });
+    const text = await response.text();
     if (!response.ok) {
       return {
         data: [] as T,
@@ -39,7 +52,22 @@ export async function tenantServerGetJson<T>(
         code: publicCodeForStatus(response.status)
       };
     }
-    return { data: (await response.json()) as T };
+    const parsed = parseJsonOrContractError(text);
+    if (!parsed.ok) {
+      return {
+        data: [] as T,
+        error: "The server response could not be understood.",
+        code: "CONTRACT_ERROR"
+      };
+    }
+    if (isValid && !isValid(parsed.value)) {
+      return {
+        data: [] as T,
+        error: "The server response could not be understood.",
+        code: "CONTRACT_ERROR"
+      };
+    }
+    return { data: parsed.value as T };
   } catch (error) {
     // F03: never surface raw error.message. Bounded message + code; technical detail is logged
     // (redacted) server-side only.
@@ -54,7 +82,8 @@ export async function tenantServerGetJson<T>(
 }
 
 export async function tenantServerGetJsonNullable<T>(
-  path: string
+  path: string,
+  isValid?: (value: unknown) => value is T
 ): Promise<TenantServerNullableJsonResult<T>> {
   try {
     const response = await serverTenantFetch(path, { cache: "no-store" });
@@ -66,8 +95,25 @@ export async function tenantServerGetJsonNullable<T>(
         code: publicCodeForStatus(response.status)
       };
     }
-    const data = text ? (JSON.parse(text) as T) : null;
-    return { data };
+    const parsed = parseJsonOrContractError(text);
+    if (!parsed.ok) {
+      return {
+        data: null,
+        error: "The server response could not be understood.",
+        code: "CONTRACT_ERROR"
+      };
+    }
+    if (parsed.value === null) {
+      return { data: null };
+    }
+    if (isValid && !isValid(parsed.value)) {
+      return {
+        data: null,
+        error: "The server response could not be understood.",
+        code: "CONTRACT_ERROR"
+      };
+    }
+    return { data: parsed.value as T };
   } catch (error) {
     const publicError = toPublicServerError(error);
     return {

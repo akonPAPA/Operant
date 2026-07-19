@@ -25,11 +25,13 @@ for (const [name, page] of [
     assert.match(page, /\bAccessDeniedState\b/);
   });
 
-  test(`${name}: distinguishes access denial from a dependency failure`, () => {
+  test(`${name}: distinguishes access denial, contract drift, and dependency failure`, () => {
     assert.match(page, /code === "ACCESS_DENIED"/);
     assert.match(page, /code === "AUTH_REQUIRED"/);
+    assert.match(page, /code === "CONTRACT_ERROR"/);
     // The denied branch renders AccessDeniedState, not the generic ErrorState.
     assert.match(page, /accessDenied\s*\?[\s\S]*?<AccessDeniedState/);
+    assert.match(page, /contractError\s*\?[\s\S]*?Response could not be understood/);
   });
 
   test(`${name}: retry is an idempotent GET navigation, not a mutation control`, () => {

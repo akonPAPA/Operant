@@ -16,12 +16,26 @@ export type {
   IntakeApiResult
 } from "../intake-api.ts";
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isIntakeDocumentArray(value: unknown): value is IntakeDocument[] {
+  return Array.isArray(value) && value.every((entry) => isObjectRecord(entry) && typeof entry.id === "string");
+}
+
+function isInboundEventArray(value: unknown): value is InboundEvent[] {
+  return Array.isArray(value) && value.every((entry) => isObjectRecord(entry) && typeof entry.id === "string");
+}
+
 export function getIntakeDocuments() {
-  return tenantServerGetJson<IntakeDocument[]>("/api/v1/intake/documents");
+  return tenantServerGetJson<IntakeDocument[]>("/api/v1/intake/documents", isIntakeDocumentArray);
 }
 
 export function getIntakeDocument(id: string) {
-  return tenantServerGetJson<IntakeDocument>(`/api/v1/intake/documents/${id}`);
+  return tenantServerGetJson<IntakeDocument>(`/api/v1/intake/documents/${id}`, (value): value is IntakeDocument => {
+    return isObjectRecord(value) && typeof value.id === "string";
+  });
 }
 
 export function getIntakeMessages() {
@@ -37,5 +51,5 @@ export function getIntakeJobs() {
 }
 
 export function getInboundEvents() {
-  return tenantServerGetJson<InboundEvent[]>("/api/v1/intake/events");
+  return tenantServerGetJson<InboundEvent[]>("/api/v1/intake/events", isInboundEventArray);
 }

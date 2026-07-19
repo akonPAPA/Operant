@@ -1,16 +1,15 @@
 import { type UploadCapability, uploadCapability } from "../lib/upload-capability.ts";
+import { tenantNavigationGroupsFromRegistry } from "./navigation-registry.ts";
 
 /**
- * WP1 — shell-facing tenant navigation view.
+ * WP1/WP3 — shell-facing tenant navigation view.
  *
- * This file is the backward-compatible grouped view consumed by `DashboardShell` and the BFF
- * transport contract test. The rich single source of truth (access plane, capability, aliases,
- * palette visibility, breadcrumbs) lives in `navigation-registry.ts`. `navigation-registry.test.mjs`
- * asserts these two stay consistent (every primary href here is a TENANT primary destination there),
- * so duplicate destinations cannot silently reappear. Duplicate entries removed in WP1:
- *   - "Business Value" -> /analytics   (duplicate of "Analytics")
- *   - "Bot Conversations" -> /bot/conversations (legacy alias of "/bot-conversations")
- *   - "Audit" -> /audit                (legacy alias of the canonical "/audit-log")
+ * The navigation registry is the single source of truth. This module only:
+ * - groups registry destinations for the sidebar
+ * - applies upload availability gating
+ *
+ * Capability offer-filtering is applied by callers that pass a UI capability set into
+ * `navigationGroupsForUploadCapability` / `tenantNavigationGroupsFromRegistry`.
  */
 
 export type NavigationItem = {
@@ -26,123 +25,20 @@ export type NavigationGroup = {
   items: NavigationItem[];
 };
 
-const baseNavigationGroups: NavigationGroup[] = [
-  {
-    label: "Command Center",
-    href: "/command-center",
-    code: "CC",
-    items: [
-      { label: "Command Center", href: "/command-center" },
-      { label: "Analytics", href: "/analytics" },
-      { label: "Pilot Readiness", href: "/pilot-readiness" },
-      { label: "Pilot Evidence Report", href: "/pilot-readiness/evidence-report" },
-      { label: "Pilot Demo Scenarios", href: "/pilot-readiness/demo-scenarios" },
-      { label: "Investor Demo", href: "/demo" }
-    ]
-  },
-  {
-    label: "Inbox",
-    href: "/inbox",
-    code: "IN",
-    items: [
-      { label: "Inbox", href: "/inbox" },
-      { label: "Upload", href: "/upload" },
-      { label: "Documents", href: "/documents" },
-      { label: "Messages", href: "/messages" },
-      { label: "Extractions", href: "/extractions" },
-      { label: "Processing Jobs", href: "/processing-jobs" }
-    ]
-  },
-  {
-    label: "Work Queue",
-    href: "/validation-review",
-    code: "WQ",
-    items: [
-      { label: "Validation Review", href: "/validation-review" },
-      { label: "Exception Cockpit", href: "/exception-cockpit" },
-      { label: "Conversion Review", href: "/conversion-review" },
-      { label: "Quote Review", href: "/quote-review" },
-      { label: "Review-Origin Drafts", href: "/workspace/review-drafts" },
-      { label: "RFQ Handoffs", href: "/channels/rfq-handoffs" }
-    ]
-  },
-  {
-    label: "Transactions",
-    href: "/quotes",
-    code: "TX",
-    items: [
-      { label: "Draft Quotes", href: "/quotes" },
-      { label: "Draft Orders", href: "/orders" },
-      { label: "Draft Quote Review", href: "/workspace/draft-quotes" },
-      { label: "Draft Order Review", href: "/workspace/draft-orders" },
-      { label: "Order Journey", href: "/order-journey" }
-    ]
-  },
-  {
-    label: "Catalog",
-    href: "/products",
-    code: "CA",
-    items: [
-      { label: "Customers", href: "/customers" },
-      { label: "Products", href: "/products" },
-      { label: "Inventory", href: "/inventory" },
-      { label: "Pricing", href: "/pricing" },
-      { label: "Imports", href: "/imports" }
-    ]
-  },
-  {
-    label: "Intelligence",
-    href: "/ai-work",
-    code: "AI",
-    items: [
-      { label: "Commerce Intelligence", href: "/commerce-intelligence" },
-      { label: "Runtime Control Telemetry", href: "/runtime-control" },
-      { label: "AI Work Assistant", href: "/ai-work" },
-      { label: "Reconciliation", href: "/reconciliation" }
-    ]
-  },
-  {
-    label: "Channels",
-    href: "/channels",
-    code: "CH",
-    items: [
-      { label: "Channels", href: "/channels" },
-      { label: "Bot / Conversations", href: "/bot-conversations" },
-      { label: "Messenger Bridge", href: "/messenger-bridge" },
-      { label: "Channel Identities", href: "/channel-identities" },
-      { label: "Inbound Events", href: "/inbound-events" },
-      { label: "Webhook Events", href: "/webhook-events" },
-      { label: "Bot Runtime", href: "/bot-runtime" },
-      { label: "Bot Settings", href: "/bot-settings" }
-    ]
-  },
-  {
-    label: "Control Center",
-    href: "/integrations",
-    code: "CT",
-    items: [
-      { label: "Integrations", href: "/integrations" },
-      { label: "Sync Events", href: "/sync-events" },
-      { label: "Audit / Security", href: "/audit-log" }
-    ]
-  },
-  {
-    label: "Settings",
-    href: "/settings",
-    code: "ST",
-    items: [
-      { label: "Settings", href: "/settings" }
-    ]
-  }
-];
-
 export function navigationGroupsForUploadCapability(
-  capability: UploadCapability = uploadCapability()
+  capability: UploadCapability = uploadCapability(),
+  uiCapabilities?: ReadonlySet<string>
 ): NavigationGroup[] {
+  const groups = tenantNavigationGroupsFromRegistry(uiCapabilities).map((group) => ({
+    label: group.label,
+    href: group.href,
+    code: group.code,
+    items: group.items.map((item) => ({ label: item.label, href: item.href }))
+  }));
   if (capability === "AVAILABLE_LOCAL_DEMO") {
-    return baseNavigationGroups;
+    return groups;
   }
-  return baseNavigationGroups.map((group) => ({
+  return groups.map((group) => ({
     ...group,
     items: group.items.filter((item) => item.href !== "/upload")
   }));
