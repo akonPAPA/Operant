@@ -1,20 +1,16 @@
-document_version: 7
-updated_at: 2026-07-17T14:45:00Z
+document_version: 12
 repository: akonPAPA/Operant
 phase: 1
-branch: fix/p1d-post-merge-root-causes
-current_main_sha: 52e23746f23289b0a74f4ee5c0fccef3e2984812
-last_merged_pr: "#281"
-last_closed_capability: P1-D initial topology (merged, corrective delta pending)
-active_capability: P1-D-CORRECTIVE
-active_branch: fix/p1d-post-merge-root-causes
-active_start_sha: 52e23746f23289b0a74f4ee5c0fccef3e2984812
-active_head_sha: 52e23746f23289b0a74f4ee5c0fccef3e2984812 (corrective delta staged, uncommitted)
-next_capability: P1-E operantctl and bounded Control API (after P1-D corrective merge)
+active_capability: P1-E bounded Control API and operantctl
+next_capability: P1-F Connector Gateway protocol
+
+# This file records DURABLE capability truth only. Transient Git/PR evidence (commit SHAs, dirty
+# worktree state, staging instructions, exact-head CI results, owner-machine paths) belongs in the
+# task report, the PR body, the GitHub review, and CI runs bound to an exact remote head — not here.
+
 production_authentication:
   core_auth_mode: SIGNED_GATEWAY_HEADERS
   browser_auth_mode: BFF_OIDC_AUTHORIZATION_CODE
-  p1_c_code_status: MERGED_EXACT_HEAD_CI_PASS
   runtime_implemented: true
   login_callback_pkce_state_nonce: IMPLEMENTED
   browser_login_binding: IMPLEMENTED
@@ -23,56 +19,77 @@ production_authentication:
   bff_to_core_authority: SERVER_RESOLVED_AND_SIGNED
   liveness_route: /api/bff/health
   readiness_route: /api/bff/ready
-p1d_corrective:
-  state: IMPLEMENTED_LOCAL_VERIFIED_COMMIT_BLOCKED
-  staged_patch_digest_sha256: 6243e1124bfbba3fe350568200ab71bafb9582a12ec1b1dedb20069236cb9582
-  patch_artifact: .git/operant-recovery/p1d-interrupted/corrective-final.patch
-  root_causes_closed:
-    - executable deployment script (index mode 100755, test-asserted)
-    - bounded startup timeout validation (30..900s, default 240, fail-closed parse)
-    - compose up --wait health-gated startup, unhealthy exit propagated to systemd
-    - systemd TimeoutStartSec=960 coherent with script max 900
-    - structured ORDERPILOT_BFF_REDIS_HOST/PORT/PASSWORD replaces credential-bearing URL
-    - credential-bearing Redis URL rejected fail-closed before connection
-    - reserved-character password preserved exactly (no URL decode corruption)
-    - no password leakage in error messages (test-asserted)
-    - web-dashboard removed from data_private (BFF cannot reach PostgreSQL)
-    - redis joined application_private (BFF and Core reachability)
-    - exact network membership enforced by validator with negative mutations
-    - stateful postgres/redis resource controls (no-new-privileges, pids, mem, cpus)
-    - stop uses compose stop (no compose down, named volumes preserved)
-    - fake-Docker lifecycle fault injection (unhealthy propagation, secret non-leak)
-  verification:
-    frontend_full_suite: 745/745 PASS
-    p1d_topology_suite: 34/34 PASS
-    typecheck: PASS
-    lint: PASS
-    backend_security_package: 525/525 PASS (com.orderpilot.security.**)
-    real_compose_validate: PASS (Docker 29.6.1 / Compose v5.3.0, synthetic env, exit 0)
-  blocked_transitions:
-    - git commit (denied by .claude/settings.local.json permissions.deny)
-    - git push (denied by .claude/settings.local.json permissions.deny)
-    - gh pr create (denied by .claude/settings.local.json permissions.deny)
-reconciliation_audit_2026_07_17:
-  p1_a_config: CODE_PROVEN (backend production guards + validator tests green; frontend fail-closed config tests green)
-  p1_b_bff_boundary: CODE_PROVEN (browser-server static boundary, proxy boundary, transport isolation green)
-  p1_c_identity_planes: CODE_PROVEN (OIDC flow, session lifecycle, STAFF_*/tenant/service plane separation green)
-  p1_d_topology: CODE_PROVEN_WITH_LOCAL_CORRECTIVE (validator + negative mutations + lifecycle fault injection green; corrective delta staged)
+
+reconciliation_p1_a_d:
+  p1_a_config: CODE_PROVEN (production guards, fail-closed config, placeholder rejection)
+  p1_b_bff_boundary: CODE_PROVEN (static browser boundary, proxy boundary, transport isolation, redis credential isolation)
+  p1_c_identity_planes: CODE_PROVEN (OIDC flow, session lifecycle, STAFF/tenant/service plane separation)
+  p1_d_topology: CODE_PROVEN (exact network membership, negative mutations, lifecycle fault injection, real compose validate)
+  p1_d_merged_pr: "#282"
+
+p1e_bounded_control_read_foundation:
+  implementation_status: CODE_PROVEN by the test contract below; production runtime NOT_PROVEN
+  supported_commands:
+    server: GET/HEAD /api/v1/internal/control/{status,health,readiness,diagnostics}
+    client: version, config validate, credential import, status, health, readiness, diagnose
+  absent_commands: logs, backup, restore, upgrade, rollback
+  authority_boundaries:
+    permissions: STAFF_CONTROL_READ for status/health/readiness; STAFF_CONTROL_DIAGNOSE for diagnostics
+    route_authority_source: ApiRouteSecurityPolicy is the single source of route-to-permission truth; there is no duplicate method-authority filter
+    write_shaped_and_unknown: POST/PUT/PATCH/DELETE/TRACE, unknown sub-paths, and trailing-slash variants fail closed and never invoke the control service
+    options: CORS/preflight only; grants no control authority and no reusable authentication state
+    credential_protocol: OPERANT_CONTROL_V1 binds method, path, raw query, content type, body SHA256, audience, credential alias, timestamp, and nonce
+    registry: DISABLED is inactive with blank authority fields; ENABLED requires explicit alias, 64-hex random control secret, fixed audience, valid-from, finite future expiry, non-revoked state, allowlisted STAFF_CONTROL_* permissions, key version, and gateway/control key separation
+    key_handling: control credential material is registry-owned; no accessor returns the internal array; HMAC verification uses a defensive copy that is zeroed after use; the test fingerprint is a non-reversible SHA-256 and never the raw key
+    replay: shared gateway replay admission store with a separate control-plane/credential namespace
+    ingress: the retired X-OrderPilot-Gateway-Key control selector fails closed and is stripped at the public proxy boundary
+    plane_separation: tenant users (including tenant admins), external customers, and ordinary service accounts can never receive STAFF_CONTROL_*; a dedicated machine control credential performs only the fixed read operations in this foundation
+  runtime_bounds:
+    cli_total_deadline: one configured total operation budget bounds connect + TLS + response headers + complete bounded body read; the JDK exchange completes only when the bounded body completes, so the deadline covers the whole exchange; timeout maps to a redacted transport error
+    cli_response_size_cap: MAX_RESPONSE_BYTES enforced by a custom bounded BodySubscriber while the body is consumed; the subscription is cancelled on overflow, deadline, or stream error; no unbounded read into memory
+    diagnostics_aggregate_deadline: one monotonic absolute deadline per request bounds all sub-probes; database and Redis probes run concurrently and share the remaining budget; migration lookup runs only when the database is UP and budget remains; a result completing after the deadline never replaces the safe fallback and a timeout never reports a false-healthy dependency
+    probe_bulkhead: a bounded number of live control dependency probes (maximum 4) via a non-blocking semaphore; saturation fails closed by mapping the dependency to DOWN and emitting a bounded saturation signal, never READY; the probe executor is shut down on destroy
+    database_native_timeout: spring.datasource.hikari.connection-timeout is explicit and validated in production-like profiles to be <= the aggregate control-probe deadline
+    redis_native_timeouts: Lettuce connect and command timeouts are explicit and validated in production-like profiles; timeout errors never leak host, port, credentials, or raw driver text
+  client:
+    module: apps/operantctl (Java 21, dependency-light JDK HTTP client + Jackson)
+    credential_store: Windows current-user DPAPI, owner-only ACL, versioned blob, strict alias encoding, symlink/reparse rejection, bounded file size, atomic replacement, no plaintext fallback; non-Windows production store is deliberately unsupported
+    tls: production requires HTTPS; localhost HTTP only in explicit local mode; no insecure toggle; optional PKCS12 trust store overrides the default JVM trust for the client
+  tests_that_define_the_contract:
+    - com.orderpilot.application.services.control.ControlPlaneStatusServiceTest
+    - com.orderpilot.api.rest.InternalControlControllerSecurityTest
+    - com.orderpilot.security.ControlPlaneKeySeparationSecurityTest
+    - com.orderpilot.security.ControlPlaneSignedReadOnlyCredentialTest
+    - com.orderpilot.security.ApiInternalRouteDefaultDenyTest
+    - com.orderpilot.security.ApiRouteSecurityClassificationTest
+    - com.orderpilot.security.production.ProductionConfigurationValidatorTest
+    - com.operant.ctl.ControlApiClientResponseBoundTest
+    - com.operant.ctl.OperantCtlCommandTest
+  ci_gate:
+    operantctl_job: mvn clean verify (shaded JAR builds and all module tests run), then java -jar the shaded artifact for version, then a packaged behavioural smoke that asserts a single executable JAR, correct Main-Class, no test/source/fixture entries, fail-closed exit codes, a per-invocation time bound, and secret absence
+  production_runtime_not_proven:
+    production_credential_issuance: NOT_PROVEN
+    private_management_ingress: NOT_PROVEN
+    live_deployed_operantctl: NOT_PROVEN
+    human_staff_sso_mfa_jit_ticket_binding: NOT_PROVEN
+    persistent_control_access_audit: NOT_PROVEN
+    clean_host_runtime: NOT_PROVEN
+  lifecycle_commands: NOT_IMPLEMENTED
+  remaining_p1e_scope:
+    - lifecycle operations slice (logs, backup, restore, upgrade, rollback) with state machine, idempotency, concurrency control, audit, redaction, fixed executor contracts, and P1-H runtime recovery proof
+
 not_proven:
   - real identity-provider interoperability
   - deployed Redis failover and expiry behavior
   - DNS-pinned outbound identity-provider connections
-  - clean-host Linux deployment and reboot lifecycle
+  - clean-host Linux deployment and reboot lifecycle (scheduled for P1-H drills)
   - public Core ingress closure on a real host
   - independent external-customer authentication flow
   - independent service-account authentication flow
   - independent Operant support and maintenance authentication flow
+
 open_p1:
-  - P1-D corrective merge (implemented, blocked on owner git permissions)
-  - P1-E operantctl
+  - P1-E lifecycle operations slice
   - P1-F Connector Gateway protocol
   - P1-G operant-agent
   - P1-H Recovery and observability
-owner_decisions_required:
-  - execute commit/push/PR of fix/p1d-post-merge-root-causes, or grant git commit/push/gh permissions for the program session
-next_bounded_action: Merge P1-D corrective PR, then start P1-E operantctl and bounded Control API.

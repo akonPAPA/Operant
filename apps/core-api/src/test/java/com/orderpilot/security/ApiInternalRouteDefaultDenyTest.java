@@ -43,7 +43,14 @@ class ApiInternalRouteDefaultDenyTest {
         route("GET", "/api/v1/internal/support/unknown-maintenance-action"),
         route("POST", diagnostics),
         route("DELETE", "/api/v1/internal/support/incidents/123e4567-e89b-12d3-a456-426614174111"),
-        route("GET", "/api/v1/internal/supporting/diagnostics"));
+        route("GET", "/api/v1/internal/supporting/diagnostics"),
+        // P1-E: the control surface is GET-only and explicitly enumerated — write-shaped and unknown
+        // control routes stay unclassified and hit the global default-deny.
+        route("POST", "/api/v1/internal/control/status"),
+        route("POST", "/api/v1/internal/control/diagnostics"),
+        route("DELETE", "/api/v1/internal/control/status"),
+        route("GET", "/api/v1/internal/control/shutdown"),
+        route("GET", "/api/v1/internal/control/status/extra"));
   }
 
   private static org.junit.jupiter.params.provider.Arguments route(String method, String path) {

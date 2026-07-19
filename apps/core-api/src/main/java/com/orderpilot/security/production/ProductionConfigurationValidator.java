@@ -1,7 +1,9 @@
 package com.orderpilot.security.production;
 
 import com.orderpilot.infrastructure.config.ProductionDeploymentProperties;
+import com.orderpilot.security.ControlPlaneCredentialConfigurationValidator;
 import java.net.URI;
+import java.time.Clock;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +23,10 @@ public class ProductionConfigurationValidator implements InitializingBean {
   static final String OIDC_RUNTIME_NOT_IMPLEMENTED = "OIDC_RUNTIME_NOT_IMPLEMENTED";
   private static final int MAX_PORT = 65535;
   private static final long MAX_CLOCK_SKEW_SECONDS = 86_400L;
+  // WP-3: native dependency-acquisition timeouts must stay at or below the control-plane aggregate
+  // dependency probe deadline (ControlPlaneStatusService default 6s), so the driver-level bound always
+  // fires before the aggregate probe out-waits it.
+  private static final long CONTROL_PROBE_DEADLINE_MS = 6_000L;
 
   private final Environment environment;
   private final ProductionDeploymentProperties deploymentProperties;
@@ -46,6 +52,19 @@ public class ProductionConfigurationValidator implements InitializingBean {
   private final long orderJourneyDrainFixedDelayMs;
   private final String runtimeRateStore;
   private final String malwareScanMode;
+  private final String controlPlaneCredentialAlias;
+  private final String controlPlaneSharedSecret;
+  private final String controlPlaneAudience;
+  private final String controlPlaneStatus;
+  private final String controlPlaneValidFrom;
+  private final String controlPlaneExpiresAt;
+  private final boolean controlPlaneRevoked;
+  private final String controlPlanePermissions;
+  private final String controlPlaneKeyVersion;
+  private final long dbConnectionTimeoutMs;
+  private final long redisConnectTimeoutMs;
+  private final long redisCommandTimeoutMs;
+  private final Clock clock;
 
   public ProductionConfigurationValidator(
       Environment environment,
@@ -78,7 +97,20 @@ public class ProductionConfigurationValidator implements InitializingBean {
       @Value("${orderpilot.runtime.order-journey-projection.fixed-delay-ms:30000}")
           long orderJourneyDrainFixedDelayMs,
       @Value("${orderpilot.runtime.rate.store:in-memory}") String runtimeRateStore,
-      @Value("${orderpilot.intake.malware-scan.mode:pass-through}") String malwareScanMode) {
+      @Value("${orderpilot.intake.malware-scan.mode:pass-through}") String malwareScanMode,
+      @Value("${orderpilot.security.control-plane-auth.credential-alias:}") String controlPlaneCredentialAlias,
+      @Value("${orderpilot.security.control-plane-auth.shared-secret:}") String controlPlaneSharedSecret,
+      @Value("${orderpilot.security.control-plane-auth.audience:}") String controlPlaneAudience,
+      @Value("${orderpilot.security.control-plane-auth.status:DISABLED}") String controlPlaneStatus,
+      @Value("${orderpilot.security.control-plane-auth.valid-from:}") String controlPlaneValidFrom,
+      @Value("${orderpilot.security.control-plane-auth.expires-at:}") String controlPlaneExpiresAt,
+      @Value("${orderpilot.security.control-plane-auth.revoked:false}") boolean controlPlaneRevoked,
+      @Value("${orderpilot.security.control-plane-auth.permissions:}") String controlPlanePermissions,
+      @Value("${orderpilot.security.control-plane-auth.key-version:}") String controlPlaneKeyVersion,
+      @Value("${spring.datasource.hikari.connection-timeout:5000}") long dbConnectionTimeoutMs,
+      @Value("${orderpilot.security.gateway-header-auth.redis.connect-timeout-ms:2000}") long redisConnectTimeoutMs,
+      @Value("${orderpilot.security.gateway-header-auth.redis.command-timeout-ms:2000}") long redisCommandTimeoutMs,
+      Clock clock) {
     this.environment = environment;
     this.deploymentProperties = deploymentProperties;
     this.gatewayHeaderAuthEnabled = gatewayHeaderAuthEnabled;
@@ -103,6 +135,19 @@ public class ProductionConfigurationValidator implements InitializingBean {
     this.orderJourneyDrainFixedDelayMs = orderJourneyDrainFixedDelayMs;
     this.runtimeRateStore = runtimeRateStore;
     this.malwareScanMode = malwareScanMode;
+    this.controlPlaneCredentialAlias = controlPlaneCredentialAlias;
+    this.controlPlaneSharedSecret = controlPlaneSharedSecret;
+    this.controlPlaneAudience = controlPlaneAudience;
+    this.controlPlaneStatus = controlPlaneStatus;
+    this.controlPlaneValidFrom = controlPlaneValidFrom;
+    this.controlPlaneExpiresAt = controlPlaneExpiresAt;
+    this.controlPlaneRevoked = controlPlaneRevoked;
+    this.controlPlanePermissions = controlPlanePermissions;
+    this.controlPlaneKeyVersion = controlPlaneKeyVersion;
+    this.dbConnectionTimeoutMs = dbConnectionTimeoutMs;
+    this.redisConnectTimeoutMs = redisConnectTimeoutMs;
+    this.redisCommandTimeoutMs = redisCommandTimeoutMs;
+    this.clock = clock;
   }
 
   @Override
@@ -112,9 +157,11 @@ public class ProductionConfigurationValidator implements InitializingBean {
     }
     rejectDemoAuthority();
     rejectUnsignedGatewayTrust();
+    validateControlPlaneCredential();
     rejectPlaceholderSecrets();
     validateRequiredUrlsAndOrigins();
     validatePortsTimeoutsAndLimits();
+    validateDependencyProbeNativeTimeouts();
     emitRedactedDiagnostics();
   }
 
@@ -138,6 +185,21 @@ public class ProductionConfigurationValidator implements InitializingBean {
         gatewaySharedSecret,
         gatewayReplayStore,
         singleInstanceReplayStoreAllowed);
+  }
+
+  private void validateControlPlaneCredential() {
+    ControlPlaneCredentialConfigurationValidator.validateProductionConfiguration(
+        controlPlaneCredentialAlias,
+        controlPlaneSharedSecret,
+        controlPlaneAudience,
+        controlPlaneStatus,
+        controlPlaneValidFrom,
+        controlPlaneExpiresAt,
+        controlPlaneRevoked,
+        controlPlanePermissions,
+        controlPlaneKeyVersion,
+        gatewaySharedSecret,
+        clock);
   }
 
   private void rejectPlaceholderSecrets() {
@@ -198,6 +260,25 @@ public class ProductionConfigurationValidator implements InitializingBean {
       log.warn(
           "orderpilot.runtime.rate.store=in-memory in a production-like profile is single-instance only");
     }
+  }
+
+  private void validateDependencyProbeNativeTimeouts() {
+    // WP-3: database connection acquisition and Redis connect/command must be bounded natively (not by
+    // library defaults) and the DB acquisition bound must not exceed the aggregate control probe budget.
+    requirePositive("spring.datasource.hikari.connection-timeout", dbConnectionTimeoutMs);
+    requireMax("spring.datasource.hikari.connection-timeout", dbConnectionTimeoutMs, CONTROL_PROBE_DEADLINE_MS);
+    requirePositive(
+        "orderpilot.security.gateway-header-auth.redis.connect-timeout-ms", redisConnectTimeoutMs);
+    requireMax(
+        "orderpilot.security.gateway-header-auth.redis.connect-timeout-ms",
+        redisConnectTimeoutMs,
+        CONTROL_PROBE_DEADLINE_MS);
+    requirePositive(
+        "orderpilot.security.gateway-header-auth.redis.command-timeout-ms", redisCommandTimeoutMs);
+    requireMax(
+        "orderpilot.security.gateway-header-auth.redis.command-timeout-ms",
+        redisCommandTimeoutMs,
+        CONTROL_PROBE_DEADLINE_MS);
   }
 
   private void emitRedactedDiagnostics() {

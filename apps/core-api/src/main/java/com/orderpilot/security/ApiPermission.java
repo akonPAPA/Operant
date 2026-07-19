@@ -122,5 +122,15 @@ public enum ApiPermission {
   // Like the rest of the STAFF_* family it is never held by any tenant role (ApiRolePermissionMatrix
   // excludes the whole STAFF_* prefix), and it can never reach a business order/quote/inventory/customer/
   // price table or any connector/ERP write.
-  STAFF_PROCESSING_JOB_REPAIR_EXECUTE
+  STAFF_PROCESSING_JOB_REPAIR_EXECUTE,
+  // P1-E: bounded platform control-plane reads under /api/v1/internal/control. These gate the
+  // deployment-operator surface consumed by operantctl and are SEPARATE from the per-tenant
+  // STAFF_SUPPORT_* diagnostics family: a support-read grant must not see platform control state and a
+  // control-read grant must not see tenant support data. Like the whole STAFF_* family, no tenant role
+  // holds them.
+  // Read bounded platform status/health/readiness (no config values, hosts, paths, or secrets).
+  STAFF_CONTROL_READ,
+  // Read the bounded, redacted platform diagnostics — a stronger read tier than STAFF_CONTROL_READ
+  // because diagnostics reveal dependency/migration detail; a control-read grant alone is denied.
+  STAFF_CONTROL_DIAGNOSE
 }

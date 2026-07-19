@@ -6,7 +6,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -70,7 +73,7 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
   // strictly health/intentional) because these are business reads gated by an opaque, expiring,
   // tenant/journey-scoped token in the path (the sole credential) rather than a permission grant. The
   // route policy classifies them SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN; the service resolves all scope
-  // from the token. Read-only — no external write, no order/ETA/milestone mutation.
+  // from the token. Read-only - no external write, no order/ETA/milestone mutation.
   static final String[] PUBLIC_GET_SECURE_LINK_ROUTES = {
       "/api/v1/public/order-tracking/*"
   };
@@ -115,6 +118,15 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
   private final boolean gatewayHeaderAuthEnabled;
   private final boolean gatewayHeaderSignatureRequired;
   private final String gatewayHeaderSharedSecret;
+  private final String controlPlaneCredentialAlias;
+  private final String controlPlaneSharedSecret;
+  private final String controlPlaneAudience;
+  private final String controlPlaneStatus;
+  private final String controlPlaneValidFrom;
+  private final String controlPlaneExpiresAt;
+  private final boolean controlPlaneRevoked;
+  private final String controlPlanePermissions;
+  private final String controlPlaneKeyVersion;
   private final long gatewayHeaderClockSkewSeconds;
   private final Clock clock;
 
@@ -124,6 +136,15 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       @Value("${orderpilot.security.gateway-header-auth.enabled:false}") boolean gatewayHeaderAuthEnabled,
       @Value("${orderpilot.security.gateway-header-auth.signature-required:true}") boolean gatewayHeaderSignatureRequired,
       @Value("${orderpilot.security.gateway-header-auth.shared-secret:}") String gatewayHeaderSharedSecret,
+      @Value("${orderpilot.security.control-plane-auth.credential-alias:}") String controlPlaneCredentialAlias,
+      @Value("${orderpilot.security.control-plane-auth.shared-secret:}") String controlPlaneSharedSecret,
+      @Value("${orderpilot.security.control-plane-auth.audience:}") String controlPlaneAudience,
+      @Value("${orderpilot.security.control-plane-auth.status:DISABLED}") String controlPlaneStatus,
+      @Value("${orderpilot.security.control-plane-auth.valid-from:}") String controlPlaneValidFrom,
+      @Value("${orderpilot.security.control-plane-auth.expires-at:}") String controlPlaneExpiresAt,
+      @Value("${orderpilot.security.control-plane-auth.revoked:false}") boolean controlPlaneRevoked,
+      @Value("${orderpilot.security.control-plane-auth.permissions:}") String controlPlanePermissions,
+      @Value("${orderpilot.security.control-plane-auth.key-version:}") String controlPlaneKeyVersion,
       @Value("${orderpilot.security.gateway-header-auth.clock-skew-seconds:300}") long gatewayHeaderClockSkewSeconds,
       Clock clock) {
     this.interceptor = interceptor;
@@ -131,15 +152,41 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
     this.gatewayHeaderAuthEnabled = gatewayHeaderAuthEnabled;
     this.gatewayHeaderSignatureRequired = gatewayHeaderSignatureRequired;
     this.gatewayHeaderSharedSecret = gatewayHeaderSharedSecret;
+    this.controlPlaneCredentialAlias = controlPlaneCredentialAlias;
+    this.controlPlaneSharedSecret = controlPlaneSharedSecret;
+    this.controlPlaneAudience = controlPlaneAudience;
+    this.controlPlaneStatus = controlPlaneStatus;
+    this.controlPlaneValidFrom = controlPlaneValidFrom;
+    this.controlPlaneExpiresAt = controlPlaneExpiresAt;
+    this.controlPlaneRevoked = controlPlaneRevoked;
+    this.controlPlanePermissions = controlPlanePermissions;
+    this.controlPlaneKeyVersion = controlPlaneKeyVersion;
     this.gatewayHeaderClockSkewSeconds = gatewayHeaderClockSkewSeconds;
     this.clock = clock;
+  }
+
+  @Bean
+  ControlPlaneCredentialRegistry controlPlaneCredentialRegistry() {
+    return new ControlPlaneCredentialRegistry(
+        controlPlaneCredentialAlias,
+        controlPlaneSharedSecret,
+        controlPlaneAudience,
+        controlPlaneStatus,
+        controlPlaneValidFrom,
+        controlPlaneExpiresAt,
+        controlPlaneRevoked,
+        controlPlanePermissions,
+        controlPlaneKeyVersion,
+        clock);
   }
 
   @Bean
   SecurityFilterChain apiSecurityFilterChain(
       HttpSecurity http,
       ObjectMapper objectMapper,
-      GatewayHeaderReplayAdmissionStore replayAdmissionStore) throws Exception {
+      GatewayHeaderReplayAdmissionStore replayAdmissionStore,
+      ObjectProvider<ApiRouteSecurityPolicy> routePolicyProvider,
+      ControlPlaneCredentialRegistry controlPlaneCredentialRegistry) throws Exception {
     http
         .securityMatcher(new OrRequestMatcher(
             new AntPathRequestMatcher("/api/**"),
@@ -154,6 +201,14 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         .httpBasic(basic -> basic.disable())
         .formLogin(form -> form.disable())
         .logout(logout -> logout.disable())
+        .addFilterBefore(
+            new ControlPlaneAuthenticationFilter(
+                controlPlaneCredentialRegistry,
+                gatewayHeaderClockSkewSeconds,
+                clock,
+                replayAdmissionStore,
+                routePolicyProvider.getIfAvailable(ApiRouteSecurityPolicy::new)),
+            AnonymousAuthenticationFilter.class)
         .addFilterBefore(
             new ApiHeaderAuthenticationFilter(
                 gatewayHeaderAuthEnabled,
@@ -288,6 +343,144 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
         SecurityContextHolder.getContext().setAuthentication(authentication);
       }
       filterChain.doFilter(effectiveRequest, response);
+    }
+  }
+  private static final class ControlPlaneAuthenticationFilter extends OncePerRequestFilter {
+    private static final String CONTROL_BASE = "/api/v1/internal/control";
+
+    private final ControlPlaneCredentialRegistry credentialRegistry;
+    private final long maxSkewSeconds;
+    private final Clock clock;
+    private final GatewayHeaderReplayAdmissionStore replayAdmissionStore;
+    private final ApiRouteSecurityPolicy routePolicy;
+
+    private ControlPlaneAuthenticationFilter(
+        ControlPlaneCredentialRegistry credentialRegistry,
+        long maxSkewSeconds,
+        Clock clock,
+        GatewayHeaderReplayAdmissionStore replayAdmissionStore,
+        ApiRouteSecurityPolicy routePolicy) {
+      this.credentialRegistry = credentialRegistry;
+      this.maxSkewSeconds = maxSkewSeconds;
+      this.clock = clock;
+      this.replayAdmissionStore = replayAdmissionStore;
+      this.routePolicy = routePolicy;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+        throws ServletException, IOException {
+      if (!isControlCredentialRequest(request)) {
+        filterChain.doFilter(request, response);
+        return;
+      }
+      ApiPermission required = routePolicy.requiredPermissionFor(request.getMethod(), request.getRequestURI())
+          .orElse(null);
+      CachedBodyHttpServletRequest cached = CachedBodyHttpServletRequest.wrap(request, GATEWAY_SIGNED_MAX_BODY_BYTES);
+      ControlPlanePrincipal principal = required == null || cached == null ? null : verify(cached, required);
+      if (principal == null) {
+        filterChain.doFilter(request, response);
+        return;
+      }
+      var authentication = new PreAuthenticatedAuthenticationToken(
+          principal,
+          "N/A",
+          List.of(new SimpleGrantedAuthority("ORDERPILOT_" + required.name())));
+      SecurityContextHolder.getContext().setAuthentication(authentication);
+      filterChain.doFilter(cached, response);
+    }
+
+    private boolean isControlCredentialRequest(HttpServletRequest request) {
+      return request.getRequestURI().startsWith(CONTROL_BASE + "/")
+          && request.getHeader(ControlPlaneProtocol.CREDENTIAL_HEADER) != null;
+    }
+
+    private ControlPlanePrincipal verify(HttpServletRequest request, ApiPermission required) {
+      String credential = requiredHeader(request, ControlPlaneProtocol.CREDENTIAL_HEADER);
+      String audience = requiredHeader(request, ControlPlaneProtocol.AUDIENCE_HEADER);
+      String timestamp = requiredHeader(request, ControlPlaneProtocol.TIMESTAMP_HEADER);
+      String nonce = requiredHeader(request, ControlPlaneProtocol.NONCE_HEADER);
+      String version = requiredHeader(request, ControlPlaneProtocol.VERSION_HEADER);
+      String contentShaHeader = requiredHeader(request, ControlPlaneProtocol.CONTENT_SHA256_HEADER);
+      String signature = requiredHeader(request, ControlPlaneProtocol.SIGNATURE_HEADER);
+      if (credential == null
+          || audience == null
+          || timestamp == null
+          || nonce == null
+          || version == null
+          || contentShaHeader == null
+          || signature == null
+          || !ControlPlaneProtocol.AUDIENCE.equals(audience)
+          || !ControlPlaneProtocol.SIGNATURE_VERSION.equals(version)
+          || !GatewayV2Canonical.isValidContentSha256Hex(contentShaHeader)) {
+        return null;
+      }
+      var record = credentialRegistry.findActive(credential, audience);
+      if (record.isEmpty() || !record.get().permissions().contains(required)) {
+        return null;
+      }
+      long timestampEpoch;
+      try {
+        timestampEpoch = Long.parseLong(timestamp);
+      } catch (NumberFormatException invalid) {
+        return null;
+      }
+      long nowEpoch = clock.instant().getEpochSecond();
+      if (Math.abs(nowEpoch - timestampEpoch) > maxSkewSeconds) {
+        return null;
+      }
+      byte[] bodyBytes = bodyBytes(request);
+      if (bodyBytes == null) {
+        return null;
+      }
+      String actualBodySha = GatewayV2Canonical.sha256Hex(bodyBytes);
+      if (!MessageDigest.isEqual(
+          actualBodySha.getBytes(StandardCharsets.US_ASCII),
+          contentShaHeader.toLowerCase(java.util.Locale.ROOT).getBytes(StandardCharsets.US_ASCII))) {
+        return null;
+      }
+      String path = request.getRequestURI();
+      String canonical = ControlPlaneProtocol.canonical(
+          request.getMethod(),
+          path,
+          request.getQueryString(),
+          ControlPlaneProtocol.requestContentType(request),
+          actualBodySha,
+          audience,
+          credential,
+          timestampEpoch,
+          nonce);
+      byte[] verificationKey = record.get().keyMaterialCopy();
+      boolean signatureMatches;
+      try {
+        signatureMatches = SignedActorVerifier.matchesHmacHex(verificationKey, canonical, signature);
+      } finally {
+        java.util.Arrays.fill(verificationKey, (byte) 0);
+      }
+      if (!signatureMatches) {
+        return null;
+      }
+      boolean admitted = replayAdmissionStore.admitFirstUse(
+          "control-plane:" + audience,
+          "credential:" + credential,
+          nonce,
+          Duration.ofSeconds(Math.max(1L, maxSkewSeconds * 2)));
+      return admitted ? record.get().principal() : null;
+    }
+
+    private static byte[] bodyBytes(HttpServletRequest request) {
+      if (request instanceof CachedBodyHttpServletRequest cached) {
+        return cached.cachedBody();
+      }
+      return null;
+    }
+
+    private static String requiredHeader(HttpServletRequest request, String name) {
+      String value = request.getHeader(name);
+      if (value == null || value.isBlank()) {
+        return null;
+      }
+      return value.trim();
     }
   }
 }

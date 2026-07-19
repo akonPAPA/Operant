@@ -22,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -107,6 +108,23 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<ApiErrorResponse> handleUnreadableMessage(HttpMessageNotReadableException ex, HttpServletRequest request) {
     return build(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "Request body is not valid JSON", request, List.of());
+  }
+
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  ResponseEntity<ApiErrorResponse> handleMethodNotSupported(
+      HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+    ResponseEntity.BodyBuilder builder = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+    var supportedMethods = ex.getSupportedHttpMethods();
+    if (supportedMethods != null && !supportedMethods.isEmpty()) {
+      builder.allow(supportedMethods.toArray(org.springframework.http.HttpMethod[]::new));
+    }
+    return builder.body(new ApiErrorResponse(
+        "METHOD_NOT_ALLOWED",
+        "HTTP method is not supported for this API route",
+        HttpStatus.METHOD_NOT_ALLOWED.value(),
+        request.getRequestURI(),
+        clock.instant(),
+        List.of()));
   }
 
   @ExceptionHandler(NotFoundException.class)
