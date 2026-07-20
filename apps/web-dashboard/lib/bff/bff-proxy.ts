@@ -30,6 +30,7 @@ import { parseBffSessionMaxAgeSeconds } from "./bff-session-ttl-policy.ts";
 import { validateCsrf, validateSameOrigin } from "./bff-csrf.ts";
 import { readSecurityCookie, type SecurityCookiePolicy } from "./bff-cookies.ts";
 import { resolveIdempotencyKey } from "./bff-idempotency-key.ts";
+import { bodyMatchesStrictPolicy } from "./bff-strict-body-policy.ts";
 
 const SAFE_PROXY_ERROR = "The request could not be completed.";
 const ALLOWED_ACCEPT = new Set(["application/json", "*/*", "application/json, text/plain, */*"]);
@@ -202,7 +203,7 @@ type BoundedBodyBytes =
   | { ok: false; status: 413 };
 
 type CanonicalJsonBody =
-  | { ok: true; body: string }
+  | { ok: true; body: string; parsed: unknown }
   | { ok: false; status: 400 };
 
 /**
@@ -267,7 +268,7 @@ export function canonicalizeJsonRequestBody(bytes: Uint8Array): CanonicalJsonBod
   }
   try {
     const parsed: unknown = JSON.parse(text);
-    return { ok: true, body: JSON.stringify(parsed) };
+    return { ok: true, body: JSON.stringify(parsed), parsed };
   } catch {
     return { ok: false, status: 400 };
   }
@@ -379,6 +380,12 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
         const canonical = canonicalizeJsonRequestBody(rawBody.bytes);
         if (!canonical.ok) {
           return safeJson(canonical.status);
+        }
+        // Strict request-field allowlist (high-authority mutations only). A body carrying any
+        // unknown / authority / server-state / prototype-pollution key fails closed here — before
+        // signing or any upstream call — so a rejected body produces zero Core calls.
+        if (rule.bodyPolicy && !bodyMatchesStrictPolicy(canonical.parsed, rule.bodyPolicy)) {
+          return safeJson(400);
         }
         body = canonical.body;
       } else {

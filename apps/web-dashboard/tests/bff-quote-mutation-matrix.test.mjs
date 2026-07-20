@@ -140,6 +140,36 @@ async function proxied(path, options = {}) {
   return proxyCoreRequest(request, segments);
 }
 
+// Merge an extra own key into a valid JSON object body.
+function withExtraKey(bodyJson, extra) {
+  return JSON.stringify({ ...JSON.parse(bodyJson), ...extra });
+}
+
+// Splice a raw literal key/value in front of an existing JSON object body. Object-literal spread
+// cannot create an own "__proto__" key (it sets the prototype), so prototype-pollution keys must
+// be injected as raw JSON text to reproduce a real hostile payload.
+function withRawKey(bodyJson, rawKeyValue) {
+  return `{${rawKeyValue},${bodyJson.slice(1)}`;
+}
+
+// The strict request-field matrix required by the STATE1 quote-authority contract. Each case
+// mutates an otherwise-valid body so the ONLY reason for rejection is the offending key.
+const REJECTION_CASES = [
+  { label: "unknown extra field", poison: (b) => withExtraKey(b, { unexpectedField: "x" }) },
+  { label: "tenantId authority field", poison: (b) => withExtraKey(b, { tenantId: "99999999-9999-4999-8999-999999999999" }) },
+  { label: "actorId authority field", poison: (b) => withExtraKey(b, { actorId: "99999999-9999-4999-8999-999999999999" }) },
+  { label: "approvedBy authority field", poison: (b) => withExtraKey(b, { approvedBy: "operator-1" }) },
+  { label: "createdBy authority field", poison: (b) => withExtraKey(b, { createdBy: "operator-1" }) },
+  { label: "permission authority field", poison: (b) => withExtraKey(b, { permission: "QUOTE_ACTION" }) },
+  { label: "role authority field", poison: (b) => withExtraKey(b, { role: "TENANT_ADMIN" }) },
+  { label: "status server-state field", poison: (b) => withExtraKey(b, { status: "APPROVED" }) },
+  { label: "approvalStatus server-state field", poison: (b) => withExtraKey(b, { approvalStatus: "APPROVED" }) },
+  { label: "executionStatus server-state field", poison: (b) => withExtraKey(b, { executionStatus: "EXECUTED" }) },
+  { label: "__proto__ prototype key", poison: (b) => withRawKey(b, '"__proto__":{"polluted":true}') },
+  { label: "constructor prototype key", poison: (b) => withRawKey(b, '"constructor":{"polluted":true}') },
+  { label: "prototype prototype key", poison: (b) => withRawKey(b, '"prototype":{"polluted":true}') }
+];
+
 for (const route of QUOTE_MUTATION_ROUTES) {
   test(`quote mutation ${route.name}: missing session → denied, zero Core calls`, async () => {
     await withEnv(BFF_ENV, async () => {
@@ -185,23 +215,82 @@ for (const route of QUOTE_MUTATION_ROUTES) {
     });
   });
 
-  test(`quote mutation ${route.name}: spoofed tenantId in body does not override session tenant header`, async () => {
+  test(`quote mutation ${route.name}: invalid CSRF → 403, zero Core calls`, async () => {
     await withEnv(BFF_ENV, async () => {
-      const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+      const sessionId = await operatorSession();
       const { calls, impl } = recordingFetch();
-      const poison = JSON.stringify({ ...JSON.parse(route.body), tenantId: "99999999-9999-4999-8999-999999999999" });
       const response = await withFetch(impl, () =>
-        proxied(route.path, {
-          sessionId,
-          body: poison,
-          extraHeaders: { "Idempotency-Key": "quote-matrix-key-spoof" }
-        })
+        proxied(route.path, { sessionId, body: route.body, csrf: "forged-csrf-token-0123456789abcdef" })
       );
-      assert.equal(response.status, 200);
-      assert.equal(calls.length, 1);
-      assert.equal(calls[0].init.headers.get("x-tenant-id"), "11111111-1111-4111-8111-111111111111");
+      assert.equal(response.status, 403);
+      assert.equal(calls.length, 0);
     });
   });
+
+  test(`quote mutation ${route.name}: invalid Origin → 403, zero Core calls`, async () => {
+    await withEnv(BFF_ENV, async () => {
+      const sessionId = await operatorSession();
+      const { calls, impl } = recordingFetch();
+      const request = new Request(`https://dashboard.test${route.path}`, {
+        method: "POST",
+        headers: {
+          host: "dashboard.test",
+          origin: "https://evil.example",
+          cookie: `op_session=${sessionId}; op_csrf=${CSRF}`,
+          "X-OP-CSRF-Token": CSRF,
+          "Content-Type": "application/json"
+        },
+        body: route.body
+      });
+      const segments = route.path.replace(/^\/api\/bff\//, "").split("?")[0].split("/");
+      const response = await withFetch(impl, () => proxyCoreRequest(request, segments));
+      assert.equal(response.status, 403);
+      assert.equal(calls.length, 0);
+    });
+  });
+
+  test(`quote mutation ${route.name}: unsupported Content-Type → 415, zero Core calls`, async () => {
+    await withEnv(BFF_ENV, async () => {
+      const sessionId = await operatorSession();
+      const { calls, impl } = recordingFetch();
+      const request = new Request(`https://dashboard.test${route.path}`, {
+        method: "POST",
+        headers: {
+          host: "dashboard.test",
+          origin: "https://dashboard.test",
+          cookie: `op_session=${sessionId}; op_csrf=${CSRF}`,
+          "X-OP-CSRF-Token": CSRF,
+          "Content-Type": "text/plain"
+        },
+        body: route.body
+      });
+      const segments = route.path.replace(/^\/api\/bff\//, "").split("?")[0].split("/");
+      const response = await withFetch(impl, () => proxyCoreRequest(request, segments));
+      assert.equal(response.status, 415);
+      assert.equal(calls.length, 0);
+    });
+  });
+
+  // STATE1 strict request-field contract: any unknown / authority / server-state /
+  // prototype-pollution key fails closed at the BFF with 400 and ZERO Core calls, so a spoofed
+  // tenantId (or any other non-allowlisted key) never even reaches the tenant-header build step.
+  for (const rejection of REJECTION_CASES) {
+    test(`quote mutation ${route.name}: ${rejection.label} → 400, zero Core calls`, async () => {
+      await withEnv(BFF_ENV, async () => {
+        const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+        const { calls, impl } = recordingFetch();
+        const response = await withFetch(impl, () =>
+          proxied(route.path, {
+            sessionId,
+            body: rejection.poison(route.body),
+            extraHeaders: { "Idempotency-Key": `quote-matrix-reject-${route.name}` }
+          })
+        );
+        assert.equal(response.status, 400);
+        assert.equal(calls.length, 0);
+      });
+    });
+  }
 
   test(`quote mutation ${route.name}: valid QUOTE_ACTION → exactly one Core call`, async () => {
     await withEnv(BFF_ENV, async () => {
@@ -245,6 +334,24 @@ for (const route of QUOTE_MUTATION_ROUTES) {
   });
 }
 
+
+test("quote mutation from-rfq: nested unknown array-item field → 400, zero Core calls", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession();
+    const { calls, impl } = recordingFetch();
+    const body = JSON.stringify({
+      customerExternalRef: "CUST-001",
+      requestedLocation: "WH-ALM",
+      requestedDiscountPercent: 0,
+      requestedItems: [{ rawSkuOrAlias: "SKU-1", description: "Item", quantity: 1, uom: "EA", nestedExtra: "x" }]
+    });
+    const response = await withFetch(impl, () =>
+      proxied(QUOTE_MUTATION_ROUTES[0].path, { sessionId, body })
+    );
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  });
+});
 
 test("quote mutation: oversized body → 413, zero Core calls", async () => {
   await withEnv(BFF_ENV, async () => {

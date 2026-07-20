@@ -13,6 +13,7 @@
  */
 
 import type { BffIdempotencyPolicy } from "./bff-idempotency-key.ts";
+import type { StrictBodyPolicy } from "./bff-strict-body-policy.ts";
 
 export type BffHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -36,6 +37,14 @@ export type BffRouteRule = {
    */
   idempotency: BffIdempotencyPolicy;
   allowIfMatch: boolean;
+  /**
+   * Optional strict request-body allowlist. When set, a present JSON body must be a plain object
+   * whose keys are exactly within this allowlist (see bff-strict-body-policy). Unknown / authority
+   * / server-state / prototype-pollution keys are rejected with 400 and zero Core calls. Routes
+   * without a policy keep the canonicalize-and-forward behaviour (Core remains authoritative and
+   * ignores unknown fields). This is applied only to high-authority mutation routes, not globally.
+   */
+  bodyPolicy?: StrictBodyPolicy;
 };
 
 const JSON_CONTENT_TYPE = "application/json";
@@ -190,7 +199,12 @@ function mutate(
   method: Exclude<BffHttpMethod, "GET">,
   pattern: string,
   permission: string,
-  options?: { maxBodyBytes?: number; params?: Record<string, BffPathParamType>; query?: BffQueryPolicy }
+  options?: {
+    maxBodyBytes?: number;
+    params?: Record<string, BffPathParamType>;
+    query?: BffQueryPolicy;
+    bodyPolicy?: StrictBodyPolicy;
+  }
 ): BffRouteRule {
   return {
     method,
@@ -204,9 +218,21 @@ function mutate(
     maxBodyBytes: options?.maxBodyBytes ?? DEFAULT_MUTATION_BODY_LIMIT,
     csrfRequired: true,
     idempotency: "optional",
-    allowIfMatch: false
+    allowIfMatch: false,
+    bodyPolicy: options?.bodyPolicy
   };
 }
+
+// Strict request-body allowlists for the tenant quote-authority mutations. Business intent only:
+// tenant comes from X-Tenant-Id (session-derived), actor from the trusted resolver, and the
+// idempotency key travels in the Idempotency-Key header — none of them are accepted in the body.
+const QUOTE_FROM_RFQ_BODY: StrictBodyPolicy = Object.freeze({
+  allowedKeys: ["customerExternalRef", "requestedLocation", "requestedDiscountPercent", "requestedItems"],
+  arrayItemKeys: { requestedItems: ["rawSkuOrAlias", "description", "quantity", "uom"] }
+});
+const QUOTE_APPROVAL_DECISION_BODY: StrictBodyPolicy = Object.freeze({
+  allowedKeys: ["approvalRequestId", "reason", "comment"]
+});
 
 const ROUTE_RULES: BffRouteRule[] = [
   // Analytics / command center (ANALYTICS_READ)
@@ -345,11 +371,19 @@ const ROUTE_RULES: BffRouteRule[] = [
   // Quotes
   read("api/v1/quotes/:quoteId/approval-state", "QUOTE_READ"),
   read("api/v1/quotes/:quoteId/source-context", "QUOTE_READ"),
-  mutate("POST", "api/v1/quotes/from-rfq", "QUOTE_ACTION"),
-  mutate("POST", "api/v1/quotes/:quoteId/approve", "QUOTE_ACTION"),
-  mutate("POST", "api/v1/quotes/:quoteId/reject", "QUOTE_ACTION"),
-  mutate("POST", "api/v1/quotes/:quoteId/request-changes", "QUOTE_ACTION"),
-  mutate("POST", "api/v1/quotes/:quoteId/convert-to-internal-order", "QUOTE_ACTION"),
+  mutate("POST", "api/v1/quotes/from-rfq", "QUOTE_ACTION", { bodyPolicy: QUOTE_FROM_RFQ_BODY }),
+  mutate("POST", "api/v1/quotes/:quoteId/approve", "QUOTE_ACTION", {
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+  }),
+  mutate("POST", "api/v1/quotes/:quoteId/reject", "QUOTE_ACTION", {
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+  }),
+  mutate("POST", "api/v1/quotes/:quoteId/request-changes", "QUOTE_ACTION", {
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+  }),
+  mutate("POST", "api/v1/quotes/:quoteId/convert-to-internal-order", "QUOTE_ACTION", {
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+  }),
   mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId/decision", "QUOTE_ACTION"),
 
