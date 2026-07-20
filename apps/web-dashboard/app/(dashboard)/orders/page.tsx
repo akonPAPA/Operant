@@ -1,21 +1,15 @@
-import Link from "next/link";
-
 import { DashboardShell } from "@/components/dashboard-shell";
+import { UnavailableState } from "@/components/page-states";
 
+/** Static placeholder — not offered until a real tenant-scoped read contract is wired. */
 export default function Page() {
   return (
     <DashboardShell title="Draft Order Workspace">
-      <section className="panel">
-        <h2>Internal Draft Orders</h2>
-        <p>Draft orders are internal review records created after deterministic validation.</p>
-        <p className="risk-note">Internal draft only - does not write ERP/warehouse or reserve inventory.</p>
-      </section>
-      <section className="panel table-panel">
-        <table className="data-table">
-          <thead><tr><th>Order</th><th>Status</th><th>Customer</th><th>Total</th><th>Inventory</th></tr></thead>
-          <tbody><tr><td><Link href="/orders/latest">Latest</Link></td><td>NEEDS_REVIEW</td><td>Pending</td><td>Pending</td><td>Review required</td></tr></tbody>
-        </table>
-      </section>
+      <UnavailableState
+        title="Draft Orders unavailable"
+        description="This destination is not offered until a real draft-order list contract replaces placeholder content."
+        reason="PLACEHOLDER_UNSUPPORTED — no fabricated order rows are shown."
+      />
     </DashboardShell>
   );
 }

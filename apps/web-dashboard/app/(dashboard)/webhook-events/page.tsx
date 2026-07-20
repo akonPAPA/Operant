@@ -1,14 +1,14 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { UnavailableState } from "@/components/page-states";
 
 export default function Page() {
   return (
     <DashboardShell title="Webhook Events">
-      <section className="panel table-panel">
-        <table className="data-table">
-          <thead><tr><th>Provider</th><th>External Event</th><th>Signature</th><th>Status</th><th>Received</th></tr></thead>
-          <tbody><tr><td>Email / Telegram / WhatsApp</td><td>Pending</td><td>Placeholder</td><td>Accepted or rejected</td><td>Timestamp</td></tr></tbody>
-        </table>
-      </section>
+      <UnavailableState
+        title="Webhook Events unavailable"
+        description="This placeholder list is not offered. Use Messenger Bridge for live channel bot event reads when authorized."
+        reason="PLACEHOLDER_UNSUPPORTED"
+      />
     </DashboardShell>
   );
 }

@@ -1,14 +1,14 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { UnavailableState } from "@/components/page-states";
 
 export default function Page() {
   return (
     <DashboardShell title="Processing Jobs">
-      <section className="panel table-panel">
-        <table className="data-table">
-          <thead><tr><th>Job Type</th><th>Target</th><th>Status</th><th>Queued</th></tr></thead>
-          <tbody><tr><td>Document / Message / Attachment</td><td>Inbound record</td><td>Queued</td><td>Timestamp</td></tr></tbody>
-        </table>
-      </section>
+      <UnavailableState
+        title="Processing Jobs unavailable"
+        description="This placeholder job table is not offered. Intake job status is available from Inbox when authorized."
+        reason="PLACEHOLDER_UNSUPPORTED"
+      />
     </DashboardShell>
   );
 }
