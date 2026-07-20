@@ -3,10 +3,12 @@ package com.orderpilot.api.rest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,6 +25,7 @@ import com.orderpilot.api.dto.ControlInternalDtos.OperationalEventPage;
 import com.orderpilot.api.dto.ControlInternalDtos.OperationalEventProjection;
 import com.orderpilot.api.dto.ControlInternalDtos.RedisDiagnostics;
 import com.orderpilot.application.services.control.ControlPlaneStatusService;
+import com.orderpilot.application.services.control.OperationalEventAccessAuditor;
 import com.orderpilot.application.services.control.OperationalEventReadService;
 import com.orderpilot.application.services.control.OperationalEventRecorder;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -50,14 +53,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * P1-E HTTP-level security proof for the bounded platform control-plane read surface through the real
- * security stack. The routes are never public; tenant, customer, ordinary service-account, and wrong
- * staff/control grants are denied before the mocked service is reached. Diagnostics require a stronger
- * permission than status reads; the operational-event read requires its own dedicated
- * STAFF_CONTROL_OPERATIONAL_EVENT_READ (never STAFF_CONTROL_READ/DIAGNOSE). Route authority is
- * single-sourced from {@link ApiRouteSecurityPolicy}: only GET/HEAD control routes carry a control
- * permission, so write-shaped methods are unmapped and fail closed with a native 405 (unauthenticated
- * callers get 401) without ever reaching the control service.
+ * HTTP-level access-plane and side-effect proof for the bounded internal control surface. Denial must
+ * occur before status/read services, sampled-state recorder, or successful-read audit are invoked.
  */
 @WebMvcTest(controllers = InternalControlController.class)
 @Import({
@@ -84,12 +81,13 @@ class InternalControlControllerSecurityTest {
   @MockBean private ControlPlaneStatusService statusService;
   @MockBean private OperationalEventReadService eventReadService;
   @MockBean private OperationalEventRecorder eventRecorder;
+  @MockBean private OperationalEventAccessAuditor eventAccessAuditor;
 
   @ParameterizedTest
   @MethodSource("getCallerMatrix")
   void getControlRoutesHaveExactCallerMatrix(ControlRoute route, Caller caller, int expectedStatus)
       throws Exception {
-    reset(statusService, eventReadService, eventRecorder);
+    resetAll();
     if (expectedStatus == 200) {
       stubSuccess(route);
     }
@@ -103,11 +101,11 @@ class InternalControlControllerSecurityTest {
       result.andExpect(status().isUnauthorized())
           .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
           .andExpect(jsonPath("$.message").value("Authentication required"));
-      verifyNoInteractions(statusService, eventReadService);
+      verifyNoControlSideEffects();
     } else {
       result.andExpect(status().isForbidden())
           .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"));
-      verifyNoInteractions(statusService, eventReadService);
+      verifyNoControlSideEffects();
     }
   }
 
@@ -120,8 +118,12 @@ class InternalControlControllerSecurityTest {
       int expectedStatus,
       String expectedCode,
       String expectedAllowHeader) throws Exception {
-    reset(statusService, eventReadService, eventRecorder);
-    if (expectedStatus == 200 && HttpMethod.GET.equals(method)) {
+    resetAll();
+    boolean successfulGet = expectedStatus == 200 && HttpMethod.GET.equals(method);
+    boolean successfulEventHead = expectedStatus == 200
+        && HttpMethod.HEAD.equals(method)
+        && route.kind() == RouteKind.EVENTS;
+    if (successfulGet || successfulEventHead) {
       stubSuccess(route);
     }
 
@@ -139,41 +141,67 @@ class InternalControlControllerSecurityTest {
     } else {
       result.andExpect(header().doesNotExist(HttpHeaders.ALLOW));
     }
-    if (expectedStatus == 200 && HttpMethod.GET.equals(method)) {
+    if (successfulGet) {
       assertSuccessBody(result, route);
+    } else if (successfulEventHead) {
+      result.andExpect(content().string(""))
+          .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+              org.hamcrest.Matchers.containsString("no-store")));
+      verify(eventReadService).read(null, null, null, null, null);
+      verify(eventAccessAuditor).recordSuccess(null, false, false, false, false, false, 1);
+      verifyNoInteractions(statusService, eventRecorder);
     } else {
-      verifyNoInteractions(statusService, eventReadService);
+      verifyNoControlSideEffects();
     }
   }
 
   @Test
-  void unknownControlSubRouteHitsDefaultDeny() throws Exception {
+  void unknownControlSubRouteHitsDefaultDenyBeforeAnySideEffect() throws Exception {
     mockMvc.perform(get("/api/v1/internal/control/shutdown")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, READ_PERMISSION + "," + DIAGNOSE_PERMISSION))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"));
-    verifyNoInteractions(statusService, eventReadService);
+    verifyNoControlSideEffects();
   }
 
   @Test
-  void trailingSlashControlRouteHitsDefaultDeny() throws Exception {
+  void trailingSlashControlRouteHitsDefaultDenyBeforeAnySideEffect() throws Exception {
     mockMvc.perform(get(STATUS + "/").header(ApiPermissionGuard.PERMISSIONS_HEADER, READ_PERMISSION))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"));
-    verifyNoInteractions(statusService, eventReadService);
+    verifyNoControlSideEffects();
   }
 
   @Test
   void unknownOrDuplicateOperationalEventQueryParameterFailsClosed() throws Exception {
-    // Authorized caller, but an unknown parameter (and a duplicate) are rejected with a bounded 400
-    // and the read service is never invoked.
     mockMvc.perform(get(EVENTS + "?logger=com.orderpilot.Foo")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, EVENT_READ_PERMISSION))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isBadRequest())
+        .andExpect(content().string(""));
     mockMvc.perform(get(EVENTS + "?severity=INFO&severity=WARN")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, EVENT_READ_PERMISSION))
-        .andExpect(status().isBadRequest());
-    verifyNoInteractions(eventReadService);
+        .andExpect(status().isBadRequest())
+        .andExpect(content().string(""));
+    verifyNoInteractions(eventReadService, eventAccessAuditor, statusService, eventRecorder);
+  }
+
+  @Test
+  void malformedHeadQueryMatchesGetValidationAndRemainsBodyFree() throws Exception {
+    mockMvc.perform(request(HttpMethod.HEAD, EVENTS + "?logger=com.orderpilot.Foo")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, EVENT_READ_PERMISSION))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().string(""))
+        .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+            org.hamcrest.Matchers.containsString("no-store")));
+    verifyNoControlSideEffects();
+  }
+
+  private void resetAll() {
+    reset(statusService, eventReadService, eventRecorder, eventAccessAuditor);
+  }
+
+  private void verifyNoControlSideEffects() {
+    verifyNoInteractions(statusService, eventReadService, eventRecorder, eventAccessAuditor);
   }
 
   private static Stream<Arguments> getCallerMatrix() {
@@ -243,17 +271,11 @@ class InternalControlControllerSecurityTest {
     if (HttpMethod.GET.equals(method) || HttpMethod.HEAD.equals(method)) {
       return route.requiredPermission().equals(caller.permissions()) ? 200 : 403;
     }
-    // Write-shaped control methods are unmapped. Route authority is single-sourced from
-    // ApiRouteSecurityPolicy (GET/HEAD only), so an authenticated caller reaches the dispatcher and
-    // gets a native 405 fail-closed; the control service is never invoked, regardless of permission.
     return 405;
   }
 
   private static String expectedCode(HttpMethod method, Caller caller, int status) {
-    if (HttpMethod.OPTIONS.equals(method)) {
-      return null;
-    }
-    if (HttpMethod.HEAD.equals(method)) {
+    if (HttpMethod.OPTIONS.equals(method) || HttpMethod.HEAD.equals(method)) {
       return null;
     }
     if (status == 401) {
@@ -302,7 +324,7 @@ class InternalControlControllerSecurityTest {
           .thenReturn(new OperationalEventPage(
               List.of(new OperationalEventProjection(
                   "2026-07-19T10:00:00Z", "DEPENDENCY_STATE_CHANGED", "DATABASE", "ERROR",
-                  "dependency DATABASE state changed to DOWN", null)),
+                  "observed dependency DATABASE state changed to DOWN", null)),
               null,
               false,
               1,
@@ -336,7 +358,8 @@ class InternalControlControllerSecurityTest {
           .andExpect(jsonPath("$.database.state").value("UP"))
           .andExpect(jsonPath("$.database.migrationVersion").value("65"));
       case EVENTS -> result
-          .andExpect(header().string(HttpHeaders.CACHE_CONTROL, org.hamcrest.Matchers.containsString("no-store")))
+          .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+              org.hamcrest.Matchers.containsString("no-store")))
           .andExpect(jsonPath("$.maxLimit").value(100))
           .andExpect(jsonPath("$.returned").value(1))
           .andExpect(jsonPath("$.scope").value("LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS"))
