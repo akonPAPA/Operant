@@ -90,10 +90,11 @@ test("approve accepts an explicit empty intent object but reject requires a reas
   );
 });
 
-test("oversized declared body is denied before parsing", async () => {
-  const response = await validateBffQuoteMutationRequest(
-    request(JSON.stringify(VALID_RFQ), { headers: { "Content-Length": String(256 * 1024 + 1) } }),
-    FROM_RFQ
-  );
+test("oversized actual body is denied before JSON parsing", async () => {
+  const oversized = JSON.stringify({
+    ...VALID_RFQ,
+    requestedItems: [{ ...VALID_RFQ.requestedItems[0], description: "x".repeat(300 * 1024) }]
+  });
+  const response = await validateBffQuoteMutationRequest(request(oversized), FROM_RFQ);
   assert.equal(response?.status, 413);
 });
