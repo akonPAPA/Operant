@@ -63,7 +63,7 @@ function declaredContentLength(request: Request): number | null {
 async function readBodyBounded(request: Request): Promise<BodyReadResult> {
   const declared = declaredContentLength(request);
   if (Number.isNaN(declared) || (declared !== null && declared > MAX_BODY_BYTES)) {
-    await request.body?.cancel().catch(() => undefined);
+    void request.body?.cancel().catch(() => undefined);
     return { ok: false, status: 413 };
   }
   if (!request.body) return { ok: true, bytes: new Uint8Array(0) };
@@ -77,7 +77,7 @@ async function readBodyBounded(request: Request): Promise<BodyReadResult> {
       if (done) break;
       total += value.byteLength;
       if (total > MAX_BODY_BYTES) {
-        await reader.cancel().catch(() => undefined);
+        void reader.cancel().catch(() => undefined);
         return { ok: false, status: 413 };
       }
       chunks.push(value);
