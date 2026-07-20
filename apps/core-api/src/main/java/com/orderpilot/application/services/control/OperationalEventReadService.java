@@ -10,18 +10,19 @@ import java.util.Locale;
 import org.springframework.stereotype.Service;
 
 /**
- * P1-E lifecycle (operational-event slice) - bounded, cursor-paginated read over the process-local
- * {@link OperationalEventBuffer}, projected to the safe typed {@link OperationalEventProjection}. All
- * client-influenced values are bounded here: severity/component/eventCode are exact enum allowlists,
- * {@code limit} is clamped, and {@code before} is a numeric sequence boundary. Any malformed input
- * fails closed with {@link InvalidOperationalEventQueryException} (mapped to 400). Newest-first;
- * {@code before} is the exclusive upper sequence bound.
+ * Bounded, cursor-paginated read over the current process-local retained event window. All
+ * client-influenced values are bounded: filters are exact enum allowlists, {@code limit} is clamped,
+ * and {@code before} is a non-negative signed-64-bit sequence boundary. Malformed input fails closed.
+ *
+ * <p>The cursor prevents newer events from leaking into an older-page request and prevents duplicates
+ * within the retained window. The backing ring is intentionally non-durable and may evict old events
+ * between requests; an evicted event cannot be recovered. {@code instanceId} lets clients detect a
+ * process restart/change but does not turn this surface into durable history.
  */
 @Service
 public class OperationalEventReadService {
   public static final int DEFAULT_LIMIT = 50;
   public static final int MAX_LIMIT = 100;
-  /** Honest fixed contract token: process-local, non-durable recent operational events. */
   public static final String SCOPE = "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS";
   static final String INSTANCE_ID = java.util.UUID.randomUUID().toString();
 
