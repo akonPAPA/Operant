@@ -2,27 +2,33 @@ package com.orderpilot.application.services.control;
 
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 
 /**
- * P1-E lifecycle (operational-event slice) - the explicit producer of operational events. It is the
- * ONLY thing that writes to {@link OperationalEventBuffer}, and it emits only from approved
- * operational boundaries (observed dependency/readiness state). It emits an event exactly on a
- * transition, so routine polling does not flood the buffer, and it maps only known components -
- * an unrecognized dependency name is ignored (fail closed), never projected.
+ * P1-E lifecycle (operational-event slice) - the explicit producer of sampled control-state
+ * observations. It is the ONLY thing that writes to {@link OperationalEventBuffer}. Status and
+ * readiness endpoint polling supplies typed dependency/readiness observations; the first observation
+ * establishes an in-process baseline and emits no transition event. A subsequent changed observation
+ * emits exactly one event.
  *
- * <p>No arbitrary logger record can reach this producer: callers pass typed platform state, and the
- * summary is built from a fixed server template.
+ * <p>The recorder is linearizable: baseline/current-state update and event append execute under one
+ * lock, so concurrent polls cannot publish an event order that contradicts the recorder's final
+ * observed state. A DOWN observation is the bounded control-probe result and may represent dependency
+ * unreachability, probe timeout, bulkhead saturation, or probe failure; it is not an independent
+ * background incident detector.
+ *
+ * <p>No arbitrary logger record can reach this producer: callers pass typed platform state, unknown
+ * components are ignored fail-closed, and summaries are built from fixed server templates.
  */
 @Component
 public class OperationalEventRecorder {
   private final OperationalEventBuffer buffer;
   private final java.time.Clock clock;
-  private final Map<OperationalEventComponent, DependencyState> lastDependencyState = new ConcurrentHashMap<>();
-  private final Object readinessLock = new Object();
+  private final Object stateLock = new Object();
+  private final Map<OperationalEventComponent, DependencyState> lastDependencyState = new HashMap<>();
   private Boolean lastReadiness;
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -35,7 +41,10 @@ public class OperationalEventRecorder {
     this.clock = clock;
   }
 
-  /** Observe a set of dependency statuses; emit DEPENDENCY_STATE_CHANGED for each real transition. */
+  /**
+   * Observe dependency probe states. The first value per component establishes a baseline; only a
+   * later changed sampled value emits DEPENDENCY_STATE_CHANGED.
+   */
   public void observeDependencies(List<DependencyStatus> dependencies) {
     if (dependencies == null) {
       return;
@@ -49,8 +58,16 @@ public class OperationalEventRecorder {
       if (component == null || state == null) {
         continue;
       }
-      DependencyState previous = lastDependencyState.put(component, state);
-      if (previous != state) {
+      synchronized (stateLock) {
+        if (!lastDependencyState.containsKey(component)) {
+          lastDependencyState.put(component, state);
+          continue;
+        }
+        DependencyState previous = lastDependencyState.get(component);
+        if (previous == state) {
+          continue;
+        }
+        lastDependencyState.put(component, state);
         buffer.append(
             clock.millis(),
             OperationalEventCode.DEPENDENCY_STATE_CHANGED,
@@ -62,21 +79,28 @@ public class OperationalEventRecorder {
     }
   }
 
-  /** Observe platform readiness; emit READINESS_STATE_CHANGED only on a transition. */
+  /**
+   * Observe sampled platform readiness. The first value establishes a baseline; only a later changed
+   * sampled value emits READINESS_STATE_CHANGED.
+   */
   public void observeReadiness(boolean ready) {
-    synchronized (readinessLock) {
-      if (lastReadiness != null && lastReadiness == ready) {
+    synchronized (stateLock) {
+      if (lastReadiness == null) {
+        lastReadiness = ready;
+        return;
+      }
+      if (lastReadiness == ready) {
         return;
       }
       lastReadiness = ready;
+      buffer.append(
+          clock.millis(),
+          OperationalEventCode.READINESS_STATE_CHANGED,
+          OperationalEventComponent.PLATFORM,
+          ready ? OperationalEventSeverity.INFO : OperationalEventSeverity.WARN,
+          OperationalEventSummaries.readinessStateChanged(ready),
+          null);
     }
-    buffer.append(
-        clock.millis(),
-        OperationalEventCode.READINESS_STATE_CHANGED,
-        OperationalEventComponent.PLATFORM,
-        ready ? OperationalEventSeverity.INFO : OperationalEventSeverity.WARN,
-        OperationalEventSummaries.readinessStateChanged(ready),
-        null);
   }
 
   private static OperationalEventComponent componentFor(String dependencyName) {
