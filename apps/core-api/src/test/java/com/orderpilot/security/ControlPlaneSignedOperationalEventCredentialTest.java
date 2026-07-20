@@ -35,12 +35,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * P1-E lifecycle (operational-event slice) proof that a signed control credential granted only
- * STAFF_CONTROL_OPERATIONAL_EVENT_READ can read the bounded typed operational-event projection but is
- * denied the status route (which requires STAFF_CONTROL_READ) - the dedicated event-read permission
- * does not imply status reads. It also proves the raw query is bound into the control signature (a
- * query appended after signing fails closed) and that a successful read emits a bounded access-audit
- * record carrying no event content.
+ * Signed-control proof for the dedicated operational-event permission, raw-query HMAC binding and
+ * bounded pseudonymous access auditing.
  */
 @WebMvcTest(controllers = InternalControlController.class)
 @Import({
@@ -85,9 +81,7 @@ class ControlPlaneSignedOperationalEventCredentialTest {
 
   @Test
   void signedEventReadCredentialCanReadOperationalEvents() throws Exception {
-    when(eventReadService.read(any(), any(), any(), any(), any())).thenReturn(new OperationalEventPage(
-        List.of(), null, false, 0, 100, "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS",
-        "22222222-2222-2222-2222-222222222222"));
+    when(eventReadService.read(any(), any(), any(), any(), any())).thenReturn(emptyPage());
 
     mockMvc.perform(controlSigned(EVENTS, ""))
         .andExpect(status().isOk())
@@ -102,29 +96,36 @@ class ControlPlaneSignedOperationalEventCredentialTest {
     mockMvc.perform(controlSigned(STATUS, ""))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
-    verifyNoInteractions(statusService);
-    verifyNoInteractions(eventReadService);
+    verifyNoInteractions(statusService, eventReadService, eventRecorder);
   }
 
   @Test
-  void queryTamperedAfterSigningIsDeniedBecauseTheQueryIsBoundIntoTheSignature() throws Exception {
-    mockMvc.perform(controlSigned(EVENTS, "").with(mutable -> {
-          mutable.setQueryString("limit=5");
-          return mutable;
-        }))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
-    verifyNoInteractions(eventReadService);
+  void queryTamperedAfterSigningIsDeniedBeforeReadProducerOrSuccessAudit() throws Exception {
+    ch.qos.logback.classic.Logger auditLogger = auditLogger();
+    ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captured =
+        new ch.qos.logback.core.read.ListAppender<>();
+    captured.start();
+    auditLogger.addAppender(captured);
+    try {
+      mockMvc.perform(controlSigned(EVENTS, "").with(mutable -> {
+            mutable.setQueryString("limit=5");
+            return mutable;
+          }))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    } finally {
+      auditLogger.detachAppender(captured);
+    }
+
+    verifyNoInteractions(eventReadService, eventRecorder);
+    assertThat(captured.list).isEmpty();
   }
 
   @Test
-  void successfulReadEmitsBoundedAccessAuditWithoutContent() throws Exception {
-    when(eventReadService.read(any(), any(), any(), any(), any())).thenReturn(new OperationalEventPage(
-        List.of(), null, false, 0, 100, "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS",
-        "22222222-2222-2222-2222-222222222222"));
+  void successfulReadEmitsBoundedPseudonymousAuditWithoutContent() throws Exception {
+    when(eventReadService.read(any(), any(), any(), any(), any())).thenReturn(emptyPage());
 
-    ch.qos.logback.classic.Logger auditLogger = (ch.qos.logback.classic.Logger)
-        org.slf4j.LoggerFactory.getLogger(OperationalEventAccessAuditor.AUDIT_LOGGER_NAME);
+    ch.qos.logback.classic.Logger auditLogger = auditLogger();
     ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captured =
         new ch.qos.logback.core.read.ListAppender<>();
     captured.start();
@@ -139,10 +140,25 @@ class ControlPlaneSignedOperationalEventCredentialTest {
     String message = captured.list.get(0).getFormattedMessage();
     assertThat(message)
         .contains("result=SUCCESS")
-        .contains("principal=" + CREDENTIAL)
         .contains("permission=STAFF_CONTROL_OPERATIONAL_EVENT_READ")
-        .contains("returned=0");
-    assertThat(message).doesNotContain(CONTROL_SECRET).doesNotContain("Bearer");
+        .contains("severityFilterPresent=false")
+        .contains("customLimitPresent=false")
+        .contains("returned=0")
+        .matches(".*principalFingerprint=[0-9a-f]{24}.*")
+        .doesNotContain(CREDENTIAL)
+        .doesNotContain(CONTROL_SECRET)
+        .doesNotContain("Bearer");
+  }
+
+  private static OperationalEventPage emptyPage() {
+    return new OperationalEventPage(
+        List.of(), null, false, 0, 100, "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS",
+        "22222222-2222-2222-2222-222222222222");
+  }
+
+  private static ch.qos.logback.classic.Logger auditLogger() {
+    return (ch.qos.logback.classic.Logger)
+        org.slf4j.LoggerFactory.getLogger(OperationalEventAccessAuditor.AUDIT_LOGGER_NAME);
   }
 
   private static MockHttpServletRequestBuilder controlSigned(String path, String rawQuery) throws Exception {
