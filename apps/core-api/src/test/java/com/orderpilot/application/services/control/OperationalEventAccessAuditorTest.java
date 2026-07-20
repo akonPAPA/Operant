@@ -12,9 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
 /**
- * P1-E lifecycle (operational-event slice) proof that a successful privileged read emits a bounded,
- * structured access record with attribution + request shape only - never content, secrets, or raw
- * headers - and that all inputs are defensively sanitized.
+ * Proof that privileged read audit records contain only a stable fingerprint, fixed permission,
+ * booleans and a bounded count; raw principal/query/event data never reaches the log sink.
  */
 class OperationalEventAccessAuditorTest {
   private Logger auditLogger;
@@ -41,47 +40,60 @@ class OperationalEventAccessAuditorTest {
   }
 
   @Test
-  void recordsBoundedAttributionAndRequestShape() {
+  void recordsPseudonymousAttributionAndBooleanRequestShape() {
     auditor.recordSuccess(
-        new ControlPlanePrincipal("ops-prod", "control-v1", "MAINTENANCE_SERVICE"),
-        "warn", "database", "dependency_state_changed", "25", true, 25);
+        new ControlPlanePrincipal("ops-prod", "control-v1", "CONTROL"),
+        true, true, true, true, true, 25);
 
-    assertThat(lastMessage())
+    String message = lastMessage();
+    assertThat(message)
         .contains("result=SUCCESS")
-        .contains("principal=ops-prod")
-        .contains("principalType=MAINTENANCE_SERVICE")
-        .contains("keyVersion=control-v1")
         .contains("permission=STAFF_CONTROL_OPERATIONAL_EVENT_READ")
-        .contains("severity=WARN")
-        .contains("component=DATABASE")
-        .contains("eventCode=DEPENDENCY_STATE_CHANGED")
-        .contains("limit=25")
+        .contains("severityFilterPresent=true")
+        .contains("componentFilterPresent=true")
+        .contains("eventCodeFilterPresent=true")
+        .contains("customLimitPresent=true")
         .contains("beforePresent=true")
-        .contains("returned=25");
+        .contains("returned=25")
+        .matches(".*principalFingerprint=[0-9a-f]{24}.*")
+        .doesNotContain("ops-prod")
+        .doesNotContain("control-v1");
   }
 
   @Test
-  void reportsUnknownWhenPrincipalAbsentAndAllFiltersOmitted() {
-    auditor.recordSuccess(null, null, null, null, null, false, 0);
-    assertThat(lastMessage())
-        .contains("principal=unknown")
-        .contains("severity=ALL")
-        .contains("component=ALL")
-        .contains("eventCode=ALL")
-        .contains("limit=default")
-        .contains("beforePresent=false");
-  }
+  void reportsUnknownWhenPrincipalAbsent() {
+    auditor.recordSuccess(null, false, false, false, false, false, 0);
 
-  @Test
-  void sanitizesMalformedInputsAndNegativeCount() {
-    auditor.recordSuccess(
-        new ControlPlanePrincipal("ops-prod", "control-v1", "MAINTENANCE_SERVICE"),
-        "DROP TABLE", "../etc", "x'; --", "99999999999", true, -5);
     assertThat(lastMessage())
-        .contains("severity=INVALID")
-        .contains("component=INVALID")
-        .contains("eventCode=INVALID")
-        .contains("limit=invalid")
+        .contains("principalFingerprint=unknown")
+        .contains("severityFilterPresent=false")
+        .contains("componentFilterPresent=false")
+        .contains("eventCodeFilterPresent=false")
+        .contains("customLimitPresent=false")
+        .contains("beforePresent=false")
         .contains("returned=0");
+  }
+
+  @Test
+  void rawPrincipalTextAndLogForgingCharactersNeverReachTheSink() {
+    String maliciousAlias = "ops\nforged\u2028entry";
+    String maliciousVersion = "v1\r\nresult=FAIL";
+    String maliciousType = "CONTROL\u2029FORGED";
+
+    auditor.recordSuccess(
+        new ControlPlanePrincipal(maliciousAlias, maliciousVersion, maliciousType),
+        true, false, true, false, true, -5);
+
+    String message = lastMessage();
+    assertThat(message)
+        .matches(".*principalFingerprint=[0-9a-f]{24}.*")
+        .contains("returned=0")
+        .doesNotContain(maliciousAlias)
+        .doesNotContain(maliciousVersion)
+        .doesNotContain(maliciousType)
+        .doesNotContain("\n")
+        .doesNotContain("\r")
+        .doesNotContain("\u2028")
+        .doesNotContain("\u2029");
   }
 }
