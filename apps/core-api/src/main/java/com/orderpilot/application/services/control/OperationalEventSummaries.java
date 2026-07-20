@@ -11,14 +11,14 @@ final class OperationalEventSummaries {
 
   private OperationalEventSummaries() {}
 
-  /** Fixed template for a dependency state change. Uses only closed tokens. */
+  /** Fixed template for a changed sampled dependency observation. Uses only closed tokens. */
   static String dependencyStateChanged(OperationalEventComponent component, String state) {
-    return "dependency " + component.name() + " state changed to " + safeState(state);
+    return "observed dependency " + component.name() + " state changed to " + safeState(state);
   }
 
-  /** Fixed template for a readiness state change. */
+  /** Fixed template for a changed sampled readiness observation. */
   static String readinessStateChanged(boolean ready) {
-    return "platform readiness changed to " + (ready ? "READY" : "NOT_READY");
+    return "observed platform readiness changed to " + (ready ? "READY" : "NOT_READY");
   }
 
   /** Defensive bound applied to any stored summary (templates are already safe). */
