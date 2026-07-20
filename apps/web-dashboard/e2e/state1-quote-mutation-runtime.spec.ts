@@ -23,12 +23,24 @@ async function resetCoreRequests(request: APIRequestContext) {
   await request.delete(`${FAKE_CORE}/__test/requests`);
 }
 
+async function configureQuoteBehavior(
+  request: APIRequestContext,
+  behavior: { failNextQuoteMutationTransport?: boolean; failNextApprovalState?: boolean }
+) {
+  const response = await request.post(`${FAKE_CORE}/__test/quote-behavior`, { data: behavior });
+  expect(response.ok()).toBeTruthy();
+}
+
 function quoteMutationCalls(requests: Awaited<ReturnType<typeof coreRequests>>) {
   return requests.filter(
     (entry) =>
       entry.path.startsWith("/api/v1/quotes/") &&
       (entry.method === "POST" || entry.path.includes("/approval-state"))
   );
+}
+
+function quotePosts(requests: Awaited<ReturnType<typeof coreRequests>>) {
+  return quoteMutationCalls(requests).filter((entry) => entry.method === "POST");
 }
 
 async function signIn(page: Page, appOrigin: string) {
@@ -51,13 +63,12 @@ async function authCookies(page: Page, appOrigin: string) {
 }
 
 test.describe("Profile A — QUOTE_READ + QUOTE_ACTION", () => {
-  test("rapid double-click produces exactly one upstream mutation", async ({ page, request }) => {
+  test("rapid double-click, navigation and reload never repeat the mutation", async ({ page, request }) => {
     await resetCoreRequests(request);
     await signIn(page, QUOTE_ACTOR_APP);
     await page.goto(`${QUOTE_ACTOR_APP}/quotes`);
     await expect(page.getByRole("heading", { name: /Draft Quote Workspace/i })).toBeVisible();
     const createButton = page.getByRole("button", { name: /Create Draft Quote/i });
-    await expect(createButton).toBeVisible();
     const mutationResponsePromise = page.waitForResponse(
       (response) => response.url().includes("/quotes/from-rfq") && response.request().method() === "POST",
       { timeout: 30_000 }
@@ -66,8 +77,59 @@ test.describe("Profile A — QUOTE_READ + QUOTE_ACTION", () => {
     const mutationResponse = await mutationResponsePromise;
     expect(mutationResponse.ok(), `mutation HTTP ${mutationResponse.status()}`).toBeTruthy();
     await expect(page.locator("#quote-workspace-status")).toContainText(/Draft quote created/i);
-    const mutations = quoteMutationCalls(await coreRequests(request)).filter((call) => call.method === "POST");
-    expect(mutations).toHaveLength(1);
+    expect(quotePosts(await coreRequests(request))).toHaveLength(1);
+
+    await page.goto(`${QUOTE_ACTOR_APP}/command-center`);
+    await page.goto(`${QUOTE_ACTOR_APP}/quotes`);
+    await page.reload();
+    await expect(page.getByRole("button", { name: /Create Draft Quote/i })).toBeVisible();
+    expect(quotePosts(await coreRequests(request))).toHaveLength(1);
+  });
+
+  test("transport-uncertain retry reuses the same opaque idempotency key", async ({ page, request }) => {
+    await resetCoreRequests(request);
+    await configureQuoteBehavior(request, { failNextQuoteMutationTransport: true });
+    await signIn(page, QUOTE_ACTOR_APP);
+    await page.goto(`${QUOTE_ACTOR_APP}/quotes`);
+    const createButton = page.getByRole("button", { name: /Create Draft Quote/i });
+
+    const failedResponsePromise = page.waitForResponse(
+      (response) => response.url().includes("/quotes/from-rfq") && response.request().method() === "POST",
+      { timeout: 30_000 }
+    );
+    await createButton.click();
+    const failedResponse = await failedResponsePromise;
+    expect(failedResponse.ok()).toBeFalsy();
+    await expect(page.locator("#quote-workspace-status")).toContainText(/could not|unavailable|failed/i);
+    await expect(createButton).toBeEnabled();
+
+    const successResponsePromise = page.waitForResponse(
+      (response) => response.url().includes("/quotes/from-rfq") && response.request().method() === "POST",
+      { timeout: 30_000 }
+    );
+    await createButton.click();
+    expect((await successResponsePromise).ok()).toBeTruthy();
+    await expect(page.locator("#quote-workspace-status")).toContainText(/Draft quote created/i);
+
+    const posts = quotePosts(await coreRequests(request));
+    expect(posts).toHaveLength(2);
+    expect(posts[0].headers["idempotency-key"]).toBeTruthy();
+    expect(posts[1].headers["idempotency-key"]).toBe(posts[0].headers["idempotency-key"]);
+  });
+
+  test("successful mutation remains successful when the follow-up read refresh fails", async ({ page, request }) => {
+    await resetCoreRequests(request);
+    await configureQuoteBehavior(request, { failNextApprovalState: true });
+    await signIn(page, QUOTE_ACTOR_APP);
+    await page.goto(`${QUOTE_ACTOR_APP}/quotes`);
+    const createButton = page.getByRole("button", { name: /Create Draft Quote/i });
+    await createButton.click();
+    await expect(page.locator("#quote-workspace-status")).toContainText(
+      /Draft quote created.*could not be refreshed/i,
+      { timeout: 30_000 }
+    );
+    await expect(createButton).toBeEnabled();
+    expect(quotePosts(await coreRequests(request))).toHaveLength(1);
   });
 });
 
@@ -93,8 +155,7 @@ test.describe("Profile B — QUOTE_READ without QUOTE_ACTION", () => {
       data: VALID_RFQ
     });
     expect(bffResponse.status()).toBe(403);
-    const mutations = quoteMutationCalls(await coreRequests(request)).filter((call) => call.method === "POST");
-    expect(mutations).toHaveLength(0);
+    expect(quotePosts(await coreRequests(request))).toHaveLength(0);
   });
 });
 
@@ -134,7 +195,7 @@ test.describe("Profile D — revoked server session", () => {
       data: VALID_RFQ
     });
     expect(revokedAttempt.status()).toBe(401);
-    expect(quoteMutationCalls(await coreRequests(request)).filter((call) => call.method === "POST")).toHaveLength(0);
+    expect(quotePosts(await coreRequests(request))).toHaveLength(0);
   });
 });
 
@@ -170,6 +231,6 @@ test.describe("Profile F — stale UI after permission revocation", () => {
     await page.getByRole("button", { name: /Create Draft Quote/i }).click();
     await expect(page.locator("#quote-workspace-status")).not.toContainText(/Draft quote created/i, { timeout: 15_000 });
     await expect(page.locator("#quote-workspace-status")).toContainText(/not available|permission|validation|failed|do not have/i);
-    expect(quoteMutationCalls(await coreRequests(request)).filter((call) => call.method === "POST")).toHaveLength(0);
+    expect(quotePosts(await coreRequests(request))).toHaveLength(0);
   });
 });
