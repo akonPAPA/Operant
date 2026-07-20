@@ -1,22 +1,26 @@
 package com.orderpilot.application.services.control;
 
 import com.orderpilot.security.ControlPlanePrincipal;
-import java.util.Locale;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * P1-E lifecycle (operational-event slice) - emits a bounded, structured access record for each
- * successful privileged operational-event read. It carries attribution + request-shape metadata only:
- * never returned events, secrets, headers, key material, or sensitive query values. It writes to a
- * dedicated logger namespace, distinct from application logging and from the operational-event
- * projection (which is producer-fed, not logger-fed), so auditing a read cannot feed the projection.
- * This is a structured operational audit channel; a durable/persisted control-access audit store
- * remains a later slice (NOT_PROVEN).
+ * P1-E lifecycle (operational-event slice) - emits one bounded structured record for each successful
+ * privileged operational-event read. The record carries a stable non-reversible principal fingerprint
+ * and boolean request-shape facts only. It never logs raw principal fields, filter values, headers,
+ * returned events, secrets, key material, or response content.
+ *
+ * <p>The dedicated logger namespace is distinct from the operational-event projection, so auditing a
+ * read cannot feed the projection. A durable/persisted control-access audit store remains NOT_PROVEN.
  */
 public final class OperationalEventAccessAuditor {
   public static final String AUDIT_LOGGER_NAME = "com.orderpilot.security.control.audit.OperationalEventAccess";
   static final String PERMISSION = "STAFF_CONTROL_OPERATIONAL_EVENT_READ";
+  private static final int PRINCIPAL_FINGERPRINT_HEX_LENGTH = 24;
 
   private final Logger auditLogger;
 
@@ -30,69 +34,39 @@ public final class OperationalEventAccessAuditor {
 
   public void recordSuccess(
       ControlPlanePrincipal principal,
-      String requestedSeverity,
-      String requestedComponent,
-      String requestedEventCode,
-      String requestedLimit,
+      boolean severityFilterPresent,
+      boolean componentFilterPresent,
+      boolean eventCodeFilterPresent,
+      boolean customLimitPresent,
       boolean beforePresent,
       int returnedCount) {
-    String alias = principal == null ? "unknown" : safeToken(principal.credentialAlias());
-    String type = principal == null ? "unknown" : safeToken(principal.principalType());
-    String keyVersion = principal == null ? "unknown" : safeToken(principal.keyVersion());
     auditLogger.info(
-        "control-operational-event-access result=SUCCESS principal={} principalType={} keyVersion={} "
-            + "permission={} severity={} component={} eventCode={} limit={} beforePresent={} returned={}",
-        alias,
-        type,
-        keyVersion,
+        "control-operational-event-access result=SUCCESS principalFingerprint={} permission={} "
+            + "severityFilterPresent={} componentFilterPresent={} eventCodeFilterPresent={} "
+            + "customLimitPresent={} beforePresent={} returned={}",
+        principalFingerprint(principal),
         PERMISSION,
-        allowlistToken(requestedSeverity),
-        allowlistToken(requestedComponent),
-        allowlistToken(requestedEventCode),
-        safeLimit(requestedLimit),
+        severityFilterPresent,
+        componentFilterPresent,
+        eventCodeFilterPresent,
+        customLimitPresent,
         beforePresent,
         Math.max(0, returnedCount));
   }
 
-  private static String allowlistToken(String raw) {
-    if (raw == null || raw.isBlank()) {
-      return "ALL";
-    }
-    String normalized = raw.trim().toUpperCase(Locale.ROOT);
-    for (int i = 0; i < normalized.length(); i++) {
-      char c = normalized.charAt(i);
-      if (!((c >= 'A' && c <= 'Z') || c == '_')) {
-        return "INVALID";
-      }
-    }
-    return normalized.length() > 48 ? "INVALID" : normalized;
-  }
-
-  private static String safeLimit(String requestedLimit) {
-    if (requestedLimit == null || requestedLimit.isBlank()) {
-      return "default";
-    }
-    String trimmed = requestedLimit.trim();
-    if (trimmed.length() > 9) {
-      return "invalid";
-    }
-    for (int i = 0; i < trimmed.length(); i++) {
-      if (trimmed.charAt(i) < '0' || trimmed.charAt(i) > '9') {
-        return "invalid";
-      }
-    }
-    return trimmed;
-  }
-
-  private static String safeToken(String raw) {
-    if (raw == null || raw.isBlank()) {
+  private static String principalFingerprint(ControlPlanePrincipal principal) {
+    if (principal == null) {
       return "unknown";
     }
-    StringBuilder builder = new StringBuilder(Math.min(raw.length(), 64));
-    for (int i = 0; i < raw.length() && builder.length() < 64; i++) {
-      char character = raw.charAt(i);
-      builder.append(Character.isISOControl(character) || character == ' ' ? '_' : character);
+    String material = principal.credentialAlias()
+        + '\u0000' + principal.keyVersion()
+        + '\u0000' + principal.principalType();
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256")
+          .digest(material.getBytes(StandardCharsets.UTF_8));
+      return HexFormat.of().formatHex(digest).substring(0, PRINCIPAL_FINGERPRINT_HEX_LENGTH);
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 unavailable", unavailable);
     }
-    return builder.toString();
   }
 }
