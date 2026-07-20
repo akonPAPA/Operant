@@ -9,9 +9,8 @@ import com.orderpilot.application.services.control.OperationalEventReadService.I
 import org.junit.jupiter.api.Test;
 
 /**
- * P1-E lifecycle (operational-event slice) proof that the read is bounded, newest-first, correctly
- * cursor-paginated, filterable by the closed allowlists, and fails closed on malformed input. The
- * projection only ever carries the typed allowlisted fields.
+ * Proof that operational-event reads are bounded, newest-first, filtered through closed vocabularies,
+ * cursor-paginated within the retained ring window, and fail closed on malformed/overflowing input.
  */
 class OperationalEventReadServiceTest {
 
@@ -20,14 +19,17 @@ class OperationalEventReadServiceTest {
   }
 
   private static void append(
-      OperationalEventBuffer buffer, OperationalEventCode code, OperationalEventComponent component,
+      OperationalEventBuffer buffer,
+      OperationalEventCode code,
+      OperationalEventComponent component,
       OperationalEventSeverity severity) {
     buffer.append(1_000L, code, component, severity, "summary", null);
   }
 
   @Test
   void emptyBufferReturnsEmptyBoundedPageWithHonestScope() {
-    OperationalEventPage page = serviceWith(new OperationalEventBuffer()).read(null, null, null, null, null);
+    OperationalEventPage page = serviceWith(new OperationalEventBuffer())
+        .read(null, null, null, null, null);
     assertThat(page.events()).isEmpty();
     assertThat(page.hasMore()).isFalse();
     assertThat(page.nextCursor()).isNull();
@@ -90,6 +92,29 @@ class OperationalEventReadServiceTest {
   }
 
   @Test
+  void cursorNeverReturnsNewerEventsAndEvictedOlderEventsRemainUnavailable() {
+    OperationalEventBuffer buffer = new OperationalEventBuffer(3);
+    OperationalEventReadService service = serviceWith(buffer);
+    for (int i = 0; i < 3; i++) {
+      append(buffer, OperationalEventCode.DEPENDENCY_STATE_CHANGED, OperationalEventComponent.DATABASE,
+          OperationalEventSeverity.INFO);
+    }
+
+    OperationalEventPage first = service.read(null, null, null, "2", null);
+    assertThat(first.nextCursor()).isEqualTo("2");
+
+    append(buffer, OperationalEventCode.READINESS_STATE_CHANGED, OperationalEventComponent.PLATFORM,
+        OperationalEventSeverity.WARN);
+    append(buffer, OperationalEventCode.READINESS_STATE_CHANGED, OperationalEventComponent.PLATFORM,
+        OperationalEventSeverity.INFO);
+
+    OperationalEventPage olderRetainedWindow = service.read(null, null, null, "2", first.nextCursor());
+    assertThat(olderRetainedWindow.events()).isEmpty();
+    assertThat(olderRetainedWindow.hasMore()).isFalse();
+    assertThat(olderRetainedWindow.nextCursor()).isNull();
+  }
+
+  @Test
   void filtersBySeverityComponentAndEventCode() {
     OperationalEventBuffer buffer = new OperationalEventBuffer();
     append(buffer, OperationalEventCode.DEPENDENCY_STATE_CHANGED, OperationalEventComponent.DATABASE,
@@ -120,13 +145,15 @@ class OperationalEventReadServiceTest {
   }
 
   @Test
-  void failsClosedOnMalformedLimitAndBefore() {
+  void failsClosedOnMalformedLimitAndBeforeIncludingNineteenDigitOverflow() {
     OperationalEventReadService service = serviceWith(new OperationalEventBuffer());
     assertThatThrownBy(() -> service.read(null, null, null, "0", null))
         .isInstanceOf(InvalidOperationalEventQueryException.class);
     assertThatThrownBy(() -> service.read(null, null, null, "abc", null))
         .isInstanceOf(InvalidOperationalEventQueryException.class);
     assertThatThrownBy(() -> service.read(null, null, null, null, "-1"))
+        .isInstanceOf(InvalidOperationalEventQueryException.class);
+    assertThatThrownBy(() -> service.read(null, null, null, null, "9223372036854775808"))
         .isInstanceOf(InvalidOperationalEventQueryException.class);
     assertThatThrownBy(() -> service.read(null, null, null, null, "99999999999999999999"))
         .isInstanceOf(InvalidOperationalEventQueryException.class);
