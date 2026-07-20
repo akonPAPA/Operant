@@ -68,7 +68,20 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
-      - run: npm test
+      - name: Run frontend unit and contract tests
+        shell: bash
+        run: |
+          set +e
+          npm test > "$RUNNER_TEMP/frontend-unit-tests.log" 2>&1
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            echo "::group::Last 240 lines of failed frontend unit tests"
+            tail -n 240 "$RUNNER_TEMP/frontend-unit-tests.log"
+            echo "::endgroup::"
+            exit "$status"
+          fi
+          tail -n 30 "$RUNNER_TEMP/frontend-unit-tests.log"
       - run: npm run validate:p1d-topology
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
@@ -84,7 +97,6 @@ jobs:
             apps/web-dashboard/test-results/
           if-no-files-found: ignore
 
-
   release-evidence:
     name: Release Evidence Gate
     runs-on: ubuntu-latest
@@ -99,6 +111,7 @@ jobs:
         run: node scripts/check-evidence-integrity.mjs --mode structural
       - name: Run release evidence checker tests
         run: node --test scripts/check-evidence-integrity.test.mjs
+
   # Skip-safe required gate: "Frontend / Frontend Gate".
   # This job MUST always run and reach a terminal success/failure conclusion so it is
   # never reported as skipped/neutral. When there are no frontend changes it satisfies
