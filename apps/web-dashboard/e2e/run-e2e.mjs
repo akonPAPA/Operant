@@ -127,6 +127,16 @@ function artifactManifest(dir) {
 function cleanDevDist() {
   rmSync(devDist, { recursive: true, force: true });
   rmSync(demoDevDist, { recursive: true, force: true });
+  for (const dir of [
+    ".next-e2e-denied",
+    ".next-e2e-unavailable",
+    ".next-e2e-no-review",
+    ".next-e2e-quote-actor",
+    ".next-e2e-quote-readonly",
+    ".next-e2e-no-quotes"
+  ]) {
+    rmSync(join(appRoot, dir), { recursive: true, force: true });
+  }
 }
 
 // F15: `next dev` on the isolated distDir rewrites TRACKED generated-config sources in the app
@@ -154,7 +164,25 @@ function restoreTrackedGenerated() {
 
 let exitCode = 0;
 cleanDevDist();
+
+function ensurePlaywrightBrowsers() {
+  const install = spawnSync(
+    process.execPath,
+    [playwrightBin, "install", "chromium"],
+    { cwd: appRoot, stdio: "inherit", shell: false }
+  );
+  if (install.status !== 0) {
+    console.error("Playwright browser install failed — run: npx playwright install chromium");
+    return install.status ?? 1;
+  }
+  return 0;
+}
+
 try {
+  const browserInstall = ensurePlaywrightBrowsers();
+  if (browserInstall !== 0) {
+    process.exit(browserInstall);
+  }
   exitCode = run([nextBin, "build"]);
   if (exitCode === 0) {
     // Prepare the standalone runtime assets NOW so the artifact snapshot below covers the exact

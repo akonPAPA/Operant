@@ -89,8 +89,8 @@ test("approval state/command response contracts expose no audit/actor/internal-e
 });
 
 test("non-2xx responses map to safe messages, never raw backend body dumps", () => {
-  assert.match(apiClient, /function safeErrorMessage\(status: number\)/);
-  assert.match(apiClient, /throw new BoundedUiError\(safeErrorMessage\(response\.status\)\)/);
+  assert.match(apiClient, /uiErrorForStatus/);
+  assert.match(apiClient, /throw new BoundedUiError\(mapped\.message, response\.status\)/);
   // No code path rethrows the raw response text/body as the error message.
   assert.doesNotMatch(apiClient, /throw new Error\(message \|\|/);
 });

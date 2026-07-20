@@ -24,10 +24,11 @@ test("quote approval API client exposes Stage 12B endpoints", () => {
   assert.match(apiClient, /X-Tenant-Id/);
 });
 
-test("quote workspace renders approval panel and guarded actions", () => {
+test("quote workspace renders approval panel and guarded actions when mutation offered", () => {
   assert.match(workspace, /Approval required/);
   assert.match(workspace, /Approval reasons/);
   assert.match(workspace, /Blocking issues/);
+  assert.match(workspace, /canPerformQuoteAction/);
   assert.match(workspace, /Approve/);
   assert.match(workspace, /Reject/);
   assert.match(workspace, /Request changes/);
@@ -51,34 +52,16 @@ test("quote workspace does not use Date.now() for idempotency keys", () => {
   assert.doesNotMatch(idempotencyHelper, /Math\.random\(\)/);
 });
 
-test("quote workspace uses secure idempotency key helper", () => {
-  assert.match(workspace, /import \{ generateIdempotencyKey \} from "@\/lib\/security-idempotency"/);
-  assert.match(idempotencyHelper, /crypto\.randomUUID/);
-  assert.match(idempotencyHelper, /crypto\.getRandomValues/);
-  assert.match(idempotencyHelper, /throw new Error\("Secure idempotency key generation is unavailable in this browser\."\)/);
-  assert.match(workspace, /createDraftKeyRef\.current = generateIdempotencyKey\(\)/);
-  assert.match(workspace, /approvalActionKeyRef\.current\.set\(actionKey, generateIdempotencyKey\(\)\)/);
+test("quote workspace uses intent-bound idempotency keys", () => {
+  assert.match(workspace, /idempotencyKeyForCreateDraftFromRfq/);
+  assert.match(workspace, /idempotencyKeyForQuoteApprovalAction/);
+  assert.match(workspace, /useOperatorAction/);
 });
 
-test("quote workspace stores idempotency key in useRef for stable attempt state", () => {
-  assert.match(workspace, /const loadingRef = useRef\(false\)/);
-  assert.match(workspace, /const createDraftKeyRef = useRef<string \| null>\(null\)/);
-  assert.match(workspace, /const approvalActionKeyRef = useRef<Map<string, string>>\(new Map\(\)\)/);
-});
-
-test("quote workspace clears draft key after successful creation", () => {
-  assert.match(workspace, /createDraftKeyRef\.current = null/);
-});
-
-test("quote workspace guards against duplicate click during pending state", () => {
-  assert.match(workspace, /if \(loadingRef\.current\) return/);
-  assert.match(workspace, /loadingRef\.current = true/);
-  assert.match(workspace, /loadingRef\.current = false/);
-});
-
-test("quote workspace locks buttons while request is pending", () => {
-  assert.match(workspace, /disabled=\{loading\}/);
-  assert.match(workspace, /\{loading \? "Submitting\.\.\." : "Create Draft Quote"\}/);
+test("quote workspace guards duplicate submission via operator action runtime", () => {
+  assert.match(workspace, /useOperatorAction/);
+  assert.match(workspace, /disabled=\{busy \|\| actionDisabled\}/);
+  assert.match(workspace, /\{busy \? "Submitting\.\.\." : "Create Draft Quote"\}/);
 });
 
 test("quote transaction API sends idempotency key as header and strips it from JSON body", () => {

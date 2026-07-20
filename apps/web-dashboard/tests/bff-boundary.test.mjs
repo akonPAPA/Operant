@@ -156,8 +156,9 @@ test("bff proxy returns before Core fetch when CSRF validation fails", () => {
 test("every mutation client routes through the shared CSRF-aware helper", () => {
   const libDir = join(root, "lib");
   const offenders = [];
+  const skipContractOnly = new Set(["frontend-surface-contract.ts"]);
   for (const entry of readdirSync(libDir)) {
-    if (!entry.endsWith(".ts")) {
+    if (!entry.endsWith(".ts") || skipContractOnly.has(entry)) {
       continue;
     }
     const source = readFileSync(join(libDir, entry), "utf8");

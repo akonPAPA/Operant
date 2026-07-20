@@ -1,4 +1,4 @@
-import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable } from "./api-transport";
+import { dashboardCoreApiBaseUrl, enrichDashboardRequestInit, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
 import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
@@ -110,12 +110,7 @@ export const rfqHandoffClient = {
   tenantId: demoTenantId()
 };
 
-// The backend re-validates read and mutation permissions on every request.
-// This is an operator-only surface; the bot/channel path can never reach these transition endpoints.
-const CHANNELS_READ_PERMISSION = "ADMIN_SETTINGS_READ";
-const CHANNELS_MANAGE_PERMISSION = "ADMIN_SETTINGS_MANAGE";
-const AI_WORK_ACTION = "AI_WORK_ACTION";
-const QUOTE_ACTION = "QUOTE_ACTION";
+// Permissions are enforced by BFF session + Core on every request — never sent from the browser in BFF mode.
 
 function rfqHandoffStatusMessage(status: number): string {
   switch (status) {
@@ -137,15 +132,13 @@ function rfqHandoffStatusMessage(status: number): string {
   }
 }
 
-function baseHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-OrderPilot-Permissions": CHANNELS_READ_PERMISSION
-  };
-  if (rfqHandoffClient.tenantId) {
-    h["X-Tenant-Id"] = rfqHandoffClient.tenantId;
+// BFF mode: session cookie carries permissions. Demo/dev direct Core may send tenant header only.
+function requestHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(extra ?? {}) };
+  if (!usesBffTransport() && rfqHandoffClient.tenantId) {
+    headers["X-Tenant-Id"] = rfqHandoffClient.tenantId;
   }
-  return h;
+  return headers;
 }
 
 async function request<T>(path: string, init: RequestInit, fallback: T): Promise<RfqHandoffApiResult<T>> {
@@ -161,7 +154,7 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
       enrichDashboardRequestInit({
         cache: "no-store",
         ...init,
-        headers: { ...baseHeaders(), ...((init.headers as Record<string, string>) ?? {}) }
+        headers: { ...requestHeaders(), ...((init.headers as Record<string, string>) ?? {}) }
       })
     );
     if (!response.ok) {
@@ -195,7 +188,6 @@ export function startReviewRfqHandoff(id: string) {
     `/api/v1/channels/rfq-handoffs/${id}/start-review`,
     {
       method: "POST",
-      headers: { "X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION },
       body: JSON.stringify({})
     },
     null
@@ -208,7 +200,6 @@ export function dismissRfqHandoff(id: string, reason: string) {
     `/api/v1/channels/rfq-handoffs/${id}/dismiss`,
     {
       method: "POST",
-      headers: { "X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION },
       body: JSON.stringify({ reason })
     },
     null
@@ -221,7 +212,6 @@ export function markConvertedRfqHandoff(id: string, conversionNote: string) {
     `/api/v1/channels/rfq-handoffs/${id}/mark-converted`,
     {
       method: "POST",
-      headers: { "X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION },
       body: JSON.stringify({ conversionNote })
     },
     null
@@ -239,7 +229,6 @@ export function generateRfqHandoffAiSuggestion(
     {
       method: "POST",
       headers: {
-        "X-OrderPilot-Permissions": AI_WORK_ACTION,
         "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({ workType })
@@ -257,7 +246,6 @@ export function createDraftQuoteFromRfqHandoff(id: string) {
     `/api/v1/quotes/drafts/from-rfq-handoff/${id}`,
     {
       method: "POST",
-      headers: { "X-OrderPilot-Permissions": QUOTE_ACTION },
       body: JSON.stringify({})
     },
     null
@@ -279,7 +267,6 @@ export function decideRfqHandoffDraft(
     {
       method: "POST",
       headers: {
-        "X-OrderPilot-Permissions": QUOTE_ACTION,
         "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({ decision, note })

@@ -13,7 +13,8 @@ test("E2E runner and standalone launcher avoid shell execution", () => {
   assert.doesNotMatch(standalone, /shell:\s*true/);
   assert.match(runE2e, /shell:\s*false/);
   assert.match(standalone, /shell:\s*false/);
-  assert.doesNotMatch(runE2e, /npx/);
+  assert.match(runE2e, /playwrightBin, "install", "chromium"/);
+  assert.doesNotMatch(runE2e, /spawnSync\(\s*["']npx/);
 });
 
 test("E2E standalone harness uses process env and no production-module runtime downgrade", () => {

@@ -343,6 +343,36 @@ export async function loadOperatorSession(
   return result.status === "ACTIVE" ? result.session : null;
 }
 
+/** Local-test memory sessions only: replace permission grants without rotating session id. */
+export async function replaceOperatorSessionPermissions(
+  sessionId: string,
+  permissions: string[]
+): Promise<boolean> {
+  if (!validSessionId(sessionId) || !memorySessionStoreAllowed()) {
+    return false;
+  }
+  const existing = memoryStore.get(sessionId);
+  if (!existing || existing.revoked) {
+    return false;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const candidate = {
+    ...existing,
+    permissions: [...permissions]
+  };
+  if (
+    !validateSessionAuthority(candidate, {
+      expectedSessionId: sessionId,
+      nowEpochSec: now,
+      requireActive: true
+    })
+  ) {
+    return false;
+  }
+  memoryStore.set(sessionId, candidate);
+  return true;
+}
+
 /** Deletes the server-side session. Throws SessionStoreUnavailableError when Redis fails. */
 export async function revokeOperatorSession(sessionId: string | undefined): Promise<void> {
   if (!validSessionId(sessionId)) {

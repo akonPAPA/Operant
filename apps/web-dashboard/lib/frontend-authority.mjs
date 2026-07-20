@@ -8,10 +8,15 @@ const unavailable = (reason) =>
     reason
   });
 
+function isExplicitBffEnabled() {
+  return String(process.env.NEXT_PUBLIC_ORDERPILOT_BFF_ENABLED ?? "").trim() === "true";
+}
+
 export function resolveFrontendAuthority({
   nodeEnv,
   demoMode,
-  demoTenantId
+  demoTenantId,
+  bffEnabled = isExplicitBffEnabled()
 } = {}) {
   if (nodeEnv === "production") {
     if (demoMode === "true") {
@@ -29,6 +34,13 @@ export function resolveFrontendAuthority({
   }
 
   if (demoMode !== "true") {
+    if (bffEnabled) {
+      return Object.freeze({
+        available: true,
+        mode: "bff-session",
+        tenantId: ""
+      });
+    }
     return unavailable("DEMO_MODE_NOT_ENABLED");
   }
 

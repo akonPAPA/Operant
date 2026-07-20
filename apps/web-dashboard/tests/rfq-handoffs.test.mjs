@@ -73,24 +73,12 @@ test("api client targets the OP-CAP-06B/06C channel routes", () => {
   assert.match(api, /mark-converted/);
 });
 
-test("api client separates channel read and mutation permissions", () => {
-  assert.match(api, /X-Tenant-Id/);
-  assert.match(api, /X-OrderPilot-Permissions/);
-  assert.match(api, /CHANNELS_READ_PERMISSION = "ADMIN_SETTINGS_READ"/);
-  assert.match(api, /CHANNELS_MANAGE_PERMISSION = "ADMIN_SETTINGS_MANAGE"/);
-  for (const functionName of [
-    "startReviewRfqHandoff",
-    "dismissRfqHandoff",
-    "markConvertedRfqHandoff"
-  ]) {
-    const start = api.indexOf(`export function ${functionName}`);
-    const end = api.indexOf("\n}\n", start);
-    const action = api.slice(start, end);
-    assert.match(
-      action,
-      /"X-OrderPilot-Permissions": CHANNELS_MANAGE_PERMISSION/
-    );
-  }
+test("api client does not manufacture browser permission headers (BFF session owns authority)", () => {
+  assert.match(api, /usesBffTransport/);
+  assert.match(api, /enrichDashboardRequestInit/);
+  assert.match(api, /isDashboardApiAuthorityAvailable/);
+  assert.doesNotMatch(api, /X-OrderPilot-Permissions/);
+  assert.match(api, /Permissions are enforced by BFF session/);
 });
 
 test("api client transition payloads do not send backend-owned actor fields", () => {
@@ -301,7 +289,8 @@ test("workspace wires the existing transitions and the safe reviewed-handoff dra
 
 test("draft quote action sends only the safe route handle and an empty intent body", () => {
   assert.match(api, /\/api\/v1\/quotes\/drafts\/from-rfq-handoff\/\$\{id\}/);
-  assert.match(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
+  assert.doesNotMatch(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
+  assert.match(api, /enrichDashboardRequestInit/);
   const action = api.slice(
     api.indexOf("export function createDraftQuoteFromRfqHandoff"),
     api.indexOf("export function decideRfqHandoffDraft")
@@ -335,7 +324,8 @@ test("operator decision submits business intent and idempotency header only", ()
 test("local demo actor authority remains backend-owned", () => {
   assert.doesNotMatch(api, /X-OrderPilot-Actor-Id/);
   assert.doesNotMatch(api, /NEXT_PUBLIC_.*ACTOR/);
-  assert.match(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
+  assert.doesNotMatch(api, /"X-OrderPilot-Permissions": QUOTE_ACTION/);
+  assert.match(api, /usesBffTransport/);
 });
 
 test("workspace displays terminal decision, audit, and disabled external execution state", () => {
