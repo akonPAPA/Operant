@@ -18,10 +18,51 @@
   --danger-bg: #351315;
   --warning-bg: #33220d;
   --success-bg: #062b25;
+  /* WP2 — accessible design-system additions (normalize, do not replace existing tokens). */
+  --success: #6ee7c8; /* status foreground; pairs with --success-bg. Never the only signal. */
+  --focus-ring: #9ecbff; /* high-contrast focus indicator, distinct from --accent. */
+  --focus-ring-offset: var(--bg);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --z-overlay: 100;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* WP2 — visible keyboard focus for every interactive element. UI hiding/disabling is never
+   authorization; this only makes keyboard navigation perceivable. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* WP2 — respect reduced-motion; the shell adds no heavy animation infrastructure. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Screen-reader-only utility (accessible names without visual noise). */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 html,
@@ -627,6 +668,36 @@ a {
   text-transform: uppercase;
 }
 
+.breadcrumbs {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbs li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumbs li + li::before {
+  content: "/";
+  color: var(--border-strong);
+}
+
+.breadcrumbs li[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .demo-context {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -983,5 +1054,262 @@ code {
   .report-print-area {
     break-inside: avoid;
     box-shadow: none;
+  }
+}
+
+/* ============================================================================
+   WP2/WP3/WP4 — State-language primitives, status badges, command palette,
+   and responsive shell. Additive; reuses existing tokens for visual continuity.
+   ========================================================================== */
+
+/* --- StatusBadge: tone carried by icon glyph + text, never color alone. --- */
+.status-badge {
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 6px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 4px 9px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status-badge .status-badge-glyph {
+  font-size: 11px;
+}
+
+.status-badge--success {
+  background: var(--success-bg);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+}
+
+.status-badge--warning {
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+}
+
+.status-badge--danger {
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}
+
+.status-badge--info {
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+  color: var(--info);
+}
+
+/* --- Shared page states (loading / empty / error / unavailable / denied). --- */
+.page-state {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  display: grid;
+  gap: 8px;
+  padding: 24px;
+}
+
+.page-state h2 {
+  color: var(--text);
+  font-size: 16px;
+  margin: 0;
+}
+
+.page-state p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.page-state .page-state-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.page-state--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.page-state--error h2 {
+  color: var(--danger);
+}
+
+.page-state--unavailable {
+  border-style: dashed;
+}
+
+.page-state--denied {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.page-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* --- Skeleton: decorative, respects reduced-motion via the global rule above. --- */
+.skeleton {
+  background: linear-gradient(90deg, var(--panel-muted) 25%, var(--panel-high) 37%, var(--panel-muted) 63%);
+  background-size: 400% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* --- Command palette (WP3): navigation-only, bounded to the registry. --- */
+.command-trigger {
+  align-items: center;
+  background: var(--panel-high);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 8px;
+  padding: 7px 10px;
+}
+
+.command-trigger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.command-trigger kbd {
+  background: var(--field);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 5px;
+}
+
+.command-overlay {
+  align-items: flex-start;
+  background: color-mix(in srgb, #000 62%, transparent);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+  position: fixed;
+  z-index: var(--z-overlay);
+}
+
+.command-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  max-width: 560px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.command-input {
+  background: var(--field);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  padding: 14px 16px;
+}
+
+.command-input:focus {
+  outline: none;
+}
+
+.command-list {
+  list-style: none;
+  margin: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.command-option {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 9px 10px;
+}
+
+.command-option[aria-selected="true"] {
+  background: var(--panel-high);
+}
+
+.command-option .command-option-section {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.command-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 18px 16px;
+}
+
+/* --- Skip link (WP4/WP5 accessibility): reachable by keyboard, hidden until focus. --- */
+.skip-link {
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-ink);
+  font-weight: 700;
+  left: 12px;
+  padding: 8px 12px;
+  position: fixed;
+  top: -60px;
+  transition: top 0.15s ease;
+  z-index: calc(var(--z-overlay) + 1);
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* --- Responsive shell (WP3/WP5): no horizontal overflow on narrow viewports. --- */
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    max-height: none;
+    position: static;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .command-trigger {
+    min-height: 40px;
   }
 }

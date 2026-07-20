@@ -13,7 +13,7 @@ const aiWorkSchemaView = readFileSync(
   "utf8"
 );
 const page = readFileSync(join(root, "app", "(dashboard)", "channels", "rfq-handoffs", "page.tsx"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 const demoApi = readFileSync(join(root, "lib", "demo-api.ts"), "utf8");
 const demoDashboard = readFileSync(join(root, "components", "demo-dashboard.tsx"), "utf8");
 const demoBff = readFileSync(

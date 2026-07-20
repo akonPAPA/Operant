@@ -12,7 +12,7 @@ const badgePath = join(root, "components", "order-journey-status-badge.tsx");
 const signalPath = join(root, "components", "fulfillment-signal-panel.tsx");
 const listPage = join(root, "app", "(dashboard)", "order-journey", "page.tsx");
 const detailPage = join(root, "app", "(dashboard)", "order-journey", "[id]", "page.tsx");
-const navPath = join(root, "components", "navigation.ts");
+const navPath = join(root, "components", "navigation-registry.ts");
 const brandPath = join(root, "lib", "brand.ts");
 
 const apiClient = readFileSync(apiClientPath, "utf8");
@@ -40,9 +40,9 @@ test("order journey API client is tenant + permission scoped; reads stay GET-onl
 });
 
 test("navigation includes Order Journey under the Transactions group", () => {
-  const txIndex = nav.indexOf('label: "Transactions"');
-  const catalogIndex = nav.indexOf('label: "Catalog"');
-  const journeyIndex = nav.indexOf('"/order-journey"');
+  const txIndex = nav.indexOf('section: "Transactions"');
+  const catalogIndex = nav.indexOf('section: "Catalog"');
+  const journeyIndex = nav.indexOf('path: "/order-journey"');
   assert.ok(txIndex >= 0 && journeyIndex > txIndex && journeyIndex < catalogIndex,
     "Order Journey link must sit inside the Transactions group");
 });

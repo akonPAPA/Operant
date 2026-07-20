@@ -18,6 +18,7 @@ export type PublicServerErrorCode =
   | "VALIDATION_FAILED"
   | "RATE_LIMITED"
   | "TEMPORARILY_UNAVAILABLE"
+  | "CONTRACT_ERROR"
   | "REQUEST_FAILED";
 
 /** Bounded, non-technical public messages. Never contain infrastructure detail. */
@@ -29,6 +30,7 @@ export const PUBLIC_SERVER_ERROR_MESSAGE: Record<PublicServerErrorCode, string> 
   VALIDATION_FAILED: "The request was invalid.",
   RATE_LIMITED: "Too many requests. Please try again shortly.",
   TEMPORARILY_UNAVAILABLE: "This service is temporarily unavailable.",
+  CONTRACT_ERROR: "The server response could not be understood.",
   REQUEST_FAILED: "The request could not be completed."
 });
 

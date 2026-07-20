@@ -6,7 +6,7 @@ import test from "node:test";
 const root = process.cwd();
 const apiClientPath = join(root, "lib", "pilot-metrics-api.ts");
 const reportPagePath = join(root, "app", "(dashboard)", "pilot-readiness", "evidence-report", "page.tsx");
-const navPath = join(root, "components", "navigation.ts");
+const navPath = join(root, "components", "navigation-registry.ts");
 
 const apiClient = readFileSync(apiClientPath, "utf8");
 const reportPage = readFileSync(reportPagePath, "utf8");

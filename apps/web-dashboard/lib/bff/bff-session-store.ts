@@ -289,23 +289,58 @@ function liveOrNull(record: StoredOperatorSession | null): StoredOperatorSession
   return record;
 }
 
-/** Missing, expired, revoked sessions and Redis errors all fail closed (null). */
-export async function loadOperatorSession(
+/**
+ * Three-state session resolution for callers that must distinguish store outages from
+ * missing/inactive sessions (e.g. UI capability projection → 503 vs 401).
+ *
+ * Does not duplicate Redis key format, TTL, revocation, or authority validation — reuses the
+ * same parse/live path as {@link loadOperatorSession}.
+ */
+export type OperatorSessionLoadResult =
+  | { status: "ACTIVE"; session: StoredOperatorSession }
+  | { status: "MISSING_OR_INACTIVE" }
+  | { status: "STORE_UNAVAILABLE" };
+
+export async function loadOperatorSessionResult(
   sessionId: string | undefined
-): Promise<StoredOperatorSession | null> {
+): Promise<OperatorSessionLoadResult> {
   if (!validSessionId(sessionId)) {
-    return null;
+    return { status: "MISSING_OR_INACTIVE" };
   }
   if (memorySessionStoreAllowed()) {
-    return liveOrNull(parseStoredRecord(JSON.stringify(memoryStore.get(sessionId) ?? null), sessionId));
+    const session = liveOrNull(
+      parseStoredRecord(JSON.stringify(memoryStore.get(sessionId) ?? null), sessionId)
+    );
+    return session ? { status: "ACTIVE", session } : { status: "MISSING_OR_INACTIVE" };
   }
   try {
     const redis = await requireRedis();
-    const raw = await redis.get(`${SESSION_KEY_PREFIX}${sessionId}`);
-    return liveOrNull(parseStoredRecord(raw, sessionId));
-  } catch {
-    return null;
+    let raw: string | null;
+    try {
+      raw = await redis.get(`${SESSION_KEY_PREFIX}${sessionId}`);
+    } catch {
+      return { status: "STORE_UNAVAILABLE" };
+    }
+    const session = liveOrNull(parseStoredRecord(raw, sessionId));
+    return session ? { status: "ACTIVE", session } : { status: "MISSING_OR_INACTIVE" };
+  } catch (error) {
+    if (error instanceof SessionStoreUnavailableError || error instanceof BffRedisConfigurationError) {
+      return { status: "STORE_UNAVAILABLE" };
+    }
+    // Unknown internal failure — fail closed as store unavailable (no raw detail).
+    return { status: "STORE_UNAVAILABLE" };
   }
+}
+
+/**
+ * Missing, expired, revoked sessions and Redis errors all fail closed (null).
+ * Ordinary BFF route authorization must keep this fail-closed null semantics.
+ */
+export async function loadOperatorSession(
+  sessionId: string | undefined
+): Promise<StoredOperatorSession | null> {
+  const result = await loadOperatorSessionResult(sessionId);
+  return result.status === "ACTIVE" ? result.session : null;
 }
 
 /** Deletes the server-side session. Throws SessionStoreUnavailableError when Redis fails. */

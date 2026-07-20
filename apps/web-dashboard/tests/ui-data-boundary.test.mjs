@@ -10,6 +10,7 @@ const conversionReviewCockpit = readFileSync(join(root, "components", "conversio
 const intakeUploadForm = readFileSync(join(root, "components", "intake-upload-form.tsx"), "utf8");
 const uploadPage = readFileSync(join(root, "app", "(dashboard)", "upload", "page.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigationRegistry = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 const quoteReviewCockpit = readFileSync(join(root, "components", "quote-review-cockpit.tsx"), "utf8");
 const aiWorkApi = readFileSync(join(root, "lib", "ai-work-api.ts"), "utf8");
 const quoteReviewApi = readFileSync(join(root, "lib", "quote-review-api.ts"), "utf8");
@@ -131,11 +132,16 @@ test("frontend command payloads do not expose client-supplied authority or calcu
 
 test("production direct upload page renders unavailable state before mounting the active form", () => {
   assert.match(uploadPage, /const capability = uploadCapability\(\)/);
-  assert.match(uploadPage, /if \(!isUploadAvailable\(capability\)\) \{/);
-  assert.match(uploadPage, /<h2>Not available<\/h2>/);
+  assert.match(uploadPage, /loadUiCapabilityProjection/);
+  assert.match(uploadPage, /VIEW_DOCUMENTS/);
+  assert.match(uploadPage, /if \(!isUploadAvailable\(capability\) \|\| !mayOfferDocuments\) \{/);
+  assert.match(uploadPage, /UnavailableState/);
   assert.match(uploadPage, /uploadUnavailableMessage\(\)/);
   assert.match(uploadPage, /<IntakeUploadForm \/>/);
-  assert.ok(uploadPage.indexOf("if (!isUploadAvailable(capability))") < uploadPage.indexOf("<IntakeUploadForm />"));
+  assert.ok(
+    uploadPage.indexOf("if (!isUploadAvailable(capability) || !mayOfferDocuments)") <
+      uploadPage.indexOf("<IntakeUploadForm />")
+  );
   assert.doesNotMatch(uploadPage.slice(0, uploadPage.indexOf("<IntakeUploadForm />")), /type="file"|onSubmit=|fetch\(/);
 });
 

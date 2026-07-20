@@ -192,12 +192,13 @@ test("production with unavailable BFF configuration keeps upload fail-closed", a
   expect(upstream).toHaveLength(0);
 });
 
-test("local demo upload remains visible with enabled form controls", async ({ page, request }) => {
+test("local demo upload stays unavailable without projected documents capability", async ({ page, request }) => {
+  // Deployment alone is not authority: local-demo form requires VIEW_DOCUMENTS projection.
+  // :3103 runs without BFF session bootstrap, so capability projection cannot ALLOW documents.
   await page.goto(`${LOCAL_DEMO_APP}/upload`);
-  await expect(page.getByRole("heading", { name: "Manual file intake" })).toBeVisible();
-  await expect(page.locator('input[type="file"]')).toHaveCount(1);
-  await expect(page.getByRole("button", { name: /^upload$/i })).toBeEnabled();
-  await expect(page.locator('a[href="/upload"]')).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: /upload not available|not available/i })).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^upload$/i })).toHaveCount(0);
   const upstream = (await coreRequests(request)).filter((r) => r.path.includes("/intake/documents/upload"));
   expect(upstream).toHaveLength(0);
 });

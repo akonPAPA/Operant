@@ -8,7 +8,7 @@ const apiClient = readFileSync(join(root, "lib", "draft-review-api.ts"), "utf8")
 const quoteQueue = readFileSync(join(root, "app", "(dashboard)", "workspace", "draft-quotes", "page.tsx"), "utf8");
 const orderQueue = readFileSync(join(root, "app", "(dashboard)", "workspace", "draft-orders", "page.tsx"), "utf8");
 const workspace = readFileSync(join(root, "components", "draft-review-workspace.tsx"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 
 const FORBIDDEN_CONTROLS =
   /Send to ERP|Approve final order|Approve final quote|Sync external|Create invoice|executeConnector|reserveInventory|finalizeOrder|sendToErp|createChangeRequest/i;
@@ -56,9 +56,9 @@ test("order queue page links to draft order detail and has filter/table/empty st
 
 test("navigation includes distinct draft review queue entries", () => {
   assert.match(navigation, /label: "Draft Quote Review"/);
-  assert.match(navigation, /href: "\/workspace\/draft-quotes"/);
+  assert.match(navigation, /path: "\/workspace\/draft-quotes"/);
   assert.match(navigation, /label: "Draft Order Review"/);
-  assert.match(navigation, /href: "\/workspace\/draft-orders"/);
+  assert.match(navigation, /path: "\/workspace\/draft-orders"/);
 });
 
 test("detail component integrates the product picker", () => {

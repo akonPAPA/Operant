@@ -13,7 +13,7 @@ const page = readFileSync(
   join(root, "app", "(dashboard)", "commerce-intelligence", "page.tsx"),
   "utf8"
 );
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 
 function typeBlock(source, typeName) {
   const match = source.match(new RegExp(`export type ${typeName} = \\{([\\s\\S]*?)\\n\\};`));
@@ -87,5 +87,5 @@ test("dashboard links to demo and RFQ workspace without rendering internal ids o
 test("server page loads the read model and navigation exposes the tenant operator route", () => {
   assert.match(page, /getCommerceIntelligenceDemoFlow/);
   assert.match(page, /CommerceIntelligenceDemoFlowView/);
-  assert.match(navigation, /\{ label: "Commerce Intelligence", href: "\/commerce-intelligence" \}/);
+  assert.match(navigation, /\{ id: "commerce-intelligence", path: "\/commerce-intelligence", label: "Commerce Intelligence"/);
 });

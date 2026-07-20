@@ -9,7 +9,7 @@ const coreApiClient = readFileSync(join(root, "lib", "core-api-client.ts"), "utf
 const cockpit = readFileSync(join(root, "components", "conversion-review-cockpit.tsx"), "utf8");
 const listPage = readFileSync(join(root, "app", "(dashboard)", "conversion-review", "page.tsx"), "utf8");
 const detailPage = readFileSync(join(root, "app", "(dashboard)", "conversion-review", "[attemptId]", "page.tsx"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 
 test("conversion review client uses read-only quote review endpoints", () => {
   assert.match(apiClient, /getQuoteConversionAttempts/);

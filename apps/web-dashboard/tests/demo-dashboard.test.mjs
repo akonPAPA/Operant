@@ -9,7 +9,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const demoPage = readFileSync(join(root, "components", "demo-dashboard.tsx"), "utf8");
 const demoRoute = readFileSync(join(root, "app", "(dashboard)", "demo", "page.tsx"), "utf8");
 const apiClient = readFileSync(join(root, "lib", "demo-api.ts"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 const quoteWorkspace = readFileSync(join(root, "components", "quote-workspace.tsx"), "utf8");
 const quoteReviewCockpit = readFileSync(join(root, "components", "quote-review-cockpit.tsx"), "utf8");
 
@@ -115,7 +115,7 @@ test("key investor demo navigation routes have page files", () => {
 
   for (const [label, href, path] of routes) {
     assert.match(navigation, new RegExp(`label: "${label.replace("/", "\\/")}"`));
-    assert.match(navigation, new RegExp(`href: "${href.replace("/", "\\/")}"`));
+    assert.match(navigation, new RegExp(`path: "${href.replace("/", "\\/")}"`));
     assert.equal(existsSync(path), true, `${href} page file should exist`);
   }
 

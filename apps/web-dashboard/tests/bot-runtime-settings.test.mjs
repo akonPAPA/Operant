@@ -7,7 +7,7 @@ const root = process.cwd();
 const apiClient = readFileSync(join(root, "lib", "bot-runtime-config-api.ts"), "utf8");
 const page = readFileSync(join(root, "app", "(dashboard)", "bot-runtime", "page.tsx"), "utf8");
 const workspace = readFileSync(join(root, "components", "bot-runtime-config-workspace.tsx"), "utf8");
-const navigation = readFileSync(join(root, "components", "navigation.ts"), "utf8");
+const navigation = readFileSync(join(root, "components", "navigation-registry.ts"), "utf8");
 
 // --- API client ------------------------------------------------------------------------------------
 
