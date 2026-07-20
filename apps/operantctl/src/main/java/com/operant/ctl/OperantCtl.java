@@ -29,10 +29,6 @@ public final class OperantCtl {
   static final int EXIT_TRANSPORT = 4;
   private static final Pattern CREDENTIAL_ALIAS = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$");
   private static final int CONTROL_SECRET_HEX_CHARS = 64;
-  // P1-E lifecycle (operational-event slice): bounded, allowlisted operational-event query argument
-  // shapes. Values are URL-safe by construction so the raw query string can be signed and placed on the
-  // request line verbatim. The externally simple verb is `logs`, but it reads bounded TYPED operational
-  // events (not raw application logs).
   private static final Pattern EVENT_SEVERITY = Pattern.compile("^(ERROR|WARN|INFO)$");
   private static final Pattern EVENT_COMPONENT = Pattern.compile("^(DATABASE|REDIS|PLATFORM)$");
   private static final Pattern EVENT_CODE = Pattern.compile("^(DEPENDENCY_STATE_CHANGED|READINESS_STATE_CHANGED)$");
@@ -90,8 +86,6 @@ public final class OperantCtl {
       }
       return usage(err);
     }
-    // Canonical verb `operational-events`; `logs` is a documented alias for the SAME bounded typed
-    // operational-event read (identical route, permission and response contract - never raw app logs).
     if ("operational-events".equals(command) || "logs".equals(command)) {
       return logsCommand(args, env, credentialStore, clock, out, err);
     }
@@ -108,11 +102,9 @@ public final class OperantCtl {
   }
 
   /**
-   * P1-E lifecycle (operational-event slice): {@code logs [--severity S] [--component C]
-   * [--event-code E] [--limit N] [--before SEQ]}. Reads bounded TYPED operational events, not raw
-   * application logs. All flags are optional, each at most once, each validated to a bounded
-   * allowlisted shape here BEFORE any request is built. The raw query is assembled in a fixed order
-   * from URL-safe tokens only.
+   * {@code logs [--severity S] [--component C] [--event-code E] [--limit N] [--before SEQ]}.
+   * Every value is validated before a request is built. The raw query is assembled in a fixed order
+   * from URL-safe tokens only and signed byte-for-byte.
    */
   private static int logsCommand(
       String[] args,
@@ -205,11 +197,12 @@ public final class OperantCtl {
       appendQuery(rawQuery, "limit", Integer.toString(parsed));
     }
     if (before != null) {
-      if (!EVENT_BEFORE.matcher(before).matches()) {
+      String normalized = normalizeEventBefore(before);
+      if (normalized == null) {
         err.println("logs: before is invalid");
         return EXIT_USAGE_OR_CONFIG;
       }
-      appendQuery(rawQuery, "before", before);
+      appendQuery(rawQuery, "before", normalized);
     }
     return remoteRead(env, credentialStore, clock, out, err, "operational-events", rawQuery.toString(), null);
   }
@@ -225,6 +218,18 @@ public final class OperantCtl {
     }
     int value = Integer.parseInt(limit);
     return value >= 1 && value <= EVENT_MAX_LIMIT ? value : null;
+  }
+
+  static String normalizeEventBefore(String before) {
+    if (before == null || !EVENT_BEFORE.matcher(before).matches()) {
+      return null;
+    }
+    try {
+      long value = Long.parseLong(before);
+      return value < 0 ? null : Long.toString(value);
+    } catch (NumberFormatException overflow) {
+      return null;
+    }
   }
 
   private static void appendQuery(StringBuilder rawQuery, String key, String value) {
@@ -251,7 +256,6 @@ public final class OperantCtl {
       return EXIT_USAGE_OR_CONFIG;
     }
   }
-
 
   private static int importCredential(
       String alias,
@@ -303,6 +307,7 @@ public final class OperantCtl {
       return EXIT_USAGE_OR_CONFIG;
     }
   }
+
   private static boolean isControlCredentialSecret(char[] secret) {
     if (secret.length != CONTROL_SECRET_HEX_CHARS) {
       return false;
@@ -317,6 +322,7 @@ public final class OperantCtl {
     }
     return true;
   }
+
   private static int remoteRead(
       Map<String, String> env,
       ControlCredentialStore credentialStore,
@@ -373,6 +379,7 @@ public final class OperantCtl {
     err.println("exit codes: 0 ok, 1 negative result, 2 usage/config, 3 denied, 4 transport");
     return EXIT_USAGE_OR_CONFIG;
   }
+
   interface SecretReader {
     char[] readSecret(String prompt);
   }
