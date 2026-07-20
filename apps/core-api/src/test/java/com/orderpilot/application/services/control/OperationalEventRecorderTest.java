@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -179,7 +178,7 @@ class OperationalEventRecorderTest {
 
     private static void await(CountDownLatch latch) {
       try {
-        if (!latch.await(Duration.ofSeconds(2))) {
+        if (!latch.await(2, TimeUnit.SECONDS)) {
           throw new IllegalStateException("timed out waiting for test latch");
         }
       } catch (InterruptedException interrupted) {
