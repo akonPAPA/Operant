@@ -11,10 +11,8 @@ import java.util.List;
  *   <li>This slice is read-only: there are no request DTOs and no mutation surface.</li>
  *   <li>Responses are platform-scoped and bounded. They never expose configuration values, hosts,
  *       ports, URLs, file paths, environment variables, credentials, tokens, cookies, signing keys,
- *       tenant identifiers, customer data, or raw dependency error text. A dependency is described
- *       only by a fixed logical name and a fixed state token.</li>
- *   <li>Dependency failure detail stays server-side (logs); the response carries state only, so a
- *       leaked response can never disclose topology or secret material.</li>
+ *       tenant identifiers, customer data, or raw dependency error text.</li>
+ *   <li>Dependency failure detail stays server-side; the response carries fixed state tokens only.</li>
  * </ul>
  */
 public final class ControlInternalDtos {
@@ -52,7 +50,7 @@ public final class ControlInternalDtos {
   public record JvmDiagnostics(long heapUsedMb, long heapMaxMb) {}
 
   /**
-   * Bounded, redacted platform diagnostics. Profile names are Spring profile identifiers (e.g.
+   * Bounded, redacted platform diagnostics. Profile names are Spring profile identifiers (for example
    * {@code production}) - never configuration values.
    */
   public record ControlDiagnosticsResponse(
@@ -63,13 +61,11 @@ public final class ControlInternalDtos {
       JvmDiagnostics jvm) {}
 
   /**
-   * P1-E lifecycle (operational-event slice) - one bounded, server-owned, TYPED operational event.
-   * This is NOT a log line: {@code eventCode} and {@code component} are closed server allowlists,
-   * {@code severity} is a closed token, and {@code summary} is generated from a bounded server
-   * template (never an arbitrary application/logger message). No tenant/actor/customer identifier,
-   * payload, path, host, exception text, stack trace, credential, or free-form metadata is present.
-   * {@code correlationId} is optional (may be {@code null}) and bounded. {@code occurredAt} is an
-   * ISO-8601 UTC timestamp.
+   * One bounded, server-owned typed operational event. In this slice, dependency/readiness events are
+   * changed observations sampled when authenticated status/readiness endpoints are polled; they are
+   * not raw log lines or independent background incident detections. {@code summary} is generated from
+   * a fixed template. No tenant/actor/customer identifier, payload, path, host, exception text, stack
+   * trace, credential, or free-form metadata is present.
    */
   public record OperationalEventProjection(
       String occurredAt,
@@ -80,15 +76,10 @@ public final class ControlInternalDtos {
       String correlationId) {}
 
   /**
-   * Bounded, cursor-paginated page of recent operational events, newest first. {@code nextCursor} is
-   * the opaque cursor (an event sequence) to pass back as {@code before} to fetch the next (older)
-   * page, or {@code null} when no older events remain. {@code returned} equals {@code events.size()}
-   * and never exceeds {@code maxLimit}.
-   *
-   * <p>Honest runtime scope: {@code scope} is always {@code LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS}.
-   * This surface is a fixed-capacity, NON-DURABLE, process-local ring - it holds only this instance's
-   * recent operational events, a restart clears it, and it provides NO multi-instance aggregation.
-   * {@code instanceId} is an opaque per-process identifier (never a host, pid, or path).
+   * Bounded newest-first page over the current process-local retained window. {@code nextCursor} is the
+   * exclusive sequence boundary for an older page. The ring is non-durable and fixed-capacity: restart
+   * clears it, instances do not aggregate, and events evicted between page requests cannot be recovered.
+   * {@code instanceId} is an opaque per-process identifier that lets a client detect process changes.
    */
   public record OperationalEventPage(
       List<OperationalEventProjection> events,
