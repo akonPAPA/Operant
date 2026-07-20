@@ -76,9 +76,11 @@ class OperationalEventAccessAuditorTest {
 
   @Test
   void rawPrincipalTextAndLogForgingCharactersNeverReachTheSink() {
-    String maliciousAlias = "ops\nforged\u2028entry";
+    String unicodeLineSeparator = new String(Character.toChars(0x2028));
+    String unicodeParagraphSeparator = new String(Character.toChars(0x2029));
+    String maliciousAlias = "ops\nforged" + unicodeLineSeparator + "entry";
     String maliciousVersion = "v1\r\nresult=FAIL";
-    String maliciousType = "CONTROL\u2029FORGED";
+    String maliciousType = "CONTROL" + unicodeParagraphSeparator + "FORGED";
 
     auditor.recordSuccess(
         new ControlPlanePrincipal(maliciousAlias, maliciousVersion, maliciousType),
@@ -93,7 +95,7 @@ class OperationalEventAccessAuditorTest {
         .doesNotContain(maliciousType)
         .doesNotContain("\n")
         .doesNotContain("\r")
-        .doesNotContain("\u2028")
-        .doesNotContain("\u2029");
+        .doesNotContain(unicodeLineSeparator)
+        .doesNotContain(unicodeParagraphSeparator);
   }
 }
