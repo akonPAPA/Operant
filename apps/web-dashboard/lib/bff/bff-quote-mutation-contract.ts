@@ -99,8 +99,11 @@ async function readBodyBounded(request: Request): Promise<BodyReadResult> {
 
 class JsonDuplicateKeyGuard {
   private index = 0;
+  private readonly text: string;
 
-  constructor(private readonly text: string) {}
+  constructor(text: string) {
+    this.text = text;
+  }
 
   verify(): void {
     this.skipWhitespace();
@@ -283,7 +286,10 @@ function validRfqBody(body: Record<string, unknown>): boolean {
 
 function validApprovalBody(kind: QuoteMutationKind, body: Record<string, unknown>): boolean {
   if (!onlyKeys(body, ["approvalRequestId", "reason", "comment"])) return false;
-  if (body.approvalRequestId !== undefined && (typeof body.approvalRequestId !== "string" || !UUID_VALUE.test(body.approvalRequestId))) {
+  if (
+    body.approvalRequestId !== undefined &&
+    (typeof body.approvalRequestId !== "string" || !UUID_VALUE.test(body.approvalRequestId))
+  ) {
     return false;
   }
   if (!boundedString(body.reason, { max: 2000 })) return false;
