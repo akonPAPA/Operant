@@ -1,16 +1,18 @@
 package com.orderpilot.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.orderpilot.api.dto.ControlInternalDtos.ControlStatusResponse;
-import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
-import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
+import com.orderpilot.api.dto.ControlInternalDtos.OperationalEventPage;
 import com.orderpilot.api.rest.InternalControlController;
 import com.orderpilot.application.services.control.ControlPlaneStatusService;
+import com.orderpilot.application.services.control.OperationalEventAccessAuditor;
 import com.orderpilot.application.services.control.OperationalEventReadService;
 import com.orderpilot.application.services.control.OperationalEventRecorder;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -33,11 +35,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * P1-E proof that a signed control credential granted only STAFF_CONTROL_READ can perform the read
- * status route but is denied the diagnostics route, which requires the stronger dedicated
- * STAFF_CONTROL_DIAGNOSE permission. Route authority is resolved by ApiRouteSecurityPolicy and the
- * credential's own granted permissions are enforced by the control authentication filter, so a
- * read-only credential fails closed before the mocked service is reached.
+ * P1-E lifecycle (operational-event slice) proof that a signed control credential granted only
+ * STAFF_CONTROL_OPERATIONAL_EVENT_READ can read the bounded typed operational-event projection but is
+ * denied the status route (which requires STAFF_CONTROL_READ) - the dedicated event-read permission
+ * does not imply status reads. It also proves the raw query is bound into the control signature (a
+ * query appended after signing fails closed) and that a successful read emits a bounded access-audit
+ * record carrying no event content.
  */
 @WebMvcTest(controllers = InternalControlController.class)
 @Import({
@@ -52,27 +55,26 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
     "orderpilot.security.gateway-header-auth.enabled=true",
     "orderpilot.security.gateway-header-auth.signature-required=true",
     "orderpilot.security.gateway-header-auth.shared-secret="
-        + ControlPlaneSignedReadOnlyCredentialTest.GATEWAY_SECRET,
+        + ControlPlaneSignedOperationalEventCredentialTest.GATEWAY_SECRET,
     "orderpilot.security.control-plane-auth.credential-alias="
-        + ControlPlaneSignedReadOnlyCredentialTest.CREDENTIAL,
+        + ControlPlaneSignedOperationalEventCredentialTest.CREDENTIAL,
     "orderpilot.security.control-plane-auth.shared-secret="
-        + ControlPlaneSignedReadOnlyCredentialTest.CONTROL_SECRET,
+        + ControlPlaneSignedOperationalEventCredentialTest.CONTROL_SECRET,
     "orderpilot.security.control-plane-auth.audience=orderpilot-control-plane",
     "orderpilot.security.control-plane-auth.status=ENABLED",
     "orderpilot.security.control-plane-auth.valid-from=2026-01-01T00:00:00Z",
     "orderpilot.security.control-plane-auth.expires-at=2099-01-01T00:00:00Z",
-    "orderpilot.security.control-plane-auth.permissions=STAFF_CONTROL_READ",
+    "orderpilot.security.control-plane-auth.permissions=STAFF_CONTROL_OPERATIONAL_EVENT_READ",
     "orderpilot.security.control-plane-auth.key-version=control-v1",
     "orderpilot.security.gateway-header-auth.clock-skew-seconds=300"
 })
-class ControlPlaneSignedReadOnlyCredentialTest {
+class ControlPlaneSignedOperationalEventCredentialTest {
   static final String GATEWAY_SECRET =
       "a3f91c7e2b4d8056e1a9c0d4f7b26385e6a1d9c2b4f70835a6e9c1d2b3f40517";
   static final String CONTROL_SECRET =
       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
   static final String CREDENTIAL = "ops-prod";
   private static final String STATUS = "/api/v1/internal/control/status";
-  private static final String DIAGNOSTICS = "/api/v1/internal/control/diagnostics";
   private static final String EVENTS = "/api/v1/internal/control/operational-events";
 
   @Autowired private MockMvc mockMvc;
@@ -82,42 +84,74 @@ class ControlPlaneSignedReadOnlyCredentialTest {
   @MockBean private OperationalEventRecorder eventRecorder;
 
   @Test
-  void signedReadOnlyCredentialCanReadStatus() throws Exception {
-    when(statusService.status()).thenReturn(new ControlStatusResponse(
-        "unknown", 12L, List.of(new DependencyStatus("database", DependencyState.UP))));
+  void signedEventReadCredentialCanReadOperationalEvents() throws Exception {
+    when(eventReadService.read(any(), any(), any(), any(), any())).thenReturn(new OperationalEventPage(
+        List.of(), null, false, 0, 100, "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS",
+        "22222222-2222-2222-2222-222222222222"));
 
-    mockMvc.perform(controlSigned(STATUS))
+    mockMvc.perform(controlSigned(EVENTS, ""))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.version").value("unknown"));
+        .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+        .andExpect(jsonPath("$.maxLimit").value(100))
+        .andExpect(jsonPath("$.scope").value("LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS"))
+        .andExpect(jsonPath("$.hasMore").value(false));
   }
 
   @Test
-  void signedReadOnlyCredentialCannotAccessDiagnostics() throws Exception {
-    mockMvc.perform(controlSigned(DIAGNOSTICS))
+  void signedEventReadCredentialCannotReadStatus() throws Exception {
+    mockMvc.perform(controlSigned(STATUS, ""))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     verifyNoInteractions(statusService);
+    verifyNoInteractions(eventReadService);
   }
 
   @Test
-  void signedReadOnlyCredentialCannotReadOperationalEvents() throws Exception {
-    // Operational events require the dedicated STAFF_CONTROL_OPERATIONAL_EVENT_READ permission; a
-    // STAFF_CONTROL_READ-only credential is denied even though its signature is otherwise valid - the
-    // read service is never reached, so no event content is exposed.
-    mockMvc.perform(controlSigned(EVENTS))
+  void queryTamperedAfterSigningIsDeniedBecauseTheQueryIsBoundIntoTheSignature() throws Exception {
+    mockMvc.perform(controlSigned(EVENTS, "").with(mutable -> {
+          mutable.setQueryString("limit=5");
+          return mutable;
+        }))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     verifyNoInteractions(eventReadService);
-    verifyNoInteractions(statusService);
   }
 
-  private static MockHttpServletRequestBuilder controlSigned(String path) throws Exception {
+  @Test
+  void successfulReadEmitsBoundedAccessAuditWithoutContent() throws Exception {
+    when(eventReadService.read(any(), any(), any(), any(), any())).thenReturn(new OperationalEventPage(
+        List.of(), null, false, 0, 100, "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS",
+        "22222222-2222-2222-2222-222222222222"));
+
+    ch.qos.logback.classic.Logger auditLogger = (ch.qos.logback.classic.Logger)
+        org.slf4j.LoggerFactory.getLogger(OperationalEventAccessAuditor.AUDIT_LOGGER_NAME);
+    ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captured =
+        new ch.qos.logback.core.read.ListAppender<>();
+    captured.start();
+    auditLogger.addAppender(captured);
+    try {
+      mockMvc.perform(controlSigned(EVENTS, "")).andExpect(status().isOk());
+    } finally {
+      auditLogger.detachAppender(captured);
+    }
+
+    assertThat(captured.list).hasSize(1);
+    String message = captured.list.get(0).getFormattedMessage();
+    assertThat(message)
+        .contains("result=SUCCESS")
+        .contains("principal=" + CREDENTIAL)
+        .contains("permission=STAFF_CONTROL_OPERATIONAL_EVENT_READ")
+        .contains("returned=0");
+    assertThat(message).doesNotContain(CONTROL_SECRET).doesNotContain("Bearer");
+  }
+
+  private static MockHttpServletRequestBuilder controlSigned(String path, String rawQuery) throws Exception {
     long now = Instant.now().getEpochSecond();
     String nonce = "nonce-" + UUID.randomUUID();
     String canonical = ControlPlaneProtocol.canonical(
         HttpMethod.GET.name(),
         path,
-        "",
+        rawQuery,
         "",
         ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX,
         ControlPlaneProtocol.AUDIENCE,

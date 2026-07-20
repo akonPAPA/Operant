@@ -327,6 +327,19 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/internal/control/diagnostics",
             SecurityClassification.PROTECTED_READ,
             ApiPermission.STAFF_CONTROL_DIAGNOSE),
+        // P1-E lifecycle (operational-event slice): the bounded typed operational-event read requires
+        // the dedicated STAFF_CONTROL_OPERATIONAL_EVENT_READ permission (never STAFF_CONTROL_READ/
+        // DIAGNOSE), GET and HEAD.
+        new RouteExpectation(
+            "GET",
+            "/api/v1/internal/control/operational-events",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_CONTROL_OPERATIONAL_EVENT_READ),
+        new RouteExpectation(
+            "HEAD",
+            "/api/v1/internal/control/operational-events",
+            SecurityClassification.PROTECTED_READ,
+            ApiPermission.STAFF_CONTROL_OPERATIONAL_EVENT_READ),
         // OP-CAP-51: the internal owner-company support surface. Each verb maps to a dedicated STAFF_*
         // permission (never a tenant business permission), proving the route-edge separation.
         new RouteExpectation(

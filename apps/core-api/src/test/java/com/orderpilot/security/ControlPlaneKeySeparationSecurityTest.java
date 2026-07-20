@@ -18,6 +18,8 @@ import com.orderpilot.api.dto.ControlInternalDtos.JvmDiagnostics;
 import com.orderpilot.api.dto.ControlInternalDtos.RedisDiagnostics;
 import com.orderpilot.api.rest.InternalControlController;
 import com.orderpilot.application.services.control.ControlPlaneStatusService;
+import com.orderpilot.application.services.control.OperationalEventReadService;
+import com.orderpilot.application.services.control.OperationalEventRecorder;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.nio.charset.StandardCharsets;
@@ -94,6 +96,8 @@ class ControlPlaneKeySeparationSecurityTest {
   @Autowired private MockMvc mockMvc;
 
   @MockBean private ControlPlaneStatusService statusService;
+  @MockBean private OperationalEventReadService eventReadService;
+  @MockBean private OperationalEventRecorder eventRecorder;
 
   @Test
   void controlCredentialAuthenticatesAsAttributedControlPrincipalAndCoreResolvesPermission() throws Exception {

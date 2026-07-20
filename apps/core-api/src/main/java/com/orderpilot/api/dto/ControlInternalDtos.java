@@ -61,4 +61,41 @@ public final class ControlInternalDtos {
       DatabaseDiagnostics database,
       RedisDiagnostics redis,
       JvmDiagnostics jvm) {}
+
+  /**
+   * P1-E lifecycle (operational-event slice) - one bounded, server-owned, TYPED operational event.
+   * This is NOT a log line: {@code eventCode} and {@code component} are closed server allowlists,
+   * {@code severity} is a closed token, and {@code summary} is generated from a bounded server
+   * template (never an arbitrary application/logger message). No tenant/actor/customer identifier,
+   * payload, path, host, exception text, stack trace, credential, or free-form metadata is present.
+   * {@code correlationId} is optional (may be {@code null}) and bounded. {@code occurredAt} is an
+   * ISO-8601 UTC timestamp.
+   */
+  public record OperationalEventProjection(
+      String occurredAt,
+      String eventCode,
+      String component,
+      String severity,
+      String summary,
+      String correlationId) {}
+
+  /**
+   * Bounded, cursor-paginated page of recent operational events, newest first. {@code nextCursor} is
+   * the opaque cursor (an event sequence) to pass back as {@code before} to fetch the next (older)
+   * page, or {@code null} when no older events remain. {@code returned} equals {@code events.size()}
+   * and never exceeds {@code maxLimit}.
+   *
+   * <p>Honest runtime scope: {@code scope} is always {@code LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS}.
+   * This surface is a fixed-capacity, NON-DURABLE, process-local ring - it holds only this instance's
+   * recent operational events, a restart clears it, and it provides NO multi-instance aggregation.
+   * {@code instanceId} is an opaque per-process identifier (never a host, pid, or path).
+   */
+  public record OperationalEventPage(
+      List<OperationalEventProjection> events,
+      String nextCursor,
+      boolean hasMore,
+      int returned,
+      int maxLimit,
+      String scope,
+      String instanceId) {}
 }

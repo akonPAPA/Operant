@@ -132,5 +132,14 @@ public enum ApiPermission {
   STAFF_CONTROL_READ,
   // Read the bounded, redacted platform diagnostics — a stronger read tier than STAFF_CONTROL_READ
   // because diagnostics reveal dependency/migration detail; a control-read grant alone is denied.
-  STAFF_CONTROL_DIAGNOSE
+  STAFF_CONTROL_DIAGNOSE,
+  // P1-E lifecycle (operational-event slice): read the bounded, server-owned TYPED operational-event
+  // projection (dependency/readiness state changes and future lifecycle-operation events) under
+  // /api/v1/internal/control/operational-events. A DEDICATED permission, never implied by
+  // STAFF_CONTROL_READ or STAFF_CONTROL_DIAGNOSE, and deliberately kept in the STAFF_CONTROL_ family so
+  // the merged control-credential validator accepts it and the role matrix keeps it out of every tenant
+  // role (STAFF_* is excluded by prefix). It attributes to the interactive Operant support/maintenance
+  // control principal - a future non-human deployment automation slice would introduce a distinct
+  // SERVICE_CONTROL_* permission with its own SERVICE_ACCOUNT principal, not this one.
+  STAFF_CONTROL_OPERATIONAL_EVENT_READ
 }
