@@ -11,6 +11,7 @@ import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
 import com.orderpilot.api.rest.InternalControlController;
 import com.orderpilot.application.services.control.ControlPlaneStatusService;
+import com.orderpilot.application.services.control.OperationalEventAccessAuditor;
 import com.orderpilot.application.services.control.OperationalEventReadService;
 import com.orderpilot.application.services.control.OperationalEventRecorder;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -33,11 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * P1-E proof that a signed control credential granted only STAFF_CONTROL_READ can perform the read
- * status route but is denied the diagnostics route, which requires the stronger dedicated
- * STAFF_CONTROL_DIAGNOSE permission. Route authority is resolved by ApiRouteSecurityPolicy and the
- * credential's own granted permissions are enforced by the control authentication filter, so a
- * read-only credential fails closed before the mocked service is reached.
+ * Proof that a STAFF_CONTROL_READ-only signed credential cannot cross into diagnostics or the
+ * dedicated operational-event permission and is denied before service/recorder/audit effects.
  */
 @WebMvcTest(controllers = InternalControlController.class)
 @Import({
@@ -80,6 +78,7 @@ class ControlPlaneSignedReadOnlyCredentialTest {
   @MockBean private ControlPlaneStatusService statusService;
   @MockBean private OperationalEventReadService eventReadService;
   @MockBean private OperationalEventRecorder eventRecorder;
+  @MockBean private OperationalEventAccessAuditor eventAccessAuditor;
 
   @Test
   void signedReadOnlyCredentialCanReadStatus() throws Exception {
@@ -96,19 +95,15 @@ class ControlPlaneSignedReadOnlyCredentialTest {
     mockMvc.perform(controlSigned(DIAGNOSTICS))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
-    verifyNoInteractions(statusService);
+    verifyNoInteractions(statusService, eventReadService, eventRecorder, eventAccessAuditor);
   }
 
   @Test
   void signedReadOnlyCredentialCannotReadOperationalEvents() throws Exception {
-    // Operational events require the dedicated STAFF_CONTROL_OPERATIONAL_EVENT_READ permission; a
-    // STAFF_CONTROL_READ-only credential is denied even though its signature is otherwise valid - the
-    // read service is never reached, so no event content is exposed.
     mockMvc.perform(controlSigned(EVENTS))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
-    verifyNoInteractions(eventReadService);
-    verifyNoInteractions(statusService);
+    verifyNoInteractions(statusService, eventReadService, eventRecorder, eventAccessAuditor);
   }
 
   private static MockHttpServletRequestBuilder controlSigned(String path) throws Exception {
