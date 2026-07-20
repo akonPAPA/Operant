@@ -41,11 +41,22 @@ final class ControlPlaneSigner {
     this.credentialAlias = credentialAlias;
   }
 
-  /** Signed headers for a bodyless GET to a fixed control API path. */
+  /** Signed headers for a bodyless GET to a fixed control API path (no query string). */
   Map<String, String> signedGetHeaders(String path, long timestampEpoch) {
+    return signedGetHeaders(path, "", timestampEpoch);
+  }
+
+  /**
+   * Signed headers for a bodyless GET to a fixed control API path with a bounded raw query string.
+   * The {@code rawQuery} MUST be exactly the query string placed on the request line (no leading
+   * {@code ?}), because Core verifies the signature over {@code request.getQueryString()} verbatim -
+   * any post-signing tampering with the query breaks the HMAC and is rejected.
+   */
+  Map<String, String> signedGetHeaders(String path, String rawQuery, long timestampEpoch) {
     String nonce = newNonce();
     String canonical = canonical(
-        "GET", path, "", "", EMPTY_BODY_SHA256_HEX, AUDIENCE, credentialAlias, timestampEpoch, nonce);
+        "GET", path, rawQuery == null ? "" : rawQuery, "", EMPTY_BODY_SHA256_HEX, AUDIENCE,
+        credentialAlias, timestampEpoch, nonce);
     Map<String, String> headers = new LinkedHashMap<>();
     headers.put(CREDENTIAL_HEADER, credentialAlias);
     headers.put(AUDIENCE_HEADER, AUDIENCE);

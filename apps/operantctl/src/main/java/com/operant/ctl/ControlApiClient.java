@@ -46,9 +46,11 @@ final class ControlApiClient {
   static final String HEALTH_PATH = "/api/v1/internal/control/health";
   static final String READINESS_PATH = "/api/v1/internal/control/readiness";
   static final String DIAGNOSTICS_PATH = "/api/v1/internal/control/diagnostics";
+  static final String OPERATIONAL_EVENTS_PATH = "/api/v1/internal/control/operational-events";
 
   static final String READ_PERMISSION = "STAFF_CONTROL_READ";
   static final String DIAGNOSE_PERMISSION = "STAFF_CONTROL_DIAGNOSE";
+  static final String OPERATIONAL_EVENT_READ_PERMISSION = "STAFF_CONTROL_OPERATIONAL_EVENT_READ";
 
   static final int MAX_RESPONSE_BYTES = 64 * 1024;
 
@@ -122,11 +124,23 @@ final class ControlApiClient {
     this.clock = clock;
   }
   ControlResponse get(String path) {
+    return get(path, "");
+  }
+
+  /**
+   * Signed bounded GET with an optional raw query string. {@code rawQuery} is placed verbatim on the
+   * request line AND signed verbatim, so the query the server verifies is byte-for-byte the query the
+   * client signed. Callers must pass only pre-validated, URL-safe query content (the control commands
+   * only ever build queries from allowlisted keys and validated tokens).
+   */
+  ControlResponse get(String path, String rawQuery) {
+    String query = rawQuery == null ? "" : rawQuery;
+    String uri = query.isEmpty() ? config.coreBaseUrl() + path : config.coreBaseUrl() + path + "?" + query;
     HttpRequest.Builder request = HttpRequest.newBuilder()
-        .uri(URI.create(config.coreBaseUrl() + path))
+        .uri(URI.create(uri))
         .timeout(Duration.ofSeconds(config.timeoutSeconds()))
         .GET();
-    signer.signedGetHeaders(path, clock.instant().getEpochSecond())
+    signer.signedGetHeaders(path, query, clock.instant().getEpochSecond())
         .forEach(request::header);
     // Absolute total budget for connect + TLS + headers + complete bounded body read. The JDK request
     // timeout alone does not bound the streamed body once headers arrive, so the exchange is driven
@@ -166,7 +180,8 @@ final class ControlApiClient {
         "status", STATUS_PATH,
         "health", HEALTH_PATH,
         "readiness", READINESS_PATH,
-        "diagnose", DIAGNOSTICS_PATH);
+        "diagnose", DIAGNOSTICS_PATH,
+        "operational-events", OPERATIONAL_EVENTS_PATH);
   }
 
   private static SSLContext sslContext(CtlConfig config) throws GeneralSecurityException, IOException {

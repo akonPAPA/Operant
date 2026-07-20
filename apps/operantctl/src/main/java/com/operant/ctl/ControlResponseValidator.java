@@ -30,6 +30,18 @@ final class ControlResponseValidator {
   private static final int MAX_PROFILES = 16;
   private static final Set<String> DEPENDENCY_NAMES = Set.of("database", "redis");
   private static final Set<String> DEPENDENCY_STATES = Set.of("UP", "DOWN", "NOT_CONFIGURED");
+  private static final Set<String> EVENT_SEVERITIES = Set.of("ERROR", "WARN", "INFO");
+  private static final Set<String> EVENT_CODES = Set.of("DEPENDENCY_STATE_CHANGED", "READINESS_STATE_CHANGED");
+  private static final Set<String> EVENT_COMPONENTS = Set.of("DATABASE", "REDIS", "PLATFORM");
+  private static final int MAX_EVENT_ENTRIES = 100;
+  private static final int MAX_EVENT_SUMMARY_LENGTH = 200;
+  private static final Pattern ISO_INSTANT =
+      Pattern.compile("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$");
+  private static final Pattern CURSOR_TOKEN = Pattern.compile("^\\d{1,19}$");
+  private static final Pattern CORRELATION_TOKEN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
+  private static final Pattern INSTANCE_ID_TOKEN =
+      Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+  private static final String EVENT_SCOPE = "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS";
   private static final Set<String> FORBIDDEN_FIELD_MARKERS = Set.of(
       "secret", "token", "credential", "authorization", "password", "tenant", "actor", "permission",
       "sourceid", "audit", "payload", "stack", "trace", "path", "url", "host", "port");
@@ -47,8 +59,100 @@ final class ControlResponseValidator {
       case "health" -> validateHealth(root);
       case "readiness" -> validateReadiness(root);
       case "diagnose" -> validateDiagnostics(root);
+      case "operational-events" -> validateOperationalEvents(root);
       default -> throw invalid();
     };
+  }
+
+  private static ValidatedResponse validateOperationalEvents(JsonNode root) {
+    requireFields(root, Set.of("events", "nextCursor", "hasMore", "returned", "maxLimit", "scope", "instanceId"));
+    // Honest runtime scope: this surface is process-local and non-durable, marked by a fixed token.
+    if (!EVENT_SCOPE.equals(requireSafeString(root.get("scope")))) {
+      throw invalid();
+    }
+    if (!INSTANCE_ID_TOKEN.matcher(requireSafeString(root.get("instanceId"))).matches()) {
+      throw invalid();
+    }
+    long maxLimit = requireNonNegativeLong(root.get("maxLimit"));
+    if (maxLimit < 1 || maxLimit > MAX_EVENT_ENTRIES) {
+      throw invalid();
+    }
+    if (!root.get("hasMore").isBoolean()) {
+      throw invalid();
+    }
+    boolean hasMore = root.get("hasMore").asBoolean();
+    JsonNode events = root.get("events");
+    if (!events.isArray() || events.size() > maxLimit) {
+      throw invalid();
+    }
+    long returned = requireNonNegativeLong(root.get("returned"));
+    if (returned != events.size()) {
+      throw invalid();
+    }
+    // nextCursor is present iff there are more (older) events - a symmetric server contract.
+    JsonNode nextCursor = root.get("nextCursor");
+    boolean cursorPresent;
+    if (nextCursor.isNull()) {
+      cursorPresent = false;
+    } else {
+      if (!CURSOR_TOKEN.matcher(requireSafeString(nextCursor)).matches()) {
+        throw invalid();
+      }
+      cursorPresent = true;
+    }
+    if (hasMore != cursorPresent) {
+      throw invalid();
+    }
+    for (JsonNode eventNode : events) {
+      JsonNode event = requireObject(eventNode);
+      requireFields(event, Set.of("occurredAt", "eventCode", "component", "severity", "summary", "correlationId"));
+      requireIsoInstant(event.get("occurredAt"));
+      requireAllowlisted(event.get("eventCode"), EVENT_CODES);
+      requireAllowlisted(event.get("component"), EVENT_COMPONENTS);
+      requireAllowlisted(event.get("severity"), EVENT_SEVERITIES);
+      requireEventSummary(event.get("summary"));
+      requireOptionalCorrelation(event.get("correlationId"));
+    }
+    return normalized(root, true);
+  }
+
+  private static void requireIsoInstant(JsonNode node) {
+    if (!ISO_INSTANT.matcher(requireSafeString(node)).matches()) {
+      throw invalid();
+    }
+  }
+
+  private static void requireAllowlisted(JsonNode node, Set<String> allowed) {
+    if (node == null || !node.isTextual() || !allowed.contains(node.asText())) {
+      throw invalid();
+    }
+  }
+
+  private static void requireEventSummary(JsonNode node) {
+    if (node == null || !node.isTextual()) {
+      throw invalid();
+    }
+    String value = node.asText();
+    if (value.length() > MAX_EVENT_SUMMARY_LENGTH) {
+      throw invalid();
+    }
+    for (int i = 0; i < value.length(); i++) {
+      if (Character.isISOControl(value.charAt(i))) {
+        throw invalid();
+      }
+    }
+  }
+
+  private static void requireOptionalCorrelation(JsonNode node) {
+    if (node == null) {
+      throw invalid();
+    }
+    if (node.isNull()) {
+      return;
+    }
+    if (!node.isTextual() || !CORRELATION_TOKEN.matcher(node.asText()).matches()) {
+      throw invalid();
+    }
   }
 
   private static ValidatedResponse validateStatus(JsonNode root) {

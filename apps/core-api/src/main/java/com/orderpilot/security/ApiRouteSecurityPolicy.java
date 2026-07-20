@@ -356,6 +356,12 @@ public class ApiRouteSecurityPolicy {
     if (path.equals(INTERNAL_CONTROL_BASE + "/diagnostics")) {
       return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_CONTROL_DIAGNOSE);
     }
+    // P1-E lifecycle (operational-event slice): the bounded typed operational-event read requires the
+    // dedicated STAFF_CONTROL_OPERATIONAL_EVENT_READ permission - never STAFF_CONTROL_READ/DIAGNOSE.
+    // Only this exact path is classified; a deeper sub-path stays unclassified and fails closed.
+    if (path.equals(INTERNAL_CONTROL_BASE + "/operational-events")) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_CONTROL_OPERATIONAL_EVENT_READ);
+    }
     return Optional.empty();
   }
 

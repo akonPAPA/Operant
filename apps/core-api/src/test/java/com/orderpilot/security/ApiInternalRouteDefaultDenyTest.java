@@ -50,7 +50,12 @@ class ApiInternalRouteDefaultDenyTest {
         route("POST", "/api/v1/internal/control/diagnostics"),
         route("DELETE", "/api/v1/internal/control/status"),
         route("GET", "/api/v1/internal/control/shutdown"),
-        route("GET", "/api/v1/internal/control/status/extra"));
+        route("GET", "/api/v1/internal/control/status/extra"),
+        // P1-E lifecycle (operational-event slice): the operational-event read is GET/HEAD only and
+        // matched exactly; write-shaped and deeper sub-paths stay unclassified and hit default-deny.
+        route("POST", "/api/v1/internal/control/operational-events"),
+        route("DELETE", "/api/v1/internal/control/operational-events"),
+        route("GET", "/api/v1/internal/control/operational-events/extra"));
   }
 
   private static org.junit.jupiter.params.provider.Arguments route(String method, String path) {

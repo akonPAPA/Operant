@@ -37,10 +37,22 @@ class OperantCtlCommandTest {
   private static final String VALID_DIAGNOSTICS =
       "{\"version\":\"unknown\",\"activeProfiles\":[\"production\"],\"database\":{\"state\":\"UP\",\"migrationVersion\":\"65\"},\"redis\":{\"configured\":true,\"state\":\"UP\"},\"jvm\":{\"heapUsedMb\":1,\"heapMaxMb\":256}}";
 
+  private static final String VALID_EVENTS =
+      "{\"events\":[{\"occurredAt\":\"2026-07-19T10:00:00Z\",\"eventCode\":\"DEPENDENCY_STATE_CHANGED\","
+          + "\"component\":\"DATABASE\",\"severity\":\"ERROR\","
+          + "\"summary\":\"dependency DATABASE state changed to DOWN\",\"correlationId\":null},"
+          + "{\"occurredAt\":\"2026-07-19T09:59:00Z\",\"eventCode\":\"READINESS_STATE_CHANGED\","
+          + "\"component\":\"PLATFORM\",\"severity\":\"WARN\","
+          + "\"summary\":\"platform readiness changed to NOT_READY\",\"correlationId\":\"corr-01\"}],"
+          + "\"nextCursor\":\"11\",\"hasMore\":true,\"returned\":2,\"maxLimit\":100,"
+          + "\"scope\":\"LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS\","
+          + "\"instanceId\":\"11111111-2222-3333-4444-555555555555\"}";
+
   private HttpServer server;
   private Map<String, String> env;
   private InMemoryControlCredentialStore credentialStore;
   private final Map<String, Map<String, String>> capturedHeadersByPath = new ConcurrentHashMap<>();
+  private final Map<String, String> capturedQueryByPath = new ConcurrentHashMap<>();
   private final Map<String, String> responseByPath = new ConcurrentHashMap<>();
   private final Map<String, byte[]> responseBytesByPath = new ConcurrentHashMap<>();
   private int responseStatus = 200;
@@ -52,6 +64,8 @@ class OperantCtlCommandTest {
       Map<String, String> headers = new HashMap<>();
       exchange.getRequestHeaders().forEach((name, values) -> headers.put(name, values.getFirst()));
       capturedHeadersByPath.put(exchange.getRequestURI().getPath(), headers);
+      String rawQuery = exchange.getRequestURI().getRawQuery();
+      capturedQueryByPath.put(exchange.getRequestURI().getPath(), rawQuery == null ? "" : rawQuery);
       byte[] body = responseBytesByPath.get(exchange.getRequestURI().getPath());
       if (body == null) {
         body = responseByPath
@@ -74,6 +88,7 @@ class OperantCtlCommandTest {
     responseByPath.put(ControlApiClient.HEALTH_PATH, VALID_HEALTH);
     responseByPath.put(ControlApiClient.READINESS_PATH, VALID_READY);
     responseByPath.put(ControlApiClient.DIAGNOSTICS_PATH, VALID_DIAGNOSTICS);
+    responseByPath.put(ControlApiClient.OPERATIONAL_EVENTS_PATH, VALID_EVENTS);
   }
 
   @AfterEach
@@ -411,6 +426,108 @@ class OperantCtlCommandTest {
     RunResult diagnose = run("diagnose");
     assertThat(diagnose.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
     assertThat(diagnose.out()).contains("\"activeProfiles\"").contains("\"jvm\"");
+  }
+
+  @Test
+  void logsSendsBoundedSignedOperationalEventQueryAndValidatesResponse() {
+    RunResult result = run(
+        "logs", "--severity", "error", "--component", "database",
+        "--event-code", "dependency_state_changed", "--limit", "2", "--before", "100");
+    assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+    assertThat(result.out()).contains("\"events\"").contains("\"maxLimit\":100");
+
+    // The client builds the query in a fixed order from allowlisted URL-safe tokens...
+    String query = capturedQueryByPath.get(ControlApiClient.OPERATIONAL_EVENTS_PATH);
+    assertThat(query).isEqualTo(
+        "severity=ERROR&component=DATABASE&eventCode=DEPENDENCY_STATE_CHANGED&limit=2&before=100");
+
+    // ...and signs exactly that raw query (the server verifies the signature over it verbatim).
+    Map<String, String> headers = capturedHeadersByPath.get(ControlApiClient.OPERATIONAL_EVENTS_PATH);
+    assertThat(headers).isNotNull();
+    assertThat(headers).doesNotContainKeys("X-tenant-id", "X-orderpilot-permissions");
+    ControlPlaneSigner signer = new ControlPlaneSigner(new ControlCredential(SECRET).keyMaterialCopy(), ALIAS);
+    String canonical = ControlPlaneSigner.canonical(
+        "GET",
+        ControlApiClient.OPERATIONAL_EVENTS_PATH,
+        query,
+        "",
+        headers.get("X-orderpilot-control-content-sha256"),
+        headers.get("X-orderpilot-control-audience"),
+        ALIAS,
+        Long.parseLong(headers.get("X-orderpilot-control-timestamp")),
+        headers.get("X-orderpilot-control-nonce"));
+    assertThat(headers.get("X-orderpilot-control-signature")).isEqualTo(signer.hmacHex(canonical));
+  }
+
+  @Test
+  void logsWithoutArgumentsSendsAnEmptyQuery() {
+    RunResult result = run("logs");
+    assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+    assertThat(capturedQueryByPath.get(ControlApiClient.OPERATIONAL_EVENTS_PATH)).isEmpty();
+  }
+
+  @Test
+  void operationalEventsCanonicalVerbBehavesIdenticallyToLogsAlias() {
+    // The canonical `operational-events` verb reads the SAME bounded typed projection as the `logs`
+    // alias: identical route, identical allowlisted query construction, identical signed request.
+    RunResult result = run("operational-events", "--severity", "error", "--component", "database");
+    assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_OK);
+    assertThat(result.out()).contains("\"events\"");
+    assertThat(capturedQueryByPath.get(ControlApiClient.OPERATIONAL_EVENTS_PATH))
+        .isEqualTo("severity=ERROR&component=DATABASE");
+  }
+
+  @Test
+  void logsRejectsInvalidArgumentsBeforeSendingAnyRequest() {
+    for (String[] args : List.of(
+        new String[] {"logs", "--severity", "BOGUS"},
+        new String[] {"logs", "--severity", "DEBUG"},
+        new String[] {"logs", "--component", "KAFKA"},
+        new String[] {"logs", "--event-code", "BACKUP_STARTED"},
+        new String[] {"logs", "--limit", "0"},
+        new String[] {"logs", "--limit", "101"},
+        new String[] {"logs", "--limit", "abc"},
+        new String[] {"logs", "--before", "not-a-number"},
+        new String[] {"logs", "--before", "-5"},
+        new String[] {"logs", "--unknown", "x"},
+        new String[] {"logs", "--severity"},
+        new String[] {"logs", "--severity", "WARN", "--severity", "INFO"},
+        new String[] {"logs", "extra-positional"})) {
+      capturedHeadersByPath.clear();
+      RunResult result = run(args);
+      assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_USAGE_OR_CONFIG);
+      assertThat(capturedHeadersByPath).doesNotContainKey(ControlApiClient.OPERATIONAL_EVENTS_PATH);
+    }
+  }
+
+  @Test
+  void logsRejectsInvalidResponseBodiesBeforePrinting() {
+    for (String invalid : List.of(
+        "{}",
+        // returned disagrees with events size
+        "{\"events\":[],\"nextCursor\":null,\"hasMore\":false,\"returned\":1,\"maxLimit\":100,"
+            + "\"scope\":\"LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS\",\"instanceId\":\"11111111-2222-3333-4444-555555555555\"}",
+        // hasMore true but no cursor (asymmetric)
+        "{\"events\":[],\"nextCursor\":null,\"hasMore\":true,\"returned\":0,\"maxLimit\":100,"
+            + "\"scope\":\"LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS\",\"instanceId\":\"11111111-2222-3333-4444-555555555555\"}",
+        // wrong scope token
+        "{\"events\":[],\"nextCursor\":null,\"hasMore\":false,\"returned\":0,\"maxLimit\":100,"
+            + "\"scope\":\"LOCAL_PROCESS_RECENT_LOGS\",\"instanceId\":\"11111111-2222-3333-4444-555555555555\"}",
+        // unknown event code token
+        "{\"events\":[{\"occurredAt\":\"2026-07-19T10:00:00Z\",\"eventCode\":\"BACKUP_STARTED\","
+            + "\"component\":\"DATABASE\",\"severity\":\"INFO\",\"summary\":\"x\",\"correlationId\":null}],"
+            + "\"nextCursor\":null,\"hasMore\":false,\"returned\":1,\"maxLimit\":100,"
+            + "\"scope\":\"LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS\",\"instanceId\":\"11111111-2222-3333-4444-555555555555\"}",
+        // forbidden field marker in the payload
+        "{\"events\":[],\"nextCursor\":null,\"hasMore\":false,\"returned\":0,\"maxLimit\":100,"
+            + "\"scope\":\"LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS\",\"instanceId\":\"11111111-2222-3333-4444-555555555555\","
+            + "\"secret\":\"leak\"}")) {
+      responseByPath.put(ControlApiClient.OPERATIONAL_EVENTS_PATH, invalid);
+      RunResult result = run("logs");
+      assertThat(result.exitCode()).isEqualTo(OperantCtl.EXIT_NEGATIVE);
+      assertThat(result.out()).isBlank();
+      assertThat(result.err()).contains("response failed validation").doesNotContain("leak");
+    }
   }
 
   @Test

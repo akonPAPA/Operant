@@ -1,11 +1,14 @@
 package com.orderpilot.api.rest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -18,8 +21,13 @@ import com.orderpilot.api.dto.ControlInternalDtos.DatabaseDiagnostics;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyState;
 import com.orderpilot.api.dto.ControlInternalDtos.DependencyStatus;
 import com.orderpilot.api.dto.ControlInternalDtos.JvmDiagnostics;
+import com.orderpilot.api.dto.ControlInternalDtos.OperationalEventPage;
+import com.orderpilot.api.dto.ControlInternalDtos.OperationalEventProjection;
 import com.orderpilot.api.dto.ControlInternalDtos.RedisDiagnostics;
 import com.orderpilot.application.services.control.ControlPlaneStatusService;
+import com.orderpilot.application.services.control.OperationalEventAccessAuditor;
+import com.orderpilot.application.services.control.OperationalEventReadService;
+import com.orderpilot.application.services.control.OperationalEventRecorder;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiPermissionGuard;
@@ -45,13 +53,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * P1-E HTTP-level security proof for the bounded platform control-plane read surface through the
- * real security stack. The routes are never public; tenant, customer, ordinary service-account, and
- * wrong staff/control grants are denied before the mocked service is reached. Diagnostics require a
- * stronger dedicated permission than status reads. Route authority is single-sourced from
- * {@link ApiRouteSecurityPolicy}: only GET/HEAD control routes carry a control permission, so
- * write-shaped methods are unmapped and fail closed with a native 405 (unauthenticated callers get
- * 401) without ever reaching the control service.
+ * HTTP-level access-plane and side-effect proof for the bounded internal control surface. Denial must
+ * occur before status/read services, sampled-state recorder, or successful-read audit are invoked.
  */
 @WebMvcTest(controllers = InternalControlController.class)
 @Import({
@@ -68,18 +71,23 @@ class InternalControlControllerSecurityTest {
   private static final String HEALTH = "/api/v1/internal/control/health";
   private static final String READINESS = "/api/v1/internal/control/readiness";
   private static final String DIAGNOSTICS = "/api/v1/internal/control/diagnostics";
+  private static final String EVENTS = "/api/v1/internal/control/operational-events";
   private static final String READ_PERMISSION = "STAFF_CONTROL_READ";
   private static final String DIAGNOSE_PERMISSION = "STAFF_CONTROL_DIAGNOSE";
+  private static final String EVENT_READ_PERMISSION = "STAFF_CONTROL_OPERATIONAL_EVENT_READ";
 
   @Autowired private MockMvc mockMvc;
 
   @MockBean private ControlPlaneStatusService statusService;
+  @MockBean private OperationalEventReadService eventReadService;
+  @MockBean private OperationalEventRecorder eventRecorder;
+  @MockBean private OperationalEventAccessAuditor eventAccessAuditor;
 
   @ParameterizedTest
   @MethodSource("getCallerMatrix")
   void getControlRoutesHaveExactCallerMatrix(ControlRoute route, Caller caller, int expectedStatus)
       throws Exception {
-    reset(statusService);
+    resetAll();
     if (expectedStatus == 200) {
       stubSuccess(route);
     }
@@ -93,11 +101,11 @@ class InternalControlControllerSecurityTest {
       result.andExpect(status().isUnauthorized())
           .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
           .andExpect(jsonPath("$.message").value("Authentication required"));
-      verifyNoInteractions(statusService);
+      verifyNoControlSideEffects();
     } else {
       result.andExpect(status().isForbidden())
           .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"));
-      verifyNoInteractions(statusService);
+      verifyNoControlSideEffects();
     }
   }
 
@@ -110,8 +118,12 @@ class InternalControlControllerSecurityTest {
       int expectedStatus,
       String expectedCode,
       String expectedAllowHeader) throws Exception {
-    reset(statusService);
-    if (expectedStatus == 200 && HttpMethod.GET.equals(method)) {
+    resetAll();
+    boolean successfulGet = expectedStatus == 200 && HttpMethod.GET.equals(method);
+    boolean successfulEventHead = expectedStatus == 200
+        && HttpMethod.HEAD.equals(method)
+        && route.kind() == RouteKind.EVENTS;
+    if (successfulGet || successfulEventHead) {
       stubSuccess(route);
     }
 
@@ -129,28 +141,67 @@ class InternalControlControllerSecurityTest {
     } else {
       result.andExpect(header().doesNotExist(HttpHeaders.ALLOW));
     }
-    if (expectedStatus == 200 && HttpMethod.GET.equals(method)) {
+    if (successfulGet) {
       assertSuccessBody(result, route);
+    } else if (successfulEventHead) {
+      result.andExpect(content().string(""))
+          .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+              org.hamcrest.Matchers.containsString("no-store")));
+      verify(eventReadService).read(null, null, null, null, null);
+      verify(eventAccessAuditor).recordSuccess(null, false, false, false, false, false, 1);
+      verifyNoInteractions(statusService, eventRecorder);
     } else {
-      verifyNoInteractions(statusService);
+      verifyNoControlSideEffects();
     }
   }
 
   @Test
-  void unknownControlSubRouteHitsDefaultDeny() throws Exception {
+  void unknownControlSubRouteHitsDefaultDenyBeforeAnySideEffect() throws Exception {
     mockMvc.perform(get("/api/v1/internal/control/shutdown")
             .header(ApiPermissionGuard.PERMISSIONS_HEADER, READ_PERMISSION + "," + DIAGNOSE_PERMISSION))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"));
-    verifyNoInteractions(statusService);
+    verifyNoControlSideEffects();
   }
 
   @Test
-  void trailingSlashControlRouteHitsDefaultDeny() throws Exception {
+  void trailingSlashControlRouteHitsDefaultDenyBeforeAnySideEffect() throws Exception {
     mockMvc.perform(get(STATUS + "/").header(ApiPermissionGuard.PERMISSIONS_HEADER, READ_PERMISSION))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("TENANT_POLICY_DENIED"));
-    verifyNoInteractions(statusService);
+    verifyNoControlSideEffects();
+  }
+
+  @Test
+  void unknownOrDuplicateOperationalEventQueryParameterFailsClosed() throws Exception {
+    mockMvc.perform(get(EVENTS + "?logger=com.orderpilot.Foo")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, EVENT_READ_PERMISSION))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().string(""));
+    mockMvc.perform(get(EVENTS + "?severity=INFO&severity=WARN")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, EVENT_READ_PERMISSION))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().string(""));
+    verifyNoInteractions(eventReadService, eventAccessAuditor, statusService, eventRecorder);
+  }
+
+  @Test
+  void malformedHeadQueryMatchesGetValidationAndRemainsBodyFree() throws Exception {
+    mockMvc.perform(request(HttpMethod.HEAD, EVENTS + "?logger=com.orderpilot.Foo")
+            .header(ApiPermissionGuard.PERMISSIONS_HEADER, EVENT_READ_PERMISSION))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().string(""))
+        .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+            org.hamcrest.Matchers.containsString("no-store")));
+    verifyNoControlSideEffects();
+  }
+
+  private void resetAll() {
+    reset(statusService, eventReadService, eventRecorder, eventAccessAuditor);
+  }
+
+  private void verifyNoControlSideEffects() {
+    verifyNoInteractions(statusService, eventReadService, eventRecorder, eventAccessAuditor);
   }
 
   private static Stream<Arguments> getCallerMatrix() {
@@ -172,12 +223,14 @@ class InternalControlControllerSecurityTest {
           expectedAllowHeader(method, status));
     })));
   }
+
   private static Stream<ControlRoute> controlRoutes() {
     return Stream.of(
         new ControlRoute(STATUS, READ_PERMISSION, RouteKind.STATUS),
         new ControlRoute(HEALTH, READ_PERMISSION, RouteKind.HEALTH),
         new ControlRoute(READINESS, READ_PERMISSION, RouteKind.READINESS),
-        new ControlRoute(DIAGNOSTICS, DIAGNOSE_PERMISSION, RouteKind.DIAGNOSTICS));
+        new ControlRoute(DIAGNOSTICS, DIAGNOSE_PERMISSION, RouteKind.DIAGNOSTICS),
+        new ControlRoute(EVENTS, EVENT_READ_PERMISSION, RouteKind.EVENTS));
   }
 
   private static Stream<Caller> callers() {
@@ -189,7 +242,8 @@ class InternalControlControllerSecurityTest {
         new Caller("ordinary service account", "AI_RESULT_INTAKE"),
         new Caller("wrong staff permission", "STAFF_SUPPORT_READ"),
         new Caller("valid STAFF_CONTROL_READ", READ_PERMISSION),
-        new Caller("valid STAFF_CONTROL_DIAGNOSE", DIAGNOSE_PERMISSION));
+        new Caller("valid STAFF_CONTROL_DIAGNOSE", DIAGNOSE_PERMISSION),
+        new Caller("valid STAFF_CONTROL_OPERATIONAL_EVENT_READ", EVENT_READ_PERMISSION));
   }
 
   private static Stream<HttpMethod> methods() {
@@ -217,16 +271,11 @@ class InternalControlControllerSecurityTest {
     if (HttpMethod.GET.equals(method) || HttpMethod.HEAD.equals(method)) {
       return route.requiredPermission().equals(caller.permissions()) ? 200 : 403;
     }
-    // Write-shaped control methods are unmapped. Route authority is single-sourced from
-    // ApiRouteSecurityPolicy (GET/HEAD only), so an authenticated caller reaches the dispatcher and
-    // gets a native 405 fail-closed; the control service is never invoked, regardless of permission.
     return 405;
   }
+
   private static String expectedCode(HttpMethod method, Caller caller, int status) {
-    if (HttpMethod.OPTIONS.equals(method)) {
-      return null;
-    }
-    if (HttpMethod.HEAD.equals(method)) {
+    if (HttpMethod.OPTIONS.equals(method) || HttpMethod.HEAD.equals(method)) {
       return null;
     }
     if (status == 401) {
@@ -250,12 +299,14 @@ class InternalControlControllerSecurityTest {
     }
     return null;
   }
+
   private static void assertAllowHeader(ResultActions result, String expectedAllowHeader) throws Exception {
     String actual = result.andReturn().getResponse().getHeader(HttpHeaders.ALLOW);
     assertThat(actual).isNotBlank();
     assertThat(Arrays.stream(actual.split(",")).map(String::trim).toList())
         .containsExactlyInAnyOrder(expectedAllowHeader.split(","));
   }
+
   private void stubSuccess(ControlRoute route) {
     switch (route.kind()) {
       case STATUS -> when(statusService.status()).thenReturn(new ControlStatusResponse(
@@ -269,6 +320,17 @@ class InternalControlControllerSecurityTest {
           new DatabaseDiagnostics(DependencyState.UP, "65"),
           new RedisDiagnostics(false, DependencyState.NOT_CONFIGURED),
           new JvmDiagnostics(12L, 512L)));
+      case EVENTS -> when(eventReadService.read(any(), any(), any(), any(), any()))
+          .thenReturn(new OperationalEventPage(
+              List.of(new OperationalEventProjection(
+                  "2026-07-19T10:00:00Z", "DEPENDENCY_STATE_CHANGED", "DATABASE", "ERROR",
+                  "observed dependency DATABASE state changed to DOWN", null)),
+              null,
+              false,
+              1,
+              100,
+              "LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS",
+              "11111111-1111-1111-1111-111111111111"));
     }
   }
 
@@ -295,6 +357,15 @@ class InternalControlControllerSecurityTest {
           .andExpect(jsonPath("$.version").value("unknown"))
           .andExpect(jsonPath("$.database.state").value("UP"))
           .andExpect(jsonPath("$.database.migrationVersion").value("65"));
+      case EVENTS -> result
+          .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+              org.hamcrest.Matchers.containsString("no-store")))
+          .andExpect(jsonPath("$.maxLimit").value(100))
+          .andExpect(jsonPath("$.returned").value(1))
+          .andExpect(jsonPath("$.scope").value("LOCAL_PROCESS_RECENT_OPERATIONAL_EVENTS"))
+          .andExpect(jsonPath("$.events[0].eventCode").value("DEPENDENCY_STATE_CHANGED"))
+          .andExpect(jsonPath("$.events[0].component").value("DATABASE"))
+          .andExpect(jsonPath("$.events[0].severity").value("ERROR"));
     }
   }
 
@@ -306,6 +377,7 @@ class InternalControlControllerSecurityTest {
     STATUS,
     HEALTH,
     READINESS,
-    DIAGNOSTICS
+    DIAGNOSTICS,
+    EVENTS
   }
 }
