@@ -20,7 +20,9 @@ import {
 } from "@/lib/operator-action-runtime";
 import {
   idempotencyKeyForCreateDraftFromRfq,
-  idempotencyKeyForQuoteApprovalAction
+  idempotencyKeyForQuoteApprovalAction,
+  intentFingerprintForCreateDraftFromRfq,
+  intentFingerprintForQuoteApprovalAction
 } from "@/lib/quote-mutation-idempotency";
 import { BoundedUiError, boundedUiErrorMessage } from "@/lib/ui-error";
 
@@ -37,6 +39,8 @@ type MutationPhase =
   | "VALIDATION_FAILED"
   | "ACCESS_DENIED"
   | "AUTH_REQUIRED"
+  | "NOT_FOUND"
+  | "RATE_LIMITED"
   | "DEPENDENCY_UNAVAILABLE"
   | "CONTRACT_ERROR"
   | "UNKNOWN_SAFE_ERROR";
@@ -44,12 +48,20 @@ type MutationPhase =
 function phaseFromErrorCode(code: string, httpStatus?: number): MutationPhase {
   if (code === "CONFLICT") return "CONFLICT";
   if (code === "VALIDATION_FAILED") return "VALIDATION_FAILED";
-  if (code === "PERMISSION_DENIED") {
-    return httpStatus === 401 ? "AUTH_REQUIRED" : "ACCESS_DENIED";
-  }
+  if (code === "NOT_FOUND") return "NOT_FOUND";
+  if (code === "RATE_LIMITED") return "RATE_LIMITED";
+  if (code === "PERMISSION_DENIED") return httpStatus === 401 ? "AUTH_REQUIRED" : "ACCESS_DENIED";
   if (httpStatus === 503 || httpStatus === 504) return "DEPENDENCY_UNAVAILABLE";
   if (httpStatus === 502) return "CONTRACT_ERROR";
   return "UNKNOWN_SAFE_ERROR";
+}
+
+/**
+ * A missing response or any 5xx/429 is transport-uncertain: the backend may have committed before
+ * the browser lost the response, so the same attempt key must be retained for a safe retry.
+ */
+function shouldRetainAttemptKey(errorCode: string, httpStatus?: number): boolean {
+  return errorCode === "RATE_LIMITED" || httpStatus === undefined || httpStatus >= 500;
 }
 
 export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
@@ -67,10 +79,11 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
   >();
 
   async function runMutation<T>(
-    actionKey: string,
+    intentFingerprint: string,
     resolveIdempotencyKey: () => string,
     operation: (idempotencyKey: string) => Promise<T>,
-    onSuccess: (data: T) => Promise<void> | void,
+    applyMutationResult: (data: T) => void,
+    refreshAuthoritativeState: (() => Promise<void>) | null,
     doneMessage: string
   ) {
     if (!canPerformQuoteAction) {
@@ -80,14 +93,22 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
       return;
     }
 
-    let idempotencyKey = mutationKeysRef.current.get(actionKey);
+    let idempotencyKey = mutationKeysRef.current.get(intentFingerprint);
     if (!idempotencyKey) {
-      idempotencyKey = resolveIdempotencyKey();
-      mutationKeysRef.current.set(actionKey, idempotencyKey);
+      try {
+        idempotencyKey = resolveIdempotencyKey();
+      } catch {
+        setMessageKind("error");
+        setMessage("Secure mutation attempt creation is unavailable.");
+        setPhase("CONTRACT_ERROR");
+        return;
+      }
+      mutationKeysRef.current.set(intentFingerprint, idempotencyKey);
     }
 
     setPhase("SUBMITTING");
     setMessage("");
+    let observedHttpStatus: number | undefined;
     const runOperation = async (): Promise<
       OperatorActionResult<QuoteTransactionResponse | QuoteApprovalCommandResponse>
     > => {
@@ -95,9 +116,9 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
         const data = (await operation(idempotencyKey)) as QuoteTransactionResponse | QuoteApprovalCommandResponse;
         return { ok: true as const, data, safeMessage: doneMessage };
       } catch (error) {
-        const httpStatus = error instanceof BoundedUiError ? error.httpStatus : undefined;
+        observedHttpStatus = error instanceof BoundedUiError ? error.httpStatus : undefined;
         const { errorCode, safeMessage } = mapOperatorActionError(
-          httpStatus ?? 500,
+          observedHttpStatus ?? 500,
           boundedUiErrorMessage(error, "The action could not be completed. Please try again or contact support.")
         );
         return { ok: false as const, errorCode, safeMessage };
@@ -106,15 +127,26 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
 
     const actionResult = await execute(runOperation);
     if (actionResult.ok) {
-      mutationKeysRef.current.delete(actionKey);
-      await onSuccess(actionResult.data as T);
+      mutationKeysRef.current.delete(intentFingerprint);
+      applyMutationResult(actionResult.data as T);
       setMessageKind("done");
       setMessage(doneMessage);
       setPhase("SUCCEEDED");
+
+      if (refreshAuthoritativeState) {
+        try {
+          await refreshAuthoritativeState();
+        } catch {
+          setMessage(`${doneMessage} Updated quote state could not be refreshed; reload the workspace.`);
+        }
+      }
       return;
     }
 
-    setPhase(phaseFromErrorCode(actionResult.errorCode));
+    if (!shouldRetainAttemptKey(actionResult.errorCode, observedHttpStatus)) {
+      mutationKeysRef.current.delete(intentFingerprint);
+    }
+    setPhase(phaseFromErrorCode(actionResult.errorCode, observedHttpStatus));
     setMessageKind("error");
     setMessage(actionResult.safeMessage);
   }
@@ -136,19 +168,19 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
         }
       ]
     };
-    const intentKey = idempotencyKeyForCreateDraftFromRfq(rfqPayload);
+    const intentFingerprint = intentFingerprintForCreateDraftFromRfq(rfqPayload);
+    let createdQuoteId: string | null = null;
     await runMutation(
-      intentKey,
+      intentFingerprint,
       () => idempotencyKeyForCreateDraftFromRfq(rfqPayload),
-      (idempotencyKey) =>
-        createDraftQuoteFromRfq({
-          ...rfqPayload,
-          idempotencyKey
-        }),
-      async (response) => {
+      (idempotencyKey) => createDraftQuoteFromRfq({ ...rfqPayload, idempotencyKey }),
+      (response) => {
+        createdQuoteId = response.draftQuoteId;
         setResult(response);
         setApprovalResult(null);
-        setApprovalState(await getQuoteApprovalState(response.draftQuoteId));
+      },
+      async () => {
+        if (createdQuoteId) setApprovalState(await getQuoteApprovalState(createdQuoteId));
       },
       "Draft quote created through the backend transaction service."
     );
@@ -162,21 +194,17 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
       setPhase("VALIDATION_FAILED");
       return;
     }
-    const intentKey = idempotencyKeyForQuoteApprovalAction({
+
+    const approvalIntent = {
       action,
       quoteId: result.draftQuoteId,
       reason: decisionReason,
       comment: decisionReason
-    });
+    } as const;
+    const intentFingerprint = intentFingerprintForQuoteApprovalAction(approvalIntent);
     await runMutation(
-      intentKey,
-      () =>
-        idempotencyKeyForQuoteApprovalAction({
-          action,
-          quoteId: result.draftQuoteId,
-          reason: decisionReason,
-          comment: decisionReason
-        }),
+      intentFingerprint,
+      () => idempotencyKeyForQuoteApprovalAction(approvalIntent),
       (idempotencyKey) => {
         const body = { reason: decisionReason, comment: decisionReason, idempotencyKey };
         return action === "approve"
@@ -187,10 +215,9 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
               ? requestQuoteChanges(result.draftQuoteId, body)
               : convertQuoteToInternalOrder(result.draftQuoteId, body);
       },
-      async (response) => {
+      (response) => {
         const approvalResponse = response as QuoteApprovalCommandResponse;
         setApprovalResult(approvalResponse);
-        setApprovalState(await getQuoteApprovalState(result.draftQuoteId));
         setResult({
           ...result,
           status: approvalResponse.newStatus,
@@ -198,6 +225,7 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
           approvalReasons: approvalResponse.approvalReasons
         });
       },
+      async () => setApprovalState(await getQuoteApprovalState(result.draftQuoteId)),
       "Quote approval action completed. External ERP write was not executed."
     );
   }
@@ -225,40 +253,14 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
             shows substitute/approval context, and keeps externalExecution=DISABLED.
           </p>
           <form className="upload-form" onSubmit={submit}>
-            <label>
-              <span>Customer external ref</span>
-              <input name="customerExternalRef" defaultValue="CUST-001" />
-            </label>
-            <label>
-              <span>SKU or alias</span>
-              <input name="rawSkuOrAlias" defaultValue="PAD-OE-04465" />
-            </label>
-            <label>
-              <span>Description</span>
-              <input name="description" defaultValue="Original brake pads for Toyota Camry 2018" />
-            </label>
-            <label>
-              <span>Quantity</span>
-              <input name="quantity" type="number" min="1" defaultValue="2" />
-            </label>
-            <label>
-              <span>UOM</span>
-              <input name="uom" defaultValue="EA" />
-            </label>
-            <label>
-              <span>Location</span>
-              <input name="requestedLocation" defaultValue="WH-ALM" />
-            </label>
-            <label>
-              <span>Discount percent</span>
-              <input name="requestedDiscountPercent" type="number" min="0" step="0.01" defaultValue="0" />
-            </label>
-            <button
-              className="button"
-              disabled={busy || actionDisabled}
-              type="submit"
-              aria-busy={busy}
-            >
+            <label><span>Customer external ref</span><input name="customerExternalRef" defaultValue="CUST-001" /></label>
+            <label><span>SKU or alias</span><input name="rawSkuOrAlias" defaultValue="PAD-OE-04465" /></label>
+            <label><span>Description</span><input name="description" defaultValue="Original brake pads for Toyota Camry 2018" /></label>
+            <label><span>Quantity</span><input name="quantity" type="number" min="1" defaultValue="2" /></label>
+            <label><span>UOM</span><input name="uom" defaultValue="EA" /></label>
+            <label><span>Location</span><input name="requestedLocation" defaultValue="WH-ALM" /></label>
+            <label><span>Discount percent</span><input name="requestedDiscountPercent" type="number" min="0" max="100" step="0.01" defaultValue="0" /></label>
+            <button className="button" disabled={busy || actionDisabled} type="submit" aria-busy={busy}>
               {busy ? "Submitting..." : "Create Draft Quote"}
             </button>
           </form>
@@ -291,9 +293,7 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
             <p>Approval required: {(approvalState?.approvalRequired ?? result.approvalRequired) ? "Yes" : "No"}</p>
             <p>
               Approval reasons:{" "}
-              {(approvalState?.approvalReasons.length ? approvalState.approvalReasons : result.approvalReasons).join(
-                ", "
-              ) || "None"}
+              {(approvalState?.approvalReasons.length ? approvalState.approvalReasons : result.approvalReasons).join(", ") || "None"}
             </p>
             <p>
               Blocking issues:{" "}
@@ -318,9 +318,7 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
                     disabled={
                       busy ||
                       actionDisabled ||
-                      Boolean(
-                        (approvalState?.blockingIssues ?? result.validationIssues).some((issue) => issue.blocking)
-                      ) ||
+                      Boolean((approvalState?.blockingIssues ?? result.validationIssues).some((issue) => issue.blocking)) ||
                       result.status === "CONVERTED_TO_INTERNAL_ORDER"
                     }
                     type="button"
@@ -331,12 +329,7 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
                   </button>
                   <button
                     className="button secondary-button"
-                    disabled={
-                      busy ||
-                      actionDisabled ||
-                      !decisionReason.trim() ||
-                      result.status === "CONVERTED_TO_INTERNAL_ORDER"
-                    }
+                    disabled={busy || actionDisabled || !decisionReason.trim() || result.status === "CONVERTED_TO_INTERNAL_ORDER"}
                     type="button"
                     onClick={() => void runApprovalAction("reject")}
                   >
@@ -344,12 +337,7 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
                   </button>
                   <button
                     className="button secondary-button"
-                    disabled={
-                      busy ||
-                      actionDisabled ||
-                      !decisionReason.trim() ||
-                      result.status === "CONVERTED_TO_INTERNAL_ORDER"
-                    }
+                    disabled={busy || actionDisabled || !decisionReason.trim() || result.status === "CONVERTED_TO_INTERNAL_ORDER"}
                     type="button"
                     onClick={() => void runApprovalAction("changes")}
                   >
@@ -377,34 +365,20 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
                 <p>New status: {approvalResult.newStatus}</p>
                 <p>Internal draft order boundary: {approvalResult.internalDraftOrderId ?? "Not created"}</p>
                 <p>ChangeRequest: {approvalResult.changeRequestId ?? "Not created"}</p>
-                <p>
-                  External execution:{" "}
-                  {approvalResult.externalExecutionEnabled ? "Enabled" : "Disabled (no external write)"}
-                </p>
+                <p>External execution: {approvalResult.externalExecutionEnabled ? "Enabled" : "Disabled (no external write)"}</p>
               </div>
             ) : null}
           </section>
           <section className="panel table-panel">
             <h2>Lines</h2>
             <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Resolved</th>
-                  <th>Qty</th>
-                  <th>Price</th>
-                  <th>Margin</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Item</th><th>Resolved</th><th>Qty</th><th>Price</th><th>Margin</th><th>Status</th></tr></thead>
               <tbody>
                 {result.lines.map((line) => (
                   <tr key={line.id}>
                     <td>{line.rawSkuOrAlias}</td>
                     <td>{line.productName ?? "Unresolved"}</td>
-                    <td>
-                      {line.quantity} {line.uom}
-                    </td>
+                    <td>{line.quantity} {line.uom}</td>
                     <td>{line.unitPrice ?? "n/a"}</td>
                     <td>{line.marginPercent ?? "n/a"}</td>
                     <td>{line.validationStatus}</td>
@@ -416,28 +390,16 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
           <section className="panel table-panel">
             <h2>Validation Issues</h2>
             <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Severity</th>
-                  <th>Blocking</th>
-                  <th>Message</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Code</th><th>Severity</th><th>Blocking</th><th>Message</th></tr></thead>
               <tbody>
                 {result.validationIssues.length ? (
                   result.validationIssues.map((issue) => (
                     <tr key={issue.id}>
-                      <td>{issue.issueCode}</td>
-                      <td>{issue.severity}</td>
-                      <td>{issue.blocking ? "Yes" : "No"}</td>
-                      <td>{issue.message}</td>
+                      <td>{issue.issueCode}</td><td>{issue.severity}</td><td>{issue.blocking ? "Yes" : "No"}</td><td>{issue.message}</td>
                     </tr>
                   ))
                 ) : (
-                  <tr>
-                    <td colSpan={4}>No validation issues.</td>
-                  </tr>
+                  <tr><td colSpan={4}>No validation issues.</td></tr>
                 )}
               </tbody>
             </table>
@@ -445,28 +407,17 @@ export function QuoteWorkspace({ canPerformQuoteAction }: QuoteWorkspaceProps) {
           <section className="panel table-panel">
             <h2>Substitutes</h2>
             <table className="data-table">
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Risk</th>
-                  <th>Stock</th>
-                  <th>Approval</th>
-                </tr>
-              </thead>
+              <thead><tr><th>SKU</th><th>Risk</th><th>Stock</th><th>Approval</th></tr></thead>
               <tbody>
                 {result.substituteCandidates.length ? (
                   result.substituteCandidates.map((candidate) => (
                     <tr key={`${candidate.lineId}-${candidate.productId}`}>
-                      <td>{candidate.sku}</td>
-                      <td>{candidate.riskLevel}</td>
-                      <td>{candidate.stockStatus}</td>
+                      <td>{candidate.sku}</td><td>{candidate.riskLevel}</td><td>{candidate.stockStatus}</td>
                       <td>{candidate.requiresApproval || candidate.blocked ? "Required" : "Not required"}</td>
                     </tr>
                   ))
                 ) : (
-                  <tr>
-                    <td colSpan={4}>No substitute candidates.</td>
-                  </tr>
+                  <tr><td colSpan={4}>No substitute candidates.</td></tr>
                 )}
               </tbody>
             </table>

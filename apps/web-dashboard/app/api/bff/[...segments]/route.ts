@@ -1,3 +1,4 @@
+import { validateBffQuoteMutationRequest } from "@/lib/bff/bff-quote-mutation-contract";
 import { proxyCoreRequest } from "@/lib/bff/bff-proxy";
 
 // Authoritative session validation and proxying require the Node runtime (redis, node:crypto).
@@ -7,6 +8,8 @@ type RouteContext = { params: Promise<{ segments?: string[] }> };
 
 async function handle(request: Request, context: RouteContext): Promise<Response> {
   const { segments = [] } = await context.params;
+  const quoteContractDenial = await validateBffQuoteMutationRequest(request, segments);
+  if (quoteContractDenial) return quoteContractDenial;
   return proxyCoreRequest(request, segments);
 }
 
