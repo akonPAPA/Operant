@@ -1,31 +1,53 @@
-import { resolveIdempotencyKey } from "./bff-idempotency-key.ts";
+/**
+ * High-authority quote mutation contract (route-specific business payload schema).
+ *
+ * This module answers exactly ONE question the generic proxy cannot: for a tenant quote-authority
+ * mutation (from-rfq / approve / reject / request-changes / convert-to-internal-order), does the
+ * already-authenticated, already-read request body decode to a bounded, duplicate-key-free
+ * business-intent JSON object whose VALUES satisfy the route schema?
+ *
+ * F1 security-order: this module does NOT read/clone the request body, does NOT authenticate, and
+ * does NOT check permission / same-origin / CSRF / idempotency. Those are owned by the proxy and
+ * run BEFORE any of the work here. It also does NOT own the top-level key allowlist — that is the
+ * route registry `bodyPolicy`, applied by the proxy via bodyMatchesStrictPolicy. The proxy composes
+ * the single body-processing path:
+ *
+ *   bounded body read (once)
+ *     -> parseStrictQuoteJsonBody  (fatal UTF-8 + duplicate-key rejection + plain-object)
+ *     -> bodyMatchesStrictPolicy   (strict key allowlist — the ONLY allowlist)
+ *     -> validateQuoteMutationBody (value / required-field schema)
+ *
+ * Every rejection returns before signing, so a rejected body produces zero Core calls. Duplicate
+ * keys are rejected from the RAW bytes (parseStrictQuoteJsonBody) — never JSON.parse-first, which
+ * would silently collapse duplicates and destroy the evidence.
+ */
 
-const SAFE_FAILURE = "The request could not be completed.";
-const JSON_CONTENT_TYPE = "application/json";
-const MAX_BODY_BYTES = 256 * 1024;
 const MAX_JSON_DEPTH = 32;
 const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// Reject C0/C1 control characters (allowing \t \n \r) and DEL — business intent text is single-line.
+const CONTROL_CHAR = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 
-type QuoteMutationKind =
+export type QuoteMutationKind =
   | "from-rfq"
   | "approve"
   | "reject"
   | "request-changes"
   | "convert-to-internal-order";
 
-type BodyReadResult =
-  | { ok: true; bytes: Uint8Array }
-  | { ok: false; status: 400 | 413 };
+export type StrictQuoteJsonBody =
+  | { ok: true; object: Record<string, unknown> }
+  | { ok: false };
 
-function safeJson(status: number): Response {
-  return new Response(JSON.stringify({ message: SAFE_FAILURE }), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
-  });
-}
-
-function quoteMutationKind(segments: readonly string[], method: string): QuoteMutationKind | null {
-  if (method !== "POST") return null;
+/**
+ * Classify a registered path as a tenant quote-authority mutation, or null for anything else.
+ * Structural route existence/method/permission remain the route registry's authority; this only
+ * selects the additional business schema the proxy must apply after the generic allowlist.
+ */
+export function quoteMutationKind(
+  segments: readonly string[],
+  method: string
+): QuoteMutationKind | null {
+  if (method.toUpperCase() !== "POST") return null;
   if (
     segments.length === 4 &&
     segments[0] === "api" &&
@@ -51,50 +73,6 @@ function quoteMutationKind(segments: readonly string[], method: string): QuoteMu
     action === "convert-to-internal-order"
     ? action
     : null;
-}
-
-function declaredContentLength(request: Request): number | null {
-  const raw = request.headers.get("content-length");
-  if (raw === null) return null;
-  if (!/^[0-9]{1,12}$/.test(raw)) return Number.NaN;
-  return Number.parseInt(raw, 10);
-}
-
-async function readBodyBounded(request: Request): Promise<BodyReadResult> {
-  const declared = declaredContentLength(request);
-  if (Number.isNaN(declared) || (declared !== null && declared > MAX_BODY_BYTES)) {
-    void request.body?.cancel().catch(() => undefined);
-    return { ok: false, status: 413 };
-  }
-  if (!request.body) return { ok: true, bytes: new Uint8Array(0) };
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
-        void reader.cancel().catch(() => undefined);
-        return { ok: false, status: 413 };
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return { ok: false, status: 400 };
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return { ok: true, bytes };
 }
 
 class JsonDuplicateKeyGuard {
@@ -220,30 +198,30 @@ class JsonDuplicateKeyGuard {
   }
 }
 
-function parseJsonObject(bytes: Uint8Array): Record<string, unknown> | null {
+/**
+ * Decode already-read request bytes into a plain JSON object, rejecting (ok:false) on invalid
+ * UTF-8, malformed JSON, a duplicate object key (scanned on the raw text before JSON.parse can
+ * collapse it), or a non-object top-level value. A leading UTF-8 BOM is stripped once.
+ */
+export function parseStrictQuoteJsonBody(bytes: Uint8Array): StrictQuoteJsonBody {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    return null;
+    return { ok: false };
   }
   if (text.length > 0 && text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   try {
     new JsonDuplicateKeyGuard(text).verify();
     const parsed: unknown = JSON.parse(text);
-    return isPlainObject(parsed) ? parsed : null;
+    return isPlainObject(parsed) ? { ok: true, object: parsed } : { ok: false };
   } catch {
-    return null;
+    return { ok: false };
   }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }
 
 function boundedString(
@@ -253,7 +231,7 @@ function boundedString(
   if (value === undefined) return !options.required;
   if (typeof value !== "string" || value.length < (options.min ?? 0) || value.length > options.max) return false;
   if (options.nonBlank && value.trim().length === 0) return false;
-  return !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
+  return !CONTROL_CHAR.test(value);
 }
 
 function boundedNumber(
@@ -265,9 +243,6 @@ function boundedNumber(
 }
 
 function validRfqBody(body: Record<string, unknown>): boolean {
-  if (!onlyKeys(body, ["customerExternalRef", "requestedLocation", "requestedDiscountPercent", "requestedItems"])) {
-    return false;
-  }
   if (!boundedString(body.customerExternalRef, { required: true, min: 1, max: 128, nonBlank: true })) return false;
   if (!boundedString(body.requestedLocation, { max: 128, nonBlank: true })) return false;
   if (!boundedNumber(body.requestedDiscountPercent, { min: 0, max: 100 })) return false;
@@ -275,7 +250,7 @@ function validRfqBody(body: Record<string, unknown>): boolean {
     return false;
   }
   for (const item of body.requestedItems) {
-    if (!isPlainObject(item) || !onlyKeys(item, ["rawSkuOrAlias", "description", "quantity", "uom"])) return false;
+    if (!isPlainObject(item)) return false;
     if (!boundedString(item.rawSkuOrAlias, { required: true, min: 1, max: 128, nonBlank: true })) return false;
     if (!boundedString(item.description, { max: 512 })) return false;
     if (!boundedNumber(item.quantity, { required: true, min: Number.MIN_VALUE, max: 1_000_000_000 })) return false;
@@ -285,7 +260,6 @@ function validRfqBody(body: Record<string, unknown>): boolean {
 }
 
 function validApprovalBody(kind: QuoteMutationKind, body: Record<string, unknown>): boolean {
-  if (!onlyKeys(body, ["approvalRequestId", "reason", "comment"])) return false;
   if (
     body.approvalRequestId !== undefined &&
     (typeof body.approvalRequestId !== "string" || !UUID_VALUE.test(body.approvalRequestId))
@@ -303,29 +277,14 @@ function validApprovalBody(kind: QuoteMutationKind, body: Record<string, unknown
 }
 
 /**
- * High-authority quote mutations are stricter than the generic BFF proxy:
- * a canonical opaque Idempotency-Key and a bounded, duplicate-free business-intent JSON body
- * are mandatory. This guard runs before Core forwarding, so every rejection produces zero Core calls.
+ * Validate the VALUE/required-field schema for a quote-authority mutation. The top-level key
+ * allowlist is NOT re-checked here — the proxy applies the route registry `bodyPolicy` (the single
+ * allowlist) immediately before calling this, so unknown / authority / server-state /
+ * prototype-pollution keys have already failed closed.
  */
-export async function validateBffQuoteMutationRequest(
-  request: Request,
-  segments: readonly string[]
-): Promise<Response | null> {
-  const kind = quoteMutationKind(segments, request.method.toUpperCase());
-  if (!kind) return null;
-
-  const idempotency = resolveIdempotencyKey(request.headers.get("idempotency-key"), "required");
-  if (!idempotency.ok) return safeJson(400);
-
-  const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
-  if (contentType !== JSON_CONTENT_TYPE) return safeJson(415);
-
-  const bodyResult = await readBodyBounded(request.clone());
-  if (!bodyResult.ok) return safeJson(bodyResult.status);
-  if (bodyResult.bytes.byteLength === 0) return safeJson(400);
-
-  const body = parseJsonObject(bodyResult.bytes);
-  if (!body) return safeJson(400);
-  const valid = kind === "from-rfq" ? validRfqBody(body) : validApprovalBody(kind, body);
-  return valid ? null : safeJson(400);
+export function validateQuoteMutationBody(
+  kind: QuoteMutationKind,
+  body: Record<string, unknown>
+): boolean {
+  return kind === "from-rfq" ? validRfqBody(body) : validApprovalBody(kind, body);
 }

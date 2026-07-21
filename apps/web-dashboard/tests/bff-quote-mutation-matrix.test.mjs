@@ -2,6 +2,8 @@
  * Parameterized BFF authorization matrix for tenant quote mutation routes.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { proxyCoreRequest } from "../lib/bff/bff-proxy.ts";
 import {
@@ -366,6 +368,262 @@ test("quote mutation: oversized body → 413, zero Core calls", async () => {
     );
     assert.equal(response.status, 413);
     assert.equal(calls.length, 0);
+  });
+});
+
+// ==========================================================================================
+// F1 security-order regression proof (STEP 2 / P03). These fail on the defective head, where the
+// route handler read + schema-validated the quote body BEFORE proxyCoreRequest authenticated the
+// request (and read the body a second time). They assert BEHAVIOUR, not source shape.
+// ==========================================================================================
+
+const FROM_RFQ_PATH = "/api/bff/api/v1/quotes/from-rfq";
+const FROM_RFQ_BODY = QUOTE_MUTATION_ROUTES[0].body;
+
+function segmentsOf(path) {
+  return path.replace(/^\/api\/bff\//, "").split("?")[0].split("/");
+}
+
+// A quote mutation Request whose body is instrumented WITHOUT a stream body constructor (Node eagerly
+// pulls a ReadableStream body at Request construction, which would falsely read as "consumed"). The
+// real Request carries a normal string body; a Proxy intercepts `.body` and hands the proxy code a
+// spy stream that flips `spy.read` true the instant the PROXY calls getReader().read(). So `spy.read`
+// isolates consumption performed by proxyCoreRequest itself — the exact thing the invariant requires.
+function observableBodyRequest(path, options = {}) {
+  const {
+    sessionId,
+    csrf = CSRF,
+    origin = "https://dashboard.test",
+    contentType = "application/json",
+    payload = "{}",
+    idempotencyKey = "quote-observable-key-1"
+  } = options;
+  const spy = { read: false, cancelled: false };
+  const data = new TextEncoder().encode(payload);
+  let delivered = false;
+  const spyBody = new ReadableStream(
+    {
+      pull(controller) {
+        spy.read = true;
+        if (!delivered) {
+          delivered = true;
+          controller.enqueue(data);
+        }
+        controller.close();
+      },
+      cancel() {
+        spy.cancelled = true;
+      }
+    },
+    // highWaterMark 0: never auto-pull to pre-fill the queue — only a real getReader().read() by
+    // the proxy flips spy.read, so this measures consumption performed by proxyCoreRequest itself.
+    { highWaterMark: 0 }
+  );
+  const headers = {
+    host: "dashboard.test",
+    origin,
+    ...(sessionId ? { cookie: `op_session=${sessionId}; op_csrf=${CSRF}` } : {}),
+    ...(csrf ? { "X-OP-CSRF-Token": csrf } : {}),
+    ...(contentType ? { "Content-Type": contentType } : {}),
+    ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
+  };
+  const real = new Request(`https://dashboard.test${path}`, { method: "POST", headers, body: payload });
+  const request = new Proxy(real, {
+    get(target, prop) {
+      if (prop === "body") {
+        return spyBody;
+      }
+      const value = target[prop];
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+  return { request, spy };
+}
+
+test("F1-A: missing session denies before any body byte is consumed (401, zero Core calls)", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const { calls, impl } = recordingFetch();
+    const { request, spy } = observableBodyRequest(FROM_RFQ_PATH, {
+      sessionId: undefined,
+      payload: FROM_RFQ_BODY,
+      throwOnRead: true
+    });
+    const response = await withFetch(impl, () => proxyCoreRequest(request, segmentsOf(FROM_RFQ_PATH)));
+    assert.equal(response.status, 401);
+    assert.equal(spy.read, false, "body stream must not be read before authentication");
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("F1-B: missing QUOTE_ACTION denies before body is consumed (403, zero Core calls)", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ"]);
+    const { calls, impl } = recordingFetch();
+    const { request, spy } = observableBodyRequest(FROM_RFQ_PATH, {
+      sessionId,
+      payload: FROM_RFQ_BODY,
+      throwOnRead: true
+    });
+    const response = await withFetch(impl, () => proxyCoreRequest(request, segmentsOf(FROM_RFQ_PATH)));
+    assert.equal(response.status, 403);
+    assert.equal(spy.read, false, "body stream must not be read before permission check");
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("F1-C: invalid CSRF denies before body is consumed (403, zero Core calls)", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+    const { calls, impl } = recordingFetch();
+    const { request, spy } = observableBodyRequest(FROM_RFQ_PATH, {
+      sessionId,
+      payload: FROM_RFQ_BODY,
+      csrf: "forged-csrf-token-0123456789abcdef",
+      throwOnRead: true
+    });
+    const response = await withFetch(impl, () => proxyCoreRequest(request, segmentsOf(FROM_RFQ_PATH)));
+    assert.equal(response.status, 403);
+    assert.equal(spy.read, false, "body stream must not be read before CSRF check");
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("F1-C: invalid Origin denies before body is consumed (403, zero Core calls)", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+    const { calls, impl } = recordingFetch();
+    const { request, spy } = observableBodyRequest(FROM_RFQ_PATH, {
+      sessionId,
+      payload: FROM_RFQ_BODY,
+      origin: "https://evil.example",
+      throwOnRead: true
+    });
+    const response = await withFetch(impl, () => proxyCoreRequest(request, segmentsOf(FROM_RFQ_PATH)));
+    assert.equal(response.status, 403);
+    assert.equal(spy.read, false, "body stream must not be read before same-origin check");
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("F1-D: valid mutation reads the one-shot body exactly once and forwards the canonical body", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+    const { calls, impl } = recordingFetch();
+    const { request, spy } = observableBodyRequest(FROM_RFQ_PATH, {
+      sessionId,
+      payload: FROM_RFQ_BODY,
+      idempotencyKey: "quote-observable-valid-1"
+    });
+    const response = await withFetch(impl, () => proxyCoreRequest(request, segmentsOf(FROM_RFQ_PATH)));
+    assert.equal(response.status, 200);
+    assert.equal(spy.read, true, "the authenticated body must be read exactly once");
+    assert.equal(calls.length, 1);
+    // Canonical body signed and forwarded is exactly JSON.stringify(parsed) — no raw ambiguous bytes.
+    assert.equal(calls[0].init.body, JSON.stringify(JSON.parse(FROM_RFQ_BODY)));
+  });
+});
+
+test("F1-D-guard: proxy has no Request.clone()-based second read and exactly one bounded read", () => {
+  const proxySrc = readFileSync(join(process.cwd(), "lib/bff/bff-proxy.ts"), "utf8");
+  const routeSrc = readFileSync(join(process.cwd(), "app/api/bff/[...segments]/route.ts"), "utf8");
+  assert.doesNotMatch(proxySrc, /\.clone\(/, "proxy must not clone the request for a second read");
+  assert.doesNotMatch(routeSrc, /\.clone\(/, "route handler must not clone/parse the request body");
+  const reads = proxySrc.match(/readRequestBodyBytesBounded\(request/g) ?? [];
+  assert.equal(reads.length, 1, "exactly one bounded request-body read in the proxy path");
+});
+
+// F1-E: strict-contract cases that must be denied AFTER authentication (400/413/415, zero Core).
+// The unknown/authority/prototype-pollution and invalid-JSON/oversized/wrong-media cases already
+// live in the matrix above; these add the quote-schema, duplicate-key and invalid-UTF-8 cases that
+// used to be enforced only by the pre-auth route handler.
+const AUTHENTICATED_BODY_REJECTIONS = [
+  {
+    label: "duplicate JSON key",
+    status: 400,
+    body: `{"customerExternalRef":"CUST-A","customerExternalRef":"CUST-B","requestedItems":[{"rawSkuOrAlias":"SKU","quantity":1,"uom":"EA"}]}`
+  },
+  {
+    label: "invalid UTF-8 bytes",
+    status: 400,
+    body: Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xff, 0x7d])
+  },
+  {
+    label: "out-of-range requestedDiscountPercent (schema)",
+    status: 400,
+    body: JSON.stringify({
+      customerExternalRef: "CUST-1",
+      requestedDiscountPercent: 101,
+      requestedItems: [{ rawSkuOrAlias: "SKU-1", quantity: 1, uom: "EA" }]
+    })
+  },
+  {
+    label: "reject without reason or comment (schema)",
+    status: 400,
+    path: `/api/bff/api/v1/quotes/${QUOTE_ID}/reject`,
+    body: JSON.stringify({})
+  }
+];
+
+for (const rejection of AUTHENTICATED_BODY_REJECTIONS) {
+  test(`F1-E: authenticated ${rejection.label} → ${rejection.status}, zero Core calls`, async () => {
+    await withEnv(BFF_ENV, async () => {
+      const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+      const { calls, impl } = recordingFetch();
+      const response = await withFetch(impl, () =>
+        proxied(rejection.path ?? FROM_RFQ_PATH, {
+          sessionId,
+          body: rejection.body,
+          extraHeaders: { "Idempotency-Key": "quote-f1e-key" }
+        })
+      );
+      assert.equal(response.status, rejection.status);
+      assert.equal(calls.length, 0);
+    });
+  });
+}
+
+test("F1-F: missing required Idempotency-Key denies before signing/Core (400, zero Core calls)", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+    const { calls, impl } = recordingFetch();
+    // Valid body, valid auth, but no Idempotency-Key: quote-authority routes require one.
+    const response = await withFetch(impl, () => proxied(FROM_RFQ_PATH, { sessionId, body: FROM_RFQ_BODY }));
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("F1-F: invalid Idempotency-Key denies before signing/Core (400, zero Core calls)", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+    const { calls, impl } = recordingFetch();
+    const response = await withFetch(impl, () =>
+      proxied(FROM_RFQ_PATH, {
+        sessionId,
+        body: FROM_RFQ_BODY,
+        extraHeaders: { "Idempotency-Key": "bad key with spaces" }
+      })
+    );
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("F1-F: valid opaque Idempotency-Key is forwarded byte-for-byte", async () => {
+  await withEnv(BFF_ENV, async () => {
+    const sessionId = await operatorSession(["QUOTE_READ", "QUOTE_ACTION"]);
+    const { calls, impl } = recordingFetch();
+    const opaqueKey = "op-idem.KEY_1:abc-DEF";
+    const response = await withFetch(impl, () =>
+      proxied(FROM_RFQ_PATH, {
+        sessionId,
+        body: FROM_RFQ_BODY,
+        extraHeaders: { "Idempotency-Key": opaqueKey }
+      })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.headers.get("Idempotency-Key"), opaqueKey);
   });
 });
 

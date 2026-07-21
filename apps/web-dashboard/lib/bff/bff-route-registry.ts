@@ -204,6 +204,7 @@ function mutate(
     params?: Record<string, BffPathParamType>;
     query?: BffQueryPolicy;
     bodyPolicy?: StrictBodyPolicy;
+    idempotency?: BffIdempotencyPolicy;
   }
 ): BffRouteRule {
   return {
@@ -217,7 +218,7 @@ function mutate(
     contentType: JSON_CONTENT_TYPE,
     maxBodyBytes: options?.maxBodyBytes ?? DEFAULT_MUTATION_BODY_LIMIT,
     csrfRequired: true,
-    idempotency: "optional",
+    idempotency: options?.idempotency ?? "optional",
     allowIfMatch: false,
     bodyPolicy: options?.bodyPolicy
   };
@@ -371,18 +372,28 @@ const ROUTE_RULES: BffRouteRule[] = [
   // Quotes
   read("api/v1/quotes/:quoteId/approval-state", "QUOTE_READ"),
   read("api/v1/quotes/:quoteId/source-context", "QUOTE_READ"),
-  mutate("POST", "api/v1/quotes/from-rfq", "QUOTE_ACTION", { bodyPolicy: QUOTE_FROM_RFQ_BODY }),
+  // Tenant quote-authority mutations: the strict business contract requires a canonical opaque
+  // Idempotency-Key (replay/dedup protection for high-authority actions). "required" here is the
+  // single source of that policy — the proxy validates it after body processing, before signing.
+  mutate("POST", "api/v1/quotes/from-rfq", "QUOTE_ACTION", {
+    bodyPolicy: QUOTE_FROM_RFQ_BODY,
+    idempotency: "required"
+  }),
   mutate("POST", "api/v1/quotes/:quoteId/approve", "QUOTE_ACTION", {
-    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY,
+    idempotency: "required"
   }),
   mutate("POST", "api/v1/quotes/:quoteId/reject", "QUOTE_ACTION", {
-    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY,
+    idempotency: "required"
   }),
   mutate("POST", "api/v1/quotes/:quoteId/request-changes", "QUOTE_ACTION", {
-    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY,
+    idempotency: "required"
   }),
   mutate("POST", "api/v1/quotes/:quoteId/convert-to-internal-order", "QUOTE_ACTION", {
-    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY
+    bodyPolicy: QUOTE_APPROVAL_DECISION_BODY,
+    idempotency: "required"
   }),
   mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId", "QUOTE_ACTION"),
   mutate("POST", "api/v1/quotes/drafts/from-rfq-handoff/:handoffId/decision", "QUOTE_ACTION"),

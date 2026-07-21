@@ -31,6 +31,11 @@ import { validateCsrf, validateSameOrigin } from "./bff-csrf.ts";
 import { readSecurityCookie, type SecurityCookiePolicy } from "./bff-cookies.ts";
 import { resolveIdempotencyKey } from "./bff-idempotency-key.ts";
 import { bodyMatchesStrictPolicy } from "./bff-strict-body-policy.ts";
+import {
+  parseStrictQuoteJsonBody,
+  quoteMutationKind,
+  validateQuoteMutationBody
+} from "./bff-quote-mutation-contract.ts";
 
 const SAFE_PROXY_ERROR = "The request could not be completed.";
 const ALLOWED_ACCEPT = new Set(["application/json", "*/*", "application/json, text/plain, */*"]);
@@ -365,29 +370,55 @@ export async function proxyCoreRequest(request: Request, segments: string[]): Pr
   let body: string | undefined;
   if (rule.kind === "mutation") {
     const requestContentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+    // ONE bounded body read for the whole request. Session, permission, same-origin and CSRF were
+    // all resolved above, so no body byte is consumed before authentication/authorization.
     const rawBody = await readRequestBodyBytesBounded(request, rule.maxBodyBytes);
     if (!rawBody.ok) {
       return safeJson(rawBody.status);
     }
+    // High-authority quote mutations carry an additional route-specific business schema. It runs on
+    // the SAME already-read bytes (no second read, no request cloning).
+    const quoteKind = quoteMutationKind(segments, method);
     if (rawBody.bytes.byteLength === 0) {
-      // Empty body is allowed for registered mutations (idempotent POST markers, etc.).
+      if (quoteKind) {
+        // The quote-authority contract requires an explicit business-intent body.
+        return safeJson(400);
+      }
+      // Empty body is allowed for other registered mutations (idempotent POST markers, etc.).
       body = undefined;
     } else {
       if (!rule.contentType || requestContentType !== rule.contentType) {
         return safeJson(415);
       }
       if (rule.contentType === "application/json") {
-        const canonical = canonicalizeJsonRequestBody(rawBody.bytes);
-        if (!canonical.ok) {
-          return safeJson(canonical.status);
+        if (quoteKind) {
+          // One coherent quote path: fatal UTF-8 + duplicate-key rejection on the RAW bytes, then
+          // the strict key allowlist (rule.bodyPolicy — the single allowlist), then the value
+          // schema. Any failure returns before signing, so a rejected body makes zero Core calls.
+          const parsed = parseStrictQuoteJsonBody(rawBody.bytes);
+          if (!parsed.ok) {
+            return safeJson(400);
+          }
+          if (rule.bodyPolicy && !bodyMatchesStrictPolicy(parsed.object, rule.bodyPolicy)) {
+            return safeJson(400);
+          }
+          if (!validateQuoteMutationBody(quoteKind, parsed.object)) {
+            return safeJson(400);
+          }
+          body = JSON.stringify(parsed.object);
+        } else {
+          const canonical = canonicalizeJsonRequestBody(rawBody.bytes);
+          if (!canonical.ok) {
+            return safeJson(canonical.status);
+          }
+          // Strict request-field allowlist (high-authority mutations only). A body carrying any
+          // unknown / authority / server-state / prototype-pollution key fails closed here — before
+          // signing or any upstream call — so a rejected body produces zero Core calls.
+          if (rule.bodyPolicy && !bodyMatchesStrictPolicy(canonical.parsed, rule.bodyPolicy)) {
+            return safeJson(400);
+          }
+          body = canonical.body;
         }
-        // Strict request-field allowlist (high-authority mutations only). A body carrying any
-        // unknown / authority / server-state / prototype-pollution key fails closed here — before
-        // signing or any upstream call — so a rejected body produces zero Core calls.
-        if (rule.bodyPolicy && !bodyMatchesStrictPolicy(canonical.parsed, rule.bodyPolicy)) {
-          return safeJson(400);
-        }
-        body = canonical.body;
       } else {
         // Non-JSON mutation media types are not registered today; fail closed.
         return safeJson(415);
