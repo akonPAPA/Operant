@@ -36,7 +36,7 @@ class ApiPermissionRoleMatrixTest {
     // OP-CAP-51: OWNER_ADMIN holds every TENANT permission, but NOT the internal staff/support family —
     // a tenant owner is not Operant-owner-company support staff.
     EnumSet<ApiPermission> everyTenantPermission = EnumSet.allOf(ApiPermission.class);
-    everyTenantPermission.removeAll(ApiRolePermissionMatrix.STAFF_SUPPORT_PERMISSIONS);
+    everyTenantPermission.removeAll(ApiRolePermissionMatrix.NON_TENANT_PERMISSIONS);
     assertThat(ApiRolePermissionMatrix.permissionsFor(RoleProfile.OWNER_ADMIN))
         .containsExactlyInAnyOrderElementsOf(everyTenantPermission);
 
@@ -57,6 +57,19 @@ class ApiPermissionRoleMatrixTest {
       assertThat(ApiRolePermissionMatrix.permissionsFor(role))
           .as("%s must hold no STAFF_* support permission", role)
           .doesNotContainAnyElementsOf(ApiRolePermissionMatrix.STAFF_SUPPORT_PERMISSIONS);
+    }
+  }
+
+  @Test
+  void noTenantRoleHoldsAnyControlExecutorPermission() {
+    // P1-E2A: the CONTROL_EXECUTOR_* lifecycle-executor family is a dedicated machine deployment-control
+    // identity class. It is not STAFF_-prefixed, so this proves it is excluded from EVERY tenant role
+    // (including OWNER_ADMIN and AUDITOR) - a tenant grant can never lease or complete a lifecycle op.
+    assertThat(ApiRolePermissionMatrix.CONTROL_EXECUTOR_PERMISSIONS).isNotEmpty();
+    for (RoleProfile role : RoleProfile.values()) {
+      assertThat(ApiRolePermissionMatrix.permissionsFor(role))
+          .as("%s must hold no CONTROL_EXECUTOR_* permission", role)
+          .doesNotContainAnyElementsOf(ApiRolePermissionMatrix.CONTROL_EXECUTOR_PERMISSIONS);
     }
   }
 
