@@ -106,12 +106,18 @@ public final class ControlPlaneCredentialConfigurationValidator {
       return Optional.empty();
     }
     try {
+      // Preserve the legacy property contract: an invalid alias must be reported as an alias failure
+      // before the alias-derived compatibility principal id is validated.
+      String resolvedAlias = requireExact(ROOT_PREFIX + ".credential-alias", alias);
+      if (!ALIAS_PATTERN.matcher(resolvedAlias).matches()) {
+        throw invalid(ROOT_PREFIX + ".credential-alias");
+      }
       ControlPlanePrincipalType inferredType = inferPrincipalType(ROOT_PREFIX, permissions);
       return Optional.of(enabledRecord(
           ROOT_PREFIX,
-          alias,
+          resolvedAlias,
           inferredType,
-          alias,
+          resolvedAlias,
           sharedSecret,
           audience,
           resolvedStatus,
@@ -196,13 +202,13 @@ public final class ControlPlaneCredentialConfigurationValidator {
     if (principalType == null) {
       throw invalid(prefix + ".principal-type");
     }
-    String resolvedPrincipalId = requireExact(prefix + ".principal-id", principalId);
-    if (!PRINCIPAL_ID_PATTERN.matcher(resolvedPrincipalId).matches()) {
-      throw invalid(prefix + ".principal-id");
-    }
     String resolvedAlias = requireExact(prefix + ".credential-alias", alias);
     if (!ALIAS_PATTERN.matcher(resolvedAlias).matches()) {
       throw invalid(prefix + ".credential-alias");
+    }
+    String resolvedPrincipalId = requireExact(prefix + ".principal-id", principalId);
+    if (!PRINCIPAL_ID_PATTERN.matcher(resolvedPrincipalId).matches()) {
+      throw invalid(prefix + ".principal-id");
     }
     byte[] controlKey = GatewayHmacKeyCodec.requireValid(prefix + ".shared-secret", sharedSecret);
     try {
