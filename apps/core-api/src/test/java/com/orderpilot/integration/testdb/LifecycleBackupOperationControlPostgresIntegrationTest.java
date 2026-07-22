@@ -1,9 +1,9 @@
 package com.orderpilot.integration.testdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.orderpilot.application.services.control.lifecycle.LifecycleBackupOperationService;
-import com.orderpilot.application.services.control.lifecycle.LifecycleControlException;
 import com.orderpilot.domain.control.LifecycleOperation;
 import com.orderpilot.domain.control.LifecycleOperationRepository;
 import com.orderpilot.domain.control.LifecycleOperationState;
@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.DockerClientFactory;
@@ -30,19 +32,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/**
- * P1-E2A - PostgreSQL concurrency + fencing proof for the durable backup-operation control slice.
- *
- * <p>The fast H2 suite ({@code LifecycleBackupOperationServiceTest}) proves the protocol logic, but H2
- * degrades {@code FOR UPDATE SKIP LOCKED} and its @DataJpaTest single transaction cannot exercise genuine
- * cross-connection contention. This test boots the real application context against a real PostgreSQL
- * (Testcontainers), runs Flyway (V67), and drives genuinely concurrent transactions so the DB unique
- * idempotency index and the row-locked atomic lease are actually exercised.
- *
- * <p>It reuses the existing integration-test convention but overrides the datasource to point at the
- * container and enables the lifecycle executor capability, so it is self-contained and needs only Docker.
- * Without a Docker daemon the whole class is SKIPPED (kept out of the default H2 suite).
- */
+/** PostgreSQL concurrency, fencing, and migration-constraint proof for lifecycle control. */
 @Testcontainers
 @RequiresPostgresIntegration
 @EnabledIf("dockerAvailable")
@@ -63,7 +53,6 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
     registry.add("spring.flyway.enabled", () -> true);
     registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
     registry.add("spring.datasource.hikari.maximum-pool-size", () -> 16);
-    // Enable the executor capability so backup requests create operations in this proof only.
     registry.add("orderpilot.control.lifecycle.executor.enabled", () -> true);
   }
 
@@ -73,6 +62,7 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
 
   @Autowired private LifecycleBackupOperationService service;
   @Autowired private LifecycleOperationRepository repository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @BeforeEach
   void clean() {
@@ -80,17 +70,14 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
   }
 
   @Test
-  void concurrentDuplicateIdempotencyRequestsCreateExactlyOneOperation() throws Exception {
-    List<Optional<String>> results = runConcurrent(WORKERS, () -> {
-      try {
-        return Optional.of(service.requestBackup(STAFF_FP, "same-idempotency-key").getPublicId());
-      } catch (LifecycleControlException.IdempotencyConflict conflict) {
-        return Optional.empty();
-      }
-    });
+  void concurrentSamePrincipalIdempotencyRequestsAllReturnOneOperation() throws Exception {
+    List<Optional<String>> results = runConcurrent(
+        WORKERS,
+        () -> Optional.of(service.requestBackup(STAFF_FP, "same-idempotency-key").getPublicId()));
 
-    List<String> publicIds = results.stream().flatMap(Optional::stream).distinct().toList();
-    assertThat(publicIds).hasSize(1); // exactly one operation, one public id
+    List<String> returnedIds = results.stream().flatMap(Optional::stream).toList();
+    assertThat(returnedIds).hasSize(WORKERS);
+    assertThat(returnedIds).containsOnly(returnedIds.get(0));
     assertThat(repository.count()).isEqualTo(1);
   }
 
@@ -109,13 +96,29 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
     });
 
     List<String> leasedIds = results.stream().flatMap(Optional::stream).toList();
-    assertThat(winners.get()).isEqualTo(1); // atomic lease: exactly one executor won
+    assertThat(winners.get()).isEqualTo(1);
     assertThat(leasedIds).containsExactly(queued.getPublicId());
 
     LifecycleOperation reloaded = repository.findByPublicId(queued.getPublicId()).orElseThrow();
     assertThat(reloaded.getState()).isEqualTo(LifecycleOperationState.LEASED);
     assertThat(reloaded.getFencingToken()).isEqualTo(1L);
     assertThat(reloaded.getAttempt()).isEqualTo(1);
+  }
+
+  @Test
+  void migrationRejectsImpossibleQueuedRowWithTerminalResult() {
+    assertThatThrownBy(() -> jdbcTemplate.update("""
+        insert into lifecycle_operation (
+          public_id, operation_type, state, idempotency_key_hash, requested_by_fingerprint,
+          result_code, attempt, fencing_token, lease_expires_at, leased_by_fingerprint,
+          created_at, updated_at
+        ) values (
+          'op_invalid_terminal_queue', 'BACKUP', 'QUEUED', repeat('a', 64), repeat('b', 64),
+          'BACKUP_COMPLETED', 0, null, null, null, now(), now()
+        )
+        """))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(repository.count()).isZero();
   }
 
   private static List<Optional<String>> runConcurrent(int workers, Callable<Optional<String>> task)
