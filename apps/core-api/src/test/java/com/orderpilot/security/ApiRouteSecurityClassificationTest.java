@@ -401,30 +401,7 @@ class ApiRouteSecurityClassificationTest {
             "/api/v1/internal/support/tenants/123e4567-e89b-12d3-a456-426614174000/data-repair-requests/"
                 + "123e4567-e89b-12d3-a456-426614174222/execute-processing-job-repair",
             SecurityClassification.PROTECTED_EXECUTE,
-            ApiPermission.STAFF_PROCESSING_JOB_REPAIR_EXECUTE),
-        // P1-E2A: the durable backup operation control slice. Two DISJOINT control-plane principal
-        // classes: the human operantctl staff principal (request/read) and the machine lifecycle
-        // executor (lease/complete). Each route maps to its own permission; the families never overlap.
-        new RouteExpectation(
-            "POST",
-            "/api/v1/internal/control/lifecycle/backups",
-            SecurityClassification.PROTECTED_CREATE,
-            ApiPermission.STAFF_CONTROL_BACKUP),
-        new RouteExpectation(
-            "GET",
-            "/api/v1/internal/control/lifecycle/operations/op_0011223344556677",
-            SecurityClassification.PROTECTED_READ,
-            ApiPermission.STAFF_CONTROL_LIFECYCLE_READ),
-        new RouteExpectation(
-            "POST",
-            "/api/v1/internal/control/lifecycle/executor/lease",
-            SecurityClassification.PROTECTED_EXECUTE,
-            ApiPermission.CONTROL_EXECUTOR_LEASE),
-        new RouteExpectation(
-            "POST",
-            "/api/v1/internal/control/lifecycle/operations/op_0011223344556677/complete",
-            SecurityClassification.PROTECTED_EXECUTE,
-            ApiPermission.CONTROL_EXECUTOR_REPORT));
+            ApiPermission.STAFF_PROCESSING_JOB_REPAIR_EXECUTE));
   }
 
   // OP-CAP-46C: the public secure tracking link is classified public-with-token (no permission), while

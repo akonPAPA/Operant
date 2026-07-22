@@ -201,34 +201,21 @@ public final class ControlPlaneCredentialConfigurationValidator {
   private static Set<ApiPermission> requirePermissions(String raw) {
     String configured = requireExact("orderpilot.security.control-plane-auth.permissions", raw);
     EnumSet<ApiPermission> permissions = EnumSet.noneOf(ApiPermission.class);
-    boolean hasStaffControl = false;
-    boolean hasExecutor = false;
     for (String value : configured.split(",", -1)) {
       if (value.isBlank() || !value.equals(value.trim())) {
         throw invalid("orderpilot.security.control-plane-auth.permissions");
       }
       try {
         ApiPermission permission = ApiPermission.valueOf(value);
-        boolean staffControl = permission.name().startsWith("STAFF_CONTROL_");
-        boolean executor = permission.name().startsWith("CONTROL_EXECUTOR_");
-        if (!staffControl && !executor) {
+        if (!permission.name().startsWith("STAFF_CONTROL_")) {
           throw invalid("orderpilot.security.control-plane-auth.permissions");
         }
-        hasStaffControl |= staffControl;
-        hasExecutor |= executor;
         permissions.add(permission);
       } catch (IllegalArgumentException unknown) {
         throw invalid("orderpilot.security.control-plane-auth.permissions");
       }
     }
     if (permissions.isEmpty()) {
-      throw invalid("orderpilot.security.control-plane-auth.permissions");
-    }
-    // P1-E2A principal-class separation: a single control credential is EITHER the human staff-control
-    // principal (STAFF_CONTROL_*) OR the machine lifecycle executor (CONTROL_EXECUTOR_*), never both. This
-    // makes "staff credentials must not act as executors" (and the converse) a structural config invariant,
-    // not merely a route-mapping property.
-    if (hasStaffControl && hasExecutor) {
       throw invalid("orderpilot.security.control-plane-auth.permissions");
     }
     return Set.copyOf(permissions);

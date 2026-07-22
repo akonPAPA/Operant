@@ -57,26 +57,6 @@ final class ApiRolePermissionMatrix {
           .collect(Collectors.toSet()));
 
   /**
-   * P1-E2A - the dedicated lifecycle-executor permission family ({@code CONTROL_EXECUTOR_*}). Unlike the
-   * STAFF_* family it is not STAFF_-prefixed, so it must be excluded explicitly: it is a machine
-   * deployment-control identity class and is NEVER held by any tenant role (including OWNER_ADMIN).
-   */
-  static final Set<ApiPermission> CONTROL_EXECUTOR_PERMISSIONS = EnumSet.copyOf(
-      EnumSet.allOf(ApiPermission.class).stream()
-          .filter(p -> p.name().startsWith("CONTROL_EXECUTOR_"))
-          .collect(Collectors.toSet()));
-
-  /** Every non-tenant control-plane permission: neither the STAFF_* nor the CONTROL_EXECUTOR_* family
-   * is ever granted to a tenant role. */
-  static final Set<ApiPermission> NON_TENANT_PERMISSIONS = nonTenantPermissions();
-
-  private static Set<ApiPermission> nonTenantPermissions() {
-    EnumSet<ApiPermission> combined = EnumSet.copyOf(STAFF_SUPPORT_PERMISSIONS);
-    combined.addAll(CONTROL_EXECUTOR_PERMISSIONS);
-    return combined;
-  }
-
-  /**
    * External-write-adjacent grant. Reaching connector execution must be limited to the roles that are
    * explicitly trusted to push an approved change to an external system.
    */
@@ -101,7 +81,7 @@ final class ApiRolePermissionMatrix {
     // OWNER_ADMIN is the tenant super-admin: every TENANT permission, but NOT the internal staff/support
     // family — a tenant owner is not Operant-owner-company support staff.
     EnumSet<ApiPermission> ownerAdmin = EnumSet.allOf(ApiPermission.class);
-    ownerAdmin.removeAll(NON_TENANT_PERMISSIONS);
+    ownerAdmin.removeAll(STAFF_SUPPORT_PERMISSIONS);
     matrix.put(RoleProfile.OWNER_ADMIN, ownerAdmin);
 
     matrix.put(RoleProfile.SALES_MANAGER, EnumSet.of(
@@ -148,7 +128,7 @@ final class ApiRolePermissionMatrix {
     // Auditor sees everything readable and may mutate nothing — but staff/support reads are not tenant
     // permissions, so they are excluded.
     EnumSet<ApiPermission> auditor = EnumSet.copyOf(READ_ONLY_PERMISSIONS);
-    auditor.removeAll(NON_TENANT_PERMISSIONS);
+    auditor.removeAll(STAFF_SUPPORT_PERMISSIONS);
     matrix.put(RoleProfile.AUDITOR, auditor);
 
     matrix.put(RoleProfile.ANALYTICS_VIEWER, EnumSet.of(

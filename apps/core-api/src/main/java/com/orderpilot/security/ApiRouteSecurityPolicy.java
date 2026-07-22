@@ -345,10 +345,6 @@ public class ApiRouteSecurityPolicy {
   // STAFF_CONTROL_DIAGNOSE permission. Write-shaped variants and unknown sub-paths remain
   // unclassified and hit the global /api/** default-deny.
   private Optional<RouteDecision> controlDecision(String method, String path) {
-    String lifecycleBase = INTERNAL_CONTROL_BASE + "/lifecycle";
-    if (path.equals(lifecycleBase) || path.startsWith(lifecycleBase + "/")) {
-      return lifecycleDecision(method, path, lifecycleBase);
-    }
     if (!HttpMethod.GET.matches(method) && !HttpMethod.HEAD.matches(method)) {
       return Optional.empty();
     }
@@ -365,32 +361,6 @@ public class ApiRouteSecurityPolicy {
     // Only this exact path is classified; a deeper sub-path stays unclassified and fails closed.
     if (path.equals(INTERNAL_CONTROL_BASE + "/operational-events")) {
       return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_CONTROL_OPERATIONAL_EVENT_READ);
-    }
-    return Optional.empty();
-  }
-
-  // P1-E2A durable backup operation control slice: the bounded lifecycle surface under
-  // /api/v1/internal/control/lifecycle. Two DISJOINT control-plane principal classes:
-  //   * STAFF_CONTROL_BACKUP / STAFF_CONTROL_LIFECYCLE_READ - the human operantctl principal requests and
-  //     reads operations, but can never lease or complete them;
-  //   * CONTROL_EXECUTOR_LEASE / CONTROL_EXECUTOR_REPORT - the dedicated lifecycle executor leases and
-  //     completes already-authorized operations, but can never request or read the staff surface.
-  // Only the exact method+path matrix below is classified; every other verb/sub-path (including a GET of
-  // the executor routes or a POST to the read route) stays unclassified and hits the global /api/**
-  // default-deny.
-  private Optional<RouteDecision> lifecycleDecision(String method, String path, String base) {
-    boolean post = HttpMethod.POST.matches(method);
-    if (post && path.equals(base + "/backups")) {
-      return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.STAFF_CONTROL_BACKUP);
-    }
-    if (post && path.equals(base + "/executor/lease")) {
-      return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.CONTROL_EXECUTOR_LEASE);
-    }
-    if (post && matches(path, base + "/operations/*/complete")) {
-      return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.CONTROL_EXECUTOR_REPORT);
-    }
-    if (HttpMethod.GET.matches(method) && matches(path, base + "/operations/*")) {
-      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.STAFF_CONTROL_LIFECYCLE_READ);
     }
     return Optional.empty();
   }
