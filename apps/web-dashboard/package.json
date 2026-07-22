@@ -15,7 +15,7 @@
     "validate:p1d-topology": "node scripts/validate-p1d-production-topology.mjs"
   },
   "dependencies": {
-    "next": "16.2.10",
+    "next": "16.2.11",
     "openid-client": "6.8.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
