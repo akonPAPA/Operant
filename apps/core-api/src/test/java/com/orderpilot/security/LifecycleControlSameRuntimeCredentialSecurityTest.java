@@ -27,11 +27,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * One-runtime proof for the complete control flow. The same Spring context simultaneously authenticates
- * an Operant staff principal and an independent lifecycle-executor service account; no restart or
- * property replacement occurs between request, lease, completion, and staff readback.
- */
+/** One-runtime proof for separated staff and lifecycle-executor credentials. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -88,14 +84,15 @@ class LifecycleControlSameRuntimeCredentialSecurityTest {
         .andExpect(status().isUnauthorized());
     assertThat(repository.count()).isZero();
 
-    mockMvc.perform(signed(EXECUTOR_ALIAS, EXECUTOR_SECRET, "POST", BASE + "/backups", null)
-            .header("Idempotency-Key", "wrong-plane-attempt"))
+    String wrongPlaneBody = "{\"idempotencyKey\":\"wrong-plane-attempt\"}";
+    mockMvc.perform(signed(
+            EXECUTOR_ALIAS, EXECUTOR_SECRET, "POST", BASE + "/backups", wrongPlaneBody))
         .andExpect(status().isUnauthorized());
     assertThat(repository.count()).isZero();
 
+    String requestBody = "{\"idempotencyKey\":\"same-runtime-flow-1\"}";
     MvcResult requested = mockMvc.perform(
-            signed(STAFF_ALIAS, STAFF_SECRET, "POST", BASE + "/backups", null)
-                .header("Idempotency-Key", "same-runtime-flow-1"))
+            signed(STAFF_ALIAS, STAFF_SECRET, "POST", BASE + "/backups", requestBody))
         .andExpect(status().isAccepted())
         .andExpect(jsonPath("$.state").value("QUEUED"))
         .andReturn();
