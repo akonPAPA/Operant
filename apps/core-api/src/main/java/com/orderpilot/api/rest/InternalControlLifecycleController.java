@@ -26,14 +26,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * P1-E2A - the bounded durable-backup-operation control surface under
- * {@code /api/v1/internal/control/lifecycle/**}, consumed by the human-operated operantctl (staff routes)
- * and by a dedicated lifecycle executor (executor routes). Route-edge security is enforced by
- * {@link com.orderpilot.security.ApiRouteSecurityPolicy}: each route requires a distinct control
- * permission, staff and executor permissions are disjoint, and tenant/support permissions are denied.
+ * {@code /api/v1/internal/control/lifecycle/**}. Staff routes are reserved for an authenticated Operant
+ * control client; executor routes are reserved for a dedicated lifecycle-executor service account.
+ * Route-edge security is enforced by {@link com.orderpilot.security.ApiRouteSecurityPolicy}: each route
+ * requires a distinct control permission, staff and executor permissions are disjoint, and tenant/support
+ * permissions are denied.
  *
- * <p>This slice ends at the executor protocol boundary. It performs NO real backup: an executor lease and
- * completion only record bounded control state, never a pg_dump, artifact, or file. The executor
- * capability is disabled by default, so a backup request fails closed before any operation is created.
+ * <p>This slice ends at the Core protocol boundary. It does not claim that a packaged operantctl backup
+ * command or a real backup executor exists. Lease and completion record bounded control state only; no
+ * pg_dump, artifact, restore, or filesystem operation is performed. The executor capability is disabled by
+ * default, so a backup request fails closed before any operation is created.
  */
 @RestController
 public class InternalControlLifecycleController {
