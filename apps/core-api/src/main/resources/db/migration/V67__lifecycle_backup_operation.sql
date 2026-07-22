@@ -18,8 +18,11 @@
 -- Idempotency is enforced by a UNIQUE index on (operation_type, idempotency_key_hash). The lifecycle
 -- consistency constraint prevents impossible partial rows such as a terminal state without a bounded
 -- result, a queued row carrying lease authority, or an in-flight row without owner/token/expiry.
+--
+-- Deliberately no IF NOT EXISTS: Flyway must fail if an unexpected object already occupies these names.
+-- Silently accepting a pre-existing incompatible table/index would turn schema drift into runtime risk.
 
-CREATE TABLE IF NOT EXISTS lifecycle_operation (
+CREATE TABLE lifecycle_operation (
   id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   public_id                 VARCHAR(40) NOT NULL,
   operation_type            VARCHAR(20) NOT NULL,
@@ -87,11 +90,11 @@ CREATE TABLE IF NOT EXISTS lifecycle_operation (
   )
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_lifecycle_operation_public_id
+CREATE UNIQUE INDEX ux_lifecycle_operation_public_id
   ON lifecycle_operation (public_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_lifecycle_operation_idempotency
+CREATE UNIQUE INDEX ux_lifecycle_operation_idempotency
   ON lifecycle_operation (operation_type, idempotency_key_hash);
 
-CREATE INDEX IF NOT EXISTS idx_lifecycle_operation_state
+CREATE INDEX idx_lifecycle_operation_state
   ON lifecycle_operation (state, created_at);
