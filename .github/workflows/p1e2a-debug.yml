@@ -1,0 +1,42 @@
+name: P1-E2A Debug
+
+on:
+  push:
+    branches:
+      - fix/p1-e2a-multi-principal-lifecycle-control
+
+permissions:
+  contents: read
+
+jobs:
+  backend-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/core-api
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run backend tests with bounded failure diagnostics
+        shell: bash
+        run: |
+          set +e
+          mvn -B test > "$RUNNER_TEMP/p1e2a-backend.log" 2>&1
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            echo "::group::Bounded Maven failure diagnostics"
+            grep -E "(^|[[:space:]])(ERROR|FAILURE|Failures:|Errors:|Tests run:|Caused by:|APPLICATION FAILED|expected:|but was:|NoSuchBeanDefinition|BeanDefinition|UnsatisfiedDependency|IllegalStateException|AssertionFailedError)" \
+              "$RUNNER_TEMP/p1e2a-backend.log" | tail -n 160 || true
+            echo "::endgroup::"
+          else
+            tail -n 25 "$RUNNER_TEMP/p1e2a-backend.log"
+          fi
+          exit "$status"
