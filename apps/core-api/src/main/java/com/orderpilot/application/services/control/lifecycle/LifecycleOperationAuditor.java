@@ -9,11 +9,11 @@ import org.springframework.stereotype.Component;
  * P1-E2A - emits one bounded structured record per sensitive lifecycle-operation event. Following the
  * merged control-plane precedent ({@code OperationalEventAccessAuditor}), it uses a dedicated audit
  * logger namespace and records only bounded, non-reversible facts: the opaque operation id, the fixed
- * operation type, the state, a bounded result code, and already-hashed principal fingerprints.
+ * operation type, state, attempt count, bounded result code, and already-hashed principal fingerprints.
  *
- * <p>It NEVER records a credential, raw request body, stack trace, stdout, stderr, filesystem path,
- * environment value, idempotency key, or key material. A durable/persisted control-operation audit store
- * is out of scope for this slice and remains NOT_PROVEN.
+ * <p>It NEVER records a credential, key material, raw request body, idempotency key, fencing token,
+ * signature, stack trace, stdout, stderr, filesystem path, or environment value. A durable/persisted
+ * control-operation audit store is out of scope for this slice and remains NOT_PROVEN.
  */
 @Component
 public class LifecycleOperationAuditor {
@@ -43,12 +43,11 @@ public class LifecycleOperationAuditor {
   public void leaseAcquired(LifecycleOperation operation, String executorFingerprint) {
     auditLogger.info(
         "lifecycle-operation event=LEASE_ACQUIRED operationId={} operationType={} state={} attempt={} "
-            + "fencingToken={} executorFingerprint={}",
+            + "executorFingerprint={}",
         operation.getPublicId(),
         operation.getOperationType(),
         operation.getState(),
         operation.getAttempt(),
-        operation.getFencingToken(),
         executorFingerprint);
   }
 
@@ -78,12 +77,10 @@ public class LifecycleOperationAuditor {
       LifecycleOperation operation, long presentedFencingToken, String executorFingerprint) {
     auditLogger.warn(
         "lifecycle-operation event=STALE_EXECUTOR_REPORT_DENIED operationId={} operationType={} "
-            + "state={} currentFencingToken={} presentedFencingToken={} executorFingerprint={}",
+            + "state={} executorFingerprint={}",
         operation.getPublicId(),
         operation.getOperationType(),
         operation.getState(),
-        operation.getFencingToken(),
-        presentedFencingToken,
         executorFingerprint);
   }
 
