@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -46,11 +45,14 @@ public class InternalControlLifecycleController {
     this.service = service;
   }
 
-  /** Staff route: request a backup operation (STAFF_CONTROL_BACKUP). Idempotent by Idempotency-Key. */
+  /**
+   * Staff route: request a backup operation (STAFF_CONTROL_BACKUP). The opaque idempotency intent is in
+   * the signed JSON body, so post-signature header tampering cannot alter deduplication semantics.
+   */
   @PostMapping(BASE + "/backups")
   public ResponseEntity<OperationView> requestBackup(
-      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-      @RequestBody(required = false) BackupRequest ignoredBody) {
+      @RequestBody(required = false) BackupRequest request) {
+    String idempotencyKey = request == null ? null : request.idempotencyKey();
     LifecycleOperation operation = service.requestBackup(currentFingerprint(), idempotencyKey);
     return ResponseEntity.accepted().body(view(operation));
   }
@@ -110,7 +112,7 @@ public class InternalControlLifecycleController {
     if (exception instanceof LifecycleControlException.OperationNotFound) {
       return HttpStatus.NOT_FOUND;
     }
-    // IdempotencyConflict, StaleFencingToken, CompletionConflict are all fail-closed conflicts.
+    // Idempotency, ownership, fencing, expiry, and conflicting-terminal failures are bounded conflicts.
     return HttpStatus.CONFLICT;
   }
 
