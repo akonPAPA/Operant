@@ -21,6 +21,8 @@ import java.util.Set;
  * impersonating both a human support principal and a machine executor.
  */
 final class ControlPlaneCredentialRegistry {
+  /** Legacy single-slot principal type retained for focused compatibility assertions. */
+  static final ControlPlanePrincipalType PRINCIPAL_TYPE = ControlPlanePrincipalType.OPERANT_STAFF;
   static final String STATUS_ENABLED = "ENABLED";
   static final String STATUS_DISABLED = "DISABLED";
   static final String STATUS_REVOKED = "REVOKED";
