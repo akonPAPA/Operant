@@ -29,8 +29,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 /**
  * P1-E2A - H2 protocol proofs for the durable backup-operation control service: the executor-disabled
  * gate, idempotency (including the DB unique constraint), the lease transition + monotonic fencing token,
- * fencing-checked completion, terminal idempotency, and conflicting-completion denial, plus that the
- * bounded audit events fire on each sensitive transition.
+ * owner- and fencing-checked completion, terminal idempotency, and conflicting-completion denial, plus
+ * that the bounded audit events fire on each sensitive transition.
  *
  * <p>Genuinely CONCURRENT lease/idempotency behaviour needs real PostgreSQL row locking and is proven
  * separately by {@code LifecycleBackupOperationControlPostgresIntegrationTest} (Docker-gated).
@@ -42,6 +42,7 @@ class LifecycleBackupOperationServiceTest {
   private static final String STAFF_FP = "staff-fingerprint-1";
   private static final String OTHER_STAFF_FP = "staff-fingerprint-2";
   private static final String EXEC_FP = "executor-fingerprint-1";
+  private static final String SECOND_EXEC_FP = "executor-fingerprint-2";
   private static final Instant T0 = Instant.parse("2026-07-20T10:00:00Z");
   private static final long LEASE_SECONDS = 300L;
 
@@ -157,7 +158,7 @@ class LifecycleBackupOperationServiceTest {
     service.leaseNext(EXEC_FP);
 
     // No time has passed; the lease is still valid.
-    assertThat(service.leaseNext("executor-fingerprint-2")).isEmpty();
+    assertThat(service.leaseNext(SECOND_EXEC_FP)).isEmpty();
   }
 
   @Test
@@ -168,7 +169,7 @@ class LifecycleBackupOperationServiceTest {
 
     clock.advance(Duration.ofSeconds(LEASE_SECONDS + 1));
 
-    LifecycleOperation second = service.leaseNext("executor-fingerprint-2").orElseThrow();
+    LifecycleOperation second = service.leaseNext(SECOND_EXEC_FP).orElseThrow();
     assertThat(second.getPublicId()).isEqualTo(first.getPublicId());
     assertThat(second.getFencingToken()).isEqualTo(2L); // strictly increased
     assertThat(second.getAttempt()).isEqualTo(2);
@@ -205,16 +206,16 @@ class LifecycleBackupOperationServiceTest {
   }
 
   @Test
-  void staleFencingTokenCompletionIsDeniedAndOperationUnchanged() {
+  void staleFencingTokenCompletionByCurrentOwnerIsDeniedAndOperationUnchanged() {
     service.requestBackup(STAFF_FP, "idem-1");
     LifecycleOperation first = service.leaseNext(EXEC_FP).orElseThrow();
     long staleToken = first.getFencingToken(); // 1
 
     clock.advance(Duration.ofSeconds(LEASE_SECONDS + 1));
-    LifecycleOperation reLeased = service.leaseNext("executor-fingerprint-2").orElseThrow(); // token 2
+    LifecycleOperation reLeased = service.leaseNext(SECOND_EXEC_FP).orElseThrow(); // token 2
 
     assertThatThrownBy(() -> service.complete(
-        EXEC_FP, reLeased.getPublicId(), staleToken,
+        SECOND_EXEC_FP, reLeased.getPublicId(), staleToken,
         LifecycleOperationResultCode.BACKUP_COMPLETED))
         .isInstanceOf(LifecycleControlException.StaleFencingToken.class);
 
@@ -223,7 +224,7 @@ class LifecycleBackupOperationServiceTest {
     assertThat(reloaded.getResultCode()).isNull();
     verify(auditor).staleExecutorReportDenied(
         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(staleToken),
-        org.mockito.ArgumentMatchers.eq(EXEC_FP));
+        org.mockito.ArgumentMatchers.eq(SECOND_EXEC_FP));
   }
 
   @Test
