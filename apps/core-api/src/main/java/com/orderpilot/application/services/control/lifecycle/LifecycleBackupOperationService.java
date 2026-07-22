@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -24,24 +25,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * P1-E2A - the durable backup-operation control service. It owns the full bounded protocol:
- * idempotent request, atomic executor lease with a per-operation monotonic fencing token, and a
- * fencing-checked, idempotent terminal completion.
+ * P1-E2A - the durable backup-operation control service. It owns the bounded protocol: idempotent request,
+ * atomic executor lease with a per-operation monotonic fencing token, and owner-bound terminal completion.
  *
  * <p>Safety invariants enforced here:
  * <ul>
- *   <li>the executor capability is DISABLED by default; a backup request fails closed BEFORE any
- *       operation row is created when it is disabled;</li>
- *   <li>the operation type is fixed to BACKUP - it is never read from the client;</li>
- *   <li>idempotency is enforced by a database UNIQUE index; a same-key/same-principal repeat returns the
- *       existing operation, a same-key/conflicting-principal repeat fails closed, and a concurrent
- *       duplicate creates exactly one operation (the unique-violation loser re-reads the winner);</li>
- *   <li>a lease is taken under a pessimistic row lock, strictly increasing the fencing token;</li>
- *   <li>only the holder of the current fencing token may complete; a stale token is denied and audited;</li>
- *   <li>terminal completion is idempotent and a conflicting second completion is denied.</li>
+ *   <li>the executor capability is disabled by default and fails before row creation;</li>
+ *   <li>the operation type is fixed to BACKUP and never read from the client;</li>
+ *   <li>idempotency is enforced by a database unique index and requesting-principal binding;</li>
+ *   <li>a lease is taken under a pessimistic row lock and strictly increases the fencing token;</li>
+ *   <li>completion requires the authenticated executor to own the current unexpired lease and present the
+ *       current fencing token;</li>
+ *   <li>terminal replay is idempotent only for the same owner, token, and result code.</li>
  * </ul>
- * No client-supplied path, command, database, container, image, environment, state, executor identity, or
- * fencing token on a staff route ever reaches this service.
  */
 @Service
 public class LifecycleBackupOperationService {
@@ -71,33 +67,30 @@ public class LifecycleBackupOperationService {
     this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
 
-  /**
-   * Requests a backup operation. Fails closed with {@link LifecycleControlException.ExecutorDisabled}
-   * BEFORE creating any row when the executor capability is disabled. Idempotent by the required
-   * {@code Idempotency-Key}.
-   */
   public LifecycleOperation requestBackup(String requestedByFingerprint, String rawIdempotencyKey) {
     if (!executorEnabled) {
       throw new LifecycleControlException.ExecutorDisabled();
     }
+    String requester = requirePrincipalFingerprint(requestedByFingerprint);
     String idempotencyKeyHash = sha256Hex(requireIdempotencyKey(rawIdempotencyKey));
 
     Optional<LifecycleOperation> existing = readByIdempotencyHash(idempotencyKeyHash);
     if (existing.isPresent()) {
-      return resolveIdempotent(existing.get(), requestedByFingerprint);
+      return resolveIdempotent(existing.get(), requester);
     }
     try {
-      return createQueuedBackup(idempotencyKeyHash, requestedByFingerprint);
+      return createQueuedBackup(idempotencyKeyHash, requester);
     } catch (DataIntegrityViolationException concurrentDuplicate) {
       LifecycleOperation winner = readByIdempotencyHash(idempotencyKeyHash)
           .orElseThrow(() -> concurrentDuplicate);
-      return resolveIdempotent(winner, requestedByFingerprint);
+      return resolveIdempotent(winner, requester);
     }
   }
 
-  /** Atomically leases the oldest leasable operation to the given executor, or empty if none. */
+  /** Atomically leases the oldest leasable operation to the authenticated executor. */
   @Transactional
   public Optional<LifecycleOperation> leaseNext(String executorFingerprint) {
+    String executor = requirePrincipalFingerprint(executorFingerprint);
     Instant now = clock.instant();
     List<LifecycleOperation> candidates = repository.findLeasableWithLock(
         LifecycleOperationState.QUEUED,
@@ -108,16 +101,15 @@ public class LifecycleBackupOperationService {
       return Optional.empty();
     }
     LifecycleOperation operation = candidates.get(0);
-    operation.lease(executorFingerprint, now, leaseDuration);
+    operation.lease(executor, now, leaseDuration);
     repository.save(operation);
-    auditor.leaseAcquired(operation, executorFingerprint);
+    auditor.leaseAcquired(operation, executor);
     return Optional.of(operation);
   }
 
   /**
-   * Completes a leased operation with a bounded terminal result code. Only the holder of the current
-   * fencing token may complete; a stale token is denied and audited. Completion is idempotent and a
-   * conflicting second completion is denied.
+   * Completes a leased operation under a pessimistic row lock. The current authenticated executor must
+   * own the current lease, present the current fencing token, and report before the lease expires.
    */
   @Transactional
   public LifecycleOperation complete(
@@ -125,42 +117,62 @@ public class LifecycleBackupOperationService {
       String publicId,
       long presentedFencingToken,
       LifecycleOperationResultCode resultCode) {
+    String executor = requirePrincipalFingerprint(executorFingerprint);
     Instant now = clock.instant();
     LifecycleOperation operation = repository.findWithLockByPublicId(publicId)
         .orElseThrow(LifecycleControlException.OperationNotFound::new);
 
     if (operation.getState().isTerminal()) {
-      boolean sameToken = operation.getFencingToken() != null
-          && operation.getFencingToken() == presentedFencingToken;
-      if (sameToken && operation.getResultCode() == resultCode) {
-        return operation; // idempotent terminal replay
+      requireLeaseOwner(operation, executor);
+      requireCurrentFencingToken(operation, presentedFencingToken, executor);
+      if (operation.getResultCode() == resultCode) {
+        return operation;
       }
       throw new LifecycleControlException.CompletionConflict();
     }
 
-    if (operation.getFencingToken() == null
-        || operation.getFencingToken() != presentedFencingToken) {
-      auditor.staleExecutorReportDenied(operation, presentedFencingToken, executorFingerprint);
-      throw new LifecycleControlException.StaleFencingToken();
+    if (!operation.getState().isInFlight()) {
+      throw new LifecycleControlException.CompletionConflict();
+    }
+    requireLeaseOwner(operation, executor);
+    requireCurrentFencingToken(operation, presentedFencingToken, executor);
+    if (operation.getLeaseExpiresAt() == null || !now.isBefore(operation.getLeaseExpiresAt())) {
+      auditor.expiredLeaseReportDenied(operation, executor);
+      throw new LifecycleControlException.LeaseExpired();
     }
 
-    operation.complete(resultCode, now);
+    operation.complete(Objects.requireNonNull(resultCode, "resultCode"), now);
     repository.save(operation);
     if (resultCode.terminalState() == LifecycleOperationState.SUCCEEDED) {
-      auditor.operationSucceeded(operation, executorFingerprint);
+      auditor.operationSucceeded(operation, executor);
     } else {
-      auditor.operationFailed(operation, executorFingerprint);
+      auditor.operationFailed(operation, executor);
     }
     return operation;
   }
 
-  /** Bounded read of a single operation by opaque public id. */
   @Transactional(readOnly = true)
   public Optional<LifecycleOperation> findByPublicId(String publicId) {
     return repository.findByPublicId(publicId);
   }
 
-  // ---------------------------------------------------------------------------------------------
+  private void requireLeaseOwner(LifecycleOperation operation, String executorFingerprint) {
+    if (!executorFingerprint.equals(operation.getLeasedByFingerprint())) {
+      auditor.wrongExecutorReportDenied(operation, executorFingerprint);
+      throw new LifecycleControlException.WrongExecutor();
+    }
+  }
+
+  private void requireCurrentFencingToken(
+      LifecycleOperation operation,
+      long presentedFencingToken,
+      String executorFingerprint) {
+    if (operation.getFencingToken() == null
+        || operation.getFencingToken() != presentedFencingToken) {
+      auditor.staleExecutorReportDenied(operation, presentedFencingToken, executorFingerprint);
+      throw new LifecycleControlException.StaleFencingToken();
+    }
+  }
 
   private Optional<LifecycleOperation> readByIdempotencyHash(String idempotencyKeyHash) {
     return transactionTemplate.execute(status ->
@@ -173,7 +185,7 @@ public class LifecycleBackupOperationService {
     return transactionTemplate.execute(status -> {
       LifecycleOperation operation = LifecycleOperation.queuedBackup(
           newPublicId(), idempotencyKeyHash, requestedByFingerprint, clock.instant());
-      repository.saveAndFlush(operation); // flush so a unique-key race surfaces here, inside this tx
+      repository.saveAndFlush(operation);
       auditor.backupRequested(operation, requestedByFingerprint);
       return operation;
     });
@@ -185,6 +197,13 @@ public class LifecycleBackupOperationService {
       throw new LifecycleControlException.IdempotencyConflict();
     }
     return existing;
+  }
+
+  private static String requirePrincipalFingerprint(String value) {
+    if (value == null || value.isBlank() || "unknown".equals(value)) {
+      throw new LifecycleControlException.InvalidRequest("CONTROL_PRINCIPAL_REQUIRED");
+    }
+    return value;
   }
 
   private static String requireIdempotencyKey(String rawIdempotencyKey) {
