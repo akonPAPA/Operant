@@ -13,7 +13,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  */
 const LOCAL_APP = "http://localhost:3100";
 const DENIED_APP = "http://localhost:3104";
-const UNAVAILABLE_APP = "http://localhost:3105";
+const UNAVAILABLE_APP = "http://127.0.0.1:3105";
 const NO_REVIEW_APP = "http://localhost:3106";
 const FAKE_CORE = "http://127.0.0.1:18080";
 const SHELL_PAGE = `${LOCAL_APP}/command-center`;
@@ -23,12 +23,13 @@ const searchInput = (page: Page) => page.getByRole("combobox", { name: /search n
 const searchTrigger = (page: Page) => page.getByRole("button", { name: /search/i });
 
 async function signIn(page: Page, appOrigin = LOCAL_APP) {
-  await page.goto(`${appOrigin}/login`);
-  const continueButton = page.getByRole("button", { name: /continue/i });
-  await expect(async () => {
-    await continueButton.click();
-    await page.waitForURL((url) => url.origin === appOrigin && url.pathname !== "/login", { timeout: 3000 });
-  }).toPass({ timeout: 25_000 });
+  await page.context().clearCookies();
+  const bootstrap = await page.request.post(`${appOrigin}/api/auth/session`, {
+    headers: { Origin: appOrigin, Referer: `${appOrigin}/login` }
+  });
+  expect(bootstrap.ok()).toBeTruthy();
+  await page.goto(`${appOrigin}/command-center`);
+  await page.waitForLoadState("domcontentloaded");
 }
 
 async function gotoShell(page: Page) {

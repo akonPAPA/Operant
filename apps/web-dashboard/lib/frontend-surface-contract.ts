@@ -43,7 +43,10 @@ export type FrontendSurfaceContract = Readonly<{
   canonicalPath: string;
   accessPlane: AccessPlane;
   availability: NavigationAvailability;
+  /** Capability required to offer the surface (read path). */
   requiredCapabilityRule: SurfaceCapabilityRule;
+  /** When non-null, mutations on this surface require these capabilities (separate from read offer). */
+  mutationCapabilityRule: SurfaceCapabilityRule | null;
   consumedBffRoutes: readonly SurfaceBffRouteRef[];
   mutationRoutes: readonly SurfaceBffRouteRef[];
   /** Non-null only when requiredCapabilityRule.kind === "NONE". */
@@ -131,7 +134,19 @@ const CONSUMED_BY_SURFACE: Readonly<Record<string, readonly SurfaceBffRouteRef[]
 });
 
 const MUTATIONS_BY_SURFACE: Readonly<Record<string, readonly SurfaceBffRouteRef[]>> = Object.freeze({
-  // No TENANT mutation surfaces are offered through read-only VIEW_* capabilities in this slice.
+  quotes: [
+    { method: "POST", pattern: "api/v1/quotes/from-rfq" },
+    { method: "POST", pattern: "api/v1/quotes/:quoteId/approve" },
+    { method: "POST", pattern: "api/v1/quotes/:quoteId/reject" },
+    { method: "POST", pattern: "api/v1/quotes/:quoteId/request-changes" },
+    { method: "POST", pattern: "api/v1/quotes/:quoteId/convert-to-internal-order" }
+  ]
+});
+
+const MUTATION_CAPABILITY_BY_SURFACE: Readonly<
+  Record<string, { kind: "ANY_OF"; capabilities: readonly UiCapability[] }>
+> = Object.freeze({
+  quotes: { kind: "ANY_OF", capabilities: ["QUOTE_ACTION"] }
 });
 
 function ruleForDestination(dest: NavigationDestination): SurfaceCapabilityRule {
@@ -173,12 +188,20 @@ function contractForDestination(dest: NavigationDestination): FrontendSurfaceCon
     throw new Error(`Missing surface BFF consumption declaration for ${dest.id}`);
   }
   const mutations = MUTATIONS_BY_SURFACE[dest.id] ?? [];
+  const mutationRule = MUTATION_CAPABILITY_BY_SURFACE[dest.id] ?? null;
+  if (mutations.length > 0 && !mutationRule) {
+    throw new Error(`Missing mutation capability rule for ${dest.id}`);
+  }
+  if (mutations.length === 0 && mutationRule) {
+    throw new Error(`Mutation capability rule without routes for ${dest.id}`);
+  }
   return Object.freeze({
     surfaceId: dest.id,
     canonicalPath: dest.path,
     accessPlane: dest.plane,
     availability: dest.availability,
     requiredCapabilityRule: ruleForDestination(dest),
+    mutationCapabilityRule: mutationRule,
     consumedBffRoutes: consumed,
     mutationRoutes: mutations,
     universalReason: universalReasonFor(dest)
@@ -252,13 +275,17 @@ export function assertSurfaceContractInvariants(surface: FrontendSurfaceContract
   }
 
   if (surface.mutationRoutes.length > 0) {
-    const rule = surface.requiredCapabilityRule;
-    if (rule.kind === "NONE" || rule.kind === "UNSUPPORTED") {
-      throw new Error(`${surface.surfaceId}: mutation surface cannot use ${rule.kind} capability rule`);
+    const rule = surface.mutationCapabilityRule;
+    if (!rule || rule.kind === "NONE" || rule.kind === "UNSUPPORTED") {
+      throw new Error(`${surface.surfaceId}: mutation surface requires mutationCapabilityRule`);
     }
-    const caps = "capabilities" in rule ? rule.capabilities : [];
-    if (caps.every((cap) => cap.startsWith("VIEW_"))) {
-      throw new Error(`${surface.surfaceId}: mutation surface cannot be represented by read-only VIEW_* only`);
+    const readRule = surface.requiredCapabilityRule;
+    if (readRule.kind === "NONE" || readRule.kind === "UNSUPPORTED") {
+      throw new Error(`${surface.surfaceId}: mutation surface cannot use ${readRule.kind} read rule`);
+    }
+    const mutationCaps = "capabilities" in rule ? rule.capabilities : [];
+    if (mutationCaps.every((cap) => cap.startsWith("VIEW_"))) {
+      throw new Error(`${surface.surfaceId}: mutations cannot be gated by VIEW_* only`);
     }
   }
 
@@ -270,24 +297,34 @@ export function assertSurfaceContractInvariants(surface: FrontendSurfaceContract
     }
   }
 
-  const implied = capabilitiesImpliedByRoutes([
-    ...surface.consumedBffRoutes,
-    ...surface.mutationRoutes
-  ]);
+  const impliedRead = capabilitiesImpliedByRoutes(surface.consumedBffRoutes);
+  const impliedMutation = capabilitiesImpliedByRoutes(surface.mutationRoutes);
   const rule = surface.requiredCapabilityRule;
   if (rule.kind === "ANY_OF" || rule.kind === "ALL_OF" || rule.kind === "DEPLOYMENT_GATED") {
     const allowed = new Set(rule.capabilities);
-    for (const capability of implied) {
+    for (const capability of impliedRead) {
       if (!allowed.has(capability)) {
         throw new Error(
-          `${surface.surfaceId}: consumed route implies ${capability} which is outside ${rule.kind} ${[...allowed].join(",")}`
+          `${surface.surfaceId}: consumed route implies ${capability} which is outside read ${rule.kind} ${[...allowed].join(",")}`
         );
       }
     }
-    if (rule.kind === "ANY_OF" && implied.size > 1) {
+    if (rule.kind === "ANY_OF" && impliedRead.size > 1) {
       throw new Error(
-        `${surface.surfaceId}: multi-permission consumption requires ALL_OF, not ANY_OF (${[...implied].join(",")})`
+        `${surface.surfaceId}: multi-permission read consumption requires ALL_OF, not ANY_OF (${[...impliedRead].join(",")})`
       );
+    }
+  }
+
+  const mutationRule = surface.mutationCapabilityRule;
+  if (mutationRule && (mutationRule.kind === "ANY_OF" || mutationRule.kind === "ALL_OF")) {
+    const allowedMut = new Set(mutationRule.capabilities);
+    for (const capability of impliedMutation) {
+      if (!allowedMut.has(capability)) {
+        throw new Error(
+          `${surface.surfaceId}: mutation route implies ${capability} outside mutation rule ${[...allowedMut].join(",")}`
+        );
+      }
     }
   }
 }

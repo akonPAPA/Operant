@@ -47,6 +47,9 @@ function isStaticDemoBundle(): boolean {
  */
 export function usesBffTransport(): boolean {
   if (isBrowserRuntime()) {
+    if (String(process.env.NEXT_PUBLIC_ORDERPILOT_BFF_ENABLED ?? "").trim() === "true") {
+      return !isStaticDemoBundle();
+    }
     return process.env.NODE_ENV === "production" && !isStaticDemoBundle();
   }
   return bffRuntimeMode() === "bff-production";

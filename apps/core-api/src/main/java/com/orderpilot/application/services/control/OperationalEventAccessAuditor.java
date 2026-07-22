@@ -1,10 +1,7 @@
 package com.orderpilot.application.services.control;
 
 import com.orderpilot.security.ControlPlanePrincipal;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
+import com.orderpilot.security.ControlPlanePrincipalFingerprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +17,6 @@ import org.slf4j.LoggerFactory;
 public final class OperationalEventAccessAuditor {
   public static final String AUDIT_LOGGER_NAME = "com.orderpilot.security.control.audit.OperationalEventAccess";
   static final String PERMISSION = "STAFF_CONTROL_OPERATIONAL_EVENT_READ";
-  private static final int PRINCIPAL_FINGERPRINT_HEX_LENGTH = 24;
 
   private final Logger auditLogger;
 
@@ -44,7 +40,7 @@ public final class OperationalEventAccessAuditor {
         "control-operational-event-access result=SUCCESS principalFingerprint={} permission={} "
             + "severityFilterPresent={} componentFilterPresent={} eventCodeFilterPresent={} "
             + "customLimitPresent={} beforePresent={} returned={}",
-        principalFingerprint(principal),
+        ControlPlanePrincipalFingerprint.of(principal),
         PERMISSION,
         severityFilterPresent,
         componentFilterPresent,
@@ -52,21 +48,5 @@ public final class OperationalEventAccessAuditor {
         customLimitPresent,
         beforePresent,
         Math.max(0, returnedCount));
-  }
-
-  private static String principalFingerprint(ControlPlanePrincipal principal) {
-    if (principal == null) {
-      return "unknown";
-    }
-    String material = principal.credentialAlias()
-        + '\u0000' + principal.keyVersion()
-        + '\u0000' + principal.principalType();
-    try {
-      byte[] digest = MessageDigest.getInstance("SHA-256")
-          .digest(material.getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(digest).substring(0, PRINCIPAL_FINGERPRINT_HEX_LENGTH);
-    } catch (NoSuchAlgorithmException unavailable) {
-      throw new IllegalStateException("SHA-256 unavailable", unavailable);
-    }
   }
 }

@@ -19,6 +19,7 @@ const sharedEnv = {
   // explicit runtime override: a local .env.local demo profile must not leak into E2E
   NEXT_PUBLIC_ORDERPILOT_DEMO_MODE: "false",
   ORDERPILOT_DEMO_MODE: "false",
+  NEXT_PUBLIC_ORDERPILOT_BFF_ENABLED: "true",
   ORDERPILOT_BFF_ENABLED: "true",
   ORDERPILOT_GATEWAY_SHARED_SECRET: GATEWAY_SECRET,
   CORE_API_BASE_URL: "http://127.0.0.1:18080"
@@ -38,7 +39,7 @@ export default defineConfig({
     {
       command: "node e2e/fake-core-server.mjs",
       url: "http://127.0.0.1:18080/__test/requests",
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 30_000
     },
     {
@@ -140,7 +141,7 @@ export default defineConfig({
     {
       // Capability UNAVAILABLE shell: local-test force flag (production Node ignores it).
       command: "node e2e/dev-server.mjs --port 3105",
-      url: "http://localhost:3105/api/bff/health",
+      url: "http://127.0.0.1:3105/api/bff/health",
       reuseExistingServer: false,
       timeout: 180_000,
       stdout: "pipe",
@@ -149,7 +150,7 @@ export default defineConfig({
         ...sharedEnv,
         NODE_ENV: "test",
         ORDERPILOT_DEPLOY_PROFILE: "local-test",
-        ORDERPILOT_PUBLIC_ORIGIN: "http://localhost:3105",
+        ORDERPILOT_PUBLIC_ORIGIN: "http://127.0.0.1:3105",
         ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
         ORDERPILOT_BFF_SESSION_STORE: "memory",
         ORDERPILOT_BFF_FORCE_CAPABILITY_UNAVAILABLE: "true",
@@ -178,6 +179,66 @@ export default defineConfig({
         ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID: "22222222-2222-4222-8222-222222222222",
         ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: "ANALYTICS_READ",
         ORDERPILOT_NEXT_DIST_DIR: ".next-e2e-no-review"
+      }
+    },
+    {
+      command: "node e2e/dev-server.mjs --port 3107",
+      url: "http://127.0.0.1:3107/api/bff/health",
+      reuseExistingServer: false,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...sharedEnv,
+        NODE_ENV: "test",
+        ORDERPILOT_DEPLOY_PROFILE: "local-test",
+        ORDERPILOT_PUBLIC_ORIGIN: "http://127.0.0.1:3107",
+        ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
+        ORDERPILOT_BFF_SESSION_STORE: "memory",
+        ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID: "11111111-1111-4111-8111-111111111111",
+        ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID: "22222222-2222-4222-8222-222222222222",
+        ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: "QUOTE_READ,QUOTE_ACTION",
+        ORDERPILOT_NEXT_DIST_DIR: ".next-e2e-quote-actor"
+      }
+    },
+    {
+      command: "node e2e/dev-server.mjs --port 3108",
+      url: "http://127.0.0.1:3108/api/bff/health",
+      reuseExistingServer: false,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...sharedEnv,
+        NODE_ENV: "test",
+        ORDERPILOT_DEPLOY_PROFILE: "local-test",
+        ORDERPILOT_PUBLIC_ORIGIN: "http://127.0.0.1:3108",
+        ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
+        ORDERPILOT_BFF_SESSION_STORE: "memory",
+        ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID: "11111111-1111-4111-8111-111111111111",
+        ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID: "22222222-2222-4222-8222-222222222222",
+        ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: "QUOTE_READ",
+        ORDERPILOT_NEXT_DIST_DIR: ".next-e2e-quote-readonly"
+      }
+    },
+    {
+      command: "node e2e/dev-server.mjs --port 3109",
+      url: "http://127.0.0.1:3109/api/bff/health",
+      reuseExistingServer: false,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...sharedEnv,
+        NODE_ENV: "test",
+        ORDERPILOT_DEPLOY_PROFILE: "local-test",
+        ORDERPILOT_PUBLIC_ORIGIN: "http://127.0.0.1:3109",
+        ORDERPILOT_BFF_LOCAL_TEST_BOOTSTRAP: "true",
+        ORDERPILOT_BFF_SESSION_STORE: "memory",
+        ORDERPILOT_BFF_BOOTSTRAP_TENANT_ID: "11111111-1111-4111-8111-111111111111",
+        ORDERPILOT_BFF_BOOTSTRAP_ACTOR_ID: "22222222-2222-4222-8222-222222222222",
+        ORDERPILOT_BFF_BOOTSTRAP_PERMISSIONS: "ANALYTICS_READ",
+        ORDERPILOT_NEXT_DIST_DIR: ".next-e2e-no-quotes"
       }
     }
   ]

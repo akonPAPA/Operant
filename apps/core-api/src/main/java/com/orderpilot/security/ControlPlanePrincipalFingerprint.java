@@ -1,0 +1,34 @@
+package com.orderpilot.security;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+
+/**
+ * Stable, non-reversible SHA-256 fingerprint of an authenticated control-plane principal.
+ *
+ * <p>The fingerprint is derived only from the server-owned logical principal id and typed access plane.
+ * Credential alias, key version, and key material are deliberately excluded, so credential rotation does
+ * not silently change durable lifecycle ownership. The full 256-bit digest is retained to match the
+ * persistence contract and avoid unnecessary truncation.
+ */
+public final class ControlPlanePrincipalFingerprint {
+  private ControlPlanePrincipalFingerprint() {}
+
+  public static String of(ControlPlanePrincipal principal) {
+    if (principal == null) {
+      return "unknown";
+    }
+    String type = principal.principalType().name();
+    String principalId = principal.principalId();
+    String material = type.length() + ":" + type + "|" + principalId.length() + ":" + principalId;
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256")
+          .digest(material.getBytes(StandardCharsets.UTF_8));
+      return HexFormat.of().formatHex(digest);
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 unavailable", unavailable);
+    }
+  }
+}

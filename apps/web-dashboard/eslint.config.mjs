@@ -8,6 +8,9 @@ const ephemeralIgnores = [
   ".next-e2e-denied/**",
   ".next-e2e-unavailable/**",
   ".next-e2e-no-review/**",
+  ".next-e2e-quote-actor/**",
+  ".next-e2e-quote-readonly/**",
+  ".next-e2e-no-quotes/**",
   "playwright-report/**",
   "test-results/**"
 ];

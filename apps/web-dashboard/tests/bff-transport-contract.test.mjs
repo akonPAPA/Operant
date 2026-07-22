@@ -205,12 +205,14 @@ async function importFreshClient(relativePath) {
   const apiTransportUrl = pathToFileURL(join(process.cwd(), "lib", "api-transport.ts")).href;
   const frontendAuthorityUrl = pathToFileURL(join(process.cwd(), "lib", "frontend-authority.mjs")).href;
   const dashboardHttpUrl = pathToFileURL(join(process.cwd(), "lib", "dashboard-http.ts")).href;
+  const uiErrorUrl = pathToFileURL(join(process.cwd(), "lib", "ui-error.ts")).href;
   const source = readFileSync(sourcePath, "utf8")
     .replaceAll('from "./api-transport"', `from "${apiTransportUrl}"`)
     .replaceAll('from "./api-transport.ts"', `from "${apiTransportUrl}"`)
     .replaceAll('from "./dashboard-http"', `from "${dashboardHttpUrl}"`)
     .replaceAll('from "./dashboard-http.ts"', `from "${dashboardHttpUrl}"`)
-    .replaceAll('from "./frontend-authority.mjs"', `from "${frontendAuthorityUrl}"`);
+    .replaceAll('from "./frontend-authority.mjs"', `from "${frontendAuthorityUrl}"`)
+    .replaceAll('from "./ui-error.ts"', `from "${uiErrorUrl}"`);
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2022,
@@ -224,7 +226,9 @@ async function importFreshClient(relativePath) {
 function assertNoBrowserAuthorityHeaders(init) {
   const headers = new Headers(init.headers);
   assert.equal(headers.get("X-Tenant-Id"), null);
+  assert.equal(headers.get("X-OrderPilot-Actor-Id"), null);
   assert.equal(headers.get("X-OrderPilot-Permissions"), null);
+  assert.equal(headers.get("Authorization"), null);
 }
 
 test("production BFF read clients continue with empty browser tenantId", async () => {
@@ -250,6 +254,22 @@ test("production BFF mutation clients attach CSRF without browser authority", as
     const headers = new Headers(calls[0].init.headers);
     assert.equal(headers.get("X-OP-CSRF-Token"), "csrf-token-0123456789abcdef012345");
     assertNoBrowserAuthorityHeaders(calls[0].init);
+  });
+});
+
+test("production quote mutation client uses BFF path and never emits browser authority", async () => {
+  await withProductionBrowserFetch(async (calls) => {
+    const { approveQuote } = await importFreshClient("lib/quote-transaction-api.ts");
+    await approveQuote("44444444-4444-4444-8444-444444444444", {
+      reason: "Approved for demo",
+      comment: "Approved for demo",
+      idempotencyKey: "quote-transport-contract-approve-1"
+    });
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /^\/api\/bff\/api\/v1\/quotes\//);
+    assert.equal(calls[0].init.method, "POST");
+    assertNoBrowserAuthorityHeaders(calls[0].init);
+    assert.doesNotMatch(calls[0].url, /localhost|evil\.example|internal-core/);
   });
 });
 

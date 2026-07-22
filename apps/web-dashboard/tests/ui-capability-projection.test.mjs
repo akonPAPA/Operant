@@ -140,11 +140,13 @@ test("known permissions map to allowlisted UI capabilities only", () => {
     "ADMIN_SETTINGS_READ",
     "BOT_READ",
     "QUOTE_READ",
+    "QUOTE_ACTION",
     "VALIDATION_READ",
     "CHANGE_REQUEST_READ"
   ]);
   assert.deepEqual([...caps].sort(), [
     "PERFORM_REVIEW_ACTION",
+    "QUOTE_ACTION",
     "VIEW_ANALYTICS",
     "VIEW_BOT",
     "VIEW_CHANGE_REQUESTS",

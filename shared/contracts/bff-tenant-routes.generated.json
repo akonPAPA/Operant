@@ -810,7 +810,7 @@
       "permission": "QUOTE_ACTION",
       "kind": "mutation",
       "csrfRequired": true,
-      "idempotency": "optional"
+      "idempotency": "required"
     },
     {
       "method": "POST",
@@ -819,7 +819,7 @@
       "permission": "QUOTE_ACTION",
       "kind": "mutation",
       "csrfRequired": true,
-      "idempotency": "optional"
+      "idempotency": "required"
     },
     {
       "method": "POST",
@@ -828,7 +828,7 @@
       "permission": "QUOTE_ACTION",
       "kind": "mutation",
       "csrfRequired": true,
-      "idempotency": "optional"
+      "idempotency": "required"
     },
     {
       "method": "POST",
@@ -837,7 +837,7 @@
       "permission": "QUOTE_ACTION",
       "kind": "mutation",
       "csrfRequired": true,
-      "idempotency": "optional"
+      "idempotency": "required"
     },
     {
       "method": "GET",
@@ -873,7 +873,7 @@
       "permission": "QUOTE_ACTION",
       "kind": "mutation",
       "csrfRequired": true,
-      "idempotency": "optional"
+      "idempotency": "required"
     },
     {
       "method": "GET",
