@@ -73,7 +73,7 @@ class LifecycleBackupOperationOwnershipTest {
   }
 
   @Test
-  void currentOwnerCannotCompleteAfterLeaseExpiryAndStateDoesNotChange() {
+  void currentOwnerCannotCompleteAtLeaseExpiryAndStateDoesNotChange() {
     service.requestBackup(STAFF, "idem-expiry-1");
     LifecycleOperation leased = service.leaseNext(EXECUTOR_A).orElseThrow();
     clock.advance(Duration.ofSeconds(LEASE_SECONDS));
@@ -90,6 +90,22 @@ class LifecycleBackupOperationOwnershipTest {
     assertThat(reloaded.getResultCode()).isNull();
     verify(auditor).expiredLeaseReportDenied(
         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(EXECUTOR_A));
+  }
+
+  @Test
+  void operationIsImmediatelyReleasableAtExactLeaseExpiryWithHigherToken() {
+    service.requestBackup(STAFF, "idem-expiry-handoff-1");
+    LifecycleOperation first = service.leaseNext(EXECUTOR_A).orElseThrow();
+    assertThat(first.getFencingToken()).isEqualTo(1L);
+    clock.advance(Duration.ofSeconds(LEASE_SECONDS));
+
+    LifecycleOperation second = service.leaseNext(EXECUTOR_B).orElseThrow();
+
+    assertThat(second.getPublicId()).isEqualTo(first.getPublicId());
+    assertThat(second.getState()).isEqualTo(LifecycleOperationState.LEASED);
+    assertThat(second.getLeasedByFingerprint()).isEqualTo(EXECUTOR_B);
+    assertThat(second.getFencingToken()).isEqualTo(2L);
+    assertThat(second.getAttempt()).isEqualTo(2);
   }
 
   @Test
