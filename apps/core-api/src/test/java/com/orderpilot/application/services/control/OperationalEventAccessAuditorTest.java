@@ -6,6 +6,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.orderpilot.security.ControlPlanePrincipal;
+import com.orderpilot.security.ControlPlanePrincipalType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,11 @@ class OperationalEventAccessAuditorTest {
   @Test
   void recordsPseudonymousAttributionAndBooleanRequestShape() {
     auditor.recordSuccess(
-        new ControlPlanePrincipal("ops-prod", "control-v1", "CONTROL"),
+        new ControlPlanePrincipal(
+            "staff:operations",
+            "ops-prod",
+            "control-v1",
+            ControlPlanePrincipalType.OPERANT_STAFF),
         true, true, true, true, true, 25);
 
     String message = lastMessage();
@@ -55,7 +60,8 @@ class OperationalEventAccessAuditorTest {
         .contains("customLimitPresent=true")
         .contains("beforePresent=true")
         .contains("returned=25")
-        .matches(".*principalFingerprint=[0-9a-f]{24}.*")
+        .matches(".*principalFingerprint=[0-9a-f]{64}.*")
+        .doesNotContain("staff:operations")
         .doesNotContain("ops-prod")
         .doesNotContain("control-v1");
   }
@@ -78,21 +84,25 @@ class OperationalEventAccessAuditorTest {
   void rawPrincipalTextAndLogForgingCharactersNeverReachTheSink() {
     String unicodeLineSeparator = new String(Character.toChars(0x2028));
     String unicodeParagraphSeparator = new String(Character.toChars(0x2029));
+    String maliciousPrincipalId = "staff\nforged" + unicodeLineSeparator + "identity";
     String maliciousAlias = "ops\nforged" + unicodeLineSeparator + "entry";
-    String maliciousVersion = "v1\r\nresult=FAIL";
-    String maliciousType = "CONTROL" + unicodeParagraphSeparator + "FORGED";
+    String maliciousVersion = "v1\r\nresult=FAIL" + unicodeParagraphSeparator;
 
     auditor.recordSuccess(
-        new ControlPlanePrincipal(maliciousAlias, maliciousVersion, maliciousType),
+        new ControlPlanePrincipal(
+            maliciousPrincipalId,
+            maliciousAlias,
+            maliciousVersion,
+            ControlPlanePrincipalType.OPERANT_STAFF),
         true, false, true, false, true, -5);
 
     String message = lastMessage();
     assertThat(message)
-        .matches(".*principalFingerprint=[0-9a-f]{24}.*")
+        .matches(".*principalFingerprint=[0-9a-f]{64}.*")
         .contains("returned=0")
+        .doesNotContain(maliciousPrincipalId)
         .doesNotContain(maliciousAlias)
         .doesNotContain(maliciousVersion)
-        .doesNotContain(maliciousType)
         .doesNotContain("\n")
         .doesNotContain("\r")
         .doesNotContain(unicodeLineSeparator)
