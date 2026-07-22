@@ -9,11 +9,11 @@ import org.springframework.stereotype.Component;
  * P1-E2A - emits one bounded structured record per sensitive lifecycle-operation event. Following the
  * merged control-plane precedent ({@code OperationalEventAccessAuditor}), it uses a dedicated audit
  * logger namespace and records only bounded, non-reversible facts: the opaque operation id, the fixed
- * operation type, the state, a bounded result code, and the already-hashed principal fingerprints.
+ * operation type, the state, a bounded result code, and already-hashed principal fingerprints.
  *
  * <p>It NEVER records a credential, raw request body, stack trace, stdout, stderr, filesystem path,
- * environment value, idempotency key, or fencing secret. A durable/persisted control-operation audit
- * store is out of scope for this slice and remains NOT_PROVEN.
+ * environment value, idempotency key, or key material. A durable/persisted control-operation audit store
+ * is out of scope for this slice and remains NOT_PROVEN.
  */
 @Component
 public class LifecycleOperationAuditor {
@@ -84,6 +84,28 @@ public class LifecycleOperationAuditor {
         operation.getState(),
         operation.getFencingToken(),
         presentedFencingToken,
+        executorFingerprint);
+  }
+
+  public void wrongExecutorReportDenied(
+      LifecycleOperation operation, String executorFingerprint) {
+    auditLogger.warn(
+        "lifecycle-operation event=WRONG_EXECUTOR_REPORT_DENIED operationId={} operationType={} "
+            + "state={} executorFingerprint={}",
+        operation.getPublicId(),
+        operation.getOperationType(),
+        operation.getState(),
+        executorFingerprint);
+  }
+
+  public void expiredLeaseReportDenied(
+      LifecycleOperation operation, String executorFingerprint) {
+    auditLogger.warn(
+        "lifecycle-operation event=EXPIRED_LEASE_REPORT_DENIED operationId={} operationType={} "
+            + "state={} executorFingerprint={}",
+        operation.getPublicId(),
+        operation.getOperationType(),
+        operation.getState(),
         executorFingerprint);
   }
 }
