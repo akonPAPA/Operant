@@ -25,20 +25,17 @@ public interface LifecycleOperationRepository extends JpaRepository<LifecycleOpe
 
   /**
    * Row-locked fetch by public id used for the terminal-completion transition. A pessimistic write lock
-   * (FOR UPDATE on PostgreSQL and H2) serializes a completion against a concurrent (re-)lease or a
-   * duplicate completion of the SAME operation so the fencing-token check and terminal transition are
-   * atomic. A wrong/unknown public id matches no row and locks nothing.
+   * serializes completion against concurrent re-lease or duplicate completion of the same operation so
+   * owner, fencing-token, expiry, and terminal-state checks are atomic.
    */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<LifecycleOperation> findWithLockByPublicId(String publicId);
 
   /**
-   * Bounded, oldest-first selection of the next leasable operation(s) under a pessimistic write lock with
-   * SKIP LOCKED. On PostgreSQL Hibernate emits FOR UPDATE SKIP LOCKED, so two concurrent executors can
-   * never lease the same operation (a competitor skips a row already locked by an in-flight lease). On H2
-   * (no SKIP LOCKED support) it degrades to plain FOR UPDATE, which is still correct (the competitor
-   * blocks, then re-evaluates state) — only throughput, not exclusivity, differs. The SKIP_LOCKED hint
-   * value (-2) is ignored where the dialect lacks support.
+   * Bounded, oldest-first selection of the next leasable operation under a pessimistic write lock with
+   * SKIP LOCKED where supported. An in-flight lease becomes leasable exactly at its expiry instant,
+   * matching completion semantics: completion requires {@code now < leaseExpiresAt}, while re-lease
+   * permits {@code leaseExpiresAt <= now}. There is no dead instant at the boundary.
    */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
@@ -46,7 +43,7 @@ public interface LifecycleOperationRepository extends JpaRepository<LifecycleOpe
       select o
       from LifecycleOperation o
       where o.state = :queued
-         or (o.state in :inFlight and o.leaseExpiresAt is not null and o.leaseExpiresAt < :now)
+         or (o.state in :inFlight and o.leaseExpiresAt is not null and o.leaseExpiresAt <= :now)
       order by o.createdAt asc
       """)
   List<LifecycleOperation> findLeasableWithLock(
