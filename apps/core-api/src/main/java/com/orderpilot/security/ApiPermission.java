@@ -141,5 +141,24 @@ public enum ApiPermission {
   // role (STAFF_* is excluded by prefix). It attributes to the interactive Operant support/maintenance
   // control principal - a future non-human deployment automation slice would introduce a distinct
   // SERVICE_CONTROL_* permission with its own SERVICE_ACCOUNT principal, not this one.
-  STAFF_CONTROL_OPERATIONAL_EVENT_READ
+  STAFF_CONTROL_OPERATIONAL_EVENT_READ,
+  // P1-E2A durable backup operation control slice. Two DISJOINT control-plane principal classes gate the
+  // bounded lifecycle surface under /api/v1/internal/control/lifecycle:
+  //   * the STAFF_CONTROL_* family below is held by the human Operant support/maintenance control
+  //     principal (operantctl): it may READ lifecycle operations and REQUEST a backup, but may NOT lease
+  //     or complete operations;
+  //   * the CONTROL_EXECUTOR_* family is held ONLY by a dedicated lifecycle executor principal: it may
+  //     lease and complete already-authorized operations, but may NOT request or read the staff surface.
+  // The control-credential validator enforces that a single credential holds AT MOST ONE of these two
+  // families (mutual exclusion), so a staff credential can never act as an executor and vice versa. Like
+  // the whole STAFF_* family, the staff-control permissions are excluded from every tenant role; the
+  // CONTROL_EXECUTOR_* family is likewise excluded from every tenant role by ApiRolePermissionMatrix.
+  // Read bounded lifecycle operations (state/type/result only; no fencing token, hash, or fingerprint).
+  STAFF_CONTROL_LIFECYCLE_READ,
+  // Request a durable backup operation. Fixed BACKUP type; no client-chosen path/database/container.
+  STAFF_CONTROL_BACKUP,
+  // Executor-only: atomically lease the next authorized operation and receive a fencing token.
+  CONTROL_EXECUTOR_LEASE,
+  // Executor-only: report a bounded terminal result for an operation the executor currently holds.
+  CONTROL_EXECUTOR_REPORT
 }
