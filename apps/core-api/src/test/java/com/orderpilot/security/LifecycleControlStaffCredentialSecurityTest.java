@@ -13,6 +13,7 @@ import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.domain.control.LifecycleOperation;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -29,11 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
-/**
- * P1-E2A - a signed STAFF control credential (STAFF_CONTROL_BACKUP + STAFF_CONTROL_LIFECYCLE_READ) may
- * request and read backup operations, but is DENIED on the executor lease/complete routes and never
- * reaches the service on a denied route. Proves the human control principal cannot act as an executor.
- */
+/** Staff credential route and denied-no-service proofs for lifecycle control. */
 @WebMvcTest(controllers = InternalControlLifecycleController.class)
 @Import({
     CoreConfiguration.class,
@@ -48,6 +45,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
     "orderpilot.security.gateway-header-auth.signature-required=true",
     "orderpilot.security.gateway-header-auth.shared-secret="
         + LifecycleControlStaffCredentialSecurityTest.GATEWAY_SECRET,
+    "orderpilot.security.control-plane-auth.principal-id=staff:operations",
     "orderpilot.security.control-plane-auth.credential-alias="
         + LifecycleControlStaffCredentialSecurityTest.CREDENTIAL,
     "orderpilot.security.control-plane-auth.shared-secret="
@@ -72,20 +70,30 @@ class LifecycleControlStaffCredentialSecurityTest {
   @MockBean private LifecycleBackupOperationService service;
 
   @Test
-  void staffCredentialCanRequestBackup() throws Exception {
+  void staffCredentialCanRequestBackupWithSignedIdempotencyIntent() throws Exception {
     when(service.requestBackup(anyString(), any()))
         .thenReturn(LifecycleOperation.queuedBackup("op_abc", "hash", "fp", Instant.EPOCH));
 
-    mockMvc.perform(controlSigned("POST", BASE + "/backups")
-            .header("Idempotency-Key", "idem-1"))
+    String body = "{\"idempotencyKey\":\"staff-backup-attempt-001\"}";
+    mockMvc.perform(controlSigned("POST", BASE + "/backups", body))
         .andExpect(status().isAccepted())
         .andExpect(jsonPath("$.operationId").value("op_abc"))
         .andExpect(jsonPath("$.state").value("QUEUED"));
   }
 
   @Test
+  void tamperingSignedBackupBodyInvalidatesAuthenticationAndNeverInvokesService() throws Exception {
+    String signedBody = "{\"idempotencyKey\":\"staff-backup-attempt-001\"}";
+    MockHttpServletRequestBuilder request = controlSigned("POST", BASE + "/backups", signedBody)
+        .content("{\"idempotencyKey\":\"staff-backup-attempt-002\"}");
+
+    mockMvc.perform(request).andExpect(status().isUnauthorized());
+    verifyNoInteractions(service);
+  }
+
+  @Test
   void staffCredentialIsDeniedOnExecutorLeaseRoute() throws Exception {
-    mockMvc.perform(controlSigned("POST", BASE + "/executor/lease"))
+    mockMvc.perform(controlSigned("POST", BASE + "/executor/lease", null))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     verifyNoInteractions(service);
@@ -93,7 +101,7 @@ class LifecycleControlStaffCredentialSecurityTest {
 
   @Test
   void staffCredentialIsDeniedOnExecutorCompleteRoute() throws Exception {
-    mockMvc.perform(controlSigned("POST", BASE + "/operations/op_abc/complete"))
+    mockMvc.perform(controlSigned("POST", BASE + "/operations/op_abc/complete", null))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     verifyNoInteractions(service);
@@ -101,32 +109,42 @@ class LifecycleControlStaffCredentialSecurityTest {
 
   @Test
   void unauthenticatedRequestIsDeniedAndNeverReachesService() throws Exception {
-    mockMvc.perform(MockMvcRequestBuilders.post(BASE + "/backups").header("Idempotency-Key", "idem-1"))
+    mockMvc.perform(MockMvcRequestBuilders.post(BASE + "/backups")
+            .contentType("application/json")
+            .content("{\"idempotencyKey\":\"unauthenticated-attempt-001\"}"))
         .andExpect(status().isUnauthorized());
     verifyNoInteractions(service);
   }
 
-  private static MockHttpServletRequestBuilder controlSigned(String method, String path) throws Exception {
+  private static MockHttpServletRequestBuilder controlSigned(
+      String method, String path, String body) throws Exception {
+    byte[] bodyBytes = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
+    String contentType = body == null ? "" : "application/json";
+    String bodySha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bodyBytes));
     long now = Instant.now().getEpochSecond();
     String nonce = "nonce-" + UUID.randomUUID();
     String canonical = ControlPlaneProtocol.canonical(
         method,
         path,
         "",
-        "",
-        ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX,
+        contentType,
+        bodySha,
         ControlPlaneProtocol.AUDIENCE,
         CREDENTIAL,
         now,
         nonce);
-    return MockMvcRequestBuilders.request(HttpMethod.valueOf(method), path)
+    MockHttpServletRequestBuilder request = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), path)
         .header(ControlPlaneProtocol.CREDENTIAL_HEADER, CREDENTIAL)
         .header(ControlPlaneProtocol.AUDIENCE_HEADER, ControlPlaneProtocol.AUDIENCE)
         .header(ControlPlaneProtocol.TIMESTAMP_HEADER, Long.toString(now))
         .header(ControlPlaneProtocol.NONCE_HEADER, nonce)
         .header(ControlPlaneProtocol.VERSION_HEADER, ControlPlaneProtocol.SIGNATURE_VERSION)
-        .header(ControlPlaneProtocol.CONTENT_SHA256_HEADER, ControlPlaneProtocol.EMPTY_BODY_SHA256_HEX)
+        .header(ControlPlaneProtocol.CONTENT_SHA256_HEADER, bodySha)
         .header(ControlPlaneProtocol.SIGNATURE_HEADER, hmac(CONTROL_SECRET, canonical));
+    if (body != null) {
+      request.contentType(contentType).content(body);
+    }
+    return request;
   }
 
   private static String hmac(String secretHex, String canonical) throws Exception {
