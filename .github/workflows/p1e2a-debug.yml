@@ -1,9 +1,9 @@
 name: P1-E2A Debug
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/p1-e2a-multi-principal-lifecycle-control
+      - main
 
 permissions:
   contents: read
