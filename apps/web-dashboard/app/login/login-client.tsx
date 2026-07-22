@@ -14,7 +14,7 @@ export default function LoginClient() {
     setPending(true);
     setMessage("");
     try {
-      const response = await fetch("/api/auth/session", { method: "POST" });
+      const response = await fetch("/api/auth/session", { method: "POST", credentials: "include" });
       if (!response.ok) {
         setMessage("Sign-in is not available.");
         return;

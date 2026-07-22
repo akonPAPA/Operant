@@ -41,7 +41,14 @@ export function caughtUiErrorMessage(error: unknown): string {
  * constant or status-keyed template — never raw backend/exception text). Only these messages may
  * pass through to the UI; any other exception collapses to the caller's bounded fallback.
  */
-export class BoundedUiError extends Error {}
+export class BoundedUiError extends Error {
+  readonly httpStatus?: number;
+
+  constructor(message: string, httpStatus?: number) {
+    super(message);
+    this.httpStatus = httpStatus;
+  }
+}
 
 /** Surface `error.message` ONLY for BoundedUiError; everything else gets the bounded fallback. */
 export function boundedUiErrorMessage(error: unknown, fallback: string): string {

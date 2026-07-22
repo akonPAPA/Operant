@@ -1,7 +1,7 @@
 import { enrichDashboardRequestInit } from "./api-transport";
 import { dashboardApiFetch } from "./dashboard-http";
 import { requireDemoTenantId } from "./frontend-authority.mjs";
-import { BoundedUiError } from "./ui-error.ts";
+import { BoundedUiError, uiErrorForStatus } from "./ui-error.ts";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -184,7 +184,8 @@ export async function createDraftQuoteFromRfq(payload: CreateDraftQuoteFromRfqPa
     })
   );
   if (!response.ok) {
-    throw new BoundedUiError(`Core API returned ${response.status}`);
+    const mapped = uiErrorForStatus(response.status);
+    throw new BoundedUiError(mapped.message, response.status);
   }
   return response.json() as Promise<QuoteTransactionResponse>;
 }
@@ -241,8 +242,8 @@ async function requestQuoteApproval<T>(path: string, payload?: QuoteApprovalDeci
     })
   );
   if (!response.ok) {
-    // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
-    throw new BoundedUiError(safeErrorMessage(response.status));
+    const mapped = uiErrorForStatus(response.status);
+    throw new BoundedUiError(mapped.message, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -262,18 +263,8 @@ async function requestQuoteTransaction<T>(path: string, payload: ChannelToQuoteP
     })
   );
   if (!response.ok) {
-    // OP-CAP-31: map to a safe status-based message; never surface the raw backend body/JSON dump.
-    throw new BoundedUiError(safeErrorMessage(response.status));
+    const mapped = uiErrorForStatus(response.status);
+    throw new BoundedUiError(mapped.message, response.status);
   }
   return response.json() as Promise<T>;
-}
-
-// OP-CAP-31: operator-safe error text. Non-2xx responses are mapped to a curated message keyed by
-// HTTP status; raw backend stack traces / JSON payload dumps are never rendered to the operator.
-function safeErrorMessage(status: number): string {
-  if (status === 401 || status === 403) return "You do not have permission to perform this action.";
-  if (status === 404) return "The requested record was not found.";
-  if (status === 409) return "This action conflicts with the current record state.";
-  if (status === 400 || status === 422) return "The request was rejected by backend validation.";
-  return `Request failed (status ${status}).`;
 }

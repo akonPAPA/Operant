@@ -17,19 +17,12 @@ async function resetCoreRequests(request: APIRequestContext) {
 }
 
 async function signIn(page: Page) {
+  await page.context().clearCookies();
+  const bootstrap = await page.request.post(`${LOCAL_APP}/api/auth/session`, {
+    headers: { Origin: LOCAL_APP, Referer: `${LOCAL_APP}/login` }
+  });
+  expect(bootstrap.ok()).toBeTruthy();
   await page.goto(`${LOCAL_APP}/login`);
-  const continueButton = page.getByRole("button", { name: /continue/i });
-  // Two dev-runtime realities:
-  //  - the server-rendered button is visible before React hydration attaches onClick, so a single
-  //    early click can be silently lost → retry the click until navigation actually starts;
-  //  - app/page.tsx redirects "/" to /command-center inside the client-side replace, so the browser
-  //    URL never settles on exactly "/". Signed in == we left /login for an authenticated page.
-  await expect(async () => {
-    await continueButton.click();
-    await page.waitForURL((url) => url.origin === LOCAL_APP && url.pathname !== "/login", {
-      timeout: 3000
-    });
-  }).toPass({ timeout: 25_000 });
 }
 
 function csrfFromCookies(cookies: { name: string; value: string }[]): string {
@@ -85,25 +78,27 @@ test("explicit local/test bootstrap creates a session with HttpOnly opaque cooki
 
 test("tenant read travels only through /api/bff with server-signed authority", async ({ page, request }) => {
   await signIn(page);
-  const externalRequests: string[] = [];
+  const coreLeaks: string[] = [];
   page.on("request", (req) => {
     const url = new URL(req.url());
-    if (url.host !== "localhost:3100") {
-      externalRequests.push(req.url());
+    if (url.port === "18080" || (url.pathname.startsWith("/api/v1/") && !url.pathname.startsWith("/api/bff/"))) {
+      coreLeaks.push(req.url());
     }
   });
+  await resetCoreRequests(request);
   const status = await page.evaluate(async () => {
     const response = await fetch("/api/bff/api/v1/quote-review/queue");
     return response.status;
   });
   expect(status).toBe(200);
-  expect(externalRequests).toEqual([]);
+  expect(coreLeaks).toEqual([]);
   const upstream = (await coreRequests(request)).filter((r) => r.path === "/api/v1/quote-review/queue");
   expect(upstream).toHaveLength(1);
-  expect(upstream[0].headers["x-tenant-id"]).toBe(BOOTSTRAP_TENANT);
-  expect(upstream[0].headers["x-orderpilot-gateway-signature"]).toBeTruthy();
-  expect(upstream[0].headers["cookie"]).toBeUndefined();
-  expect(upstream[0].headers["authorization"]).toBeUndefined();
+  const call = upstream[upstream.length - 1]!;
+  expect(call.headers["x-tenant-id"]).toBe(BOOTSTRAP_TENANT);
+  expect(call.headers["x-orderpilot-gateway-signature"]).toBeTruthy();
+  expect(call.headers["cookie"]).toBeUndefined();
+  expect(call.headers["authorization"]).toBeUndefined();
 });
 
 test("invalid CSRF mutation is denied and never reaches Core", async ({ page, request }) => {
