@@ -110,12 +110,12 @@ public class LifecycleOperation {
         publicId, LifecycleOperationType.BACKUP, idempotencyKeyHash, requestedByFingerprint, now);
   }
 
-  /** True when the operation may be (re-)leased: QUEUED, or in-flight with an expired lease. */
+  /** True when the operation may be (re-)leased: QUEUED, or in-flight at/after lease expiry. */
   public boolean isLeasable(Instant now) {
     if (state == LifecycleOperationState.QUEUED) {
       return true;
     }
-    return state.isInFlight() && leaseExpiresAt != null && leaseExpiresAt.isBefore(now);
+    return state.isInFlight() && leaseExpiresAt != null && !leaseExpiresAt.isAfter(now);
   }
 
   /**
@@ -132,7 +132,7 @@ public class LifecycleOperation {
     this.updatedAt = now;
   }
 
-  /** Applies a terminal outcome. The caller must have already verified the fencing token. */
+  /** Applies a terminal outcome. The caller must have already verified owner, token, and lease validity. */
   public void complete(LifecycleOperationResultCode code, Instant now) {
     this.state = code.terminalState();
     this.resultCode = code;
