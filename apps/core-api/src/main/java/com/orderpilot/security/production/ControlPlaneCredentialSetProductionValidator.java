@@ -8,7 +8,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-/** Strict production-like validation for both independent control-plane credential slots. */
+/**
+ * Strict production-like validation for both independent control-plane credential slots.
+ *
+ * <p>Enabled production credentials must configure an explicit stable logical principal id. Falling back
+ * to the credential alias would make an alias rotation silently change durable lease ownership.
+ */
 @Component
 public class ControlPlaneCredentialSetProductionValidator implements InitializingBean {
   private static final String STAFF_PREFIX = "orderpilot.security.control-plane-auth";
@@ -44,8 +49,7 @@ public class ControlPlaneCredentialSetProductionValidator implements Initializin
       Environment environment,
       Clock clock,
       @Value("${orderpilot.security.gateway-header-auth.shared-secret:}") String gatewaySharedSecret,
-      @Value("${orderpilot.security.control-plane-auth.principal-id:${orderpilot.security.control-plane-auth.credential-alias:}}")
-          String staffPrincipalId,
+      @Value("${orderpilot.security.control-plane-auth.principal-id:}") String staffPrincipalId,
       @Value("${orderpilot.security.control-plane-auth.credential-alias:}") String staffAlias,
       @Value("${orderpilot.security.control-plane-auth.shared-secret:}") String staffSharedSecret,
       @Value("${orderpilot.security.control-plane-auth.audience:}") String staffAudience,
@@ -55,8 +59,7 @@ public class ControlPlaneCredentialSetProductionValidator implements Initializin
       @Value("${orderpilot.security.control-plane-auth.revoked:false}") boolean staffRevoked,
       @Value("${orderpilot.security.control-plane-auth.permissions:}") String staffPermissions,
       @Value("${orderpilot.security.control-plane-auth.key-version:}") String staffKeyVersion,
-      @Value("${orderpilot.security.control-plane-auth.executor.principal-id:${orderpilot.security.control-plane-auth.executor.credential-alias:}}")
-          String executorPrincipalId,
+      @Value("${orderpilot.security.control-plane-auth.executor.principal-id:}") String executorPrincipalId,
       @Value("${orderpilot.security.control-plane-auth.executor.credential-alias:}") String executorAlias,
       @Value("${orderpilot.security.control-plane-auth.executor.shared-secret:}") String executorSharedSecret,
       @Value("${orderpilot.security.control-plane-auth.executor.audience:}") String executorAudience,
