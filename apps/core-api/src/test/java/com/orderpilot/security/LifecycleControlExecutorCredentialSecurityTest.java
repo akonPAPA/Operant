@@ -29,9 +29,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 /**
- * P1-E2A - a signed EXECUTOR control credential (CONTROL_EXECUTOR_LEASE + CONTROL_EXECUTOR_REPORT) may
- * lease operations, but is DENIED on the staff request/read routes and never reaches the service on a
- * denied route. Proves the machine executor principal cannot request or read the staff surface.
+ * A signed lifecycle-executor service account may lease operations, but is denied on the human staff
+ * request/read routes before service invocation.
  */
 @WebMvcTest(controllers = InternalControlLifecycleController.class)
 @Import({
@@ -47,16 +46,17 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
     "orderpilot.security.gateway-header-auth.signature-required=true",
     "orderpilot.security.gateway-header-auth.shared-secret="
         + LifecycleControlExecutorCredentialSecurityTest.GATEWAY_SECRET,
-    "orderpilot.security.control-plane-auth.credential-alias="
+    "orderpilot.security.control-plane-auth.executor.principal-id=lifecycle-executor:primary",
+    "orderpilot.security.control-plane-auth.executor.credential-alias="
         + LifecycleControlExecutorCredentialSecurityTest.CREDENTIAL,
-    "orderpilot.security.control-plane-auth.shared-secret="
+    "orderpilot.security.control-plane-auth.executor.shared-secret="
         + LifecycleControlExecutorCredentialSecurityTest.CONTROL_SECRET,
-    "orderpilot.security.control-plane-auth.audience=orderpilot-control-plane",
-    "orderpilot.security.control-plane-auth.status=ENABLED",
-    "orderpilot.security.control-plane-auth.valid-from=2026-01-01T00:00:00Z",
-    "orderpilot.security.control-plane-auth.expires-at=2099-01-01T00:00:00Z",
-    "orderpilot.security.control-plane-auth.permissions=CONTROL_EXECUTOR_LEASE,CONTROL_EXECUTOR_REPORT",
-    "orderpilot.security.control-plane-auth.key-version=control-v1",
+    "orderpilot.security.control-plane-auth.executor.audience=orderpilot-control-plane",
+    "orderpilot.security.control-plane-auth.executor.status=ENABLED",
+    "orderpilot.security.control-plane-auth.executor.valid-from=2026-01-01T00:00:00Z",
+    "orderpilot.security.control-plane-auth.executor.expires-at=2099-01-01T00:00:00Z",
+    "orderpilot.security.control-plane-auth.executor.permissions=CONTROL_EXECUTOR_LEASE,CONTROL_EXECUTOR_REPORT",
+    "orderpilot.security.control-plane-auth.executor.key-version=control-v1",
     "orderpilot.security.gateway-header-auth.clock-skew-seconds=300"
 })
 class LifecycleControlExecutorCredentialSecurityTest {
