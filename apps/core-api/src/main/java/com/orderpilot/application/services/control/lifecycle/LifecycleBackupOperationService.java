@@ -210,11 +210,13 @@ public class LifecycleBackupOperationService {
     if (rawIdempotencyKey == null || rawIdempotencyKey.isBlank()) {
       throw new LifecycleControlException.InvalidRequest("IDEMPOTENCY_KEY_REQUIRED");
     }
-    String trimmed = rawIdempotencyKey.trim();
-    if (trimmed.length() > 200) {
+    if (!rawIdempotencyKey.equals(rawIdempotencyKey.trim())) {
+      throw new LifecycleControlException.InvalidRequest("IDEMPOTENCY_KEY_INVALID");
+    }
+    if (rawIdempotencyKey.length() > 200) {
       throw new LifecycleControlException.InvalidRequest("IDEMPOTENCY_KEY_TOO_LONG");
     }
-    return trimmed;
+    return rawIdempotencyKey;
   }
 
   private static String newPublicId() {
