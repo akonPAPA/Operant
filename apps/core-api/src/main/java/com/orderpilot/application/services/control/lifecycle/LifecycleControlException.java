@@ -52,6 +52,20 @@ public abstract class LifecycleControlException extends RuntimeException {
     }
   }
 
+  /** The authenticated executor does not own the operation's current lease. */
+  public static final class WrongExecutor extends LifecycleControlException {
+    public WrongExecutor() {
+      super("LIFECYCLE_LEASE_OWNER_MISMATCH");
+    }
+  }
+
+  /** The current lease is no longer valid and must be re-acquired before completion. */
+  public static final class LeaseExpired extends LifecycleControlException {
+    public LeaseExpired() {
+      super("LIFECYCLE_LEASE_EXPIRED");
+    }
+  }
+
   /** A second, conflicting terminal completion of an already-terminal operation. */
   public static final class CompletionConflict extends LifecycleControlException {
     public CompletionConflict() {
