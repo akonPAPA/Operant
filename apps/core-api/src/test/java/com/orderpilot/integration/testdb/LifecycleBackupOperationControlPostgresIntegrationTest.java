@@ -66,7 +66,9 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
 
   @BeforeEach
   void clean() {
-    repository.deleteAll();
+    jdbcTemplate.update("delete from lifecycle_operation_audit");
+    jdbcTemplate.update("delete from backup_artifact");
+    jdbcTemplate.update("delete from lifecycle_operation");
   }
 
   @Test
