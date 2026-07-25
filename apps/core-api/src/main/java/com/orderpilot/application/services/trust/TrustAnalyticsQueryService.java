@@ -69,8 +69,6 @@ public class TrustAnalyticsQueryService {
     this.clock = clock;
   }
 
-  // ----------------------------- review queue -----------------------------
-
   @Transactional(readOnly = true)
   public List<TrustReviewQueueItemDto> listReviewQueue(
       String riskLevel, String approvalStatus, Boolean blocking, int page, int size) {
@@ -96,8 +94,6 @@ public class TrustAnalyticsQueryService {
     return rows.stream().map(this::toDto).toList();
   }
 
-  // ----------------------------- counterparty dashboard -----------------------------
-
   @Transactional(readOnly = true)
   public CounterpartyTrustDashboardDto getCounterpartyDashboard(UUID counterpartyId) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -106,8 +102,6 @@ public class TrustAnalyticsQueryService {
         .orElseThrow(() -> new NotFoundException("Counterparty trust dashboard not found"));
     return toDto(row);
   }
-
-  // ----------------------------- outstanding debt -----------------------------
 
   @Transactional(readOnly = true)
   public List<OutstandingDebtItemDto> listOutstandingDebt(
@@ -134,8 +128,6 @@ public class TrustAnalyticsQueryService {
     return rows.stream().map(this::toDto).toList();
   }
 
-  // ----------------------------- document anomaly trends -----------------------------
-
   @Transactional(readOnly = true)
   public List<DocumentAnomalyTrendDto> listDocumentAnomalies(
       String fromPeriod, String toPeriod, String signalCode, String severity, int limit) {
@@ -161,8 +153,6 @@ public class TrustAnalyticsQueryService {
     return rows.stream().map(this::toDto).toList();
   }
 
-  // ----------------------------- risk distribution -----------------------------
-
   @Transactional(readOnly = true)
   public List<TrustRiskDistributionDto> listRiskDistribution(
       String periodKey, String fromPeriod, String toPeriod, int limit) {
@@ -180,8 +170,6 @@ public class TrustAnalyticsQueryService {
         .findByTenantIdAndPeriodKeyBetweenOrderByPeriodKeyAsc(tenantId, from, to, pageable)
         .stream().map(this::toDto).toList();
   }
-
-  // ----------------------------- mappers -----------------------------
 
   private TrustReviewQueueItemDto toDto(TrustReviewQueueView v) {
     return new TrustReviewQueueItemDto(
@@ -226,8 +214,6 @@ public class TrustAnalyticsQueryService {
         v.getHighCount(), v.getCriticalCount(), v.getApprovalRequiredCount(), v.getBlockingCount(),
         v.getOverrideCount(), v.getAvgRiskScore(), v.getLastProjectedAt());
   }
-
-  // ----------------------------- helpers -----------------------------
 
   static int clampLimit(int requested) {
     if (requested <= 0) {

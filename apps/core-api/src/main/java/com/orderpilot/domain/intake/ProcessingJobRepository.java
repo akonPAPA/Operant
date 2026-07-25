@@ -28,12 +28,6 @@ public interface ProcessingJobRepository extends JpaRepository<ProcessingJob, UU
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
   List<ProcessingJob> findWithLockByTenantIdAndStatusOrderByQueuedAtAsc(UUID tenantId, String status, Pageable pageable);
-  // OP-CAP-30.1 / Wave 01J: explicitly system-wide, bounded stale-PROCESSING maintenance selection.
-  // This is deliberately NOT tenant-scoped: one trusted fleet reaper recovers timed-out leases across
-  // tenants. It is not used by a tenant/support read API and returns rows only to WorkerJobLeaseService,
-  // which applies the narrow PROCESSING -> FAILED maintenance transition and returns only a count.
-  // The reaper is also a terminal-state writer, so it waits on the same row-level lock protocol as result
-  // intake instead of racing an unlocked stale read against the result drain's terminal transition.
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("""
       select j

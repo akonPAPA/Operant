@@ -121,8 +121,6 @@ public class AiAdvisoryMemoryRetrievalService {
         taskType.name(), namespaceNames, maxResults, hints.size(), true, hints);
   }
 
-  // ----------------------------- scoring -----------------------------
-
   private record ScoredHint(
       AiMemoryRecord record, int score, boolean exactMatch, List<AiAdvisoryReasonCode> reasonCodes) {
     AdvisoryMemoryHintDto toDto() {
@@ -219,8 +217,6 @@ public class AiAdvisoryMemoryRetrievalService {
     }
     return 0;
   }
-
-  // ----------------------------- helpers -----------------------------
 
   private static List<AiMemoryNamespace> effectiveNamespaces(
       AiAdvisoryTaskType taskType, List<AiMemoryNamespace> requested) {

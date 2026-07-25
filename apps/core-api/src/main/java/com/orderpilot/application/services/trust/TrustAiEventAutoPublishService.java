@@ -37,16 +37,12 @@ public class TrustAiEventAutoPublishService {
     this.publisher = publisher;
   }
 
-  // ----------------------------- 17A document trust -----------------------------
-
   /** Publish {@code DOCUMENT_TRUST_COMPLETED} after a document trust run is persisted. */
   public Optional<TrustAiDomainEvent> publishDocumentTrustCompleted(
       UUID tenantId, UUID documentTrustRunId, String summary) {
     return publish(tenantId, TrustAiEventType.DOCUMENT_TRUST_COMPLETED, AiMemorySourceType.DOCUMENT_TRUST_RUN,
         documentTrustRunId, key("document-trust-completed", documentTrustRunId), summary);
   }
-
-  // ----------------------------- 17B counterparty trust -----------------------------
 
   /**
    * Publish {@code COUNTERPARTY_TRUST_UPDATED} after a counterparty profile/scoring update. The profile
@@ -57,8 +53,6 @@ public class TrustAiEventAutoPublishService {
     return publish(tenantId, TrustAiEventType.COUNTERPARTY_TRUST_UPDATED, AiMemorySourceType.COUNTERPARTY_PROFILE,
         counterpartyProfileId, key("counterparty-trust-updated", counterpartyProfileId) + ":" + version, summary);
   }
-
-  // ----------------------------- 17C payment intelligence -----------------------------
 
   /** Publish {@code PAYMENT_OBLIGATION_UPDATED} after an obligation state change is persisted. */
   public Optional<TrustAiDomainEvent> publishPaymentObligationUpdated(
@@ -73,8 +67,6 @@ public class TrustAiEventAutoPublishService {
     return publish(tenantId, TrustAiEventType.PAYMENT_ALLOCATION_RECORDED, AiMemorySourceType.PAYMENT_OBLIGATION,
         paymentAllocationId, key("payment-allocation-recorded", paymentAllocationId), summary);
   }
-
-  // ----------------------------- 17D trust risk decision -----------------------------
 
   /** Publish {@code TRUST_RISK_DECIDED} after a deterministic risk decision is persisted. */
   public Optional<TrustAiDomainEvent> publishTrustRiskDecided(
@@ -93,8 +85,6 @@ public class TrustAiEventAutoPublishService {
         trustRiskDecisionId, key("trust-risk-overridden", trustRiskDecisionId) + ":" + overrideId, summary);
   }
 
-  // ----------------------------- 17F memory / runtime (not auto-wired; see class doc) -----------------------------
-
   /** Publish {@code AI_MEMORY_INVALIDATED}. NOT auto-wired — kept acyclic; for explicit safe callers only. */
   public Optional<TrustAiDomainEvent> publishAiMemoryInvalidated(
       UUID tenantId, UUID aiMemoryRecordId, String summary) {
@@ -108,8 +98,6 @@ public class TrustAiEventAutoPublishService {
     return publish(tenantId, TrustAiEventType.AI_RUNTIME_TRACE_RECORDED, AiMemorySourceType.SYSTEM,
         runtimeTraceId, key("runtime-trace-recorded", runtimeTraceId), summary);
   }
-
-  // ----------------------------- internals -----------------------------
 
   private Optional<TrustAiDomainEvent> publish(UUID tenantId, TrustAiEventType eventType,
       AiMemorySourceType sourceType, UUID sourceId, String idempotencyKey, String summary) {

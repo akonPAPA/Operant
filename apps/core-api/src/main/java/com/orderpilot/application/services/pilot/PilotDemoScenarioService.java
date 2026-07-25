@@ -59,8 +59,6 @@ public class PilotDemoScenarioService {
         report.reportGeneratedAt(), report.tenantId(), hasEvidence, scenarios, packLimitations, report.safetyStatement());
   }
 
-  // --- scenarios ---
-
   private DemoScenario telegramRfqSubstitution(PilotMetrics metrics, boolean hasEvidence) {
     boolean substitutionEvidence =
         metrics.predictionTypeBreakdown().containsKey("SUBSTITUTION")
@@ -214,8 +212,6 @@ public class PilotDemoScenarioService {
             "Customer/document text is treated as hostile input by default."));
   }
 
-  // --- helpers ---
-
   private static List<DemoScenarioEvidence> scenarioEvidence(PilotMetrics metrics, String focusLabel, long focusCount) {
     return List.of(
         new DemoScenarioEvidence("Total shadow runs", Long.toString(metrics.totalShadowRuns())),
@@ -248,8 +244,6 @@ public class PilotDemoScenarioService {
       case READY_FOR_SCRIPTED_DEMO -> 80;
     };
   }
-
-  // --- service records (kept beside the pilot service records pattern) ---
 
   public record DemoScenarioCapability(String name, boolean available, String note) {}
 

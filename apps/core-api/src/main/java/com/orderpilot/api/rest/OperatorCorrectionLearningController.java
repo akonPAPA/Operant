@@ -90,8 +90,6 @@ public class OperatorCorrectionLearningController {
     return toDto(service.getCorrection(TenantContext.requireTenantId(), id));
   }
 
-  // ----------------------------- mappers -----------------------------
-
   private static OperatorCorrectionLearningRecordDto toDto(OperatorCorrectionLearningRecord r) {
     return new OperatorCorrectionLearningRecordDto(
         r.getId(), r.getCorrectionType().name(), r.getSourceType().name(), r.getSourceId(),

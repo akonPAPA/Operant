@@ -260,8 +260,6 @@ public class CounterpartyTrustProfileService {
         (BigDecimal) null, weight, sourceType, sourceRefId, bounded(explanation), now));
   }
 
-  // ----------------------------- read side -----------------------------
-
   @Transactional(readOnly = true)
   public CounterpartyTrustProfileView getProfileView(UUID customerAccountId, int signalLimit, int snapshotLimit) {
     UUID tenantId = TenantContext.requireTenantId();

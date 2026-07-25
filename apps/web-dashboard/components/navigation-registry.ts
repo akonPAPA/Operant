@@ -93,7 +93,6 @@ export type NavigationDestination = {
  * - Upload: VIEW_DOCUMENTS + UPLOAD_CAPABILITY_GATED (local-demo only; never universal)
  */
 const destinations: readonly NavigationDestination[] = Object.freeze([
-  // --- Command Center (CC) ---
   d({ id: "command-center", path: "/command-center", label: "Command Center", section: "Command Center", sectionCode: "CC" }),
   d({ id: "analytics", path: "/analytics", label: "Analytics", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS", searchAliases: ["business value", "roi", "metrics", "kpi"] }),
   d({ id: "pilot-readiness", path: "/pilot-readiness", label: "Pilot Readiness", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS" }),
@@ -101,7 +100,6 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   d({ id: "pilot-demo-scenarios", path: "/pilot-readiness/demo-scenarios", label: "Pilot Demo Scenarios", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS" }),
   d({ id: "demo", path: "/demo", label: "Investor Demo", section: "Command Center", sectionCode: "CC", capability: "VIEW_ANALYTICS", searchAliases: ["sandbox", "investor demo"] }),
 
-  // --- Inbox (IN) ---
   d({ id: "inbox", path: "/inbox", label: "Inbox", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS" }),
   d({
     id: "upload",
@@ -127,7 +125,6 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   }),
   d({ id: "processing-jobs", path: "/processing-jobs", label: "Processing Jobs", section: "Inbox", sectionCode: "IN", capability: "VIEW_DOCUMENTS", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
 
-  // --- Work Queue (WQ) ---
   d({ id: "validation-review", path: "/validation-review", label: "Validation Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "exception-cockpit", path: "/exception-cockpit", label: "Exception Cockpit", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "conversion-review", path: "/conversion-review", label: "Conversion Review", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_REVIEW_QUEUE" }),
@@ -135,14 +132,12 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
   d({ id: "review-origin-drafts", path: "/workspace/review-drafts", label: "Review-Origin Drafts", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_VALIDATION" }),
   d({ id: "rfq-handoffs", path: "/channels/rfq-handoffs", label: "RFQ Handoffs", section: "Work Queue", sectionCode: "WQ", capability: "VIEW_CONFIGURATION" }),
 
-  // --- Transactions (TX) ---
   d({ id: "quotes", path: "/quotes", label: "Draft Quotes", section: "Transactions", sectionCode: "TX", capability: "VIEW_QUOTES" }),
   d({ id: "orders", path: "/orders", label: "Draft Orders", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE", availability: "UNSUPPORTED", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "draft-quote-review", path: "/workspace/draft-quotes", label: "Draft Quote Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "draft-order-review", path: "/workspace/draft-orders", label: "Draft Order Review", section: "Transactions", sectionCode: "TX", capability: "VIEW_REVIEW_QUEUE" }),
   d({ id: "order-journey", path: "/order-journey", label: "Order Journey", section: "Transactions", sectionCode: "TX", capability: "VIEW_ANALYTICS" }),
 
-  // --- Catalog (CA) ---
   d({ id: "customers", path: "/customers", label: "Customers", section: "Catalog", sectionCode: "CA", capability: "VIEW_CONFIGURATION" }),
   d({ id: "products", path: "/products", label: "Products", section: "Catalog", sectionCode: "CA", capability: "VIEW_CONFIGURATION" }),
   d({ id: "inventory", path: "/inventory", label: "Inventory", section: "Catalog", sectionCode: "CA", capability: "VIEW_CONFIGURATION" }),
@@ -169,7 +164,6 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
     showInPrimaryNav: false
   }),
 
-  // --- Intelligence (AI) ---
   d({ id: "commerce-intelligence", path: "/commerce-intelligence", label: "Commerce Intelligence", section: "Intelligence", sectionCode: "AI", capability: "VIEW_ANALYTICS" }),
   d({ id: "runtime-control", path: "/runtime-control", label: "Runtime Control Telemetry", section: "Intelligence", sectionCode: "AI", capability: "VIEW_ANALYTICS" }),
   d({ id: "ai-work", path: "/ai-work", label: "AI Work Assistant", section: "Intelligence", sectionCode: "AI", capability: "VIEW_REVIEW_QUEUE" }),
@@ -213,14 +207,11 @@ const destinations: readonly NavigationDestination[] = Object.freeze([
     showInPrimaryNav: false
   }),
 
-  // --- Settings (ST) — static hub; no BFF data call; universally safe for authenticated operators ---
   d({ id: "settings", path: "/settings", label: "Settings", section: "Settings", sectionCode: "ST" }),
 
-  // --- OPERANT_STAFF plane (Operant Support & Maintenance) — never surfaced in tenant nav or palette ---
   d({ id: "internal-support", path: "/internal-support", label: "Internal Support", section: "Operant Support", sectionCode: "SP", plane: "OPERANT_STAFF", paletteVisible: false, showInPrimaryNav: false }),
   d({ id: "internal-support-operations", path: "/internal-support/operations", label: "Support Operations", section: "Operant Support", sectionCode: "SP", plane: "OPERANT_STAFF", paletteVisible: false, showInPrimaryNav: false }),
 
-  // --- EXTERNAL_CUSTOMER plane (buyer-safe) — never surfaced in tenant nav or palette ---
   d({ id: "public-order-tracking", path: "/public/order-tracking", label: "Order Tracking", section: "Customer Portal", sectionCode: "PT", plane: "EXTERNAL_CUSTOMER", paletteVisible: false, showInPrimaryNav: false })
 ]);
 

@@ -72,8 +72,6 @@ public class AiMemoryEvaluationService {
       Integer minExpectedScore,
       Integer maxResults) {}
 
-  // ----------------------------- create run / case -----------------------------
-
   @Transactional
   public AiMemoryEvaluationRun createEvaluationRun(UUID tenantId, AiMemoryEvaluationRunType runType, UUID createdBy) {
     required(tenantId, "tenantId");
@@ -98,8 +96,6 @@ public class AiMemoryEvaluationService {
         bound(cmd.lookupKey(), 160), bound(cmd.expectedMemoryKey(), 160),
         bound(cmd.expectedExcludedMemoryKey(), 160), cmd.minExpectedScore(), maxResults, clock.instant()));
   }
-
-  // ----------------------------- execute -----------------------------
 
   @Transactional
   public AiMemoryEvaluationRun runEvaluation(UUID tenantId, UUID runId) {
@@ -202,8 +198,6 @@ public class AiMemoryEvaluationService {
         topScore, expectedMatched, excludedUnsafe, tenantIsolated, bound(failureReason, MAX_FAILURE_REASON), now);
   }
 
-  // ----------------------------- read side -----------------------------
-
   @Transactional(readOnly = true)
   public AiMemoryEvaluationRun getRun(UUID tenantId, UUID runId) {
     return loadRun(tenantId, runId);
@@ -231,8 +225,6 @@ public class AiMemoryEvaluationService {
     Pageable pageable = PageRequest.of(Math.max(page, 0), clampLimit(size));
     return results.findByTenantIdAndRunIdOrderByCreatedAtAsc(tenantId, runId, pageable);
   }
-
-  // ----------------------------- helpers -----------------------------
 
   private AiMemoryEvaluationRun loadRun(UUID tenantId, UUID runId) {
     return runs.findByIdAndTenantId(required(runId, "runId"), required(tenantId, "tenantId"))

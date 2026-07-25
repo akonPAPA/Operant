@@ -90,8 +90,6 @@ public class AiMemoryEventProjector {
     };
   }
 
-  // ----------------------------- operator correction projection -----------------------------
-
   private ProjectionOutcome projectOperatorCorrection(TrustAiDomainEvent event) {
     if (event.getSourceId() == null) {
       return ProjectionOutcome.skipped();
@@ -133,8 +131,6 @@ public class AiMemoryEventProjector {
     return ProjectionOutcome.projected("AiMemoryRecord", memoryId);
   }
 
-  // ----------------------------- automated advisory hint projection -----------------------------
-
   private ProjectionOutcome projectAdvisoryHint(TrustAiDomainEvent event, AiMemoryNamespace namespace,
       AiMemoryType memoryType, AiMemoryAuthorityLevel authority, String keyPrefix) {
     // Only project from a bounded, sanitized summary; otherwise there is nothing safe/useful to store.
@@ -152,8 +148,6 @@ public class AiMemoryEventProjector {
         event.getPayloadSummary(), null, AUTOMATED_HINT_CONFIDENCE, List.of());
     return ProjectionOutcome.projected("AiMemoryRecord", memoryId);
   }
-
-  // ----------------------------- shared upsert (idempotent via 17F governance) -----------------------------
 
   private UUID upsertMemory(UUID tenantId, AiMemoryNamespace namespace, String memoryKey,
       AiMemoryType memoryType, AiMemoryAuthorityLevel authority, AiMemorySourceType sourceType, UUID sourceId,
@@ -173,8 +167,6 @@ public class AiMemoryEventProjector {
         summary, normalizedValue, confidence, 1, null, evidence, null));
     return created.getId();
   }
-
-  // ----------------------------- mappings / helpers -----------------------------
 
   static AiMemoryNamespace namespaceFor(OperatorCorrectionType type) {
     return switch (type) {

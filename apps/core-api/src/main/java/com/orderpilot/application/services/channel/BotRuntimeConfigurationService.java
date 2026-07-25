@@ -149,8 +149,6 @@ public class BotRuntimeConfigurationService {
     return toResponse(saved, connection);
   }
 
-  // --- internal helpers -------------------------------------------------------------------------
-
   private ChannelBotRuntimeConfiguration getOrCreateDefault(ChannelConnection connection) {
     UUID tenantId = connection.getTenantId();
     return configurationRepository.findByTenantIdAndChannelConnectionId(tenantId, connection.getId())

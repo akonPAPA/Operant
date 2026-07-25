@@ -158,8 +158,6 @@ function correctionBody(payload: DraftLineCorrection): string {
   return JSON.stringify(body);
 }
 
-// --- Draft quote review ---
-
 export function getDraftQuoteReview(draftQuoteId: string) {
   return requestJson<DraftReviewDetail>(`/api/v1/workspace/draft-quotes/${draftQuoteId}/review`, { method: "GET" });
 }
@@ -178,8 +176,6 @@ export function markDraftQuoteReady(draftQuoteId: string, reason?: string) {
   });
 }
 
-// --- Draft order review ---
-
 export function getDraftOrderReview(draftOrderId: string) {
   return requestJson<DraftReviewDetail>(`/api/v1/workspace/draft-orders/${draftOrderId}/review`, { method: "GET" });
 }
@@ -197,8 +193,6 @@ export function markDraftOrderReady(draftOrderId: string, reason?: string) {
     body: JSON.stringify(reason ? { reason } : {})
   });
 }
-
-// --- OP-CAP-09D: bounded review queues + read-only product picker ---
 
 function queueQuery(params: DraftReviewQueueParams): string {
   const search = new URLSearchParams();

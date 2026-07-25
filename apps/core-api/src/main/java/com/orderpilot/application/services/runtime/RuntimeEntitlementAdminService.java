@@ -71,8 +71,6 @@ public class RuntimeEntitlementAdminService {
     this.clock = clock;
   }
 
-  // --- commands ---
-
   public record CreatePlanCommand(
       TenantRuntimePlanCode planCode,
       TenantRuntimePlanStatus status,
@@ -233,8 +231,6 @@ public class RuntimeEntitlementAdminService {
             .toList();
     return new RuntimeEntitlementStatusResponse(tenantId, source, currentPlan, featureStatuses);
   }
-
-  // --- internals ---
 
   private FeatureEntitlement upsertRow(
       UUID tenantId, UUID planId, RuntimeFeatureType feature, boolean enabled, String reasonCode, Instant effectiveFrom, Instant effectiveUntil, Instant now) {

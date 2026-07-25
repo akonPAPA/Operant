@@ -130,8 +130,6 @@ public class AiMemoryEvaluationController {
         .stream().map(AiMemoryEvaluationController::toDto).toList();
   }
 
-  // ----------------------------- mappers -----------------------------
-
   private static EvaluationRunDto toDto(AiMemoryEvaluationRun r) {
     return new EvaluationRunDto(r.getId(), r.getRunType().name(), r.getStatus().name(), r.getStartedAt(),
         r.getCompletedAt(), r.getTotalCases(), r.getPassedCases(), r.getFailedCases(), r.getAverageScore(),

@@ -232,7 +232,6 @@ def _build_result(
 
     findings: List[EvaluationFinding] = []
 
-    # --- Universal safety invariants (always enforced) ---
     findings.append(_finding("result_is_schema_valid_extraction", schema_valid))
     findings.append(_finding("advisory_only_true", extraction.advisory_only is True))
     findings.append(
@@ -244,7 +243,6 @@ def _build_result(
     )
     findings.append(_finding("no_executable_action_surface", not _has_action_keys(extraction)))
 
-    # --- Case-specific expectations ---
     if exp.expect_controlled_failure:
         findings.append(
             _finding(

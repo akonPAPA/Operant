@@ -89,8 +89,6 @@ public class AiAdvisoryRuntimeAssistService {
         DETERMINISTIC_VALIDATION_REQUIRED, List.copyOf(hints));
   }
 
-  // ----------------------------- presentation (deterministic, explainable) -----------------------------
-
   private RuntimeAssistHintDto toAssistHint(AdvisoryMemoryHintDto h, AiAdvisoryTaskType taskType, int rank) {
     return new RuntimeAssistHintDto(
         UUID.nameUUIDFromBytes((h.memoryRecordId() + ":runtime-assist").getBytes(java.nio.charset.StandardCharsets.UTF_8)),
@@ -144,8 +142,6 @@ public class AiAdvisoryRuntimeAssistService {
     }
     return "GENERAL_ADVISORY";
   }
-
-  // ----------------------------- helpers -----------------------------
 
   static int clampMaxHints(Integer requested) {
     if (requested == null || requested <= 0) {

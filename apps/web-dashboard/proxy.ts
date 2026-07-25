@@ -5,19 +5,6 @@ import {
   decideEdgeMiddleware
 } from "./lib/edge-middleware-core.ts";
 
-/**
- * Edge Middleware — UX only, never an authority boundary.
- *
- * This module (and its transitive imports) must stay Edge-safe: no bff-proxy,
- * bff-session-store, bff-gateway-signer, node:crypto, redis, or any Node-runtime-only
- * module. It adds security headers, detects only the PRESENCE of the opaque session
- * cookie, and redirects unauthenticated protected-page navigation to /login.
- * Authoritative session validation lives in the Node-runtime route handlers.
- *
- * The branch decision and the security-header set live in the pure, unit-tested
- * lib/edge-middleware-core.ts so every response path receives identical headers (F09).
- */
-
 const BFF_SESSION_COOKIE = "op_session";
 
 function middlewareBffRuntimeEnabled(): boolean {

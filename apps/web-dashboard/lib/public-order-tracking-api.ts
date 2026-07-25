@@ -6,20 +6,6 @@ function publicTrackingCoreBaseUrl(): string {
   return raw.replace(/\/$/, "");
 }
 
-// OP-CAP-46E — public, UNAUTHENTICATED customer tracking client.
-//
-// This module is deliberately separate from the tenant-scoped dashboard clients. The public
-// tracking endpoint derives the entire (tenant, journey) scope from the opaque token in the
-// path, so the frontend sends NO X-Tenant-Id header, NO X-OrderPilot-Permissions header, and
-// NO authority query/body fields. The token is the sole credential and travels only in the URL
-// path of the fetch — it is never persisted, never logged, and never echoed into analytics.
-//
-// The response mirrors the backend's redacted public tracking view: customer-safe fields only
-// (status label, milestone label/state/evidence, occurred/estimated timestamps, tracking-connected
-// flag, generated-at). Every internal identifier, source/actor descriptor, signal, risk, internal
-// status, connector descriptor, audit field, and token material is withheld by the backend and
-// additionally re-projected away here (see toSafeView).
-
 export type PublicTrackingMilestone = {
   milestoneLabel: string;
   milestoneState: string;

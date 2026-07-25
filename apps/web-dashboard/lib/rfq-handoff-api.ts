@@ -169,8 +169,6 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
   }
 }
 
-// --- Read ---
-
 export function listRfqHandoffs(status?: RfqHandoffStatus) {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   return request<RfqHandoff[]>(`/api/v1/channels/rfq-handoffs${query}`, { method: "GET" }, []);
@@ -179,8 +177,6 @@ export function listRfqHandoffs(status?: RfqHandoffStatus) {
 export function getRfqHandoff(id: string) {
   return request<RfqHandoff | null>(`/api/v1/channels/rfq-handoffs/${id}`, { method: "GET" }, null);
 }
-
-// --- Operator workflow transitions (tenant-scoped, audited, no quote/order/ERP write) ---
 
 /** Take a handoff into review: PENDING_REVIEW -> IN_REVIEW. */
 export function startReviewRfqHandoff(id: string) {
@@ -274,8 +270,6 @@ export function decideRfqHandoffDraft(
     null
   );
 }
-
-// --- Display helpers ---
 
 export function statusLabel(status?: string): string {
   switch (status) {

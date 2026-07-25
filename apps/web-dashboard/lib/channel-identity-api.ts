@@ -127,8 +127,6 @@ async function request<T>(
   }
 }
 
-// --- Read ---
-
 export function listChannelIdentities() {
   return request<ChannelIdentity[]>("/api/v1/channel-identities", { method: "GET" }, []);
 }
@@ -148,8 +146,6 @@ export function listCustomerContacts(customerId: string) {
     []
   );
 }
-
-// --- Mutations (all require CHANNEL_IDENTITY_ACTION) ---
 
 /** Confirm/link this sender to a tenant-owned customer account and/or contact. */
 export function linkChannelIdentity(id: string, req: ChannelIdentityLinkRequest) {
@@ -202,8 +198,6 @@ export function markNeedsReview(id: string, notes?: string) {
     null
   );
 }
-
-// --- Display helpers ---
 
 /** Shorten a long external sender ID for display. Never truncates UUIDs under 36 chars. */
 export function formatSenderId(senderId?: string): string {

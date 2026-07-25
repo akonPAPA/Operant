@@ -6,14 +6,6 @@ import {
   SupportTenantLocatorSkeleton
 } from "@/components/support-tenant-locator";
 
-// OP-CAP-57 — Internal Support landing: TENANT LOCATOR (read-only).
-//
-// Replaces the OP-CAP-56 demo-tenant assumption. An Operant staff operator searches for a tenant they are
-// allowed to support (results are filtered server-side to tenants the staff actor holds an active support
-// grant for) and opens read-only operations visibility for the selected tenant. The selected tenant id is
-// carried only as a navigation handle — the backend re-resolves the staff actor and re-validates the grant
-// on every downstream support call. There is no editable tenant/actor/authority field on this surface.
-
 const DEFAULT_PAGE_SIZE = 20;
 
 function clampPage(raw: string | undefined): number {

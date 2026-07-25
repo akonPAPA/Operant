@@ -46,8 +46,6 @@ public class InternalIncidentController {
     this.actorResolver = actorResolver;
   }
 
-  // --- incidents (STAFF_INCIDENT_CREATE / STAFF_INCIDENT_READ / STAFF_INCIDENT_CLOSE) ---
-
   @PostMapping(BASE + "/incidents")
   public IncidentResponse createIncident(
       @RequestBody CreateIncidentRequest request, HttpServletRequest http) {
@@ -73,8 +71,6 @@ public class InternalIncidentController {
     UUID tenantId = TenantContext.requireTenantId();
     return toIncidentResponse(incidentService.getIncident(tenantId, incidentId));
   }
-
-  // --- break-glass access requests ---
 
   @PostMapping(BASE + "/tenants/{tenantId}/incidents/{incidentId}/break-glass-requests")
   public BreakGlassResponse requestBreakGlass(

@@ -61,8 +61,6 @@ public class TrustAiMemoryController {
     this.runtimeTraceService = runtimeTraceService;
   }
 
-  // ----------------------------- ai memory -----------------------------
-
   @PostMapping("/api/v1/trust/ai-memory")
   public AiMemoryRecordDto create(@RequestBody CreateAiMemoryRecordRequest request) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -150,8 +148,6 @@ public class TrustAiMemoryController {
         .stream().map(TrustAiMemoryController::toDto).toList();
   }
 
-  // ----------------------------- ai runtime traces -----------------------------
-
   @PostMapping("/api/v1/trust/ai-runtime/traces")
   public AiRuntimeTraceDto recordTrace(@RequestBody RecordAiRuntimeTraceRequest request) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -186,8 +182,6 @@ public class TrustAiMemoryController {
         parseEnumOrNull(AiMemorySourceType.class, sourceType), sourceId, page, size)
         .stream().map(TrustAiMemoryController::toDto).toList();
   }
-
-  // ----------------------------- mappers -----------------------------
 
   private static EvidenceSpec toEvidenceSpec(AiMemoryEvidenceRefRequest r) {
     return new EvidenceSpec(

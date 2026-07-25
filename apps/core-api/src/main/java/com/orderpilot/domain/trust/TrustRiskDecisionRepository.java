@@ -41,11 +41,6 @@ public interface TrustRiskDecisionRepository extends JpaRepository<TrustRiskDeci
   List<TrustRiskDecision> findByTenantIdAndRiskLevelAndStatusOrderByCreatedAtDesc(
       UUID tenantId, TrustRiskLevel riskLevel, TrustRiskDecisionStatus status, Pageable pageable);
 
-  // --------------------------------------------------------------------------------------------------
-  // OP-CAP-17E Trust Analytics Read Models — bounded finders/aggregates that drive projection rebuilds.
-  // All are tenant-scoped; none performs an unbounded per-request scan.
-  // --------------------------------------------------------------------------------------------------
-
   /** Counterparty dashboard: current count of decisions at a risk level in a given status. */
   long countByTenantIdAndCounterpartyIdAndRiskLevelAndStatus(
       UUID tenantId, UUID counterpartyId, TrustRiskLevel riskLevel, TrustRiskDecisionStatus status);

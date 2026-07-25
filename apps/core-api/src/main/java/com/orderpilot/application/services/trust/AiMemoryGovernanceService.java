@@ -75,8 +75,6 @@ public class AiMemoryGovernanceService {
     this.clock = clock;
   }
 
-  // ----------------------------- command records -----------------------------
-
   public record EvidenceSpec(
       AiMemoryEvidenceType evidenceType, String evidenceRef, AiMemorySourceType sourceType, UUID sourceId,
       String fieldKey, BigDecimal confidence) {}
@@ -91,8 +89,6 @@ public class AiMemoryGovernanceService {
       UUID tenantId, UUID recordId, AiMemoryType memoryType, AiMemoryAuthorityLevel authorityLevel,
       String title, String summary, String normalizedValue, BigDecimal confidence, Integer weight,
       Long ttlSeconds, String reason, UUID actor) {}
-
-  // ----------------------------- create -----------------------------
 
   @Transactional
   public AiMemoryRecord createMemoryRecord(CreateMemoryCommand cmd) {
@@ -144,8 +140,6 @@ public class AiMemoryGovernanceService {
     return record;
   }
 
-  // ----------------------------- supersede -----------------------------
-
   @Transactional
   public AiMemoryRecord supersedeMemoryRecord(SupersedeMemoryCommand cmd) {
     UUID tenantId = required(cmd.tenantId(), "tenantId");
@@ -178,8 +172,6 @@ public class AiMemoryGovernanceService {
     recordAudit(tenantId, "AI_MEMORY_RECORD_SUPERSEDED", next, cmd.actor());
     return next;
   }
-
-  // ----------------------------- invalidate / expire -----------------------------
 
   @Transactional
   public AiMemoryRecord invalidateMemoryRecord(UUID tenantId, UUID recordId,
@@ -215,8 +207,6 @@ public class AiMemoryGovernanceService {
     }
     return due.size();
   }
-
-  // ----------------------------- read side -----------------------------
 
   @Transactional(readOnly = true)
   public AiMemoryRecord getRecord(UUID tenantId, UUID recordId) {
@@ -259,8 +249,6 @@ public class AiMemoryGovernanceService {
     load(required(tenantId, "tenantId"), recordId); // tenant-scoped existence guard
     return invalidationEvents.findByTenantIdAndAiMemoryRecordIdOrderByCreatedAtDesc(tenantId, recordId);
   }
-
-  // ----------------------------- helpers -----------------------------
 
   private AiMemoryRecord load(UUID tenantId, UUID recordId) {
     return records.findByIdAndTenantId(required(recordId, "recordId"), tenantId)

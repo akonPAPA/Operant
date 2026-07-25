@@ -262,8 +262,6 @@ public class ValidationReviewDraftRemediationLineageService {
         lines, unattached, workspacePath, "/validations/" + validationRunId + "/review", "DISABLED");
   }
 
-  // --- helpers -----------------------------------------------------------------------------------
-
   private DraftLineView quoteLineView(DraftQuoteLine l) {
     return new DraftLineView(l.getId(), l.getSourceExtractedLineItemId(), l.getLineNumber(),
         l.getNormalizedSku(), l.getDescription(), l.getQuantity(), l.getUom());

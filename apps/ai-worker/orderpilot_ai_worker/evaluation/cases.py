@@ -87,7 +87,6 @@ _OVERSIZED_BODY = "x" * (DEFAULT_MAX_RESPONSE_CHARS + 1)
 def default_evaluation_cases() -> List[EvaluationCase]:
     """Return the deterministic offline evaluation suite."""
     return [
-        # --- Deterministic rule-based provider (default, offline) -------------------------------
         EvaluationCase(
             case_id="rfq_telegram_valid",
             category="normal_rfq",
@@ -179,7 +178,6 @@ def default_evaluation_cases() -> List[EvaluationCase]:
             ),
             expected=ExpectedExtraction(expect_prompt_injection=True),
         ),
-        # --- Local Ollama runtime (explicit opt-in, fake in-process transport) ------------------
         EvaluationCase(
             case_id="local_valid_response",
             category="normal_rfq",
@@ -386,7 +384,6 @@ def default_evaluation_cases() -> List[EvaluationCase]:
                 expect_controlled_failure=True, expect_transport_called=False
             ),
         ),
-        # --- Unknown / unrunnable provider mode -------------------------------------------------
         EvaluationCase(
             case_id="future_mode_rejected",
             category="malformed_model_output",

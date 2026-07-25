@@ -2,11 +2,7 @@
  * Server-only BFF configuration. Never expose gateway or session secrets to the browser.
  * This module is Edge-safe: env reads only, no Node-only imports.
  */
-import {
-  isProductionLikeDeployment,
-  isProductionNodeRuntime,
-  isSecureCookieDeployment
-} from "./bff-deployment-profile.ts";
+import { isProductionLikeDeployment, isSecureCookieDeployment } from "./bff-deployment-profile.ts";
 import { decodeGatewaySharedSecret, readGatewaySharedSecretEnv } from "./bff-gateway-key.ts";
 import { bffRuntimeMode, parseStrictBoundedInteger } from "./bff-public-config.ts";
 
@@ -25,7 +21,6 @@ export {
 
 const DEFAULT_CORE = "http://127.0.0.1:8080";
 
-/** Demo/dev only base URL (may fall back to loopback). Never used by the production proxy. */
 export function coreApiInternalBaseUrl(): string {
   return (process.env.CORE_API_BASE_URL ?? DEFAULT_CORE).replace(/\/$/, "");
 }

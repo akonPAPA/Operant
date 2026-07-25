@@ -1,6 +1,5 @@
 import "server-only";
 
-import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
 
 export const DEFAULT_OIDC_DISCOVERY_TIMEOUT_MS = 5_000;
 export const DEFAULT_OIDC_DISCOVERY_MAX_BODY_BYTES = 64 * 1024;

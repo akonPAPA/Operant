@@ -84,8 +84,6 @@ public class AiRuntimeTraceService {
     return traces.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable);
   }
 
-  // ----------------------------- helpers -----------------------------
-
   private static BigDecimal normalizeCost(BigDecimal value) {
     if (value == null) {
       return null;

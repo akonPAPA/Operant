@@ -20,8 +20,6 @@ import java.util.UUID;
 public final class IncidentInternalDtos {
   private IncidentInternalDtos() {}
 
-  // --- incidents ---
-
   /** Open an incident. Backend owns status/timestamps/createdByStaffActor and the tenant scope. */
   public record CreateIncidentRequest(
       String title,
@@ -44,8 +42,6 @@ public final class IncidentInternalDtos {
       Instant updatedAt,
       Instant closedAt,
       String closureReason) {}
-
-  // --- break-glass access requests ---
 
   /** Request emergency break-glass access against an incident. Backend owns status/expiry/actor; bounded TTL. */
   public record CreateBreakGlassRequest(

@@ -3,10 +3,9 @@ import { BoundedUiError } from "./ui-error.ts";
 import { dashboardApiFetch } from "./dashboard-http";
 import {
   ApiResult,
-  coreApiBaseUrl,
   coreApiGet,
   coreApiStatusMessage,
-  demoScopeHeaders
+  demoScopeHeaders,
 } from "@/lib/core-api-client";
 
 export type QuoteReviewQueueRow = {

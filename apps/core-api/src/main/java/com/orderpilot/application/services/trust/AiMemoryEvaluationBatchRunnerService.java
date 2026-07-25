@@ -123,8 +123,6 @@ public class AiMemoryEvaluationBatchRunnerService {
     return evaluationService.runEvaluation(tenantId, run.getId());
   }
 
-  // ----------------------------- helpers -----------------------------
-
   private static int clamp(Integer requested, int defaultValue, int max) {
     if (requested == null || requested <= 0) {
       return defaultValue;
