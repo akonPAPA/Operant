@@ -422,6 +422,11 @@ class ApiRouteSecurityClassificationTest {
             ApiPermission.CONTROL_EXECUTOR_LEASE),
         new RouteExpectation(
             "POST",
+            "/api/v1/internal/control/lifecycle/operations/op_0011223344556677/artifacts/stage",
+            SecurityClassification.PROTECTED_EXECUTE,
+            ApiPermission.CONTROL_EXECUTOR_REPORT),
+        new RouteExpectation(
+            "POST",
             "/api/v1/internal/control/lifecycle/operations/op_0011223344556677/complete",
             SecurityClassification.PROTECTED_EXECUTE,
             ApiPermission.CONTROL_EXECUTOR_REPORT));

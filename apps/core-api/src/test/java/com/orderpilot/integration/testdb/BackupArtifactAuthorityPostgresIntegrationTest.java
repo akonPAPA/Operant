@@ -27,54 +27,47 @@ import com.orderpilot.domain.control.LifecycleOperationRepository;
 import com.orderpilot.domain.control.LifecycleOperationResultCode;
 import com.orderpilot.domain.control.LifecycleOperationState;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.LifecyclePostgresTestSupport;
 import com.orderpilot.support.RequiresPostgresIntegration;
 import java.lang.reflect.Method;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.DockerClientFactory;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** Real PostgreSQL proof for P1-E2B-02 backup artifact authority and durable lifecycle audit. */
 @Testcontainers
 @RequiresPostgresIntegration
-@EnabledIf("dockerAvailable")
 class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegrationTestBase {
   private static final String STAFF_FP = "staff-fingerprint-1";
   private static final String EXEC_FP = "executor-fingerprint-1";
+  private static final String SECOND_EXEC_FP = "executor-fingerprint-2";
   private static final String SHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-  static boolean dockerAvailable() {
-    return DockerClientFactory.instance().isDockerAvailable();
-  }
-
-  @Container
-  static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
   @DynamicPropertySource
   static void configuration(DynamicPropertyRegistry registry) {
-    registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
-    registry.add("spring.flyway.enabled", () -> true);
-    registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
-    registry.add("spring.datasource.hikari.maximum-pool-size", () -> 12);
-    registry.add("orderpilot.control.lifecycle.executor.enabled", () -> true);
+    LifecyclePostgresTestSupport.register(registry);
   }
 
   @Autowired private BackupArtifactPersistenceService artifactService;
@@ -84,6 +77,7 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   @Autowired private LifecycleOperationAuditRepository auditRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private Flyway flyway;
+  @Autowired private PlatformTransactionManager transactionManager;
   @SpyBean private LifecycleOperationAuditor auditor;
 
   private final AtomicInteger sequence = new AtomicInteger();
@@ -115,12 +109,18 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
         "ck_backup_artifact_state",
         "ck_backup_artifact_public_handle",
         "ck_backup_artifact_format",
-        "ck_backup_artifact_available_metadata",
+        "ck_backup_artifact_state_specific",
+        "ck_backup_artifact_execution_identity",
+        "ck_backup_artifact_closed_encryption",
         "ck_lifecycle_operation_audit_event_type",
-        "ck_lifecycle_operation_audit_metadata_bound");
+        "ck_lifecycle_operation_audit_metadata_bound",
+        "ck_lifecycle_operation_audit_artifact_contract",
+        "ck_lifecycle_operation_audit_result_contract");
     assertThat(indexNames()).contains(
         "ux_backup_artifact_public_handle",
         "ux_backup_artifact_storage_key",
+        "ux_backup_artifact_execution_identity",
+        "ux_backup_artifact_identity_fk",
         "ux_backup_artifact_one_available_per_operation",
         "idx_backup_artifact_lifecycle_operation",
         "idx_backup_artifact_state_created",
@@ -132,13 +132,14 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   void stagedArtifactPersistsAsNonAuthoritativeAndAuditsWithBoundedRepositoryApi() {
     LifecycleOperation leased = leasedOperation("idem-stage");
 
-    BackupArtifact artifact = artifactService.stageArtifact(stageCommand(leased, handle(1), "staged/one.dump.enc"));
+    BackupArtifact artifact = artifactService.stageArtifact(stageCommand(leased));
 
     assertThat(artifact.getId()).isNotNull();
     assertThat(artifact.getState()).isEqualTo(BackupArtifactState.STAGED);
     assertThat(artifact.isAuthoritative()).isFalse();
     assertThat(artifact.getBackupFormat()).isEqualTo(BackupArtifact.POSTGRES_CUSTOM_FORMAT);
-    assertThat(artifact.getStorageKey()).isEqualTo("staged/one.dump.enc");
+    assertThat(artifact.getPublicHandle()).startsWith("ba_");
+    assertThat(artifact.getStorageKey()).contains(leased.getPublicId());
     assertThat(artifact.getExecutionAttempt()).isEqualTo(leased.getAttempt());
     assertThat(artifact.getFencingToken()).isEqualTo(leased.getFencingToken());
     assertThat(auditEvents(leased)).contains(LifecycleOperationAuditEventType.BACKUP_ARTIFACT_STAGED);
@@ -170,18 +171,18 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
         "AES-256-GCM", "v1", "key-1", null))
         .isInstanceOf(DataIntegrityViolationException.class);
 
-    insertStaged(handle(8), opId, "staged/dup-handle-a.dump.enc");
-    assertThatThrownBy(() -> insertStaged(handle(8), opId, "staged/dup-handle-b.dump.enc"))
+    insertStaged(handle(8), opId, "staged/dup-handle-a.dump.enc", 201, 201L);
+    assertThatThrownBy(() -> insertStaged(handle(8), opId, "staged/dup-handle-b.dump.enc", 202, 202L))
         .isInstanceOf(DataIntegrityViolationException.class);
-    assertThatThrownBy(() -> insertStaged(handle(9), opId, "staged/dup-handle-a.dump.enc"))
+    assertThatThrownBy(() -> insertStaged(handle(9), opId, "staged/dup-handle-a.dump.enc", 203, 203L))
         .isInstanceOf(DataIntegrityViolationException.class);
 
     insertAvailable(handle(10), opId, "available/first.dump.enc", SHA, 100L, true,
-        "AES-256-GCM", "v1", "key-1", Instant.now());
+        "AES-256-GCM", "v1", "key-1", Instant.now(), 301, 301L);
     assertThatThrownBy(() -> insertAvailable(handle(11), opId, "available/second.dump.enc", SHA, 100L, true,
-        "AES-256-GCM", "v1", "key-1", Instant.now()))
+        "AES-256-GCM", "v1", "key-1", Instant.now(), 302, 302L))
         .isInstanceOf(DataIntegrityViolationException.class);
-    assertThatThrownBy(() -> insertStaged(handle(12), UUID.randomUUID(), "staged/missing-fk.dump.enc"))
+    assertThatThrownBy(() -> insertStaged(handle(12), UUID.randomUUID(), "staged/missing-fk.dump.enc", 401, 401L))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -191,13 +192,13 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
         insert into lifecycle_operation (
           public_id, operation_type, state, idempotency_key_hash, requested_by_fingerprint,
           attempt, created_at, updated_at
-        ) values ('op_restore_forbidden', 'RESTORE', repeat('a', 64), repeat('b', 64),
+        ) values ('op_restore_forbidden', 'RESTORE', 'QUEUED', repeat('b', 64),
           repeat('c', 64), 0, now(), now())
         """))
         .isInstanceOf(DataIntegrityViolationException.class);
 
     LifecycleOperation leased = leasedOperation("idem-backup-only");
-    BackupArtifact artifact = artifactService.stageArtifact(stageCommand(leased, handle(13), "staged/backup-only.dump.enc"));
+    BackupArtifact artifact = artifactService.stageArtifact(stageCommand(leased));
     assertThat(artifact.getLifecycleOperation().getOperationType().name()).isEqualTo("BACKUP");
   }
 
@@ -208,8 +209,8 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
 
     assertThat(leased.getPublicId()).isEqualTo(requested.getPublicId());
     assertThat(auditEvents(requested)).containsExactly(
-        LifecycleOperationAuditEventType.BACKUP_REQUESTED,
-        LifecycleOperationAuditEventType.BACKUP_LEASE_ACQUIRED);
+        LifecycleOperationAuditEventType.BACKUP_LEASE_ACQUIRED,
+        LifecycleOperationAuditEventType.BACKUP_REQUESTED);
   }
 
   @Test
@@ -229,7 +230,7 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
     LifecycleOperation leased = leasedOperation("idem-stage-rollback");
     doThrow(new RuntimeException("AUDIT_FAIL")).when(auditor).artifactStaged(any(), any(), eq(EXEC_FP));
 
-    assertThatThrownBy(() -> artifactService.stageArtifact(stageCommand(leased, handle(14), "staged/rollback.dump.enc")))
+    assertThatThrownBy(() -> artifactService.stageArtifact(stageCommand(leased)))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("AUDIT_FAIL");
 
@@ -240,10 +241,9 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   @Test
   void availableSucceededAndSuccessAuditsCommitTogether() {
     LifecycleOperation leased = leasedOperation("idem-available");
-    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased, handle(15), "staged/available.dump.enc"));
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
 
-    BackupArtifact available = artifactService.makeArtifactAvailableAndComplete(
-        availableCommand(leased, staged.getPublicHandle()));
+    BackupArtifact available = artifactService.makeArtifactAvailableAndComplete(availableCommand(leased, staged));
 
     LifecycleOperation done = operationRepository.findByPublicId(leased.getPublicId()).orElseThrow();
     assertThat(available.getState()).isEqualTo(BackupArtifactState.AVAILABLE);
@@ -258,11 +258,10 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   @Test
   void artifactAvailableAuditFailureRollsBackAvailableAndSucceeded() {
     LifecycleOperation leased = leasedOperation("idem-available-rollback");
-    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased, handle(16), "staged/available-rollback.dump.enc"));
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
     doThrow(new RuntimeException("AUDIT_FAIL")).when(auditor).artifactAvailable(any(), any(), eq(EXEC_FP));
 
-    assertThatThrownBy(() -> artifactService.makeArtifactAvailableAndComplete(
-        availableCommand(leased, staged.getPublicHandle())))
+    assertThatThrownBy(() -> artifactService.makeArtifactAvailableAndComplete(availableCommand(leased, staged)))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("AUDIT_FAIL");
 
@@ -278,11 +277,10 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   @Test
   void operationSuccessAuditFailureRollsBackAvailableTransition() {
     LifecycleOperation leased = leasedOperation("idem-success-rollback");
-    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased, handle(17), "staged/success-rollback.dump.enc"));
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
     doThrow(new RuntimeException("AUDIT_FAIL")).when(auditor).operationSucceeded(any(), eq(EXEC_FP));
 
-    assertThatThrownBy(() -> artifactService.makeArtifactAvailableAndComplete(
-        availableCommand(leased, staged.getPublicHandle())))
+    assertThatThrownBy(() -> artifactService.makeArtifactAvailableAndComplete(availableCommand(leased, staged)))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("AUDIT_FAIL");
 
@@ -296,15 +294,16 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   @Test
   void failedOperationAndFailureAuditCommitWithoutAuthoritativeArtifact() {
     LifecycleOperation leased = leasedOperation("idem-failed");
-    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased, handle(18), "staged/failed.dump.enc"));
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
 
     LifecycleOperation failed = artifactService.failOperation(new FinalizeFailureCommand(
         leased.getPublicId(), EXEC_FP, leased.getFencingToken(), staged.getPublicHandle(),
-        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION, "BACKUP_PROCESS_FAILED"));
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION));
 
     BackupArtifact rejected = artifactRepository.findByPublicHandle(staged.getPublicHandle()).orElseThrow();
     assertThat(failed.getState()).isEqualTo(LifecycleOperationState.FAILED);
     assertThat(rejected.getState()).isEqualTo(BackupArtifactState.REJECTED);
+    assertThat(rejected.getFailureCode()).isEqualTo("BACKUP_FAILED_EXECUTION");
     assertThat(rejected.isAuthoritative()).isFalse();
     assertThat(auditEvents(leased)).contains(
         LifecycleOperationAuditEventType.BACKUP_ARTIFACT_REJECTED,
@@ -315,17 +314,207 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   }
 
   @Test
-  void auditMetadataBoundsAndOrderingAreEnforced() {
-    LifecycleOperation leased = leasedOperation("idem-audit-bounds");
-    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased, handle(19), "staged/audit-bounds.dump.enc"));
+  void omittedArtifactHandleOnFailureRejectsCurrentStagedArtifact() {
+    LifecycleOperation leased = leasedOperation("idem-omit-fail");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
 
-    assertThat(auditRepository.findTop100ByLifecycleOperationIdOrderByCreatedAtAscIdAsc(leased.getId()))
+    LifecycleOperation failed = artifactService.failOperation(new FinalizeFailureCommand(
+        leased.getPublicId(), EXEC_FP, leased.getFencingToken(), null,
+        LifecycleOperationResultCode.BACKUP_TIMED_OUT));
+
+    BackupArtifact rejected = artifactRepository.findByPublicHandle(staged.getPublicHandle()).orElseThrow();
+    assertThat(failed.getState()).isEqualTo(LifecycleOperationState.FAILED);
+    assertThat(rejected.getState()).isEqualTo(BackupArtifactState.REJECTED);
+    assertThat(rejected.getFailureCode()).isEqualTo("BACKUP_TIMED_OUT");
+  }
+
+  @Test
+  void exactSuccessAndFailureReplayAreIdempotentAndChangedFingerprintConflicts() {
+    LifecycleOperation leased = leasedOperation("idem-replay");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+    FinalizeAvailableCommand success = availableCommand(leased, staged);
+
+    BackupArtifact first = artifactService.makeArtifactAvailableAndComplete(success);
+    BackupArtifact replay = artifactService.makeArtifactAvailableAndComplete(success);
+    assertThat(replay.getId()).isEqualTo(first.getId());
+    assertThat(artifactRepository.count()).isEqualTo(1);
+
+    AvailableMetadata changed = new AvailableMetadata(
+        success.metadata().encryptionAlgorithm(),
+        success.metadata().encryptionEnvelopeVersion(),
+        success.metadata().encryptionKeyIdentifier(),
+        success.metadata().postgresServerVersion(),
+        success.metadata().pgDumpVersion(),
+        success.metadata().pgRestoreVersion(),
+        success.metadata().schemaVersion(),
+        256L,
+        SHA,
+        true,
+        12);
+    assertThatThrownBy(() -> artifactService.makeArtifactAvailableAndComplete(new FinalizeAvailableCommand(
+            leased.getPublicId(), EXEC_FP, leased.getFencingToken(),
+            staged.getPublicHandle(), staged.getStorageKey(), changed)))
+        .isInstanceOf(LifecycleControlException.class);
+
+    LifecycleOperation failedLease = leasedOperation("idem-fail-replay");
+    BackupArtifact failedStaged = artifactService.stageArtifact(stageCommand(failedLease));
+    FinalizeFailureCommand failure = new FinalizeFailureCommand(
+        failedLease.getPublicId(), EXEC_FP, failedLease.getFencingToken(), failedStaged.getPublicHandle(),
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
+    artifactService.failOperation(failure);
+    artifactService.failOperation(failure);
+    assertThatThrownBy(() -> artifactService.failOperation(new FinalizeFailureCommand(
+            failedLease.getPublicId(), EXEC_FP, failedLease.getFencingToken(), failedStaged.getPublicHandle(),
+            LifecycleOperationResultCode.BACKUP_TIMED_OUT)))
+        .isInstanceOf(LifecycleControlException.class);
+  }
+
+  @Test
+  void staleExecutorDenialPersistsAuditAndLeavesBusinessStateUnchanged() {
+    LifecycleOperation leased = leasedOperation("idem-denial-audit");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+    long beforeArtifacts = artifactRepository.count();
+    long beforeOps = operationRepository.count();
+
+    assertThatThrownBy(() -> artifactService.makeArtifactAvailableAndComplete(new FinalizeAvailableCommand(
+            leased.getPublicId(), EXEC_FP, leased.getFencingToken() + 1L,
+            staged.getPublicHandle(), staged.getStorageKey(), availableCommand(leased, staged).metadata())))
+        .isInstanceOf(LifecycleControlException.StaleFencingToken.class);
+
+    assertThat(artifactRepository.count()).isEqualTo(beforeArtifacts);
+    assertThat(operationRepository.count()).isEqualTo(beforeOps);
+    assertThat(operationRepository.findByPublicId(leased.getPublicId()).orElseThrow().getState())
+        .isEqualTo(LifecycleOperationState.LEASED);
+    assertThat(artifactRepository.findByPublicHandle(staged.getPublicHandle()).orElseThrow().getState())
+        .isEqualTo(BackupArtifactState.STAGED);
+    assertThat(auditEvents(leased)).contains(LifecycleOperationAuditEventType.BACKUP_STALE_EXECUTOR_DENIED);
+  }
+
+  @Test
+  void denialAuditSurvivesOuterBusinessRollback() {
+    LifecycleOperation leased = leasedOperation("idem-denial-survive");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+    TransactionTemplate outer = new TransactionTemplate(transactionManager);
+
+    assertThatThrownBy(() -> outer.executeWithoutResult(status -> {
+      try {
+        artifactService.makeArtifactAvailableAndComplete(new FinalizeAvailableCommand(
+            leased.getPublicId(), SECOND_EXEC_FP, leased.getFencingToken(),
+            staged.getPublicHandle(), staged.getStorageKey(), availableCommand(leased, staged).metadata()));
+      } finally {
+        status.setRollbackOnly();
+      }
+    })).isInstanceOf(LifecycleControlException.WrongExecutor.class);
+
+    assertThat(auditEvents(leased)).contains(LifecycleOperationAuditEventType.BACKUP_WRONG_EXECUTOR_DENIED);
+    assertThat(operationRepository.findByPublicId(leased.getPublicId()).orElseThrow().getState())
+        .isEqualTo(LifecycleOperationState.LEASED);
+    assertThat(artifactRepository.findByPublicHandle(staged.getPublicHandle()).orElseThrow().getState())
+        .isEqualTo(BackupArtifactState.STAGED);
+  }
+
+  @Test
+  void concurrentStagingCreatesExactlyOneArtifact() throws Exception {
+    LifecycleOperation leased = leasedOperation("idem-concurrent-stage");
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch go = new CountDownLatch(1);
+    AtomicInteger conflicts = new AtomicInteger();
+    AtomicReference<BackupArtifact> winner = new AtomicReference<>();
+    try {
+      List<Future<?>> futures = new ArrayList<>();
+      for (int i = 0; i < 2; i++) {
+        futures.add(pool.submit(() -> {
+          ready.countDown();
+          go.await(5, TimeUnit.SECONDS);
+          try {
+            BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+            winner.compareAndSet(null, staged);
+          } catch (LifecycleControlException.CompletionConflict conflict) {
+            conflicts.incrementAndGet();
+          }
+          return null;
+        }));
+      }
+      assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+      go.countDown();
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
+      }
+    } finally {
+      pool.shutdownNow();
+    }
+    assertThat(artifactRepository.count()).isEqualTo(1);
+    assertThat(winner.get()).isNotNull();
+  }
+
+  @Test
+  void reLeaseOrphansPriorStagedArtifactAndAudits() {
+    LifecycleOperation first = leasedOperation("idem-release-orphan");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(first));
+    jdbcTemplate.update(
+        "update lifecycle_operation set lease_expires_at = now() - interval '1 second' where id = ?",
+        first.getId());
+
+    LifecycleOperation second = lifecycleService.leaseNext(SECOND_EXEC_FP).orElseThrow();
+    BackupArtifact orphaned = artifactRepository.findByPublicHandle(staged.getPublicHandle()).orElseThrow();
+    assertThat(second.getFencingToken()).isEqualTo(first.getFencingToken() + 1);
+    assertThat(orphaned.getState()).isEqualTo(BackupArtifactState.ORPHANED);
+    assertThat(orphaned.getFailureCode()).isEqualTo("EXPIRED_LEASE_REPLACED");
+    assertThat(auditEvents(first)).contains(LifecycleOperationAuditEventType.BACKUP_ARTIFACT_ORPHANED);
+  }
+
+  @Test
+  void terminalArtifactRowsAreImmutableAtPostgreSql() {
+    LifecycleOperation leased = leasedOperation("idem-terminal-trigger");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+    artifactService.makeArtifactAvailableAndComplete(availableCommand(leased, staged));
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+        "update backup_artifact set state = 'ORPHANED', failure_code = 'EXPIRED_LEASE_REPLACED', "
+            + "available_at = null, encryption_algorithm = null, encryption_envelope_version = null, "
+            + "encryption_key_identifier = null, postgres_server_version = null, pg_dump_version = null, "
+            + "pg_restore_version = null, schema_version = null, encrypted_byte_size = null, "
+            + "ciphertext_sha256 = null, archive_validated = null, archive_entry_count = null "
+            + "where public_handle = ?",
+        staged.getPublicHandle()))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void auditLatestWindowReturnsNewestOneHundredEvents() {
+    LifecycleOperation leased = leasedOperation("idem-audit-window");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+    for (int i = 0; i < 110; i++) {
+      jdbcTemplate.update("""
+          insert into lifecycle_operation_audit (
+            lifecycle_operation_id, backup_artifact_id, event_type, principal_type,
+            principal_fingerprint, result_code, metadata, created_at
+          ) values (?, null, 'BACKUP_EXECUTION_STARTED', 'EXECUTOR', ?, null, '{}'::jsonb, now() + (? || ' seconds')::interval)
+          """, leased.getId(), EXEC_FP, i);
+    }
+
+    List<LifecycleOperationAudit> window =
+        auditRepository.findTop100ByLifecycleOperationIdOrderByCreatedAtDescIdDesc(leased.getId());
+    assertThat(window).hasSize(100);
+    assertThat(window.get(0).getCreatedAt()).isAfterOrEqualTo(window.get(99).getCreatedAt());
+    assertThat(auditRepository.findTop100ByBackupArtifactIdOrderByCreatedAtDescIdDesc(staged.getId()))
+        .extracting(LifecycleOperationAudit::getEventType)
+        .contains(LifecycleOperationAuditEventType.BACKUP_ARTIFACT_STAGED);
+  }
+
+  @Test
+  void auditMetadataBoundsAndLatestOrderingAreEnforced() {
+    LifecycleOperation leased = leasedOperation("idem-audit-bounds");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+
+    assertThat(auditRepository.findTop100ByLifecycleOperationIdOrderByCreatedAtDescIdDesc(leased.getId()))
         .extracting(LifecycleOperationAudit::getEventType)
         .containsExactly(
-            LifecycleOperationAuditEventType.BACKUP_REQUESTED,
+            LifecycleOperationAuditEventType.BACKUP_ARTIFACT_STAGED,
             LifecycleOperationAuditEventType.BACKUP_LEASE_ACQUIRED,
-            LifecycleOperationAuditEventType.BACKUP_ARTIFACT_STAGED);
-    assertThat(auditRepository.findTop100ByBackupArtifactIdOrderByCreatedAtAscIdAsc(staged.getId()))
+            LifecycleOperationAuditEventType.BACKUP_REQUESTED);
+    assertThat(auditRepository.findTop100ByBackupArtifactIdOrderByCreatedAtDescIdDesc(staged.getId()))
         .extracting(LifecycleOperationAudit::getEventType)
         .containsExactly(LifecycleOperationAuditEventType.BACKUP_ARTIFACT_STAGED);
     assertThatThrownBy(() -> new LifecycleOperationAudit(
@@ -341,23 +530,32 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   }
 
   private void migrateIsolatedSchema(String schema, String firstTarget) {
-    Flyway first = flywayForSchema(schema, firstTarget);
-    first.migrate();
-    assertThat(first.validateWithResult().validationSuccessful).isTrue();
-    if (firstTarget != null) {
-      Flyway latest = flywayForSchema(schema, null);
-      latest.migrate();
-      assertThat(latest.validateWithResult().validationSuccessful).isTrue();
+    try {
+      Flyway first = flywayForSchema(schema, firstTarget);
+      first.migrate();
+      assertThat(first.validateWithResult().validationSuccessful).isTrue();
+      if (firstTarget != null) {
+        Flyway latest = flywayForSchema(schema, null);
+        latest.migrate();
+        assertThat(latest.validateWithResult().validationSuccessful).isTrue();
+      }
+      Integer reached = jdbcTemplate.queryForObject(
+          "select count(*) from " + schema + ".flyway_schema_history where version = '68' and success = true",
+          Integer.class);
+      assertThat(reached).isEqualTo(1);
+    } finally {
+      // Isolated migration schemas must not remain in the shared test database; unscoped
+      // pg_indexes queries in other integration tests would otherwise count duplicate index names.
+      jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
     }
-    Integer reached = jdbcTemplate.queryForObject(
-        "select count(*) from " + schema + ".flyway_schema_history where version = '68' and success = true",
-        Integer.class);
-    assertThat(reached).isEqualTo(1);
   }
 
   private Flyway flywayForSchema(String schema, String target) {
     var configuration = Flyway.configure()
-        .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+        .dataSource(
+            LifecyclePostgresTestSupport.jdbcUrl(),
+            LifecyclePostgresTestSupport.username(),
+            LifecyclePostgresTestSupport.password())
         .schemas(schema)
         .createSchemas(true)
         .locations("classpath:db/migration");
@@ -372,17 +570,18 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
     return lifecycleService.leaseNext(EXEC_FP).orElseThrow();
   }
 
-  private StageArtifactCommand stageCommand(LifecycleOperation operation, String handle, String storageKey) {
+  private StageArtifactCommand stageCommand(LifecycleOperation operation) {
     return new StageArtifactCommand(
-        operation.getPublicId(), EXEC_FP, operation.getFencingToken(), handle, storageKey);
+        operation.getPublicId(), EXEC_FP, operation.getFencingToken());
   }
 
-  private FinalizeAvailableCommand availableCommand(LifecycleOperation operation, String artifactHandle) {
+  private FinalizeAvailableCommand availableCommand(LifecycleOperation operation, BackupArtifact artifact) {
     return new FinalizeAvailableCommand(
         operation.getPublicId(),
         EXEC_FP,
         operation.getFencingToken(),
-        artifactHandle,
+        artifact.getPublicHandle(),
+        artifact.getStorageKey(),
         new AvailableMetadata(
             "AES-256-GCM",
             "v1",
@@ -411,7 +610,8 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
     return jdbcTemplate.queryForList("""
         select constraint_name
         from information_schema.table_constraints
-        where table_name in ('backup_artifact', 'lifecycle_operation_audit')
+        where table_schema = current_schema()
+          and table_name in ('backup_artifact', 'lifecycle_operation_audit')
         """, String.class);
   }
 
@@ -419,12 +619,13 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
     return jdbcTemplate.queryForList("""
         select indexname
         from pg_indexes
-        where tablename in ('backup_artifact', 'lifecycle_operation_audit')
+        where schemaname = current_schema()
+          and tablename in ('backup_artifact', 'lifecycle_operation_audit')
         """, String.class);
   }
 
   private List<LifecycleOperationAuditEventType> auditEvents(LifecycleOperation operation) {
-    return auditRepository.findTop100ByLifecycleOperationIdOrderByCreatedAtAscIdAsc(operation.getId())
+    return auditRepository.findTop100ByLifecycleOperationIdOrderByCreatedAtDescIdDesc(operation.getId())
         .stream()
         .map(LifecycleOperationAudit::getEventType)
         .toList();
@@ -436,12 +637,17 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   }
 
   private void insertStaged(String publicHandle, UUID operationId, String storageKey) {
+    insertStaged(publicHandle, operationId, storageKey, 1, 1L);
+  }
+
+  private void insertStaged(
+      String publicHandle, UUID operationId, String storageKey, int executionAttempt, long fencingToken) {
     jdbcTemplate.update("""
         insert into backup_artifact (
           public_handle, lifecycle_operation_id, state, backup_format, created_at, updated_at,
           storage_key, execution_attempt, fencing_token
-        ) values (?, ?, 'STAGED', 'POSTGRES_CUSTOM', now(), now(), ?, 1, 1)
-        """, publicHandle, operationId, storageKey);
+        ) values (?, ?, 'STAGED', 'POSTGRES_CUSTOM', now(), now(), ?, ?, ?)
+        """, publicHandle, operationId, storageKey, executionAttempt, fencingToken);
   }
 
   private void insertAvailable(
@@ -455,14 +661,33 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
       String envelopeVersion,
       String keyIdentifier,
       Instant availableAt) {
+    insertAvailable(publicHandle, operationId, storageKey, digest, encryptedByteSize, archiveValidated,
+        encryptionAlgorithm, envelopeVersion, keyIdentifier, availableAt, 1, 1L);
+  }
+
+  private void insertAvailable(
+      String publicHandle,
+      UUID operationId,
+      String storageKey,
+      String digest,
+      Long encryptedByteSize,
+      Boolean archiveValidated,
+      String encryptionAlgorithm,
+      String envelopeVersion,
+      String keyIdentifier,
+      Instant availableAt,
+      int executionAttempt,
+      long fencingToken) {
     Timestamp timestamp = availableAt == null ? null : Timestamp.from(availableAt);
     jdbcTemplate.update("""
         insert into backup_artifact (
           public_handle, lifecycle_operation_id, state, backup_format, encryption_algorithm,
           encryption_envelope_version, encryption_key_identifier, created_at, updated_at, available_at,
+          postgres_server_version, pg_dump_version, pg_restore_version, schema_version,
           encrypted_byte_size, ciphertext_sha256, archive_validated, archive_entry_count, storage_key,
           execution_attempt, fencing_token
-        ) values (?, ?, 'AVAILABLE', 'POSTGRES_CUSTOM', ?, ?, ?, coalesce(?, now()), coalesce(?, now()), ?, ?, ?, ?, 1, ?, 1, 1)
+        ) values (?, ?, 'AVAILABLE', 'POSTGRES_CUSTOM', ?, ?, ?, coalesce(?, now()), coalesce(?, now()), ?,
+          'PostgreSQL 16', 'pg_dump 16', 'pg_restore 16', 'V68', ?, ?, ?, 1, ?, ?, ?)
         """,
         publicHandle,
         operationId,
@@ -475,6 +700,8 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
         encryptedByteSize,
         digest,
         archiveValidated,
-        storageKey);
+        storageKey,
+        executionAttempt,
+        fencingToken);
   }
 }

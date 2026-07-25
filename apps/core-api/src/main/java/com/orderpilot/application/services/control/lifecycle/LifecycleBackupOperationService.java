@@ -1,5 +1,9 @@
 package com.orderpilot.application.services.control.lifecycle;
 
+import com.orderpilot.domain.control.BackupArtifact;
+import com.orderpilot.domain.control.BackupArtifactFailureCode;
+import com.orderpilot.domain.control.BackupArtifactRepository;
+import com.orderpilot.domain.control.BackupArtifactState;
 import com.orderpilot.domain.control.LifecycleOperation;
 import com.orderpilot.domain.control.LifecycleOperationRepository;
 import com.orderpilot.domain.control.LifecycleOperationResultCode;
@@ -16,55 +20,58 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * P1-E2A - the durable backup-operation control service. It owns the bounded protocol: idempotent request,
- * atomic executor lease with a per-operation monotonic fencing token, and owner-bound terminal completion.
- *
- * <p>Safety invariants enforced here:
- * <ul>
- *   <li>the executor capability is disabled by default and fails before row creation;</li>
- *   <li>the operation type is fixed to BACKUP and never read from the client;</li>
- *   <li>idempotency is enforced by a database unique index and requesting-principal binding;</li>
- *   <li>a lease is taken under a pessimistic row lock and strictly increases the fencing token;</li>
- *   <li>completion requires the authenticated executor to own the current unexpired lease and present the
- *       current fencing token;</li>
- *   <li>terminal replay is idempotent only for the same owner, token, and result code.</li>
- * </ul>
- */
+/** Durable backup-operation control service for request, lease, and artifact-authorized completion. */
 @Service
 public class LifecycleBackupOperationService {
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final int PUBLIC_ID_RANDOM_BYTES = 12;
   private static final int LEASE_PAGE_SIZE = 1;
+  private static final int STAGED_ORPHAN_PAGE_SIZE = 32;
 
   private final LifecycleOperationRepository repository;
+  private final BackupArtifactRepository artifactRepository;
   private final LifecycleOperationAuditor auditor;
   private final Clock clock;
   private final boolean executorEnabled;
   private final Duration leaseDuration;
   private final TransactionTemplate transactionTemplate;
 
+  @Autowired
   public LifecycleBackupOperationService(
       LifecycleOperationRepository repository,
+      BackupArtifactRepository artifactRepository,
       LifecycleOperationAuditor auditor,
       Clock clock,
       PlatformTransactionManager transactionManager,
       @Value("${orderpilot.control.lifecycle.executor.enabled:false}") boolean executorEnabled,
       @Value("${orderpilot.control.lifecycle.executor.lease-seconds:300}") long leaseSeconds) {
     this.repository = repository;
+    this.artifactRepository = artifactRepository;
     this.auditor = auditor;
     this.clock = clock;
     this.executorEnabled = executorEnabled;
     this.leaseDuration = Duration.ofSeconds(Math.max(1L, leaseSeconds));
     this.transactionTemplate = new TransactionTemplate(transactionManager);
+  }
+
+  LifecycleBackupOperationService(
+      LifecycleOperationRepository repository,
+      LifecycleOperationAuditor auditor,
+      Clock clock,
+      PlatformTransactionManager transactionManager,
+      boolean executorEnabled,
+      long leaseSeconds) {
+    this(repository, null, auditor, clock, transactionManager, executorEnabled, leaseSeconds);
   }
 
   public LifecycleOperation requestBackup(String requestedByFingerprint, String rawIdempotencyKey) {
@@ -101,6 +108,9 @@ public class LifecycleBackupOperationService {
       return Optional.empty();
     }
     LifecycleOperation operation = candidates.get(0);
+    if (artifactRepository != null && operation.getState().isInFlight()) {
+      orphanPriorStagedArtifacts(operation, executor, now);
+    }
     operation.lease(executor, now, leaseDuration);
     repository.save(operation);
     auditor.leaseAcquired(operation, executor);
@@ -108,17 +118,63 @@ public class LifecycleBackupOperationService {
   }
 
   /**
-   * Completes a leased operation under a pessimistic row lock. The current authenticated executor must
-   * own the current lease, present the current fencing token, and report before the lease expires.
+   * Package-private lower-level transition. REST executor reports must use
+   * {@link BackupArtifactPersistenceService}. Success requires a current AVAILABLE artifact for the
+   * execution identity; this method is not a general bypass for artifact-free BACKUP_COMPLETED.
    */
-  @Transactional
-  public LifecycleOperation complete(
+  LifecycleOperation complete(
       String executorFingerprint,
       String publicId,
       long presentedFencingToken,
       LifecycleOperationResultCode resultCode) {
     String executor = requirePrincipalFingerprint(executorFingerprint);
-    Instant now = clock.instant();
+    try {
+      return transactionTemplate.execute(status -> completeInTransaction(
+          executor, publicId, presentedFencingToken, resultCode));
+    } catch (DeniedReport denied) {
+      denied.audit(auditor);
+      throw denied.toPublicException();
+    }
+  }
+
+  /**
+   * Drain remaining STAGED artifacts for this operation in bounded batches. Offset stays at 0 on every
+   * iteration because {@link BackupArtifact#markOrphaned} moves each row out of the STAGED predicate
+   * ({@code findStagedWithLockByLifecycleOperationId}); the next page-0 query therefore returns the next
+   * remaining batch. Advancing {@link Pageable} would skip still-STAGED rows after mutation.
+   */
+  private void orphanPriorStagedArtifacts(
+      LifecycleOperation operation, String executor, Instant now) {
+    // Intentionally fixed at offset 0 — drain remaining matches, do not walk OFFSET pages.
+    Pageable firstRemainingPage = PageRequest.of(0, STAGED_ORPHAN_PAGE_SIZE);
+    while (true) {
+      List<BackupArtifact> staged = artifactRepository.findStagedWithLockByLifecycleOperationId(
+          operation.getId(), firstRemainingPage);
+      if (staged.isEmpty()) {
+        return;
+      }
+      for (BackupArtifact artifact : staged) {
+        artifact.markOrphaned(BackupArtifactFailureCode.EXPIRED_LEASE_REPLACED, now);
+        artifactRepository.save(artifact);
+        auditor.artifactOrphaned(
+            operation, artifact, executor, BackupArtifactFailureCode.EXPIRED_LEASE_REPLACED.name());
+      }
+      if (staged.size() < STAGED_ORPHAN_PAGE_SIZE) {
+        return;
+      }
+    }
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<LifecycleOperation> findByPublicId(String publicId) {
+    return repository.findByPublicId(publicId);
+  }
+
+  private LifecycleOperation completeInTransaction(
+      String executor,
+      String publicId,
+      long presentedFencingToken,
+      LifecycleOperationResultCode resultCode) {
     LifecycleOperation operation = repository.findWithLockByPublicId(publicId)
         .orElseThrow(LifecycleControlException.OperationNotFound::new);
 
@@ -136,12 +192,16 @@ public class LifecycleBackupOperationService {
     }
     requireLeaseOwner(operation, executor);
     requireCurrentFencingToken(operation, presentedFencingToken, executor);
+    Instant now = clock.instant();
     if (operation.getLeaseExpiresAt() == null || !now.isBefore(operation.getLeaseExpiresAt())) {
-      auditor.expiredLeaseReportDenied(operation, executor);
-      throw new LifecycleControlException.LeaseExpired();
+      throw DeniedReport.expired(operation, executor);
+    }
+    Objects.requireNonNull(resultCode, "resultCode");
+    if (resultCode == LifecycleOperationResultCode.BACKUP_COMPLETED) {
+      requireAvailableArtifactForCurrentExecution(operation);
     }
 
-    operation.complete(Objects.requireNonNull(resultCode, "resultCode"), now);
+    operation.complete(resultCode, now);
     repository.save(operation);
     if (resultCode.terminalState() == LifecycleOperationState.SUCCEEDED) {
       auditor.operationSucceeded(operation, executor);
@@ -151,15 +211,22 @@ public class LifecycleBackupOperationService {
     return operation;
   }
 
-  @Transactional(readOnly = true)
-  public Optional<LifecycleOperation> findByPublicId(String publicId) {
-    return repository.findByPublicId(publicId);
+  private void requireAvailableArtifactForCurrentExecution(LifecycleOperation operation) {
+    if (artifactRepository == null) {
+      throw new LifecycleControlException.CompletionConflict();
+    }
+    BackupArtifact artifact = artifactRepository
+        .findWithLockByLifecycleOperationIdAndExecutionAttemptAndFencingToken(
+            operation.getId(), operation.getAttempt(), operation.getFencingToken())
+        .orElseThrow(LifecycleControlException.CompletionConflict::new);
+    if (artifact.getState() != BackupArtifactState.AVAILABLE) {
+      throw new LifecycleControlException.CompletionConflict();
+    }
   }
 
   private void requireLeaseOwner(LifecycleOperation operation, String executorFingerprint) {
     if (!executorFingerprint.equals(operation.getLeasedByFingerprint())) {
-      auditor.wrongExecutorReportDenied(operation, executorFingerprint);
-      throw new LifecycleControlException.WrongExecutor();
+      throw DeniedReport.wrongExecutor(operation, executorFingerprint);
     }
   }
 
@@ -167,10 +234,8 @@ public class LifecycleBackupOperationService {
       LifecycleOperation operation,
       long presentedFencingToken,
       String executorFingerprint) {
-    if (operation.getFencingToken() == null
-        || operation.getFencingToken() != presentedFencingToken) {
-      auditor.staleExecutorReportDenied(operation, presentedFencingToken, executorFingerprint);
-      throw new LifecycleControlException.StaleFencingToken();
+    if (operation.getFencingToken() == null || operation.getFencingToken() != presentedFencingToken) {
+      throw DeniedReport.stale(operation, presentedFencingToken, executorFingerprint);
     }
   }
 
@@ -233,5 +298,55 @@ public class LifecycleBackupOperationService {
     } catch (NoSuchAlgorithmException unavailable) {
       throw new IllegalStateException("SHA-256 unavailable", unavailable);
     }
+  }
+
+  private static final class DeniedReport extends RuntimeException {
+    private final LifecycleOperation operation;
+    private final String executor;
+    private final Long presentedToken;
+    private final DenialType type;
+
+    private DeniedReport(
+        LifecycleOperation operation, String executor, Long presentedToken, DenialType type) {
+      super(type.name());
+      this.operation = operation;
+      this.executor = executor;
+      this.presentedToken = presentedToken;
+      this.type = type;
+    }
+
+    private static DeniedReport wrongExecutor(LifecycleOperation operation, String executor) {
+      return new DeniedReport(operation, executor, null, DenialType.WRONG_EXECUTOR);
+    }
+
+    private static DeniedReport stale(LifecycleOperation operation, long token, String executor) {
+      return new DeniedReport(operation, executor, token, DenialType.STALE_TOKEN);
+    }
+
+    private static DeniedReport expired(LifecycleOperation operation, String executor) {
+      return new DeniedReport(operation, executor, null, DenialType.EXPIRED_LEASE);
+    }
+
+    private void audit(LifecycleOperationAuditor auditor) {
+      switch (type) {
+        case WRONG_EXECUTOR -> auditor.wrongExecutorReportDenied(operation, executor);
+        case STALE_TOKEN -> auditor.staleExecutorReportDenied(operation, presentedToken == null ? -1L : presentedToken, executor);
+        case EXPIRED_LEASE -> auditor.expiredLeaseReportDenied(operation, executor);
+      }
+    }
+
+    private LifecycleControlException toPublicException() {
+      return switch (type) {
+        case WRONG_EXECUTOR -> new LifecycleControlException.WrongExecutor();
+        case STALE_TOKEN -> new LifecycleControlException.StaleFencingToken();
+        case EXPIRED_LEASE -> new LifecycleControlException.LeaseExpired();
+      };
+    }
+  }
+
+  private enum DenialType {
+    WRONG_EXECUTOR,
+    STALE_TOKEN,
+    EXPIRED_LEASE
   }
 }
