@@ -49,6 +49,13 @@ class LifecycleControlRoutePolicyTest {
   }
 
   @Test
+  void stageRouteRequiresExecutorReportPermission() {
+    RouteDecision decision = policy.classify("POST", OP + "/artifacts/stage").orElseThrow();
+    assertThat(decision.classification()).isEqualTo(SecurityClassification.PROTECTED_EXECUTE);
+    assertThat(decision.requiredPermission()).isEqualTo(ApiPermission.CONTROL_EXECUTOR_REPORT);
+  }
+
+  @Test
   void staffAndExecutorPermissionFamiliesAreDisjointAcrossRoutes() {
     ApiPermission backup = policy.classify("POST", BASE + "/backups").orElseThrow().requiredPermission();
     ApiPermission read = policy.classify("GET", OP).orElseThrow().requiredPermission();

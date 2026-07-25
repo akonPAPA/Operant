@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orderpilot.api.rest.InternalControlLifecycleController;
+import com.orderpilot.application.services.control.lifecycle.BackupArtifactPersistenceService;
 import com.orderpilot.application.services.control.lifecycle.LifecycleBackupOperationService;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.domain.control.LifecycleOperation;
@@ -68,6 +69,7 @@ class LifecycleControlStaffCredentialSecurityTest {
 
   @Autowired private MockMvc mockMvc;
   @MockBean private LifecycleBackupOperationService service;
+  @MockBean private BackupArtifactPersistenceService artifactService;
 
   @Test
   void staffCredentialCanRequestBackupWithSignedIdempotencyIntent() throws Exception {

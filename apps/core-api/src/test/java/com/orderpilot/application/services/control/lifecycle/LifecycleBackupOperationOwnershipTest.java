@@ -57,7 +57,7 @@ class LifecycleBackupOperationOwnershipTest {
         EXECUTOR_B,
         leased.getPublicId(),
         leased.getFencingToken(),
-        LifecycleOperationResultCode.BACKUP_COMPLETED))
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION))
         .isInstanceOf(LifecycleControlException.WrongExecutor.class);
 
     LifecycleOperation reloaded = repository.findByPublicId(leased.getPublicId()).orElseThrow();
@@ -82,7 +82,7 @@ class LifecycleBackupOperationOwnershipTest {
         EXECUTOR_A,
         leased.getPublicId(),
         leased.getFencingToken(),
-        LifecycleOperationResultCode.BACKUP_COMPLETED))
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION))
         .isInstanceOf(LifecycleControlException.LeaseExpired.class);
 
     LifecycleOperation reloaded = repository.findByPublicId(leased.getPublicId()).orElseThrow();
@@ -117,18 +117,18 @@ class LifecycleBackupOperationOwnershipTest {
         EXECUTOR_A,
         leased.getPublicId(),
         token,
-        LifecycleOperationResultCode.BACKUP_COMPLETED);
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
 
     assertThatThrownBy(() -> service.complete(
         EXECUTOR_B,
         leased.getPublicId(),
         token,
-        LifecycleOperationResultCode.BACKUP_COMPLETED))
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION))
         .isInstanceOf(LifecycleControlException.WrongExecutor.class);
 
     LifecycleOperation reloaded = repository.findByPublicId(leased.getPublicId()).orElseThrow();
-    assertThat(reloaded.getState()).isEqualTo(LifecycleOperationState.SUCCEEDED);
-    assertThat(reloaded.getResultCode()).isEqualTo(LifecycleOperationResultCode.BACKUP_COMPLETED);
+    assertThat(reloaded.getState()).isEqualTo(LifecycleOperationState.FAILED);
+    assertThat(reloaded.getResultCode()).isEqualTo(LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
   }
 
   private static final class MutableClock extends Clock {

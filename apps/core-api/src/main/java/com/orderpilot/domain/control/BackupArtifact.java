@@ -22,7 +22,10 @@ import java.util.regex.Pattern;
     name = "backup_artifact",
     uniqueConstraints = {
         @UniqueConstraint(name = "ux_backup_artifact_public_handle", columnNames = "public_handle"),
-        @UniqueConstraint(name = "ux_backup_artifact_storage_key", columnNames = "storage_key")
+        @UniqueConstraint(name = "ux_backup_artifact_storage_key", columnNames = "storage_key"),
+        @UniqueConstraint(
+            name = "ux_backup_artifact_execution_identity",
+            columnNames = {"lifecycle_operation_id", "execution_attempt", "fencing_token"})
     },
     indexes = {
         @Index(name = "idx_backup_artifact_lifecycle_operation", columnList = "lifecycle_operation_id"),
@@ -30,11 +33,14 @@ import java.util.regex.Pattern;
     })
 public class BackupArtifact {
   public static final String POSTGRES_CUSTOM_FORMAT = "POSTGRES_CUSTOM";
+  public static final String ENCRYPTION_ALGORITHM_AES_256_GCM = "AES-256-GCM";
+  public static final String ENCRYPTION_ENVELOPE_VERSION_V1 = "v1";
 
   private static final Pattern SHA256_HEX = Pattern.compile("[0-9a-f]{64}");
   private static final Pattern PUBLIC_HANDLE = Pattern.compile("ba_[0-9a-f]{24}");
   private static final Pattern SAFE_STORAGE_KEY =
       Pattern.compile("^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(^|/)\\.\\.(/|$)).{1,256}$");
+  private static final Pattern SAFE_KEY_IDENTIFIER = Pattern.compile("[0-9A-Za-z:_-]{1,80}");
 
   @Id
   @GeneratedValue
@@ -99,10 +105,10 @@ public class BackupArtifact {
   @Column(name = "storage_key", nullable = false, updatable = false, length = 256)
   private String storageKey;
 
-  @Column(name = "execution_attempt", updatable = false)
+  @Column(name = "execution_attempt", nullable = false, updatable = false)
   private Integer executionAttempt;
 
-  @Column(name = "fencing_token", updatable = false)
+  @Column(name = "fencing_token", nullable = false, updatable = false)
   private Long fencingToken;
 
   @Column(name = "failure_code", length = 80)
@@ -125,8 +131,8 @@ public class BackupArtifact {
     this.state = BackupArtifactState.STAGED;
     this.backupFormat = requireText(backupFormat, "backupFormat");
     this.storageKey = requirePattern(storageKey, "storageKey", SAFE_STORAGE_KEY);
-    this.executionAttempt = executionAttempt;
-    this.fencingToken = fencingToken;
+    this.executionAttempt = requirePositive(executionAttempt, "executionAttempt");
+    this.fencingToken = requirePositive(fencingToken, "fencingToken");
     this.createdAt = Objects.requireNonNull(now, "now");
     this.updatedAt = now;
   }
@@ -157,16 +163,19 @@ public class BackupArtifact {
     if (!safe.archiveValidated()) {
       throw new IllegalArgumentException("ARCHIVE_VALIDATION_REQUIRED");
     }
-    if (safe.archiveEntryCount() < 0) {
+    if (safe.archiveEntryCount() <= 0) {
       throw new IllegalArgumentException("ARCHIVE_ENTRY_COUNT_INVALID");
     }
-    this.encryptionAlgorithm = requireText(safe.encryptionAlgorithm(), "encryptionAlgorithm");
-    this.encryptionEnvelopeVersion = requireText(safe.encryptionEnvelopeVersion(), "envelopeVersion");
-    this.encryptionKeyIdentifier = requireText(safe.encryptionKeyIdentifier(), "keyIdentifier");
-    this.postgresServerVersion = bounded(safe.postgresServerVersion(), 80);
-    this.pgDumpVersion = bounded(safe.pgDumpVersion(), 80);
-    this.pgRestoreVersion = bounded(safe.pgRestoreVersion(), 80);
-    this.schemaVersion = bounded(safe.schemaVersion(), 40);
+    this.encryptionAlgorithm = requireExact(
+        safe.encryptionAlgorithm(), ENCRYPTION_ALGORITHM_AES_256_GCM, "encryptionAlgorithm");
+    this.encryptionEnvelopeVersion = requireExact(
+        safe.encryptionEnvelopeVersion(), ENCRYPTION_ENVELOPE_VERSION_V1, "envelopeVersion");
+    this.encryptionKeyIdentifier = requirePattern(
+        safe.encryptionKeyIdentifier(), "keyIdentifier", SAFE_KEY_IDENTIFIER);
+    this.postgresServerVersion = requireBounded(safe.postgresServerVersion(), "postgresServerVersion", 80);
+    this.pgDumpVersion = requireBounded(safe.pgDumpVersion(), "pgDumpVersion", 80);
+    this.pgRestoreVersion = requireBounded(safe.pgRestoreVersion(), "pgRestoreVersion", 80);
+    this.schemaVersion = requireBounded(safe.schemaVersion(), "schemaVersion", 40);
     this.encryptedByteSize = safe.encryptedByteSize();
     this.ciphertextSha256 = safe.ciphertextSha256();
     this.archiveValidated = true;
@@ -176,20 +185,21 @@ public class BackupArtifact {
     this.state = BackupArtifactState.AVAILABLE;
   }
 
-  public void reject(String failureCode, Instant now) {
+  public void reject(BackupArtifactFailureCode failureCode, Instant now) {
     markNonAuthoritative(BackupArtifactState.REJECTED, failureCode, now);
   }
 
-  public void markOrphaned(String failureCode, Instant now) {
+  public void markOrphaned(BackupArtifactFailureCode failureCode, Instant now) {
     markNonAuthoritative(BackupArtifactState.ORPHANED, failureCode, now);
   }
 
-  private void markNonAuthoritative(BackupArtifactState nextState, String failureCode, Instant now) {
-    if (state == BackupArtifactState.AVAILABLE) {
-      throw new IllegalStateException("AVAILABLE_ARTIFACT_IS_TERMINAL");
+  private void markNonAuthoritative(
+      BackupArtifactState nextState, BackupArtifactFailureCode failureCode, Instant now) {
+    if (state != BackupArtifactState.STAGED) {
+      throw new IllegalStateException("ONLY_STAGED_ARTIFACT_CAN_BECOME_TERMINAL");
     }
     this.state = nextState;
-    this.failureCode = bounded(requireText(failureCode, "failureCode"), 80);
+    this.failureCode = Objects.requireNonNull(failureCode, "failureCode").name();
     this.updatedAt = Objects.requireNonNull(now, "now");
   }
 
@@ -208,14 +218,34 @@ public class BackupArtifact {
     return safe;
   }
 
-  private static String bounded(String value, int max) {
-    if (value == null || value.isBlank()) {
-      return null;
+  private static String requireExact(String value, String expected, String field) {
+    String safe = requireText(value, field);
+    if (!expected.equals(safe)) {
+      throw new IllegalArgumentException(field + "_INVALID");
     }
-    if (value.length() > max) {
-      throw new IllegalArgumentException("VALUE_TOO_LONG");
+    return safe;
+  }
+
+  private static int requirePositive(Integer value, String field) {
+    if (value == null || value <= 0) {
+      throw new IllegalArgumentException(field + "_INVALID");
     }
     return value;
+  }
+
+  private static long requirePositive(Long value, String field) {
+    if (value == null || value <= 0) {
+      throw new IllegalArgumentException(field + "_INVALID");
+    }
+    return value;
+  }
+
+  private static String requireBounded(String value, String field, int max) {
+    String safe = requireText(value, field);
+    if (safe.length() > max) {
+      throw new IllegalArgumentException(field + "_TOO_LONG");
+    }
+    return safe;
   }
 
   public UUID getId() {
@@ -238,12 +268,60 @@ public class BackupArtifact {
     return state.isAuthoritative();
   }
 
+  public boolean matchesStagedIdentity(String handle, String storageKey) {
+    return Objects.equals(publicHandle, handle) && Objects.equals(this.storageKey, storageKey);
+  }
+
+  public boolean matchesAvailableMetadata(AvailableMetadata metadata) {
+    AvailableMetadata safe = Objects.requireNonNull(metadata, "metadata");
+    return state == BackupArtifactState.AVAILABLE
+        && Objects.equals(encryptionAlgorithm, safe.encryptionAlgorithm())
+        && Objects.equals(encryptionEnvelopeVersion, safe.encryptionEnvelopeVersion())
+        && Objects.equals(encryptionKeyIdentifier, safe.encryptionKeyIdentifier())
+        && Objects.equals(postgresServerVersion, safe.postgresServerVersion())
+        && Objects.equals(pgDumpVersion, safe.pgDumpVersion())
+        && Objects.equals(pgRestoreVersion, safe.pgRestoreVersion())
+        && Objects.equals(schemaVersion, safe.schemaVersion())
+        && Objects.equals(encryptedByteSize, safe.encryptedByteSize())
+        && Objects.equals(ciphertextSha256, safe.ciphertextSha256())
+        && Objects.equals(archiveValidated, safe.archiveValidated())
+        && Objects.equals(archiveEntryCount, safe.archiveEntryCount());
+  }
+
   public String getBackupFormat() {
     return backupFormat;
   }
 
   public String getStorageKey() {
     return storageKey;
+  }
+
+  public String getEncryptionAlgorithm() {
+    return encryptionAlgorithm;
+  }
+
+  public String getEncryptionEnvelopeVersion() {
+    return encryptionEnvelopeVersion;
+  }
+
+  public String getEncryptionKeyIdentifier() {
+    return encryptionKeyIdentifier;
+  }
+
+  public String getPostgresServerVersion() {
+    return postgresServerVersion;
+  }
+
+  public String getPgDumpVersion() {
+    return pgDumpVersion;
+  }
+
+  public String getPgRestoreVersion() {
+    return pgRestoreVersion;
+  }
+
+  public String getSchemaVersion() {
+    return schemaVersion;
   }
 
   public Integer getExecutionAttempt() {

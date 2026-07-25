@@ -112,8 +112,37 @@ class LifecycleControlSameRuntimeCredentialSecurityTest {
         .andReturn();
     long fencingToken = json(leased).path("fencingToken").asLong();
 
+    String stageBody = "{\"fencingToken\":" + fencingToken + "}";
+    MvcResult staged = mockMvc.perform(signed(
+            EXECUTOR_ALIAS,
+            EXECUTOR_SECRET,
+            "POST",
+            BASE + "/operations/" + operationId + "/artifacts/stage",
+            stageBody))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.artifactHandle").exists())
+        .andExpect(jsonPath("$.storageKey").exists())
+        .andReturn();
+    String artifactHandle = json(staged).path("artifactHandle").asText();
+    String storageKey = json(staged).path("storageKey").asText();
+    assertThat(artifactHandle).startsWith("ba_");
+    assertThat(storageKey).contains(operationId);
+
     String completionBody = "{\"fencingToken\":" + fencingToken
-        + ",\"resultCode\":\"BACKUP_COMPLETED\"}";
+        + ",\"resultCode\":\"BACKUP_COMPLETED\""
+        + ",\"artifactHandle\":\"" + artifactHandle + "\""
+        + ",\"storageKey\":\"" + storageKey + "\""
+        + ",\"encryptionAlgorithm\":\"AES-256-GCM\""
+        + ",\"encryptionEnvelopeVersion\":\"v1\""
+        + ",\"encryptionKeyIdentifier\":\"backup-key-2026-07\""
+        + ",\"postgresServerVersion\":\"PostgreSQL 16\""
+        + ",\"pgDumpVersion\":\"pg_dump 16\""
+        + ",\"pgRestoreVersion\":\"pg_restore 16\""
+        + ",\"schemaVersion\":\"V68\""
+        + ",\"encryptedByteSize\":128"
+        + ",\"ciphertextSha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\""
+        + ",\"archiveValidated\":true"
+        + ",\"archiveEntryCount\":12}";
     mockMvc.perform(signed(
             EXECUTOR_ALIAS,
             EXECUTOR_SECRET,

@@ -2,38 +2,39 @@ package com.orderpilot.api.dto;
 
 import java.time.Instant;
 
-/**
- * P1-E2A - bounded request/response contracts for the durable backup-operation control slice.
- *
- * <p>The request DTOs declare no authority fields. Unknown properties cannot reach the service because
- * there is no declared component for operation state, executor identity, principal identity,
- * path/command/database/container/image/environment, or any permission value. Authority is resolved by
- * the backend from the verified control credential and the exact route.
- *
- * <p>Business-significant request values are carried in the signed JSON body. In particular, the backup
- * idempotency key is body-bound by the control-plane content hash instead of being accepted from an
- * unsigned auxiliary header.
- *
- * <p>Response DTOs expose only bounded, operator/executor-safe fields. They never expose the internal
- * UUID primary key, the idempotency-key hash, principal fingerprints, or any persistence/security
- * internal.
- */
+/** Bounded request/response contracts for deployment lifecycle control. */
 public final class ControlLifecycleDtos {
   private ControlLifecycleDtos() {}
 
-  /**
-   * Staff backup-request intent. The opaque idempotency key is part of the signed body; operation type,
-   * principal, state, lease details, and every execution value remain backend-owned.
-   */
+  /** Staff backup-request intent; operation type, principal, and state remain backend-owned. */
   public record BackupRequest(String idempotencyKey) {}
 
-  /**
-   * Executor completion intent. The executor presents its fencing token and one bounded terminal result
-   * code. Principal identity, operation ownership, state, and lease validity remain backend-resolved.
-   */
-  public record CompleteRequest(Long fencingToken, String resultCode) {}
+  /** Executor stage request. Backend allocates artifact handle and canonical storage key. */
+  public record StageRequest(Long fencingToken) {}
 
-  /** Bounded operation view for the staff request/read routes. No internal id, hash, or fingerprints. */
+  /**
+   * Executor terminal report. Success binds the backend-issued artifact handle and storage key with
+   * closed provenance metadata; failure may omit the handle so the backend resolves the current staged
+   * artifact.
+   */
+  public record CompleteRequest(
+      Long fencingToken,
+      String resultCode,
+      String artifactHandle,
+      String storageKey,
+      String encryptionAlgorithm,
+      String encryptionEnvelopeVersion,
+      String encryptionKeyIdentifier,
+      String postgresServerVersion,
+      String pgDumpVersion,
+      String pgRestoreVersion,
+      String schemaVersion,
+      Long encryptedByteSize,
+      String ciphertextSha256,
+      Boolean archiveValidated,
+      Integer archiveEntryCount) {}
+
+  /** Bounded operation view for staff request/read routes. No internal id, hash, or fingerprints. */
   public record OperationView(
       String operationId,
       String operationType,
@@ -43,16 +44,23 @@ public final class ControlLifecycleDtos {
       Instant createdAt,
       Instant updatedAt) {}
 
-  /** Executor lease grant. Carries exactly what the executor needs to later complete the operation. */
+  /** Executor lease grant. Carries exactly what the executor needs to later report terminal work. */
   public record LeaseResponse(
       String operationId,
       String operationType,
       long fencingToken,
       Instant leaseExpiresAt) {}
 
+  /** Backend-issued staged artifact identity for the current execution attempt. */
+  public record StageResponse(
+      String operationId,
+      String artifactHandle,
+      String storageKey,
+      long fencingToken) {}
+
   /** Bounded terminal completion result for the executor. */
   public record CompletionResponse(String operationId, String state, String resultCode) {}
 
-  /** Bounded, machine-readable error body (stable code only; never a raw message, entity, or secret). */
+  /** Bounded, machine-readable error body. */
   public record ControlLifecycleError(String code) {}
 }
