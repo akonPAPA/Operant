@@ -35,6 +35,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -53,6 +54,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -501,6 +503,92 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   }
 
   @Test
+  void everyTerminalColumnMutationIsIndependentlyRejectedAndRowStaysFieldEquivalent() {
+    LifecycleOperation leased = leasedOperation("idem-terminal-percol");
+    BackupArtifact staged = artifactService.stageArtifact(stageCommand(leased));
+    artifactService.makeArtifactAvailableAndComplete(availableCommand(leased, staged));
+    String handle = staged.getPublicHandle();
+    // A second real operation supplies a *valid* alternative FK so the operation-linkage mutation fails
+    // solely on the terminal-immutability trigger, not on a foreign-key violation.
+    LifecycleOperation other = leasedOperation("idem-terminal-other");
+
+    Map<String, Object> before = snapshotArtifact(handle);
+    long auditBefore = auditRepository.count();
+    long opTransitionsBefore = operationRepository.count();
+    String leasedStateBefore = operationStateOf(leased.getPublicId());
+    String otherStateBefore = operationStateOf(other.getPublicId());
+
+    // Each class of column is attempted independently, each in its OWN new transaction, so a PostgreSQL
+    // statement failure aborts and rolls back only that isolated transaction and the next attempt begins
+    // from a clean, non-aborted transaction. Every attempt must be rejected by
+    // trg_backup_artifact_forbid_terminal_rewrite with the bounded trigger error (never a downstream
+    // "current transaction is aborted" false positive).
+    assertTerminalUpdateRejected("state = 'ORPHANED'", handle);
+    assertTerminalUpdateRejected("lifecycle_operation_id = ?", other.getId(), handle);
+    assertTerminalUpdateRejected("execution_attempt = 999", handle);
+    assertTerminalUpdateRejected("fencing_token = 999", handle);
+    assertTerminalUpdateRejected(
+        "storage_key = 'lifecycle/backup/other/attempt-9/token-9/artifact.dump.enc'", handle);
+    assertTerminalUpdateRejected(
+        "ciphertext_sha256 = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'", handle);
+    assertTerminalUpdateRejected("encrypted_byte_size = 999999", handle);
+    assertTerminalUpdateRejected("postgres_server_version = '15.1'", handle);
+    assertTerminalUpdateRejected("pg_dump_version = '15.1'", handle);
+    assertTerminalUpdateRejected("schema_version = 'V67'", handle);
+    assertTerminalUpdateRejected("failure_code = 'EXPIRED_LEASE_REPLACED'", handle);
+    assertTerminalUpdateRejected("created_at = ?", Timestamp.from(Instant.parse("2000-01-01T00:00:00Z")), handle);
+    assertTerminalUpdateRejected("updated_at = ?", Timestamp.from(Instant.parse("2100-01-01T00:00:00Z")), handle);
+
+    // Reloaded through a clean (post-rollback) transaction, the original terminal row remains byte/field
+    // equivalent, and no unrelated audit row or lifecycle-operation state change was produced by any
+    // rejected attempt.
+    assertThat(reloadArtifactInCleanTransaction(handle)).isEqualTo(before);
+    assertThat(auditRepository.count()).isEqualTo(auditBefore);
+    assertThat(operationRepository.count()).isEqualTo(opTransitionsBefore);
+    assertThat(operationStateOf(leased.getPublicId())).isEqualTo(leasedStateBefore);
+    assertThat(operationStateOf(other.getPublicId())).isEqualTo(otherStateBefore);
+  }
+
+  @Test
+  void validStagedTransitionsStillSucceedAlongsideTerminalImmutability() {
+    // Actual BackupArtifactState machine (see BackupArtifactState + BackupArtifact): the only initial
+    // state is STAGED, and the sole legal transitions are STAGED -> AVAILABLE (authoritative success),
+    // STAGED -> REJECTED (failure flow; the *operation* moves to FAILED while the *artifact* moves to
+    // REJECTED — they are distinct enums), and STAGED -> ORPHANED (expired-lease re-lease). AVAILABLE,
+    // REJECTED and ORPHANED are all terminal. There is no REJECTED-invented-for-a-test state: REJECTED is
+    // produced by the real BackupArtifact.reject(...) path exercised below.
+
+    // STAGED -> AVAILABLE (authoritative success) still succeeds.
+    LifecycleOperation availableOp = leasedOperation("idem-valid-available");
+    BackupArtifact availableStaged = artifactService.stageArtifact(stageCommand(availableOp));
+    BackupArtifact available =
+        artifactService.makeArtifactAvailableAndComplete(availableCommand(availableOp, availableStaged));
+    assertThat(available.getState()).isEqualTo(BackupArtifactState.AVAILABLE);
+    assertThat(operationRepository.findByPublicId(availableOp.getPublicId()).orElseThrow().getState())
+        .isEqualTo(LifecycleOperationState.SUCCEEDED);
+
+    // STAGED -> REJECTED (FAILED flow) still succeeds.
+    LifecycleOperation failOp = leasedOperation("idem-valid-failed");
+    BackupArtifact failStaged = artifactService.stageArtifact(stageCommand(failOp));
+    LifecycleOperation failed = artifactService.failOperation(new FinalizeFailureCommand(
+        failOp.getPublicId(), EXEC_FP, failOp.getFencingToken(), failStaged.getPublicHandle(),
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION));
+    assertThat(failed.getState()).isEqualTo(LifecycleOperationState.FAILED);
+    assertThat(artifactRepository.findByPublicHandle(failStaged.getPublicHandle()).orElseThrow().getState())
+        .isEqualTo(BackupArtifactState.REJECTED);
+
+    // STAGED -> ORPHANED (expired-lease re-lease flow) still succeeds.
+    LifecycleOperation orphanOp = leasedOperation("idem-valid-orphan");
+    BackupArtifact orphanStaged = artifactService.stageArtifact(stageCommand(orphanOp));
+    jdbcTemplate.update(
+        "update lifecycle_operation set lease_expires_at = now() - interval '1 second' where id = ?",
+        orphanOp.getId());
+    lifecycleService.leaseNext(SECOND_EXEC_FP).orElseThrow();
+    assertThat(artifactRepository.findByPublicHandle(orphanStaged.getPublicHandle()).orElseThrow().getState())
+        .isEqualTo(BackupArtifactState.ORPHANED);
+  }
+
+  @Test
   void lifecycleOperationAuditIsAppendOnlyAtPostgreSql() {
     // request + lease already wrote durable audit rows for this operation.
     LifecycleOperation leased = leasedOperation("idem-audit-append-only");
@@ -509,19 +597,22 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
         Long.class, leased.getId());
     assertThat(auditId).isNotNull();
 
-    // Even a no-op-valued UPDATE and a DELETE are rejected by trg_lifecycle_operation_audit_append_only.
-    assertThatThrownBy(() -> jdbcTemplate.update(
+    // The UPDATE rejection runs in its OWN isolated transaction so the failure is the append-only trigger
+    // itself, not a cascaded abort. A no-op-valued UPDATE is still rejected by
+    // trg_lifecycle_operation_audit_append_only.
+    assertThatThrownBy(() -> isolatedTransaction().executeWithoutResult(status -> jdbcTemplate.update(
         "update lifecycle_operation_audit set principal_fingerprint = principal_fingerprint where id = ?",
-        auditId))
+        auditId)))
         .isInstanceOf(DataIntegrityViolationException.class);
-    assertThatThrownBy(() -> jdbcTemplate.update(
-        "delete from lifecycle_operation_audit where id = ?", auditId))
-        .isInstanceOf(DataIntegrityViolationException.class);
+    // Clean read after the aborted UPDATE transaction: the durable row survives intact.
+    assertThat(countAuditRowsById(auditId)).isEqualTo(1);
 
-    // The durable evidence row survives both rejected mutations.
-    assertThat(jdbcTemplate.queryForObject(
-        "select count(*) from lifecycle_operation_audit where id = ?", Integer.class, auditId))
-        .isEqualTo(1);
+    // The DELETE rejection runs in a SEPARATE isolated transaction, again proving the trigger, not abort.
+    assertThatThrownBy(() -> isolatedTransaction().executeWithoutResult(status -> jdbcTemplate.update(
+        "delete from lifecycle_operation_audit where id = ?", auditId)))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    // Clean read after the aborted DELETE transaction: the durable evidence row still exists exactly once.
+    assertThat(countAuditRowsById(auditId)).isEqualTo(1);
   }
 
   @Test
@@ -654,6 +745,44 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
 
   private String handle(int value) {
     return "ba_" + String.format("%024x", value);
+  }
+
+  private Map<String, Object> snapshotArtifact(String publicHandle) {
+    return jdbcTemplate.queryForMap("select * from backup_artifact where public_handle = ?", publicHandle);
+  }
+
+  private void assertTerminalUpdateRejected(String setFragment, Object... args) {
+    // Each rejected mutation runs in its OWN new transaction (PROPAGATION_REQUIRES_NEW). On the PostgreSQL
+    // statement failure that isolated transaction is aborted and rolled back, so the following attempt
+    // starts from a clean transaction — never a false-positive "current transaction is aborted". Each
+    // attempt must surface the bounded trigger error (SQL state check_violation), never a silent no-op or
+    // partial write.
+    assertThatThrownBy(() -> isolatedTransaction().executeWithoutResult(status -> jdbcTemplate.update(
+        "update backup_artifact set " + setFragment + " where public_handle = ?", args)))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("BACKUP_ARTIFACT_TERMINAL_IMMUTABLE");
+  }
+
+  private TransactionTemplate isolatedTransaction() {
+    TransactionTemplate template = new TransactionTemplate(transactionManager);
+    template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    return template;
+  }
+
+  private String operationStateOf(String publicId) {
+    return operationRepository.findByPublicId(publicId).orElseThrow().getState().name();
+  }
+
+  private Map<String, Object> reloadArtifactInCleanTransaction(String publicHandle) {
+    // A fresh REQUIRES_NEW transaction guarantees the comparison reads committed state, independent of any
+    // prior rolled-back mutation transaction.
+    return isolatedTransaction().execute(status -> snapshotArtifact(publicHandle));
+  }
+
+  private int countAuditRowsById(Long auditId) {
+    Integer count = isolatedTransaction().execute(status -> jdbcTemplate.queryForObject(
+        "select count(*) from lifecycle_operation_audit where id = ?", Integer.class, auditId));
+    return count == null ? 0 : count;
   }
 
   private List<String> tableNames(String... names) {

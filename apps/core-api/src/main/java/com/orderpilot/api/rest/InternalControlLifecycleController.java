@@ -13,6 +13,8 @@ import com.orderpilot.application.services.control.lifecycle.BackupArtifactPersi
 import com.orderpilot.application.services.control.lifecycle.BackupArtifactPersistenceService.StageArtifactCommand;
 import com.orderpilot.application.services.control.lifecycle.LifecycleBackupOperationService;
 import com.orderpilot.application.services.control.lifecycle.LifecycleControlException;
+import com.orderpilot.application.services.control.lifecycle.PostgresToolVersionNormalizer;
+import com.orderpilot.application.services.control.lifecycle.PostgresToolVersionNormalizer.ExpectedPostgresTool;
 import com.orderpilot.domain.control.BackupArtifact;
 import com.orderpilot.domain.control.BackupArtifact.AvailableMetadata;
 import com.orderpilot.domain.control.LifecycleOperation;
@@ -154,13 +156,21 @@ public class InternalControlLifecycleController {
         || request.archiveEntryCount() == null) {
       throw new LifecycleControlException.InvalidRequest("ARTIFACT_METADATA_REQUIRED");
     }
+    // Authoritative, provenance-preserving boundary normalization: the executor may report either a
+    // canonical version or the recognised CLI banner that THAT specific tool emits. Each field is
+    // normalized against its own tool identity, so a psql/pg_restore/server banner can never be accepted
+    // in the pg_dump field (and vice versa). Anything ambiguous or foreign fail-closes to
+    // IllegalArgumentException -> bounded 400 INVALID_BACKUP_ARTIFACT_REPORT (never the raw banner).
     return new AvailableMetadata(
         request.encryptionAlgorithm(),
         request.encryptionEnvelopeVersion(),
         request.encryptionKeyIdentifier(),
-        request.postgresServerVersion(),
-        request.pgDumpVersion(),
-        request.pgRestoreVersion(),
+        PostgresToolVersionNormalizer.normalize(
+            ExpectedPostgresTool.POSTGRES_SERVER, request.postgresServerVersion()),
+        PostgresToolVersionNormalizer.normalize(
+            ExpectedPostgresTool.PG_DUMP, request.pgDumpVersion()),
+        PostgresToolVersionNormalizer.normalize(
+            ExpectedPostgresTool.PG_RESTORE, request.pgRestoreVersion()),
         request.schemaVersion(),
         request.encryptedByteSize(),
         request.ciphertextSha256(),
