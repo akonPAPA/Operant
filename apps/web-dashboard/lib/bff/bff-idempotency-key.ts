@@ -12,6 +12,7 @@
  * runtime; validation happens in the proxy BEFORE HMAC signing or any upstream call.
  */
 
+/** Route-level idempotency policy. Replaces the old boolean allowIdempotencyKey. */
 export type BffIdempotencyPolicy = "required" | "optional" | "forbidden";
 
 /** Embedded canonical contract (kept in lockstep with shared/contracts/idempotency-key-contract.json). */

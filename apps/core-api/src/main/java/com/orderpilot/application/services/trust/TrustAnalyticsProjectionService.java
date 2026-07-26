@@ -118,6 +118,8 @@ public class TrustAnalyticsProjectionService {
     this.clock = clock;
   }
 
+  // ----------------------------- review queue -----------------------------
+
   /**
    * Projects one OP-CAP-17D decision into the review-queue read model. The row is upserted when the
    * decision is queue-worthy (HIGH/CRITICAL, blocking, or human-review-required, and not superseded) and
@@ -181,6 +183,8 @@ public class TrustAnalyticsProjectionService {
             .map(c -> c.getSignalCode().name())
             .orElse(null));
   }
+
+  // ----------------------------- counterparty dashboard -----------------------------
 
   /**
    * Projects the combined OP-CAP-17B profile + OP-CAP-17C obligation aggregates + OP-CAP-17D decision
@@ -276,6 +280,8 @@ public class TrustAnalyticsProjectionService {
     return true;
   }
 
+  // ----------------------------- outstanding debt -----------------------------
+
   /**
    * Projects one OP-CAP-17C obligation into the outstanding-debt read model. The row is upserted while
    * the obligation still carries exposure (any status except PAID/CANCELLED) and removed otherwise.
@@ -325,6 +331,8 @@ public class TrustAnalyticsProjectionService {
     return days > 0 ? (int) Math.min(days, Integer.MAX_VALUE) : 0;
   }
 
+  // ----------------------------- document anomaly trends -----------------------------
+
   /**
    * Rebuilds the document anomaly trend rows for one tenant + daily period via delete-then-insert, so a
    * rebuild is idempotent (no appended duplicates). Returns the number of (signal code, severity) rows
@@ -357,6 +365,8 @@ public class TrustAnalyticsProjectionService {
     return aggs.size();
   }
 
+  // ----------------------------- risk distribution -----------------------------
+
   /** Upserts the single OP-CAP-17D risk-distribution row for one tenant + daily period. */
   @Transactional
   public boolean rebuildTrustRiskDistribution(UUID tenantId, String periodKey) {
@@ -379,6 +389,8 @@ public class TrustAnalyticsProjectionService {
     distributionViews.save(row);
     return true;
   }
+
+  // ----------------------------- bounded full-tenant rebuild -----------------------------
 
   /**
    * Bounded best-effort rebuild for one tenant: today's risk distribution + document anomaly trends,
@@ -427,6 +439,8 @@ public class TrustAnalyticsProjectionService {
     return new TrustAnalyticsRebuildResponseDto(
         periodKey, queueRows, dashboards, debtRows, trendRows, distribution, now);
   }
+
+  // ----------------------------- period helpers -----------------------------
 
   String periodKeyFor(Instant instant) {
     return LocalDate.ofInstant(instant, PERIOD_ZONE).toString();

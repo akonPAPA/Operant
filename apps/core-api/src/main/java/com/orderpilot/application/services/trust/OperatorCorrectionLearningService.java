@@ -65,6 +65,8 @@ public class OperatorCorrectionLearningService {
       String targetType, UUID targetId, String fieldKey, String previousValue, String correctedValue,
       String normalizedCorrection, String correctionSummary, BigDecimal confidence, UUID createdBy) {}
 
+  // ----------------------------- record -----------------------------
+
   @Transactional
   public OperatorCorrectionLearningRecord recordCorrection(RecordCorrectionCommand cmd) {
     UUID tenantId = required(cmd.tenantId(), "tenantId");
@@ -92,6 +94,8 @@ public class OperatorCorrectionLearningService {
     recordAudit(tenantId, "AI_OPERATOR_CORRECTION_RECORDED", record, cmd.createdBy());
     return record;
   }
+
+  // ----------------------------- approve / reject -----------------------------
 
   @Transactional
   public CorrectionLearningProjectionResponse approveCorrectionForLearning(
@@ -135,6 +139,8 @@ public class OperatorCorrectionLearningService {
     return record;
   }
 
+  // ----------------------------- read side -----------------------------
+
   @Transactional(readOnly = true)
   public OperatorCorrectionLearningRecord getCorrection(UUID tenantId, UUID recordId) {
     return load(required(tenantId, "tenantId"), recordId);
@@ -157,6 +163,8 @@ public class OperatorCorrectionLearningService {
     }
     return corrections.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable);
   }
+
+  // ----------------------------- helpers -----------------------------
 
   private OperatorCorrectionLearningRecord load(UUID tenantId, UUID recordId) {
     return corrections.findByIdAndTenantId(required(recordId, "recordId"), tenantId)

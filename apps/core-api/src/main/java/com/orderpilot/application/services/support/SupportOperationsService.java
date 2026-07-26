@@ -82,6 +82,8 @@ public class SupportOperationsService {
     this.clock = clock;
   }
 
+  // --- 1) operations summary ---
+
   /**
    * Build a bounded, safe operations summary (counts + latest safe activity timestamp) for one tenant. All
    * counts are computed with tenant-scoped count queries; no raw record content is exposed.
@@ -153,6 +155,8 @@ public class SupportOperationsService {
     return latest;
   }
 
+  // --- 2) operations timeline ---
+
   /**
    * Build a bounded, deterministically time-ordered (desc) page of safe operations lifecycle markers across
    * incidents, break-glass requests, support grants, data-repair requests, and processing-job repair
@@ -200,6 +204,8 @@ public class SupportOperationsService {
         tenantId, page, size, pageEntries.size(), hasMore, pageEntries, clock.instant());
   }
 
+  // --- 3) data-repair operations detail view ---
+
   /**
    * Build the operations detail view of one tenant-scoped data-repair request, including its bounded
    * processing-job repair execution result (if any) and a derived safe per-request lifecycle timeline. A
@@ -239,6 +245,8 @@ public class SupportOperationsService {
         clock.instant(),
         EXTERNAL_EXECUTION_DISABLED);
   }
+
+  // --- lifecycle marker builders (derived from backend-owned record timestamps/status, not audit rows) ---
 
   private static void addIncidentEvents(List<SupportOperationsTimelineEntry> sink, IncidentRecord incident) {
     sink.add(entry("INCIDENT", "INCIDENT_CREATED", incident.getId(), incident.getStatus().name(),

@@ -92,6 +92,8 @@ public class TrustAiProjectionController {
     return toDto(queryService.getEvent(TenantContext.requireTenantId(), eventId));
   }
 
+  // ----------------------------- mappers -----------------------------
+
   private static TrustAiDomainEventDto toDto(TrustAiDomainEvent e) {
     return new TrustAiDomainEventDto(
         e.getId(), e.getEventType().name(), e.getSourceType().name(), e.getSourceId(), e.getSubjectType(),

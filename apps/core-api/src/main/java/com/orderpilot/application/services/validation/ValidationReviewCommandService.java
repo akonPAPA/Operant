@@ -259,6 +259,8 @@ public class ValidationReviewCommandService {
         null, "Approval request created and pending review.");
   }
 
+  // --- helpers -----------------------------------------------------------------------------------
+
   private ValidationRun requireRun(UUID tenantId, UUID validationRunId) {
     return runRepository.findByIdAndTenantId(validationRunId, tenantId)
         .orElseThrow(() -> new NotFoundException("validation_run_not_found"));

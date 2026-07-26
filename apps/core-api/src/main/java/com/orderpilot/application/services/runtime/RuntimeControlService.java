@@ -128,6 +128,8 @@ public class RuntimeControlService {
         routing, RuntimeGuardReasonCodes.ALLOWED, request, systemActor, promoteToAsync(request, units));
   }
 
+  // ----------------------------- shared pipeline helpers -----------------------------
+
   private static void validate(RuntimeControlRequest request) {
     if (request == null) {
       throw new IllegalArgumentException("runtime control request is required");

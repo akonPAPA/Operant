@@ -78,6 +78,8 @@ public final class AiMemoryDtos {
       UUID sourceId,
       Instant createdAt) {}
 
+  // ----------------------------- requests -----------------------------
+
   /** Optional bounded evidence pointer supplied when creating a memory record. */
   public record AiMemoryEvidenceRefRequest(
       String evidenceType,

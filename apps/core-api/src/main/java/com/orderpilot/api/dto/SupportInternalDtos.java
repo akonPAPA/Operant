@@ -21,6 +21,8 @@ import java.util.UUID;
 public final class SupportInternalDtos {
   private SupportInternalDtos() {}
 
+  // --- support access grants ---
+
   /** Create a scoped, reasoned, expiring support access grant. Backend owns status/expiry/createdBy. */
   public record CreateSupportAccessGrantRequest(
       UUID granteeStaffUserId,
@@ -45,6 +47,8 @@ public final class SupportInternalDtos {
    */
   public record SupportGrantApprovalDecisionRequest(String decisionNote) {}
 
+  // --- tenant diagnostics (read-only, redacted) ---
+
   public record SupportTenantDiagnosticsResponse(
       UUID tenantId,
       String health,
@@ -54,6 +58,8 @@ public final class SupportInternalDtos {
       Instant generatedAt,
       String externalExecution,
       String scope) {}
+
+  // --- maintenance/update audit records ---
 
   public record MaintenanceActionRecordRequest(
       String actionType,
@@ -68,6 +74,8 @@ public final class SupportInternalDtos {
       String targetScope,
       Instant createdAt) {}
 
+  // --- data-repair dry-run requests ---
+
   public record DataRepairDryRunRequest(
       String targetType,
       String reason,
@@ -81,6 +89,8 @@ public final class SupportInternalDtos {
       String executionStatus,
       String summary,
       Instant createdAt) {}
+
+  // --- data-repair approval workflow (OP-CAP-52) ---
 
   /**
    * OP-CAP-52 — request execution approval for an existing data-repair request. Business intent only: an
@@ -111,6 +121,8 @@ public final class SupportInternalDtos {
       Instant approvalExpiresAt,
       String message,
       Instant createdAt) {}
+
+  // --- OP-CAP-54: bounded processing-job status-repair execution ---
 
   /**
    * OP-CAP-54 — the execute command for the one bounded repair target {@code PROCESSING_JOB_STATUS_REPAIR}.

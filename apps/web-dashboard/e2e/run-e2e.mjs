@@ -164,8 +164,10 @@ function restoreTrackedGenerated() {
     const current = pathExistsNoSymlink(path) ? readFileNoSymlink(path) : null;
     if (current === null) {
       createFileNoSymlink(path, before);
+      console.log(`F15: restored canonical ${name} after the E2E dev runtime removed it`);
     } else if (!current.equals(before)) {
       writeExistingFileNoSymlink(path, before);
+      console.log(`F15: restored canonical ${name} after the E2E dev runtime rewrote it`);
     }
   }
 }
@@ -177,6 +179,7 @@ try {
   if (exitCode === 0) {
     prepareStandaloneAssets(appRoot, findStandaloneServerJs(appRoot));
     const before = artifactManifest(prodDist);
+    console.log(`F13 production artifact snapshot: ${before}`);
 
     exitCode = run([playwrightBin, "test"]);
 

@@ -8,6 +8,12 @@ import {
 } from "@/lib/rfq-handoff-api";
 import type { AiWorkSuggestion } from "@/lib/ai-work-api";
 
+// PR #255 Operator Cockpit v1 — guided RFQ-to-quote journey (read/display only).
+// This component renders a coherent, honest, step-by-step view of ONE RFQ handoff so the operator
+// can see the whole demo path at a glance and know the next safe action. It performs no mutation and
+// takes only the operator-safe props the workspace already holds. Where a step has not happened yet,
+// it shows an explicit NOT_* state token instead of a fake counter or an implied production commitment.
+
 type JourneyTone = "done" | "pending" | "muted";
 
 type JourneyStep = {

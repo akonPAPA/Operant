@@ -76,6 +76,8 @@ public class IncidentResponseService {
   public record BreakGlassSession(
       UUID staffActor, UUID tenantId, BreakGlassScope scope, UUID requestId, UUID incidentId) {}
 
+  // --- incident lifecycle ---
+
   /**
    * Create an audit-backed incident for the trusted tenant context. Title and reason are required; severity
    * and type are bounded enums (unknown values fail closed). A CRITICAL incident additionally records a
@@ -145,6 +147,8 @@ public class IncidentResponseService {
   public IncidentRecord getIncident(UUID tenantId, UUID incidentId) {
     return requireIncident(tenantId, incidentId);
   }
+
+  // --- break-glass lifecycle ---
 
   /**
    * Request emergency break-glass access against an OPEN incident. Requires a reason, a bounded scope, and a
@@ -319,6 +323,8 @@ public class IncidentResponseService {
         });
     return new BreakGlassSession(staffActor, tenantId, scope, request.getId(), request.getIncidentId());
   }
+
+  // --- helpers ---
 
   private void denied(UUID staffActor, UUID tenantId, BreakGlassScope scope, UUID requestId, String reasonCode) {
     audit("BREAK_GLASS_AUTHORIZATION_DENIED", ENTITY_BREAK_GLASS,

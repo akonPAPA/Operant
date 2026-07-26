@@ -171,6 +171,8 @@ async function request<T>(path: string, init: RequestInit, fallback: T): Promise
   }
 }
 
+// --- Read (REVIEW_READ) ---
+
 export function listRecentAiWork(limit = 50) {
   return request<AiWorkSuggestion[]>(
     `/api/v1/ai-work/suggestions?limit=${encodeURIComponent(limit)}`,
@@ -195,6 +197,8 @@ export function getAiWorkSuggestion(id: string) {
     null
   );
 }
+
+// --- Mutations (AI_WORK_ACTION) ---
 
 /** Record operator acceptance of the advisory text/idea. Never approves business state. */
 export function acceptAiWorkSuggestion(id: string, req?: AiWorkDecisionRequest) {
@@ -221,6 +225,8 @@ export function rejectAiWorkSuggestion(id: string, req?: AiWorkDecisionRequest) 
     null
   );
 }
+
+// --- Display helpers ---
 
 export function workTypeLabel(type: AiWorkType): string {
   switch (type) {

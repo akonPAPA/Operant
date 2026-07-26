@@ -135,6 +135,8 @@ public class TrustRiskDecisionService {
       UUID actor,
       String correlationId) {}
 
+  // ----------------------------- evaluation -----------------------------
+
   @Transactional
   public TrustRiskDecision evaluate(EvaluateTrustRiskCommand command) {
     if (command.tenantId() == null) {
@@ -383,6 +385,8 @@ public class TrustRiskDecisionService {
         .orElse(0);
   }
 
+  // ----------------------------- manual override -----------------------------
+
   /**
    * Applies a manual override to a decision. Validates tenant ownership, requires a non-blank reason,
    * preserves original contributions/evidence, records an append-only {@link TrustDecisionOverride},
@@ -449,6 +453,8 @@ public class TrustRiskDecisionService {
             tenantId, decisionId, TrustApprovalStatus.PENDING)
         .forEach(req -> req.cancel(now));
   }
+
+  // ----------------------------- read side -----------------------------
 
   @Transactional(readOnly = true)
   public TrustRiskDecisionView getDecisionView(UUID id) {
@@ -533,6 +539,8 @@ public class TrustRiskDecisionService {
         r.getId(), r.getRequiredAction().name(), r.getRequiredPermissionCode(), r.getRequiredRoleCode(),
         r.getReasonCode().name(), r.getStatus().name(), r.getCreatedAt(), r.getSatisfiedAt());
   }
+
+  // ----------------------------- deterministic helpers -----------------------------
 
   static TrustRiskLevel levelForScore(int score) {
     if (score >= 75) {

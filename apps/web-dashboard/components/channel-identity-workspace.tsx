@@ -116,6 +116,8 @@ export function ChannelIdentityWorkspace({
     setAction({ status: "success", message: "Identity updated." });
   }
 
+  // --- Link dialog ---
+
   async function openLinkDialog() {
     setShowLinkDialog(true);
     setSelectedAccountId("");
@@ -175,6 +177,8 @@ export function ChannelIdentityWorkspace({
     refreshIdentityInList(result.data);
   }
 
+  // --- Unlink ---
+
   async function submitUnlink() {
     if (!detail) return;
     setConfirmUnlink(false);
@@ -189,6 +193,8 @@ export function ChannelIdentityWorkspace({
     refreshIdentityInList(result.data);
   }
 
+  // --- Block ---
+
   async function submitBlock() {
     if (!detail) return;
     setConfirmBlock(false);
@@ -202,6 +208,8 @@ export function ChannelIdentityWorkspace({
     }
     refreshIdentityInList(result.data);
   }
+
+  // --- Mark needs-review ---
 
   async function submitNeedsReview() {
     if (!detail) return;

@@ -161,6 +161,7 @@ final class GatewayHeaderSignatureVerifier {
       String permissions,
       long timestampEpoch,
       String nonce) {
+    // Compatibility shim used by older unit tests during migration - rebuilds v2 empty-body form.
     String rawQuery = request.getQueryString() == null ? "" : request.getQueryString();
     return GatewayV2Canonical.build(
         request.getMethod(),

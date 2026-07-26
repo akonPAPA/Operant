@@ -72,6 +72,8 @@ public class DraftReviewService {
     this.clock = clock;
   }
 
+  // --- Draft quote review ---
+
   @Transactional(readOnly = true)
   public DraftQuoteDetail quoteDetail(UUID draftQuoteId) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -117,6 +119,8 @@ public class DraftReviewService {
     return quoteDetail(quote, tenantId);
   }
 
+  // --- Draft order review ---
+
   @Transactional(readOnly = true)
   public DraftOrderDetail orderDetail(UUID draftOrderId) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -160,6 +164,8 @@ public class DraftReviewService {
     actionService.record(actorId, "DRAFT_ORDER", draftOrderId, "DRAFT_ORDER_MARKED_READY", "Draft order marked ready for internal approval", transitionMetadata(from, READY_STATUS, request));
     return orderDetail(order, tenantId);
   }
+
+  // --- OP-CAP-09D: bounded review queues + read-only product picker ---
 
   @Transactional(readOnly = true)
   public List<DraftReviewSummary> quoteReviewQueue(String status, UUID sourceReviewCaseId, String customerRef, int limit) {
@@ -245,6 +251,8 @@ public class DraftReviewService {
     return value == null || value.isBlank() ? null : value.trim();
   }
 
+  // --- validation / guards ---
+
   private void validate(DraftLineCorrectionRequest request, UUID tenantId) {
     if (request == null || !request.hasAnyField()) {
       throw new IllegalArgumentException("At least one correctable field must be provided");
@@ -296,6 +304,8 @@ public class DraftReviewService {
     }
     return productRepository.findByIdAndTenantIdAndDeletedAtIsNull(productId, tenantId).map(p -> p.getName()).orElse(null);
   }
+
+  // --- mapping ---
 
   private DraftQuoteDetail quoteDetail(DraftQuote quote, UUID tenantId) {
     List<DraftQuoteLineView> lines = quoteLineRepository.findByTenantIdAndDraftQuoteId(tenantId, quote.getId()).stream()

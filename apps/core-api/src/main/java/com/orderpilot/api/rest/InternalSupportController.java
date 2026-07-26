@@ -86,6 +86,8 @@ public class InternalSupportController {
     this.staffIdentityResolver = staffIdentityResolver;
   }
 
+  // --- support access grants (STAFF_SUPPORT_GRANT_MANAGE / STAFF_SUPPORT_READ) ---
+
   @PostMapping(BASE + "/access-grants")
   public SupportAccessGrantResponse createGrant(
       @RequestBody CreateSupportAccessGrantRequest request, HttpServletRequest http) {
@@ -107,6 +109,8 @@ public class InternalSupportController {
     UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return toGrantResponse(supportAccessService.revokeGrant(grantId, tenantId, actor));
   }
+
+  // --- support grant approval workflow (STAFF_SUPPORT_GRANT_APPROVE) ---
 
   @PostMapping(BASE + "/access-grants/{grantId}/approve")
   public SupportAccessGrantResponse approveGrant(
@@ -134,6 +138,8 @@ public class InternalSupportController {
     return supportAccessService.listGrants(contextTenant).stream().map(this::toGrantResponse).toList();
   }
 
+  // --- safe read-only tenant diagnostics (STAFF_SUPPORT_READ + DIAGNOSTICS grant) ---
+
   @GetMapping(BASE + "/tenants/{tenantId}/diagnostics")
   public SupportTenantDiagnosticsResponse diagnostics(@PathVariable UUID tenantId, HttpServletRequest http) {
     UUID contextTenant = requireMatchingTenant(tenantId);
@@ -141,6 +147,8 @@ public class InternalSupportController {
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DIAGNOSTICS);
     return diagnosticsService.diagnose(contextTenant);
   }
+
+  // --- OP-CAP-57: read-only internal tenant locator + JIT grant boundary (STAFF_SUPPORT_READ) ---
 
   // Cross-tenant locator: there is intentionally NO single tenant context here. The staff actor is the
   // trusted, backend-resolved request actor (never a body field); the locator service filters discovery to
@@ -165,6 +173,8 @@ public class InternalSupportController {
     UUID actor = staffIdentityResolver.resolveRequired(http).staffUserId();
     return supportTenantLocatorService.supportContext(actor, contextTenant);
   }
+
+  // --- read-only support operations visibility (STAFF_SUPPORT_READ + DIAGNOSTICS grant) ---
 
   @GetMapping(BASE + "/tenants/{tenantId}/operations/summary")
   public SupportOperationsSummaryResponse operationsSummary(@PathVariable UUID tenantId, HttpServletRequest http) {
@@ -197,6 +207,8 @@ public class InternalSupportController {
     return supportOperationsService.dataRepairOperationsView(contextTenant, actor, requestId);
   }
 
+  // --- maintenance/update audit record (STAFF_MAINTENANCE_RECORD + MAINTENANCE grant) ---
+
   @PostMapping(BASE + "/tenants/{tenantId}/maintenance-records")
   public MaintenanceActionRecordResponse recordMaintenance(
       @PathVariable UUID tenantId,
@@ -209,6 +221,8 @@ public class InternalSupportController {
         contextTenant, actor, request.actionType(), request.reason(), request.targetScope());
   }
 
+  // --- controlled data-repair dry-run (STAFF_DATA_REPAIR_DRYRUN + DATA_REPAIR grant) ---
+
   @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/dry-run")
   public DataRepairDryRunResponse dataRepairDryRun(
       @PathVariable UUID tenantId,
@@ -219,6 +233,8 @@ public class InternalSupportController {
     supportAccessService.authorize(actor, contextTenant, StaffSupportScope.DATA_REPAIR);
     return dataRepairService.requestDryRun(contextTenant, actor, request.targetType(), request.reason());
   }
+
+  // --- data-repair execution approval workflow (OP-CAP-52) ---
 
   @PostMapping(BASE + "/tenants/{tenantId}/data-repair-requests/{requestId}/request-approval")
   public DataRepairRequestResponse requestDataRepairApproval(

@@ -156,6 +156,8 @@ public class ValidationEngineService {
         explanation(caseIssues));
   }
 
+  // --- customer ---
+
   private CustomerCandidate matchCustomer(UUID tenantId, ValidateExtractedRequestCommand command, List<ValidationIssueView> issues) {
     if (command.customerAccountId() != null) {
       Optional<CustomerAccount> account = customerAccountRepository.findByIdAndTenantIdAndDeletedAtIsNull(command.customerAccountId(), tenantId);
@@ -184,6 +186,8 @@ public class ValidationEngineService {
   private CustomerCandidate customerView(CustomerAccount account, String matchType) {
     return new CustomerCandidate(account.getId(), account.getAccountCode(), account.getDisplayName(), matchType);
   }
+
+  // --- per line ---
 
   private LineOutcome processLine(UUID tenantId, UUID matchedCustomerId, UUID requestedLocationId, ValidationLineInput line) {
     List<ValidationIssueView> issues = new ArrayList<>();
@@ -448,6 +452,8 @@ public class ValidationEngineService {
     return 1;
   }
 
+  // --- routing ---
+
   private ValidationRiskDecision routeDecision(List<ValidationIssueView> issues, List<ApprovalRequirementView> approvals, boolean injection) {
     boolean blocking = issues.stream().anyMatch(i -> i.severity() == ValidationSeverity.CRITICAL || i.severity() == ValidationSeverity.ERROR);
     if (blocking) {
@@ -511,6 +517,8 @@ public class ValidationEngineService {
     }
     return SUPPORTED_INTENTS.contains(intent.trim().toUpperCase().replace(' ', '_'));
   }
+
+  // --- internal holders ---
 
   private record InventoryOutcome(String status, boolean substituteRequired) {}
 

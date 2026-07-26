@@ -256,6 +256,8 @@ public class OrderJourneyService {
     return refreshFromSource(journey.getSourceType(), journey.getSourceId());
   }
 
+  // --- derivation ---------------------------------------------------------------------------------
+
   private record SourceFacts(Instant createdAt, String status, boolean hasValidationRun, boolean hasExceptionCase,
       Instant approvedAt, boolean isOrder, boolean reconciliationBlocked, UUID customerAccountId,
       String customerDisplayName) {}

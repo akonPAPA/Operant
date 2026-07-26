@@ -98,6 +98,8 @@ public class PaymentObligationService {
     this.clock = clock;
   }
 
+  // ----------------------------- command records -----------------------------
+
   public record CreateObligationCommand(
       UUID tenantId, UUID customerAccountId, PaymentObligationSourceType sourceType, UUID sourceRefId,
       String externalReference, String obligationNumber, BigDecimal amountTotal, String currency,
@@ -116,6 +118,8 @@ public class PaymentObligationService {
   public record CancelObligationCommand(UUID tenantId, UUID obligationId, String reasonSummary) {}
 
   public record WriteOffObligationCommand(UUID tenantId, UUID obligationId, String reasonSummary) {}
+
+  // ----------------------------- commands -----------------------------
 
   @Transactional
   public PaymentObligation createObligation(CreateObligationCommand cmd) {
@@ -379,6 +383,8 @@ public class PaymentObligationService {
     return newlyOverdue;
   }
 
+  // ----------------------------- read side -----------------------------
+
   @Transactional(readOnly = true)
   public PaymentObligationResponse getObligationView(UUID obligationId) {
     UUID tenantId = TenantContext.requireTenantId();
@@ -458,6 +464,8 @@ public class PaymentObligationService {
         recentSignals);
   }
 
+  // ----------------------------- deterministic engine -----------------------------
+
   /** Status for a non-terminal, non-disputed obligation. Overpayment is rejected before this runs. */
   PaymentObligationStatus computeActiveStatus(
       BigDecimal amountTotal, BigDecimal amountPaid, LocalDate dueDate, LocalDate today) {
@@ -491,6 +499,8 @@ public class PaymentObligationService {
     return daysOverdue <= OVERDUE_MEDIUM_MAX_DAYS ? TrustRiskLevel.MEDIUM : TrustRiskLevel.HIGH;
   }
 
+  // ----------------------------- trust integration -----------------------------
+
   private void notifyTrustOnTransition(
       UUID tenantId, PaymentObligationStatus previousStatus, PaymentObligation obligation, Instant now) {
     PaymentObligationStatus next = obligation.getStatus();
@@ -507,6 +517,8 @@ public class PaymentObligationService {
           "Partial payment received; balance remains open.", false, false);
     }
   }
+
+  // ----------------------------- helpers -----------------------------
 
   private PaymentObligation load(UUID tenantId, UUID obligationId) {
     return obligations.findByIdAndTenantId(required(obligationId, "obligationId"), tenantId)

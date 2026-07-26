@@ -6,6 +6,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+/**
+ * Builds the bounded two-slot control credential registry used by the security filter chain.
+ *
+ * <p>The original root properties remain the Operant-staff slot for compatibility. The independent
+ * {@code executor.*} properties are the service-account slot. Each slot has a fixed principal class; a
+ * permission family cannot change the slot's access plane.
+ */
 @Configuration
 public class ControlPlaneCredentialRegistryConfiguration {
   static final String STAFF_PREFIX = "orderpilot.security.control-plane-auth";

@@ -1,3 +1,15 @@
+/**
+ * F06 — browser-safe BFF configuration (public trust boundary).
+ *
+ * This module contains ONLY non-secret, deterministic constants and runtime-mode/env-shape helpers.
+ * It has no Node-runtime imports (no node:crypto, node:buffer, Buffer, redis), no gateway key/secret
+ * material, and no gateway signer. It is therefore safe to import from "use client" modules, the
+ * browser transport, and the Edge graph. Server-only configuration (gateway secret, internal Core
+ * URL, Redis, key decoding, cookie-Secure/origin validation) lives in bff-config.ts, which must never
+ * be reachable from the browser import graph. A transitive-graph test enforces this boundary.
+ *
+ * Single source of truth: bff-config.ts re-exports these symbols so server code has one import site.
+ */
 import { isProductionNodeRuntime } from "./bff-deployment-profile.ts";
 
 // Public cookie/header names (not secrets — the browser must read/attach these).

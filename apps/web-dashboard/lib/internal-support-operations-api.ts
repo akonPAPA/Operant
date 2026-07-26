@@ -35,6 +35,8 @@ export type ApiResult<T> = {
   error?: string;
 };
 
+// --- OP-CAP-57 locator + support-context types ---
+
 // Mirrors SupportTenantLocatorDtos.SupportTenantLocatorResult.
 export type SupportTenantLocatorResult = {
   tenantId: string;
@@ -71,6 +73,8 @@ export type SupportTenantContext = {
   externalExecution: string;
   generatedAt: string;
 };
+
+// --- OP-CAP-55 operations types ---
 
 export type SupportOperationsSummary = {
   tenantId: string;
@@ -192,6 +196,8 @@ function tenantBase(tenantId: string): string {
   return `/api/v1/internal/support/tenants/${encodeURIComponent(tenantId)}`;
 }
 
+// --- OP-CAP-57 locator (cross-tenant: NO X-Tenant-Id header) ---
+
 export function searchSupportTenants(
   query: string,
   params: TenantSearchParams = {}
@@ -208,6 +214,8 @@ export function getSupportTenantContext(tenantId: string): Promise<ApiResult<Sup
   if (!tenantId) return Promise.resolve({ error: NO_TENANT_MESSAGE });
   return getJson<SupportTenantContext>(`${tenantBase(tenantId)}/support-context`, tenantId);
 }
+
+// --- OP-CAP-55 operations (tenant-scoped by the SELECTED tenant handle) ---
 
 export function getSupportOperationsSummary(
   tenantId: string

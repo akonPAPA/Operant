@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Set;
 import org.springframework.core.env.Environment;
 
+/** Shared production-like Spring profile names used by startup configuration guards. */
 public final class ProductionLikeProfiles {
 
   public static final Set<String> PRODUCTION_LIKE_PROFILES =

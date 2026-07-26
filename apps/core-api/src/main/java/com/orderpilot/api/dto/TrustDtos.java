@@ -41,6 +41,11 @@ public final class TrustDtos {
       Instant createdAt,
       List<DocumentTrustSignalView> signals) {}
 
+  // ---------------------------------------------------------------------------
+  // OP-CAP-17B Counterparty Trust Profile Foundation — read-only views.
+  // Never expose bank fingerprint/hash, raw evidence, account numbers, or internal notes.
+  // ---------------------------------------------------------------------------
+
   public record CounterpartyTrustCounts(
       long totalDocumentCount,
       long highRiskDocumentCount,
@@ -77,6 +82,11 @@ public final class TrustDtos {
       CounterpartyTrustCounts counts,
       List<CounterpartyTrustSignalView> recentSignals,
       List<CounterpartyTrustSnapshotView> recentSnapshots) {}
+
+  // ---------------------------------------------------------------------------
+  // OP-CAP-17D Trust Risk Decision Engine — deterministic risk decision surface.
+  // Never expose raw document/OCR/prompt text, bank credentials, account numbers, or secrets.
+  // ---------------------------------------------------------------------------
 
   /** Request to evaluate a deterministic risk decision for one business subject. */
   public record TrustRiskEvaluationRequest(

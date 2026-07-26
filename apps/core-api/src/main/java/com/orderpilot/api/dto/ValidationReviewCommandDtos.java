@@ -166,6 +166,10 @@ public final class ValidationReviewCommandDtos {
       String clientRequestId,
       String message) {}
 
+  // ---------------------------------------------------------------------------------------------
+  // OP-CAP-15C — advisory per-line draftability hints + review-origin draft queue (read-only).
+  // ---------------------------------------------------------------------------------------------
+
   /** Per-line draftability reason codes (advisory UI hints; the create endpoint stays authoritative). */
   public static final String REASON_LINE_READY = "LINE_READY";
   public static final String REASON_BLOCKING_ISSUE_UNRESOLVED = "BLOCKING_ISSUE_UNRESOLVED";
@@ -351,6 +355,14 @@ public final class ValidationReviewCommandDtos {
       String draftTypeFilter,
       String statusFilter) {}
 
+  // ---------------------------------------------------------------------------------------------
+  // OP-CAP-15H — read-only remediation lineage DETAIL for one review-origin draft. Makes the 15G
+  // queue summary explainable: per draft line, the structured OperatorAction lineage (corrections,
+  // issue resolutions, approvals) plus run-scoped structured actions that could not be attached to a
+  // draft line. Derived ONLY from tenant-scoped records with stable ids — no free-text/notes parsing,
+  // no raw AI payload. Read-only: creates no draft, emits no audit, writes nothing.
+  // ---------------------------------------------------------------------------------------------
+
   /** OP-CAP-15H limitation token: the draft has no originating validation run, so lineage is not derivable. */
   public static final String REMEDIATION_DRAFT_NOT_REVIEW_ORIGIN = "draft_not_review_origin";
   /** OP-CAP-15H limitation token: a draft line carries no source extracted-line-item id (no line lineage). */
@@ -473,6 +485,13 @@ public final class ValidationReviewCommandDtos {
       String workspacePath,
       String reviewPath,
       String externalExecution) {}
+
+  // ---------------------------------------------------------------------------------------------
+  // OP-CAP-15J — bounded recent-window remediation rollup TILE. A small, read-only, tenant-scoped
+  // at-a-glance aggregate over the most recent drafts, built from the SAME structured per-draft
+  // derivation as OP-CAP-15G/15I (no per-line detail recompute, no free-text parsing, no AI). It is a
+  // bounded recent-window summary — NOT a full tenant analytics system and not an audit redesign.
+  // ---------------------------------------------------------------------------------------------
 
   /** Recent remediation rollup window bounds (drafts inspected). */
   public static final int DEFAULT_RECENT_ROLLUP_LIMIT = 50;

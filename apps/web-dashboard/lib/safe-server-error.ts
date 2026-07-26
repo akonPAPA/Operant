@@ -1,3 +1,14 @@
+/**
+ * F03 — bounded error contract for the server RSC read path (and reused by the browser UI mapper
+ * in F07). Framework-free and secret-free so it is testable and safe on any runtime.
+ *
+ * Raw caught exceptions must never become page-consumed error text: a thrown error can carry a
+ * Redis/Core URL, hostname, port, filesystem path, stack frame, SQL fragment, or secret-like token.
+ * This module maps failures to a STABLE public code + a bounded, non-technical message + an optional
+ * correlation id. The returned message is a constant — never derived from the exception — so no
+ * technical detail can leak into the response or the rendered Server Component output. Technical
+ * detail goes only to a redacting logger.
+ */
 
 export type PublicServerErrorCode =
   | "AUTH_REQUIRED"
