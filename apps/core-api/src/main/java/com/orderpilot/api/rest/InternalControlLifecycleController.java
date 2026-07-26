@@ -118,8 +118,14 @@ public class InternalControlLifecycleController {
         .body(new ControlLifecycleError(exception.reasonCode()));
   }
 
-  @ExceptionHandler({IllegalArgumentException.class, NullPointerException.class})
-  public ResponseEntity<ControlLifecycleError> handleInvalidRuntimeContract(RuntimeException exception) {
+  /**
+   * A domain/boundary validation failure of the executor's artifact report is a bounded client-facing
+   * 400 with a fixed non-enumerating code (never the raw exception message). NullPointerException is
+   * deliberately NOT handled here: an unexpected NPE is an internal programming defect and must fall
+   * through to the redacted global 500 contract rather than be disguised as an invalid client report.
+   */
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<ControlLifecycleError> handleInvalidRuntimeContract(IllegalArgumentException exception) {
     return ResponseEntity.badRequest().body(new ControlLifecycleError("INVALID_BACKUP_ARTIFACT_REPORT"));
   }
 

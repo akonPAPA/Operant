@@ -9,6 +9,7 @@ import com.orderpilot.domain.control.LifecycleOperationAuditRepository;
 import com.orderpilot.domain.control.LifecycleOperationRepository;
 import java.time.Clock;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,18 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class LifecycleOperationAuditor {
   public static final String AUDIT_LOGGER_NAME =
       "com.orderpilot.security.control.audit.LifecycleOperation";
+
+  /**
+   * Fixed backend-owned system principal for internal lifecycle mutations (STAGED -&gt; ORPHANED during
+   * re-lease). The re-leasing executor is not the actor of this transition; it is preserved only as
+   * bounded {@code triggerExecutorFingerprint} metadata, never as the audit principal fingerprint.
+   */
+  public static final String SYSTEM_RELEASER_FINGERPRINT = "system:lifecycle-releaser";
+
+  // Bounded charset for values embedded into structured audit metadata JSON. Matches artifact handles
+  // (ba_[0-9a-f]{24}) and principal fingerprints; forbids quotes, backslashes, and control characters,
+  // so validated values can be quoted directly without arbitrary-string JSON concatenation.
+  private static final Pattern SAFE_METADATA_VALUE = Pattern.compile("[0-9A-Za-z:_-]{1,80}");
 
   private final Logger auditLogger;
   private final LifecycleOperationAuditRepository auditRepository;
@@ -142,17 +155,18 @@ public class LifecycleOperationAuditor {
   public void artifactOrphaned(
       LifecycleOperation operation,
       BackupArtifact artifact,
-      String executorFingerprint,
+      String triggerExecutorFingerprint,
       String failureCode) {
     append(operation, artifact, LifecycleOperationAuditEventType.BACKUP_ARTIFACT_ORPHANED,
-        LifecycleOperationAuditPrincipalType.SYSTEM, executorFingerprint, failureCode,
-        artifactMetadata(artifact));
+        LifecycleOperationAuditPrincipalType.SYSTEM, SYSTEM_RELEASER_FINGERPRINT, failureCode,
+        orphanMetadata(artifact, triggerExecutorFingerprint));
     infoAfterCommit(
-        "lifecycle-operation event=BACKUP_ARTIFACT_ORPHANED operationId={} artifactHandle={} state={} failureCode={}",
+        "lifecycle-operation event=BACKUP_ARTIFACT_ORPHANED operationId={} artifactHandle={} state={} failureCode={} systemFingerprint={}",
         operation.getPublicId(),
         artifact.getPublicHandle(),
         artifact.getState(),
-        failureCode);
+        failureCode,
+        SYSTEM_RELEASER_FINGERPRINT);
   }
 
   public void operationSucceeded(LifecycleOperation operation, String executorFingerprint) {
@@ -270,6 +284,18 @@ public class LifecycleOperationAuditor {
   }
 
   private static String artifactMetadata(BackupArtifact artifact) {
-    return "{\"artifactHandle\":\"" + artifact.getPublicHandle() + "\"}";
+    return "{\"artifactHandle\":" + jsonSafeValue(artifact.getPublicHandle()) + "}";
+  }
+
+  private static String orphanMetadata(BackupArtifact artifact, String triggerExecutorFingerprint) {
+    return "{\"artifactHandle\":" + jsonSafeValue(artifact.getPublicHandle())
+        + ",\"triggerExecutorFingerprint\":" + jsonSafeValue(triggerExecutorFingerprint) + "}";
+  }
+
+  private static String jsonSafeValue(String value) {
+    if (value == null || !SAFE_METADATA_VALUE.matcher(value).matches()) {
+      throw new IllegalArgumentException("AUDIT_METADATA_VALUE_INVALID");
+    }
+    return "\"" + value + "\"";
   }
 }

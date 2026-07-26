@@ -85,7 +85,10 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   @BeforeEach
   void clean() {
     reset(auditor);
-    jdbcTemplate.update("delete from lifecycle_operation_audit");
+    // lifecycle_operation_audit is append-only: the V68 BEFORE UPDATE OR DELETE trigger
+    // (trg_lifecycle_operation_audit_append_only) rejects any row DELETE. Test isolation therefore uses
+    // TRUNCATE, which does not fire row-level triggers, instead of a forbidden production-style delete.
+    jdbcTemplate.update("truncate table lifecycle_operation_audit");
     jdbcTemplate.update("delete from backup_artifact");
     jdbcTemplate.update("delete from lifecycle_operation");
   }
@@ -462,6 +465,22 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
     assertThat(orphaned.getState()).isEqualTo(BackupArtifactState.ORPHANED);
     assertThat(orphaned.getFailureCode()).isEqualTo("EXPIRED_LEASE_REPLACED");
     assertThat(auditEvents(first)).contains(LifecycleOperationAuditEventType.BACKUP_ARTIFACT_ORPHANED);
+
+    // The re-leasing executor is NOT the audit principal of the internal orphan transition: the
+    // principal is the fixed backend system releaser, and the executor that triggered the re-lease is
+    // preserved only as bounded metadata (never as the principal fingerprint).
+    String orphanClause = " from lifecycle_operation_audit where lifecycle_operation_id = ?"
+        + " and event_type = 'BACKUP_ARTIFACT_ORPHANED'";
+    assertThat(jdbcTemplate.queryForObject("select principal_type" + orphanClause, String.class, first.getId()))
+        .isEqualTo("SYSTEM");
+    assertThat(jdbcTemplate.queryForObject(
+        "select principal_fingerprint" + orphanClause, String.class, first.getId()))
+        .isEqualTo(LifecycleOperationAuditor.SYSTEM_RELEASER_FINGERPRINT);
+    String orphanMetadata =
+        jdbcTemplate.queryForObject("select metadata::text" + orphanClause, String.class, first.getId());
+    assertThat(orphanMetadata)
+        .contains("\"artifactHandle\":\"" + staged.getPublicHandle() + "\"")
+        .contains("\"triggerExecutorFingerprint\":\"" + SECOND_EXEC_FP + "\"");
   }
 
   @Test
@@ -478,6 +497,43 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
             + "ciphertext_sha256 = null, archive_validated = null, archive_entry_count = null "
             + "where public_handle = ?",
         staged.getPublicHandle()))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void lifecycleOperationAuditIsAppendOnlyAtPostgreSql() {
+    // request + lease already wrote durable audit rows for this operation.
+    LifecycleOperation leased = leasedOperation("idem-audit-append-only");
+    Long auditId = jdbcTemplate.queryForObject(
+        "select id from lifecycle_operation_audit where lifecycle_operation_id = ? order by id limit 1",
+        Long.class, leased.getId());
+    assertThat(auditId).isNotNull();
+
+    // Even a no-op-valued UPDATE and a DELETE are rejected by trg_lifecycle_operation_audit_append_only.
+    assertThatThrownBy(() -> jdbcTemplate.update(
+        "update lifecycle_operation_audit set principal_fingerprint = principal_fingerprint where id = ?",
+        auditId))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(() -> jdbcTemplate.update(
+        "delete from lifecycle_operation_audit where id = ?", auditId))
+        .isInstanceOf(DataIntegrityViolationException.class);
+
+    // The durable evidence row survives both rejected mutations.
+    assertThat(jdbcTemplate.queryForObject(
+        "select count(*) from lifecycle_operation_audit where id = ?", Integer.class, auditId))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void availableArtifactRejectsNonCanonicalToolAndSchemaVersionsAtPostgreSql() {
+    LifecycleOperation leased = leasedOperation("idem-canonical-version");
+    // Everything is valid except a raw pg tool banner in postgres_server_version.
+    assertThatThrownBy(() -> insertAvailableWithVersions(
+        handle(0x9210), leased.getId(), "PostgreSQL 16", "16.4", "16.4", "V68"))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    // A schema_version missing the canonical 'V' prefix is likewise rejected.
+    assertThatThrownBy(() -> insertAvailableWithVersions(
+        handle(0x9211), leased.getId(), "16.4", "16.4", "16.4", "68"))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -586,9 +642,9 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
             "AES-256-GCM",
             "v1",
             "backup-key-2026-07",
-            "PostgreSQL 16",
-            "pg_dump 16",
-            "pg_restore 16",
+            "16.4",
+            "16.4",
+            "16.4",
             "V68",
             128L,
             SHA,
@@ -650,6 +706,35 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
         """, publicHandle, operationId, storageKey, executionAttempt, fencingToken);
   }
 
+  private void insertAvailableWithVersions(
+      String publicHandle,
+      UUID operationId,
+      String postgresServerVersion,
+      String pgDumpVersion,
+      String pgRestoreVersion,
+      String schemaVersion) {
+    // Valid AVAILABLE row except for the caller-provided version fields, isolating the failure cause to
+    // the canonical pg-tool / schema version CHECK constraints.
+    jdbcTemplate.update("""
+        insert into backup_artifact (
+          public_handle, lifecycle_operation_id, state, backup_format, encryption_algorithm,
+          encryption_envelope_version, encryption_key_identifier, created_at, updated_at, available_at,
+          postgres_server_version, pg_dump_version, pg_restore_version, schema_version,
+          encrypted_byte_size, ciphertext_sha256, archive_validated, archive_entry_count, storage_key,
+          execution_attempt, fencing_token
+        ) values (?, ?, 'AVAILABLE', 'POSTGRES_CUSTOM', 'AES-256-GCM', 'v1', 'backup-key-2026-07',
+          now(), now(), now(), ?, ?, ?, ?, 128, ?, true, 12,
+          'lifecycle/backup/op/attempt-1/token-1/artifact.dump.enc', 1, 1)
+        """,
+        publicHandle,
+        operationId,
+        postgresServerVersion,
+        pgDumpVersion,
+        pgRestoreVersion,
+        schemaVersion,
+        SHA);
+  }
+
   private void insertAvailable(
       String publicHandle,
       UUID operationId,
@@ -687,7 +772,7 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
           encrypted_byte_size, ciphertext_sha256, archive_validated, archive_entry_count, storage_key,
           execution_attempt, fencing_token
         ) values (?, ?, 'AVAILABLE', 'POSTGRES_CUSTOM', ?, ?, ?, coalesce(?, now()), coalesce(?, now()), ?,
-          'PostgreSQL 16', 'pg_dump 16', 'pg_restore 16', 'V68', ?, ?, ?, 1, ?, ?, ?)
+          '16.4', '16.4', '16.4', 'V68', ?, ?, ?, 1, ?, ?, ?)
         """,
         publicHandle,
         operationId,

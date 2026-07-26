@@ -1,4 +1,4 @@
-﻿-- P1-E2B-02 Durable backup artifact authority and deployment-global lifecycle audit.
+-- P1-E2B-02 Durable backup artifact authority and deployment-global lifecycle audit.
 -- PostgreSQL rows are the authority for artifact state; filesystem presence alone is not.
 
 CREATE TABLE backup_artifact (
@@ -61,6 +61,17 @@ CREATE TABLE backup_artifact (
   CONSTRAINT ck_backup_artifact_key_reference CHECK (
     encryption_key_identifier IS NULL OR encryption_key_identifier ~ '^[0-9A-Za-z:_-]{1,80}$'
   ),
+  -- Canonical restore provenance. Identical to the Java Patterns
+  -- BackupArtifact.CANONICAL_TOOL_VERSION_REGEX / CANONICAL_SCHEMA_VERSION_REGEX. Stored provenance has
+  -- exactly one representation; raw tool banners ('PostgreSQL 16', 'pg_dump 16', 'v16', '16.') are rejected.
+  CONSTRAINT ck_backup_artifact_pg_versions CHECK (
+    (postgres_server_version IS NULL OR postgres_server_version ~ '^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$')
+    AND (pg_dump_version IS NULL OR pg_dump_version ~ '^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$')
+    AND (pg_restore_version IS NULL OR pg_restore_version ~ '^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$')
+  ),
+  CONSTRAINT ck_backup_artifact_schema_version CHECK (
+    schema_version IS NULL OR schema_version ~ '^V[0-9]{1,6}(\.[0-9]{1,6}){0,3}$'
+  ),
   CONSTRAINT ck_backup_artifact_state_specific CHECK (
     (
       state = 'STAGED'
@@ -90,13 +101,13 @@ CREATE TABLE backup_artifact (
       AND encryption_key_identifier IS NOT NULL
       AND encryption_key_identifier ~ '^[0-9A-Za-z:_-]{1,80}$'
       AND postgres_server_version IS NOT NULL
-      AND length(postgres_server_version) BETWEEN 1 AND 80
+      AND postgres_server_version ~ '^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$'
       AND pg_dump_version IS NOT NULL
-      AND length(pg_dump_version) BETWEEN 1 AND 80
+      AND pg_dump_version ~ '^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$'
       AND pg_restore_version IS NOT NULL
-      AND length(pg_restore_version) BETWEEN 1 AND 80
+      AND pg_restore_version ~ '^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$'
       AND schema_version IS NOT NULL
-      AND length(schema_version) BETWEEN 1 AND 40
+      AND schema_version ~ '^V[0-9]{1,6}(\.[0-9]{1,6}){0,3}$'
       AND encrypted_byte_size IS NOT NULL
       AND encrypted_byte_size > 0
       AND ciphertext_sha256 IS NOT NULL
@@ -252,34 +263,16 @@ CREATE INDEX idx_lifecycle_operation_audit_artifact_order
   WHERE backup_artifact_id IS NOT NULL;
 
 -- Terminal artifact states are immutable history. Only STAGED may transition.
+-- Whole-row comparison (NEW IS DISTINCT FROM OLD) is future-safe: it also protects created_at,
+-- updated_at, and any column added to backup_artifact later without editing this trigger. An exact
+-- no-op UPDATE is still permitted because NEW is not distinct from OLD.
 CREATE OR REPLACE FUNCTION backup_artifact_forbid_terminal_rewrite()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
   IF OLD.state IN ('AVAILABLE', 'REJECTED', 'ORPHANED')
-     AND (
-       NEW.state IS DISTINCT FROM OLD.state
-       OR NEW.failure_code IS DISTINCT FROM OLD.failure_code
-       OR NEW.available_at IS DISTINCT FROM OLD.available_at
-       OR NEW.encryption_algorithm IS DISTINCT FROM OLD.encryption_algorithm
-       OR NEW.encryption_envelope_version IS DISTINCT FROM OLD.encryption_envelope_version
-       OR NEW.encryption_key_identifier IS DISTINCT FROM OLD.encryption_key_identifier
-       OR NEW.postgres_server_version IS DISTINCT FROM OLD.postgres_server_version
-       OR NEW.pg_dump_version IS DISTINCT FROM OLD.pg_dump_version
-       OR NEW.pg_restore_version IS DISTINCT FROM OLD.pg_restore_version
-       OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
-       OR NEW.encrypted_byte_size IS DISTINCT FROM OLD.encrypted_byte_size
-       OR NEW.ciphertext_sha256 IS DISTINCT FROM OLD.ciphertext_sha256
-       OR NEW.archive_validated IS DISTINCT FROM OLD.archive_validated
-       OR NEW.archive_entry_count IS DISTINCT FROM OLD.archive_entry_count
-       OR NEW.public_handle IS DISTINCT FROM OLD.public_handle
-       OR NEW.storage_key IS DISTINCT FROM OLD.storage_key
-       OR NEW.execution_attempt IS DISTINCT FROM OLD.execution_attempt
-       OR NEW.fencing_token IS DISTINCT FROM OLD.fencing_token
-       OR NEW.lifecycle_operation_id IS DISTINCT FROM OLD.lifecycle_operation_id
-       OR NEW.backup_format IS DISTINCT FROM OLD.backup_format
-     ) THEN
+     AND NEW IS DISTINCT FROM OLD THEN
     RAISE EXCEPTION 'BACKUP_ARTIFACT_TERMINAL_IMMUTABLE'
       USING ERRCODE = 'check_violation';
   END IF;
@@ -291,3 +284,24 @@ CREATE TRIGGER trg_backup_artifact_forbid_terminal_rewrite
   BEFORE UPDATE ON backup_artifact
   FOR EACH ROW
   EXECUTE FUNCTION backup_artifact_forbid_terminal_rewrite();
+
+-- Fix D: lifecycle_operation_audit is durable security evidence. Enforce append-only at the database
+-- layer (INSERT and SELECT only). JPA @Immutable and the repository's insert/read-only method surface
+-- are application-level intent; this BEFORE UPDATE OR DELETE trigger is the authoritative guard. There
+-- is intentionally NO request/session/HTTP/support bypass. Isolated Testcontainers cleanup uses an
+-- explicit test-only TRUNCATE strategy (which does not fire row-level triggers), never a production
+-- repository delete API. Long-term retention/archival is out of scope for this migration.
+CREATE OR REPLACE FUNCTION lifecycle_operation_audit_append_only()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'LIFECYCLE_OPERATION_AUDIT_APPEND_ONLY'
+    USING ERRCODE = 'check_violation';
+END;
+$$;
+
+CREATE TRIGGER trg_lifecycle_operation_audit_append_only
+  BEFORE UPDATE OR DELETE ON lifecycle_operation_audit
+  FOR EACH ROW
+  EXECUTE FUNCTION lifecycle_operation_audit_append_only();

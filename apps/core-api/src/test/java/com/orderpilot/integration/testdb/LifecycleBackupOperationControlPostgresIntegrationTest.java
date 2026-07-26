@@ -50,7 +50,10 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
 
   @BeforeEach
   void clean() {
-    jdbcTemplate.update("delete from lifecycle_operation_audit");
+    // lifecycle_operation_audit is append-only: the V68 BEFORE UPDATE OR DELETE trigger
+    // (trg_lifecycle_operation_audit_append_only) rejects any row DELETE. Test isolation therefore uses
+    // TRUNCATE, which does not fire row-level triggers, instead of a forbidden production-style delete.
+    jdbcTemplate.update("truncate table lifecycle_operation_audit");
     jdbcTemplate.update("delete from backup_artifact");
     jdbcTemplate.update("delete from lifecycle_operation");
   }

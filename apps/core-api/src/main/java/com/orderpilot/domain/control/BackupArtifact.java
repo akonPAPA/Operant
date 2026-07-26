@@ -36,6 +36,23 @@ public class BackupArtifact {
   public static final String ENCRYPTION_ALGORITHM_AES_256_GCM = "AES-256-GCM";
   public static final String ENCRYPTION_ENVELOPE_VERSION_V1 = "v1";
 
+  /**
+   * Canonical PostgreSQL tool version format shared identically with the PostgreSQL CHECK
+   * {@code ck_backup_artifact_pg_versions} in V68. Accepts MAJOR, MAJOR.MINOR, MAJOR.MINOR.PATCH
+   * (e.g. {@code 16}, {@code 16.3}, {@code 16.3.1}); rejects tool banners such as
+   * {@code "PostgreSQL 16"} / {@code "pg_dump 16"}, {@code v16}, and any whitespace/control noise.
+   * The future executor must parse and normalize tool output before reporting.
+   */
+  public static final String CANONICAL_TOOL_VERSION_REGEX = "^[0-9]{1,3}(\\.[0-9]{1,3}){0,2}$";
+
+  /**
+   * Canonical Flyway schema version format shared identically with the PostgreSQL CHECK
+   * {@code ck_backup_artifact_schema_version} in V68 (e.g. {@code V68}, {@code V68.1}, {@code V68.1.2}).
+   */
+  public static final String CANONICAL_SCHEMA_VERSION_REGEX = "^V[0-9]{1,6}(\\.[0-9]{1,6}){0,3}$";
+
+  private static final Pattern CANONICAL_TOOL_VERSION = Pattern.compile(CANONICAL_TOOL_VERSION_REGEX);
+  private static final Pattern CANONICAL_SCHEMA_VERSION = Pattern.compile(CANONICAL_SCHEMA_VERSION_REGEX);
   private static final Pattern SHA256_HEX = Pattern.compile("[0-9a-f]{64}");
   private static final Pattern PUBLIC_HANDLE = Pattern.compile("ba_[0-9a-f]{24}");
   private static final Pattern SAFE_STORAGE_KEY =
@@ -172,10 +189,12 @@ public class BackupArtifact {
         safe.encryptionEnvelopeVersion(), ENCRYPTION_ENVELOPE_VERSION_V1, "envelopeVersion");
     this.encryptionKeyIdentifier = requirePattern(
         safe.encryptionKeyIdentifier(), "keyIdentifier", SAFE_KEY_IDENTIFIER);
-    this.postgresServerVersion = requireBounded(safe.postgresServerVersion(), "postgresServerVersion", 80);
-    this.pgDumpVersion = requireBounded(safe.pgDumpVersion(), "pgDumpVersion", 80);
-    this.pgRestoreVersion = requireBounded(safe.pgRestoreVersion(), "pgRestoreVersion", 80);
-    this.schemaVersion = requireBounded(safe.schemaVersion(), "schemaVersion", 40);
+    this.postgresServerVersion =
+        requirePattern(safe.postgresServerVersion(), "postgresServerVersion", CANONICAL_TOOL_VERSION);
+    this.pgDumpVersion = requirePattern(safe.pgDumpVersion(), "pgDumpVersion", CANONICAL_TOOL_VERSION);
+    this.pgRestoreVersion =
+        requirePattern(safe.pgRestoreVersion(), "pgRestoreVersion", CANONICAL_TOOL_VERSION);
+    this.schemaVersion = requirePattern(safe.schemaVersion(), "schemaVersion", CANONICAL_SCHEMA_VERSION);
     this.encryptedByteSize = safe.encryptedByteSize();
     this.ciphertextSha256 = safe.ciphertextSha256();
     this.archiveValidated = true;
@@ -238,14 +257,6 @@ public class BackupArtifact {
       throw new IllegalArgumentException(field + "_INVALID");
     }
     return value;
-  }
-
-  private static String requireBounded(String value, String field, int max) {
-    String safe = requireText(value, field);
-    if (safe.length() > max) {
-      throw new IllegalArgumentException(field + "_TOO_LONG");
-    }
-    return safe;
   }
 
   public UUID getId() {
