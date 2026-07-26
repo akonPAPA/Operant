@@ -46,13 +46,20 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  *
  * <p><b>Scope of this proof.</b> This is a MockMvc test: it proves HTTP status / error-code / redaction
  * mapping ONLY. It deliberately does NOT and CANNOT prove that a real service which mutates and then
- * throws would roll back, because the collaborators are mocks. Transactional rollback on unexpected
- * service failure (lifecycle operation unchanged, artifact unchanged, no success audit, no outbox /
- * connector / storage / process side effect) is proven separately against real PostgreSQL by
- * {@code BackupArtifactAuthorityPostgresIntegrationTest} (e.g.
- * {@code artifactAvailableAuditFailureRollsBackAvailableAndSucceeded},
- * {@code operationSuccessAuditFailureRollsBackAvailableTransition}). Those are PostgreSQL/Docker-gated and
- * are NOT_PROVEN locally when Docker is unavailable.
+ * throws would roll back, because the collaborators are mocks.
+ *
+ * <p><b>What the PostgreSQL suite actually proves (honest boundary):</b>
+ * {@code BackupArtifactAuthorityPostgresIntegrationTest} proves rollback for the SELECTED
+ * audit-persistence failure scenarios only — where an injected auditor failure aborts the surrounding
+ * transaction (e.g. {@code artifactAvailableAuditFailureRollsBackAvailableAndSucceeded},
+ * {@code operationSuccessAuditFailureRollsBackAvailableTransition}). Status:
+ * {@code SELECTED_AUDIT_FAILURE_ROLLBACK_TEST_IMPLEMENTED}. Those tests are PostgreSQL/Docker-gated, so
+ * {@code POSTGRESQL_RUNTIME_NOT_PROVEN} locally when Docker is unavailable.
+ *
+ * <p>They do NOT prove that every arbitrary unexpected failure (e.g. a {@link NullPointerException} at an
+ * arbitrary service location) rolls back at every possible service location:
+ * {@code ARBITRARY_UNEXPECTED_SERVICE_FAILURE_ROLLBACK_NOT_GENERALLY_PROVEN}. Scenario B below proves
+ * ONLY that such an NPE maps to the redacted 500 contract — not that a mutating service rolled back.
  *
  * <p>The reflection assertion below is a secondary guard, not the behavioural proof.
  */
@@ -143,8 +150,10 @@ class InternalControlLifecycleControllerExceptionMappingTest {
     assertThat(body).doesNotContain("NullPointerException");
     // The invoked method is completeReport on the artifact service — positively verified as reached once.
     // This proves HTTP/error mapping ONLY; it does NOT prove the mutating service rolled back (mocks do
-    // not mutate). Transactional rollback is proven by BackupArtifactAuthorityPostgresIntegrationTest
-    // (PostgreSQL/Docker-gated; NOT_PROVEN locally without Docker) — see the class Javadoc.
+    // not mutate). Rollback for SELECTED audit-failure scenarios is proven by
+    // BackupArtifactAuthorityPostgresIntegrationTest (PostgreSQL/Docker-gated; POSTGRESQL_RUNTIME_NOT_PROVEN
+    // locally without Docker). Arbitrary unexpected service-failure rollback at every location is
+    // ARBITRARY_UNEXPECTED_SERVICE_FAILURE_ROLLBACK_NOT_GENERALLY_PROVEN — see the class Javadoc.
     verify(artifactService).completeReport(any(FinalizeReportCommand.class));
   }
 
