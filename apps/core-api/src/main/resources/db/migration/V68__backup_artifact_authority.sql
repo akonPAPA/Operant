@@ -1,6 +1,21 @@
 -- P1-E2B-02 Durable backup artifact authority and deployment-global lifecycle audit.
 -- PostgreSQL rows are the authority for artifact state; filesystem presence alone is not.
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM lifecycle_operation
+    WHERE operation_type = 'BACKUP'
+      AND state = 'SUCCEEDED'
+      AND result_code = 'BACKUP_COMPLETED'
+  ) THEN
+    RAISE EXCEPTION 'V68_LEGACY_BACKUP_SUCCESS_REQUIRES_RECONCILIATION'
+      USING ERRCODE = 'P0001';
+  END IF;
+END;
+$$;
+
 CREATE TABLE backup_artifact (
   id                            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   public_handle                 VARCHAR(48) NOT NULL,
@@ -305,3 +320,19 @@ CREATE TRIGGER trg_lifecycle_operation_audit_append_only
   BEFORE UPDATE OR DELETE ON lifecycle_operation_audit
   FOR EACH ROW
   EXECUTE FUNCTION lifecycle_operation_audit_append_only();
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'operant_runtime') THEN
+    GRANT SELECT, INSERT ON lifecycle_operation_audit TO operant_runtime;
+    GRANT USAGE, SELECT ON SEQUENCE lifecycle_operation_audit_id_seq TO operant_runtime;
+    REVOKE UPDATE, DELETE, TRUNCATE ON lifecycle_operation_audit FROM operant_runtime;
+
+    GRANT SELECT, INSERT, UPDATE ON backup_artifact TO operant_runtime;
+    REVOKE DELETE, TRUNCATE ON backup_artifact FROM operant_runtime;
+
+    GRANT SELECT, INSERT, UPDATE ON lifecycle_operation TO operant_runtime;
+    REVOKE DELETE, TRUNCATE ON lifecycle_operation FROM operant_runtime;
+  END IF;
+END;
+$$;

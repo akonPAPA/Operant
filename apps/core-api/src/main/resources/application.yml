@@ -20,7 +20,7 @@ spring:
       # dependency probe deadline (6s) so the control readiness/diagnostics probe never out-waits it.
       connection-timeout: "${ORDERPILOT_DB_CONNECTION_TIMEOUT_MS:5000}"
   flyway:
-    enabled: true
+    enabled: "${SPRING_FLYWAY_ENABLED:true}"
   jpa:
     hibernate:
       ddl-auto: none

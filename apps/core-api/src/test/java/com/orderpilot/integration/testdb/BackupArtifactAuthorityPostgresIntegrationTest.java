@@ -109,6 +109,75 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
   }
 
   @Test
+  void v68RejectsLegacySuccessfulBackupWithoutArtifactEvidence() {
+    String schema = "p1e2b_legacy_success_" + sequence.incrementAndGet();
+    try {
+      flywayForSchema(schema, "67").migrate();
+      jdbcTemplate.update("""
+          insert into %s.lifecycle_operation (
+            public_id, operation_type, state, idempotency_key_hash, requested_by_fingerprint,
+            result_code, attempt, fencing_token, lease_expires_at, leased_by_fingerprint,
+            created_at, updated_at
+          ) values ('op_legacy_success', 'BACKUP', 'SUCCEEDED', repeat('a', 64), repeat('b', 64),
+            'BACKUP_COMPLETED', 1, 1, now() + interval '5 minutes', repeat('c', 64), now(), now())
+          """.formatted(schema));
+      Map<String, Object> before = jdbcTemplate.queryForMap(
+          "select public_id, operation_type, state, result_code, attempt, fencing_token "
+              + "from " + schema + ".lifecycle_operation where public_id = 'op_legacy_success'");
+
+      Throwable thrown = catchThrowable(() -> flywayForSchema(schema, null).migrate());
+
+      assertThat(thrown)
+          .hasMessageContaining("V68_LEGACY_BACKUP_SUCCESS_REQUIRES_RECONCILIATION");
+      assertThat(jdbcTemplate.queryForObject("select to_regclass(?)::text", String.class, schema + ".backup_artifact"))
+          .isNull();
+      assertThat(jdbcTemplate.queryForObject(
+          "select to_regclass(?)::text", String.class, schema + ".lifecycle_operation_audit"))
+          .isNull();
+      assertThat(jdbcTemplate.queryForObject(
+          "select count(*) from " + schema + ".flyway_schema_history where version = '68' and success = true",
+          Integer.class)).isZero();
+      assertThat(jdbcTemplate.queryForMap(
+          "select public_id, operation_type, state, result_code, attempt, fencing_token "
+              + "from " + schema + ".lifecycle_operation where public_id = 'op_legacy_success'"))
+          .isEqualTo(before);
+    } finally {
+      jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
+  }
+
+  @Test
+  void v68AllowsNonSuccessfulLegacyRowsWithoutFabricatingAvailableArtifacts() {
+    String schema = "p1e2b_legacy_non_success_" + sequence.incrementAndGet();
+    try {
+      flywayForSchema(schema, "67").migrate();
+      jdbcTemplate.update("""
+          insert into %s.lifecycle_operation (
+            public_id, operation_type, state, idempotency_key_hash, requested_by_fingerprint,
+            result_code, attempt, fencing_token, lease_expires_at, leased_by_fingerprint,
+            created_at, updated_at
+          ) values
+            ('op_legacy_queued', 'BACKUP', 'QUEUED', repeat('1', 64), repeat('2', 64),
+              null, 0, null, null, null, now(), now()),
+            ('op_legacy_failed', 'BACKUP', 'FAILED', repeat('3', 64), repeat('4', 64),
+              'BACKUP_FAILED_EXECUTION', 1, 1, now() + interval '5 minutes', repeat('5', 64), now(), now())
+          """.formatted(schema));
+
+      Flyway latest = flywayForSchema(schema, null);
+      latest.migrate();
+
+      assertThat(latest.validateWithResult().validationSuccessful).isTrue();
+      assertThat(jdbcTemplate.queryForObject(
+          "select count(*) from " + schema + ".flyway_schema_history where version = '68' and success = true",
+          Integer.class)).isEqualTo(1);
+      assertThat(jdbcTemplate.queryForObject(
+          "select count(*) from " + schema + ".backup_artifact where state = 'AVAILABLE'",
+          Integer.class)).isZero();
+    } finally {
+      jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
+  }
+  @Test
   void v68CreatesRequiredTablesConstraintsAndIndexes() {
     assertThat(tableNames("backup_artifact", "lifecycle_operation_audit"))
         .containsExactly("backup_artifact", "lifecycle_operation_audit");
