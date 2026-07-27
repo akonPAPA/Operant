@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +24,46 @@ class DatabaseLeastPrivilegePostgresIntegrationTest {
   private static final AtomicInteger SEQUENCE = new AtomicInteger();
   private static final String MIGRATOR_PASSWORD = "migrator-test-password-32";
   private static final String RUNTIME_PASSWORD = "runtime-test-password-32";
+
+  @Test
+  void migratedRuntimeCannotWriteFlywayHistoryDespiteProvisionerStyleDefaultGrants() {
+    String suffix = Integer.toString(SEQUENCE.incrementAndGet());
+    String schema = "lp_flyway_" + suffix;
+    String migrator = "operant_migrator";
+    String runtime = "operant_runtime";
+    JdbcTemplate admin = adminJdbc();
+    try {
+      provision(admin, schema, migrator, runtime);
+      admin.execute("create extension if not exists pgcrypto");
+      JdbcTemplate migratorJdbc = jdbc(schema, migrator, MIGRATOR_PASSWORD);
+      migratorJdbc.execute("alter default privileges for role " + ident(migrator)
+          + " in schema " + ident(schema)
+          + " grant select, insert, update on tables to " + ident(runtime));
+
+      migrateSchema(schema, migrator, MIGRATOR_PASSWORD);
+
+      JdbcTemplate runtimeJdbc = jdbc(schema, runtime, RUNTIME_PASSWORD);
+      assertThat(DatabaseLeastPrivilegeValidator.classify(
+          DatabaseLeastPrivilegeValidator.inspect(runtimeJdbc), false)).isEmpty();
+      Integer historyRowsBefore = runtimeJdbc.queryForObject(
+          "select count(*) from flyway_schema_history", Integer.class);
+
+      assertDenied(runtimeJdbc, "insert into flyway_schema_history "
+          + "(installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success) "
+          + "values (999999, '999', 'malicious', 'SQL', 'malicious.sql', null, current_user, now(), 0, true)");
+      assertDenied(runtimeJdbc, "update flyway_schema_history set success = success");
+      assertDenied(runtimeJdbc, "delete from flyway_schema_history");
+      assertDenied(runtimeJdbc, "truncate table flyway_schema_history");
+      assertThat(runtimeJdbc.queryForObject("select count(*) from flyway_schema_history", Integer.class))
+          .isEqualTo(historyRowsBefore);
+    } finally {
+      admin.execute("drop schema if exists " + ident(schema) + " cascade");
+      admin.execute("drop owned by " + ident(runtime));
+      admin.execute("drop owned by " + ident(migrator));
+      admin.execute("drop role if exists " + ident(runtime));
+      admin.execute("drop role if exists " + ident(migrator));
+    }
+  }
 
   @Test
   void restrictedRuntimeRolePassesValidatorAndCannotMutateProtectedBoundaries() {
@@ -112,6 +153,8 @@ class DatabaseLeastPrivilegePostgresIntegrationTest {
   }
 
   private static void createProtectedTables(JdbcTemplate migratorJdbc) {
+    migratorJdbc.execute("create table flyway_schema_history (installed_rank integer primary key, success boolean not null)");
+    migratorJdbc.execute("insert into flyway_schema_history (installed_rank, success) values (1, true)");
     migratorJdbc.execute("create table lifecycle_operation (id uuid primary key, state text not null)");
     migratorJdbc.execute("create table backup_artifact (id uuid primary key, state text not null)");
     migratorJdbc.execute("create table lifecycle_operation_audit ("
@@ -119,6 +162,8 @@ class DatabaseLeastPrivilegePostgresIntegrationTest {
   }
 
   private static void grantRuntimePrivileges(JdbcTemplate migratorJdbc, String runtime) {
+    migratorJdbc.execute("grant select on flyway_schema_history to " + ident(runtime));
+    migratorJdbc.execute("revoke insert, update, delete, truncate on flyway_schema_history from " + ident(runtime));
     migratorJdbc.execute("grant select, insert, update on lifecycle_operation to " + ident(runtime));
     migratorJdbc.execute("grant select, insert, update on backup_artifact to " + ident(runtime));
     migratorJdbc.execute("grant select, insert on lifecycle_operation_audit to " + ident(runtime));
@@ -165,6 +210,17 @@ class DatabaseLeastPrivilegePostgresIntegrationTest {
     JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
     jdbcTemplate.setQueryTimeout(5);
     return jdbcTemplate;
+  }
+
+  private static void migrateSchema(String schema, String username, String password) {
+    Flyway.configure()
+        .dataSource(withSchema(LifecyclePostgresTestSupport.jdbcUrl(), schema), username, password)
+        .schemas(schema)
+        .defaultSchema(schema)
+        .createSchemas(false)
+        .locations("classpath:db/migration")
+        .load()
+        .migrate();
   }
 
   private static String withSchema(String jdbcUrl, String schema) {

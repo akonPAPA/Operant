@@ -16,9 +16,10 @@ class DatabaseLeastPrivilegeValidatorTest {
         new RoleFlags(false, false, false, false),
         false,
         false,
-        new TableBoundary("lifecycle_operation_audit", true, false, false, false, false),
-        new TableBoundary("backup_artifact", true, false, true, false, false),
-        new TableBoundary("lifecycle_operation", true, false, true, false, false));
+        new TableBoundary("flyway_schema_history", true, false, false, false, false, false),
+        new TableBoundary("lifecycle_operation_audit", true, false, true, false, false, false),
+        new TableBoundary("backup_artifact", true, false, true, true, false, false),
+        new TableBoundary("lifecycle_operation", true, false, true, true, false, false));
 
     assertThat(DatabaseLeastPrivilegeValidator.classify(snapshot, false)).isEmpty();
   }
@@ -29,9 +30,10 @@ class DatabaseLeastPrivilegeValidatorTest {
         new RoleFlags(true, true, true, true),
         true,
         true,
-        new TableBoundary("lifecycle_operation_audit", true, false, false, false, false),
-        new TableBoundary("backup_artifact", true, false, true, false, false),
-        new TableBoundary("lifecycle_operation", true, false, true, false, false));
+        new TableBoundary("flyway_schema_history", true, false, false, false, false, false),
+        new TableBoundary("lifecycle_operation_audit", true, false, true, false, false, false),
+        new TableBoundary("backup_artifact", true, false, true, true, false, false),
+        new TableBoundary("lifecycle_operation", true, false, true, true, false, false));
 
     assertThat(DatabaseLeastPrivilegeValidator.classify(snapshot, true)).contains(
         DatabaseLeastPrivilegeValidator.RUNTIME_FLYWAY_ENABLED,
@@ -49,11 +51,17 @@ class DatabaseLeastPrivilegeValidatorTest {
         new RoleFlags(false, false, false, false),
         false,
         false,
-        new TableBoundary("lifecycle_operation_audit", true, true, true, true, true),
-        new TableBoundary("backup_artifact", true, true, true, true, true),
-        new TableBoundary("lifecycle_operation", true, true, true, true, true));
+        new TableBoundary("flyway_schema_history", true, true, true, true, true, true),
+        new TableBoundary("lifecycle_operation_audit", true, true, true, true, true, true),
+        new TableBoundary("backup_artifact", true, true, true, true, true, true),
+        new TableBoundary("lifecycle_operation", true, true, true, true, true, true));
 
     assertThat(DatabaseLeastPrivilegeValidator.classify(snapshot, false)).contains(
+        DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_OWNED_BY_RUNTIME + ":flyway_schema_history",
+        DatabaseLeastPrivilegeValidator.FLYWAY_HISTORY_INSERT_GRANTED_TO_RUNTIME,
+        DatabaseLeastPrivilegeValidator.FLYWAY_HISTORY_UPDATE_GRANTED_TO_RUNTIME,
+        DatabaseLeastPrivilegeValidator.FLYWAY_HISTORY_DELETE_GRANTED_TO_RUNTIME,
+        DatabaseLeastPrivilegeValidator.FLYWAY_HISTORY_TRUNCATE_GRANTED_TO_RUNTIME,
         DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_OWNED_BY_RUNTIME + ":lifecycle_operation_audit",
         DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_OWNED_BY_RUNTIME + ":backup_artifact",
         DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_OWNED_BY_RUNTIME + ":lifecycle_operation",
@@ -72,12 +80,15 @@ class DatabaseLeastPrivilegeValidatorTest {
         new RoleFlags(false, false, false, false),
         false,
         false,
-        new TableBoundary("lifecycle_operation_audit", false, false, false, false, false),
-        new TableBoundary("backup_artifact", true, false, true, false, false),
-        new TableBoundary("lifecycle_operation", true, false, true, false, false));
+        new TableBoundary("flyway_schema_history", false, false, false, false, false, false),
+        new TableBoundary("lifecycle_operation_audit", false, false, false, false, false, false),
+        new TableBoundary("backup_artifact", true, false, true, true, false, false),
+        new TableBoundary("lifecycle_operation", true, false, true, true, false, false));
 
     assertThat(DatabaseLeastPrivilegeValidator.classify(snapshot, false))
-        .containsExactly(DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_MISSING + ":lifecycle_operation_audit");
+        .containsExactly(
+            DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_MISSING + ":flyway_schema_history",
+            DatabaseLeastPrivilegeValidator.PROTECTED_TABLE_MISSING + ":lifecycle_operation_audit");
   }
 
   private static RoleBoundarySnapshot snapshot(

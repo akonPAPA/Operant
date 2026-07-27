@@ -20,6 +20,14 @@ public final class DatabaseLeastPrivilegeValidator {
   public static final String RUNTIME_DB_OWNS_SCHEMA = "RUNTIME_DB_OWNS_SCHEMA";
   public static final String PROTECTED_TABLE_MISSING = "PROTECTED_TABLE_MISSING";
   public static final String PROTECTED_TABLE_OWNED_BY_RUNTIME = "PROTECTED_TABLE_OWNED_BY_RUNTIME";
+  public static final String FLYWAY_HISTORY_INSERT_GRANTED_TO_RUNTIME =
+      "FLYWAY_HISTORY_INSERT_GRANTED_TO_RUNTIME";
+  public static final String FLYWAY_HISTORY_UPDATE_GRANTED_TO_RUNTIME =
+      "FLYWAY_HISTORY_UPDATE_GRANTED_TO_RUNTIME";
+  public static final String FLYWAY_HISTORY_DELETE_GRANTED_TO_RUNTIME =
+      "FLYWAY_HISTORY_DELETE_GRANTED_TO_RUNTIME";
+  public static final String FLYWAY_HISTORY_TRUNCATE_GRANTED_TO_RUNTIME =
+      "FLYWAY_HISTORY_TRUNCATE_GRANTED_TO_RUNTIME";
   public static final String AUDIT_UPDATE_GRANTED_TO_RUNTIME = "AUDIT_UPDATE_GRANTED_TO_RUNTIME";
   public static final String AUDIT_DELETE_GRANTED_TO_RUNTIME = "AUDIT_DELETE_GRANTED_TO_RUNTIME";
   public static final String AUDIT_TRUNCATE_GRANTED_TO_RUNTIME = "AUDIT_TRUNCATE_GRANTED_TO_RUNTIME";
@@ -33,6 +41,7 @@ public final class DatabaseLeastPrivilegeValidator {
       "LIFECYCLE_OPERATION_TRUNCATE_GRANTED_TO_RUNTIME";
 
   private static final List<String> PROTECTED_TABLES = List.of(
+      "flyway_schema_history",
       "lifecycle_operation_audit",
       "backup_artifact",
       "lifecycle_operation");
@@ -119,7 +128,20 @@ public final class DatabaseLeastPrivilegeValidator {
     if (table.ownedByRuntime()) {
       reasons.add(PROTECTED_TABLE_OWNED_BY_RUNTIME + ":" + table.name());
     }
-    if ("lifecycle_operation_audit".equals(table.name())) {
+    if ("flyway_schema_history".equals(table.name())) {
+      if (table.canInsert()) {
+        reasons.add(FLYWAY_HISTORY_INSERT_GRANTED_TO_RUNTIME);
+      }
+      if (table.canUpdate()) {
+        reasons.add(FLYWAY_HISTORY_UPDATE_GRANTED_TO_RUNTIME);
+      }
+      if (table.canDelete()) {
+        reasons.add(FLYWAY_HISTORY_DELETE_GRANTED_TO_RUNTIME);
+      }
+      if (table.canTruncate()) {
+        reasons.add(FLYWAY_HISTORY_TRUNCATE_GRANTED_TO_RUNTIME);
+      }
+    } else if ("lifecycle_operation_audit".equals(table.name())) {
       if (table.canUpdate()) {
         reasons.add(AUDIT_UPDATE_GRANTED_TO_RUNTIME);
       }
@@ -158,7 +180,7 @@ public final class DatabaseLeastPrivilegeValidator {
         )
         """, Boolean.class, schema, table));
     if (!exists) {
-      return new TableBoundary(table, false, false, false, false, false);
+      return new TableBoundary(table, false, false, false, false, false, false);
     }
     String qualified = schema + "." + table;
     boolean owned = Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
@@ -168,13 +190,15 @@ public final class DatabaseLeastPrivilegeValidator {
         where n.nspname = ?
           and c.relname = ?
         """, Boolean.class, schema, table));
+    boolean insert = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+        "select has_table_privilege(current_user, ?, 'INSERT')", Boolean.class, qualified));
     boolean update = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
         "select has_table_privilege(current_user, ?, 'UPDATE')", Boolean.class, qualified));
     boolean delete = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
         "select has_table_privilege(current_user, ?, 'DELETE')", Boolean.class, qualified));
     boolean truncate = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
         "select has_table_privilege(current_user, ?, 'TRUNCATE')", Boolean.class, qualified));
-    return new TableBoundary(table, true, owned, update, delete, truncate);
+    return new TableBoundary(table, true, owned, insert, update, delete, truncate);
   }
 
   public record RoleFlags(boolean superuser, boolean createDb, boolean createRole, boolean bypassRls) {}
@@ -183,6 +207,7 @@ public final class DatabaseLeastPrivilegeValidator {
       String name,
       boolean exists,
       boolean ownedByRuntime,
+      boolean canInsert,
       boolean canUpdate,
       boolean canDelete,
       boolean canTruncate) {}

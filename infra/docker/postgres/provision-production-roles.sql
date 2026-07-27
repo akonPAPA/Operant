@@ -33,6 +33,11 @@ ALTER DEFAULT PRIVILEGES FOR ROLE operant_migrator IN SCHEMA public
 
 DO $$
 BEGIN
+  IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
+    REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON flyway_schema_history FROM operant_runtime;
+    ALTER DEFAULT PRIVILEGES FOR ROLE operant_migrator IN SCHEMA public
+      REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM operant_runtime;
+  END IF;
   IF to_regclass('public.lifecycle_operation_audit') IS NOT NULL THEN
     REVOKE UPDATE, DELETE, TRUNCATE ON lifecycle_operation_audit FROM operant_runtime;
   END IF;
