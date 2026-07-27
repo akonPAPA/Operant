@@ -475,16 +475,31 @@ class BackupArtifactAuthorityPostgresIntegrationTest extends DatabaseIntegration
     // preserved only as bounded metadata (never as the principal fingerprint).
     String orphanClause = " from lifecycle_operation_audit where lifecycle_operation_id = ?"
         + " and event_type = 'BACKUP_ARTIFACT_ORPHANED'";
-    assertThat(jdbcTemplate.queryForObject("select principal_type" + orphanClause, String.class, first.getId()))
-        .isEqualTo("SYSTEM");
+
     assertThat(jdbcTemplate.queryForObject(
-        "select principal_fingerprint" + orphanClause, String.class, first.getId()))
+        "select principal_type" + orphanClause,
+        String.class,
+        first.getId()))
+        .isEqualTo("SYSTEM");
+
+    assertThat(jdbcTemplate.queryForObject(
+        "select principal_fingerprint" + orphanClause,
+        String.class,
+        first.getId()))
         .isEqualTo(LifecycleOperationAuditor.SYSTEM_RELEASER_FINGERPRINT);
-    String orphanMetadata =
-        jdbcTemplate.queryForObject("select metadata::text" + orphanClause, String.class, first.getId());
-    assertThat(orphanMetadata)
-        .contains("\"artifactHandle\":\"" + staged.getPublicHandle() + "\"")
-        .contains("\"triggerExecutorFingerprint\":\"" + SECOND_EXEC_FP + "\"");
+
+    String orphanArtifactHandle = jdbcTemplate.queryForObject(
+        "select metadata ->> 'artifactHandle'" + orphanClause,
+        String.class,
+        first.getId());
+
+    String orphanTriggerExecutorFingerprint = jdbcTemplate.queryForObject(
+        "select metadata ->> 'triggerExecutorFingerprint'" + orphanClause,
+        String.class,
+        first.getId());
+
+    assertThat(orphanArtifactHandle).isEqualTo(staged.getPublicHandle());
+    assertThat(orphanTriggerExecutorFingerprint).isEqualTo(SECOND_EXEC_FP);
   }
 
   @Test
