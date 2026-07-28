@@ -8,6 +8,7 @@ import com.orderpilot.domain.control.LifecycleOperation;
 import com.orderpilot.domain.control.LifecycleOperationRepository;
 import com.orderpilot.domain.control.LifecycleOperationState;
 import com.orderpilot.support.DatabaseIntegrationTestBase;
+import com.orderpilot.support.LifecyclePostgresTestSupport;
 import com.orderpilot.support.RequiresPostgresIntegration;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,39 +22,22 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.DockerClientFactory;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** PostgreSQL concurrency, fencing, and migration-constraint proof for lifecycle control. */
 @Testcontainers
 @RequiresPostgresIntegration
-@EnabledIf("dockerAvailable")
 class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseIntegrationTestBase {
-
-  static boolean dockerAvailable() {
-    return DockerClientFactory.instance().isDockerAvailable();
-  }
-
-  @Container
-  static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
   @DynamicPropertySource
   static void configuration(DynamicPropertyRegistry registry) {
-    registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
-    registry.add("spring.flyway.enabled", () -> true);
-    registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
+    LifecyclePostgresTestSupport.register(registry);
     registry.add("spring.datasource.hikari.maximum-pool-size", () -> 16);
-    registry.add("orderpilot.control.lifecycle.executor.enabled", () -> true);
   }
 
   private static final int WORKERS = 8;
@@ -66,7 +50,12 @@ class LifecycleBackupOperationControlPostgresIntegrationTest extends DatabaseInt
 
   @BeforeEach
   void clean() {
-    repository.deleteAll();
+    // lifecycle_operation_audit is append-only: the V68 BEFORE UPDATE OR DELETE trigger
+    // (trg_lifecycle_operation_audit_append_only) rejects any row DELETE. Test isolation therefore uses
+    // TRUNCATE, which does not fire row-level triggers, instead of a forbidden production-style delete.
+    jdbcTemplate.update("truncate table lifecycle_operation_audit");
+    jdbcTemplate.update("delete from backup_artifact");
+    jdbcTemplate.update("delete from lifecycle_operation");
   }
 
   @Test

@@ -386,6 +386,9 @@ public class ApiRouteSecurityPolicy {
     if (post && path.equals(base + "/executor/lease")) {
       return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.CONTROL_EXECUTOR_LEASE);
     }
+    if (post && matches(path, base + "/operations/*/artifacts/stage")) {
+      return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.CONTROL_EXECUTOR_REPORT);
+    }
     if (post && matches(path, base + "/operations/*/complete")) {
       return protectedRoute(SecurityClassification.PROTECTED_EXECUTE, ApiPermission.CONTROL_EXECUTOR_REPORT);
     }

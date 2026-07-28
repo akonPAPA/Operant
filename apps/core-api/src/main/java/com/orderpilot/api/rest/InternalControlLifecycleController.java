@@ -6,8 +6,17 @@ import com.orderpilot.api.dto.ControlLifecycleDtos.CompletionResponse;
 import com.orderpilot.api.dto.ControlLifecycleDtos.ControlLifecycleError;
 import com.orderpilot.api.dto.ControlLifecycleDtos.LeaseResponse;
 import com.orderpilot.api.dto.ControlLifecycleDtos.OperationView;
+import com.orderpilot.api.dto.ControlLifecycleDtos.StageRequest;
+import com.orderpilot.api.dto.ControlLifecycleDtos.StageResponse;
+import com.orderpilot.application.services.control.lifecycle.BackupArtifactPersistenceService;
+import com.orderpilot.application.services.control.lifecycle.BackupArtifactPersistenceService.FinalizeReportCommand;
+import com.orderpilot.application.services.control.lifecycle.BackupArtifactPersistenceService.StageArtifactCommand;
 import com.orderpilot.application.services.control.lifecycle.LifecycleBackupOperationService;
 import com.orderpilot.application.services.control.lifecycle.LifecycleControlException;
+import com.orderpilot.application.services.control.lifecycle.PostgresToolVersionNormalizer;
+import com.orderpilot.application.services.control.lifecycle.PostgresToolVersionNormalizer.ExpectedPostgresTool;
+import com.orderpilot.domain.control.BackupArtifact;
+import com.orderpilot.domain.control.BackupArtifact.AvailableMetadata;
 import com.orderpilot.domain.control.LifecycleOperation;
 import com.orderpilot.domain.control.LifecycleOperationResultCode;
 import com.orderpilot.security.ControlPlanePrincipal;
@@ -24,33 +33,21 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * P1-E2A - the bounded durable-backup-operation control surface under
- * {@code /api/v1/internal/control/lifecycle/**}. Staff routes are reserved for an authenticated Operant
- * control client; executor routes are reserved for a dedicated lifecycle-executor service account.
- * Route-edge security is enforced by {@link com.orderpilot.security.ApiRouteSecurityPolicy}: each route
- * requires a distinct control permission, staff and executor permissions are disjoint, and tenant/support
- * permissions are denied.
- *
- * <p>This slice ends at the Core protocol boundary. It does not claim that a packaged operantctl backup
- * command or a real backup executor exists. Lease and completion record bounded control state only; no
- * pg_dump, artifact, restore, or filesystem operation is performed. The executor capability is disabled by
- * default, so a backup request fails closed before any operation is created.
- */
+/** Bounded deployment lifecycle control surface under /api/v1/internal/control/lifecycle. */
 @RestController
 public class InternalControlLifecycleController {
   private static final String BASE = "/api/v1/internal/control/lifecycle";
 
   private final LifecycleBackupOperationService service;
+  private final BackupArtifactPersistenceService artifactService;
 
-  public InternalControlLifecycleController(LifecycleBackupOperationService service) {
+  public InternalControlLifecycleController(
+      LifecycleBackupOperationService service,
+      BackupArtifactPersistenceService artifactService) {
     this.service = service;
+    this.artifactService = artifactService;
   }
 
-  /**
-   * Staff route: request a backup operation (STAFF_CONTROL_BACKUP). The opaque idempotency intent is in
-   * the signed JSON body, so post-signature header tampering cannot alter deduplication semantics.
-   */
   @PostMapping(BASE + "/backups")
   public ResponseEntity<OperationView> requestBackup(
       @RequestBody(required = false) BackupRequest request) {
@@ -59,7 +56,6 @@ public class InternalControlLifecycleController {
     return ResponseEntity.accepted().body(view(operation));
   }
 
-  /** Staff route: read one operation by opaque id (STAFF_CONTROL_LIFECYCLE_READ). */
   @GetMapping(BASE + "/operations/{operationId}")
   public ResponseEntity<OperationView> getOperation(@PathVariable String operationId) {
     return service.findByPublicId(operationId)
@@ -67,7 +63,6 @@ public class InternalControlLifecycleController {
         .orElseThrow(LifecycleControlException.OperationNotFound::new);
   }
 
-  /** Executor route: lease the next operation (CONTROL_EXECUTOR_LEASE). 204 when none is available. */
   @PostMapping(BASE + "/executor/lease")
   public ResponseEntity<LeaseResponse> lease() {
     Optional<LifecycleOperation> leased = service.leaseNext(currentFingerprint());
@@ -80,7 +75,22 @@ public class InternalControlLifecycleController {
         .orElseGet(() -> ResponseEntity.noContent().build());
   }
 
-  /** Executor route: complete a leased operation (CONTROL_EXECUTOR_REPORT). */
+  @PostMapping(BASE + "/operations/{operationId}/artifacts/stage")
+  public ResponseEntity<StageResponse> stage(
+      @PathVariable String operationId,
+      @RequestBody(required = false) StageRequest request) {
+    if (request == null || request.fencingToken() == null) {
+      throw new LifecycleControlException.InvalidRequest("FENCING_TOKEN_REQUIRED");
+    }
+    BackupArtifact artifact = artifactService.stageArtifact(new StageArtifactCommand(
+        operationId, currentFingerprint(), request.fencingToken()));
+    return ResponseEntity.ok(new StageResponse(
+        operationId,
+        artifact.getPublicHandle(),
+        artifact.getStorageKey(),
+        request.fencingToken()));
+  }
+
   @PostMapping(BASE + "/operations/{operationId}/complete")
   public ResponseEntity<CompletionResponse> complete(
       @PathVariable String operationId,
@@ -90,8 +100,14 @@ public class InternalControlLifecycleController {
     }
     LifecycleOperationResultCode resultCode = LifecycleOperationResultCode.parse(request.resultCode())
         .orElseThrow(() -> new LifecycleControlException.InvalidRequest("INVALID_RESULT_CODE"));
-    LifecycleOperation operation = service.complete(
-        currentFingerprint(), operationId, request.fencingToken(), resultCode);
+    LifecycleOperation operation = artifactService.completeReport(new FinalizeReportCommand(
+        operationId,
+        currentFingerprint(),
+        request.fencingToken(),
+        request.artifactHandle(),
+        request.storageKey(),
+        resultCode,
+        resultCode == LifecycleOperationResultCode.BACKUP_COMPLETED ? metadata(request) : null));
     return ResponseEntity.ok(new CompletionResponse(
         operation.getPublicId(),
         operation.getState().name(),
@@ -104,6 +120,17 @@ public class InternalControlLifecycleController {
         .body(new ControlLifecycleError(exception.reasonCode()));
   }
 
+  /**
+   * A domain/boundary validation failure of the executor's artifact report is a bounded client-facing
+   * 400 with a fixed non-enumerating code (never the raw exception message). NullPointerException is
+   * deliberately NOT handled here: an unexpected NPE is an internal programming defect and must fall
+   * through to the redacted global 500 contract rather than be disguised as an invalid client report.
+   */
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<ControlLifecycleError> handleInvalidRuntimeContract(IllegalArgumentException exception) {
+    return ResponseEntity.badRequest().body(new ControlLifecycleError("INVALID_BACKUP_ARTIFACT_REPORT"));
+  }
+
   private static HttpStatus statusFor(LifecycleControlException exception) {
     if (exception instanceof LifecycleControlException.ExecutorDisabled) {
       return HttpStatus.SERVICE_UNAVAILABLE;
@@ -114,8 +141,41 @@ public class InternalControlLifecycleController {
     if (exception instanceof LifecycleControlException.OperationNotFound) {
       return HttpStatus.NOT_FOUND;
     }
-    // Idempotency, ownership, fencing, expiry, and conflicting-terminal failures are bounded conflicts.
     return HttpStatus.CONFLICT;
+  }
+
+  private static AvailableMetadata metadata(CompleteRequest request) {
+    if (request.artifactHandle() == null || request.artifactHandle().isBlank()) {
+      throw new LifecycleControlException.InvalidRequest("ARTIFACT_HANDLE_REQUIRED");
+    }
+    if (request.storageKey() == null || request.storageKey().isBlank()) {
+      throw new LifecycleControlException.InvalidRequest("ARTIFACT_STORAGE_KEY_REQUIRED");
+    }
+    if (request.encryptedByteSize() == null
+        || request.archiveValidated() == null
+        || request.archiveEntryCount() == null) {
+      throw new LifecycleControlException.InvalidRequest("ARTIFACT_METADATA_REQUIRED");
+    }
+    // Authoritative, provenance-preserving boundary normalization: the executor may report either a
+    // canonical version or the recognised CLI banner that THAT specific tool emits. Each field is
+    // normalized against its own tool identity, so a psql/pg_restore/server banner can never be accepted
+    // in the pg_dump field (and vice versa). Anything ambiguous or foreign fail-closes to
+    // IllegalArgumentException -> bounded 400 INVALID_BACKUP_ARTIFACT_REPORT (never the raw banner).
+    return new AvailableMetadata(
+        request.encryptionAlgorithm(),
+        request.encryptionEnvelopeVersion(),
+        request.encryptionKeyIdentifier(),
+        PostgresToolVersionNormalizer.normalize(
+            ExpectedPostgresTool.POSTGRES_SERVER, request.postgresServerVersion()),
+        PostgresToolVersionNormalizer.normalize(
+            ExpectedPostgresTool.PG_DUMP, request.pgDumpVersion()),
+        PostgresToolVersionNormalizer.normalize(
+            ExpectedPostgresTool.PG_RESTORE, request.pgRestoreVersion()),
+        request.schemaVersion(),
+        request.encryptedByteSize(),
+        request.ciphertextSha256(),
+        request.archiveValidated(),
+        request.archiveEntryCount());
   }
 
   private static OperationView view(LifecycleOperation operation) {

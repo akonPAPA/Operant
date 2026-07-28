@@ -178,17 +178,20 @@ class LifecycleBackupOperationServiceTest {
   // --- completion --------------------------------------------------------------------------------
 
   @Test
-  void completeWithCurrentFencingTokenMarksSucceededAndAudits() {
+  void completeSucceededWithoutAvailableArtifactIsDeniedAsBypass() {
     service.requestBackup(STAFF_FP, "idem-1");
     LifecycleOperation leased = service.leaseNext(EXEC_FP).orElseThrow();
 
-    LifecycleOperation done = service.complete(
+    assertThatThrownBy(() -> service.complete(
         EXEC_FP, leased.getPublicId(), leased.getFencingToken(),
-        LifecycleOperationResultCode.BACKUP_COMPLETED);
+        LifecycleOperationResultCode.BACKUP_COMPLETED))
+        .isInstanceOf(LifecycleControlException.CompletionConflict.class);
 
-    assertThat(done.getState()).isEqualTo(LifecycleOperationState.SUCCEEDED);
-    assertThat(done.getResultCode()).isEqualTo(LifecycleOperationResultCode.BACKUP_COMPLETED);
-    verify(auditor).operationSucceeded(done, EXEC_FP);
+    LifecycleOperation reloaded = repository.findByPublicId(leased.getPublicId()).orElseThrow();
+    assertThat(reloaded.getState()).isEqualTo(LifecycleOperationState.LEASED);
+    assertThat(reloaded.getResultCode()).isNull();
+    verify(auditor, never()).operationSucceeded(org.mockito.ArgumentMatchers.any(),
+        org.mockito.ArgumentMatchers.anyString());
   }
 
   @Test
@@ -216,7 +219,7 @@ class LifecycleBackupOperationServiceTest {
 
     assertThatThrownBy(() -> service.complete(
         SECOND_EXEC_FP, reLeased.getPublicId(), staleToken,
-        LifecycleOperationResultCode.BACKUP_COMPLETED))
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION))
         .isInstanceOf(LifecycleControlException.StaleFencingToken.class);
 
     LifecycleOperation reloaded = repository.findByPublicId(reLeased.getPublicId()).orElseThrow();
@@ -228,18 +231,18 @@ class LifecycleBackupOperationServiceTest {
   }
 
   @Test
-  void terminalCompletionIsIdempotent() {
+  void terminalFailureCompletionIsIdempotent() {
     service.requestBackup(STAFF_FP, "idem-1");
     LifecycleOperation leased = service.leaseNext(EXEC_FP).orElseThrow();
     long token = leased.getFencingToken();
 
     LifecycleOperation first = service.complete(
-        EXEC_FP, leased.getPublicId(), token, LifecycleOperationResultCode.BACKUP_COMPLETED);
+        EXEC_FP, leased.getPublicId(), token, LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
     LifecycleOperation replay = service.complete(
-        EXEC_FP, leased.getPublicId(), token, LifecycleOperationResultCode.BACKUP_COMPLETED);
+        EXEC_FP, leased.getPublicId(), token, LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
 
-    assertThat(first.getState()).isEqualTo(LifecycleOperationState.SUCCEEDED);
-    assertThat(replay.getState()).isEqualTo(LifecycleOperationState.SUCCEEDED);
+    assertThat(first.getState()).isEqualTo(LifecycleOperationState.FAILED);
+    assertThat(replay.getState()).isEqualTo(LifecycleOperationState.FAILED);
     assertThat(replay.getPublicId()).isEqualTo(first.getPublicId());
   }
 
@@ -249,22 +252,22 @@ class LifecycleBackupOperationServiceTest {
     LifecycleOperation leased = service.leaseNext(EXEC_FP).orElseThrow();
     long token = leased.getFencingToken();
     service.complete(EXEC_FP, leased.getPublicId(), token,
-        LifecycleOperationResultCode.BACKUP_COMPLETED);
+        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
 
     assertThatThrownBy(() -> service.complete(
         EXEC_FP, leased.getPublicId(), token,
-        LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION))
+        LifecycleOperationResultCode.BACKUP_TIMED_OUT))
         .isInstanceOf(LifecycleControlException.CompletionConflict.class);
 
     LifecycleOperation reloaded = repository.findByPublicId(leased.getPublicId()).orElseThrow();
-    assertThat(reloaded.getState()).isEqualTo(LifecycleOperationState.SUCCEEDED);
-    assertThat(reloaded.getResultCode()).isEqualTo(LifecycleOperationResultCode.BACKUP_COMPLETED);
+    assertThat(reloaded.getState()).isEqualTo(LifecycleOperationState.FAILED);
+    assertThat(reloaded.getResultCode()).isEqualTo(LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION);
   }
 
   @Test
   void completingAnUnknownOperationIsNotFound() {
     assertThatThrownBy(() -> service.complete(
-        EXEC_FP, "op_does_not_exist", 1L, LifecycleOperationResultCode.BACKUP_COMPLETED))
+        EXEC_FP, "op_does_not_exist", 1L, LifecycleOperationResultCode.BACKUP_FAILED_EXECUTION))
         .isInstanceOf(LifecycleControlException.OperationNotFound.class);
     verify(auditor, never()).operationSucceeded(org.mockito.ArgumentMatchers.any(),
         org.mockito.ArgumentMatchers.anyString());
