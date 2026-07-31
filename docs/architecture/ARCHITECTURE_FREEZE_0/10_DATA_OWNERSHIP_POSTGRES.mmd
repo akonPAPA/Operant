@@ -1,0 +1,34 @@
+%% VIEW 10 — DATA OWNERSHIP AND POSTGRESQL SCHEMAS
+%% Scope: owner module -> authoritative tables, legal readers, future extraction seams. Source commit: c11f7e8.
+%% One physical PostgreSQL, one authoritative DB. Ownership is LOGICAL (module-owned repos), not DB-per-module.
+%% Legend: solid=owns/writes; -.->=legal read via owner API; dashed box=future extraction seam [S3].
+flowchart LR
+  subgraph PG["PostgreSQL (single authoritative DB, tenant_id on every business row)"]
+    AO["auditoutbox: audit_event, outbox_event, idempotency_record"]
+    Q["quote: quote, quote_line, quote_version, quote_approval_request, quote_artifact"]
+    OM["ordermanagement: order, order_line, conversion"]
+    INV["inventory: inventory_snapshot, import_job, import_staging_row"]
+    CAT["catalog: product, product_alias, vehicle, substitution"]
+    POL["commercialpolicy: pricing_rule, discount, margin, risk_policy"]
+    PR["paymentreconciliation: payment_event, payment_obligation, payment_allocation, reconciliation_case"]
+    IC["integrationcontrol: integration_connection, change_request, compensation_plan"]
+    CE["connectorexecution: connector_run, connector_command_execution, connector_sandbox_execution"]
+    FF["fulfillment: order_journey, milestone, tracking_link"]
+    CIN["channelintake: channel_message, inbound_event_ledger, webhook_event"]
+    DE["documentevidence: inbound_document, object_storage_record, processing_job"]
+    SC["supportcontrol: incident, break_glass, access_grant, data_repair, lifecycle_operation, backup_artifact"]
+  end
+  Q -.->|read| BI["commerceintelligence (read models, rebuildable)"]
+  OM -.-> BI
+  PR -.-> BI
+  FF -.-> XP["customerprojection (rebuildable)"]
+
+  subgraph SEAMS["Future extraction seams [S3] — dashed, NOT current services"]
+    CESEAM["connectorexecution"]:::seam
+    DESEAM["documentevidence + AI/OCR worker"]:::seam
+  end
+  CE -.potential.-> CESEAM
+  DE -.potential.-> DESEAM
+
+  classDef seam stroke-dasharray:6 4,stroke:#666;
+  %% RULE: audit_event + outbox_event commit ATOMICALLY with owning business mutation. No cross-DB tx. No Saga where 1 local tx suffices.

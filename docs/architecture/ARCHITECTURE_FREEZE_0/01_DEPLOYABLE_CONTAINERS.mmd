@@ -1,0 +1,38 @@
+%% VIEW 01 — DEPLOYABLE CONTAINER VIEW
+%% Scope: deployable units + data stores + provider boundary. Source commit: c11f7e8.
+%% Status: solid boxes = CURRENT; dashed boxes = TARGET_STATE_2 [T2] / NOT_PROVEN [NP].
+%% Legend: solid=sync; ==>=external effect; -.->=async/event. Do NOT read this as one-process-per-box: Core is ONE monolith.
+flowchart LR
+  subgraph Edge
+    NGINX["Reverse proxy / ingress<br/>(P1-D topology, merged #282)"]
+  end
+  BFF["Web Dashboard / BFF<br/>Next.js — REDIS session required"]
+  CORE["Core API (Java 21 / Spring Boot)<br/>ONE modular monolith deployable"]
+  WK["AI/Document Worker<br/>Python — advisory"]
+  CG["Connector Gateway [T2:P1-F, NP]"]
+  AG["operant-agent outbound-only [T2:P1-G, NP]"]
+  CTL["operantctl (control client, separate)"]
+
+  PG[("PostgreSQL<br/>single authoritative DB")]
+  RSESS[("Redis: session + replay/security")]
+  RRUN[("Redis: rate + runtime + cache")]
+  OBJ[("Object storage")]
+
+  NGINX --> BFF --> CORE
+  NGINX -->|token link / webhook| CORE
+  CTL ==>|signed control API| CORE
+  CORE --> PG
+  CORE --> RRUN
+  BFF --> RSESS
+  CORE --> RSESS
+  CORE --> OBJ
+  CORE -.->|jobs| WK
+  CORE ==>|approved effect| CG ==> EXT["External business/payment systems"]
+  AG ==> EXT
+  WK --> AIP["AI/OCR providers"]
+
+  classDef t2 stroke-dasharray:5 4,stroke:#b36b00;
+  class CG,AG t2;
+  classDef store fill:#dfefff,stroke:#3b7;
+  class PG,RSESS,RRUN,OBJ store;
+  %% NOTE: Redis physical split (RSESS vs RRUN) is JUSTIFIED but NEEDS_OWNER_DECISION on ops budget (ADR-005).

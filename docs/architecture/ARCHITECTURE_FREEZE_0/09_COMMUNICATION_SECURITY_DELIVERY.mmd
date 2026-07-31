@@ -1,0 +1,22 @@
+%% VIEW 09 — COMMUNICATION AND SECURITY DELIVERY (flows F7, F13)
+%% Scope: business messaging SEPARATE from MFA/security messaging. Source commit: c11f7e8.
+%% Legend: solid=sync; ==>=durable outbox/external; -.->=async. RULE: security delivery MUST NOT share pool/provider/audit with business messaging.
+flowchart TB
+  subgraph BUS["Business Communication (communicationdelivery)"]
+    QI["Quote issued / order update (quote, ordermanagement)"] ==> OBX1["outbox: message intent (in-tx)"]
+    OBX1 -.->|relay| DA["DeliveryAttempt PENDING"]
+    DA ==> PROV1["email/Telegram/WhatsApp/SMS/push/webhook"]:::ext
+    DA --> R1{"result"}
+    R1 -->|fail| DL1["retry bounded -> DEAD_LETTER"]
+    R1 -->|ok| DEL1["DELIVERED"]
+  end
+  subgraph SEC["Security Delivery (securitydelivery) [T2]"]
+    CH["MFA/security challenge issued (identityaccess)"] ==> OBX2["security delivery intent"]
+    OBX2 -.-> DA2["SecurityDeliveryAttempt"]
+    DA2 ==> PROV2["MFA email/SMS provider (SEPARATE)"]:::ext
+    DA2 --> VER["verify -> session (identityaccess)"]
+  end
+  DEL1 -.-> AO["auditoutbox"]
+  VER -.-> AO
+  %% NOT_PROVEN: securitydelivery + business outbox external relay both target (external effects disabled today).
+  classDef ext fill:#eee,stroke:#999,stroke-dasharray:4 3;

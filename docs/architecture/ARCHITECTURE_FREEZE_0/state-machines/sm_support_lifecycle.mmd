@@ -1,0 +1,24 @@
+%% STATE MACHINES — SupportAccessGrant / BreakGlassGrant / LifecycleOperation+BackupArtifact (owner: supportcontrol). Source commit: c11f7e8.
+%% Plane: Operant Staff. Evidence: BreakGlassStatus, IncidentStatus, LifecycleOperationState, BackupArtifactState; ApiRouteSecurityPolicy support/lifecycle decisions.
+%% Separation of duties enforced (approver != requester); grants bounded-TTL and always-expiring; break-glass grant mutates NO business row.
+stateDiagram-v2
+  state "SupportAccessGrant / BreakGlassGrant" as G {
+    [*] --> REQUESTED: [STAFF_*_REQUEST / STAFF_SUPPORT_GRANT_MANAGE]
+    REQUESTED --> APPROVED: [*_APPROVE] (approver != requester)
+    REQUESTED --> REJECTED: [*_APPROVE reject-path]
+    APPROVED --> REVOKED: [*_REVOKE]
+    APPROVED --> EXPIRED: TTL (observed -> alert BREAK_GLASS_EXPIRED)
+    REJECTED --> [*]
+    REVOKED --> [*]
+    EXPIRED --> [*]
+  }
+  state "LifecycleOperation (+ BackupArtifact)" as L {
+    [*] --> REQUESTED: staff [STAFF_CONTROL_BACKUP]
+    REQUESTED --> LEASED: executor [CONTROL_EXECUTOR_LEASE] (DISJOINT principal)
+    LEASED --> IN_PROGRESS
+    IN_PROGRESS --> COMPLETED: [CONTROL_EXECUTOR_REPORT] / artifact STAGED->AUTHORITATIVE
+    IN_PROGRESS --> FAILED
+    COMPLETED --> [*]
+    FAILED --> [*]
+  }
+  %% FORBIDDEN: self-approve; use grant after expiry; staff completes lifecycle op; executor requests/read staff surface.

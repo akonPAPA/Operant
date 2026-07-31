@@ -1,0 +1,84 @@
+%% VIEW 02 — MASTER CORE MODULE MAP
+%% Scope: bounded-context modules + ALLOWED dependency edges (public API only). Source commit: c11f7e8.
+%% Legend: solid=sync command/query via public API; -.->=in-process event; ==>=durable outbox intent.
+%% Colour bands: A platform/control, B intake/evidence, C commercial/O2C, D integration/delivery.
+%% Status suffix on node: (P)=CURRENT_PROVEN (X)=CURRENT_PARTIAL (T2)=TARGET_STATE_2 (OD)=NEEDS_OWNER_DECISION (D)=DEFERRED.
+%% This map is intentionally coarse (module→module), NOT field-level, to stay readable.
+flowchart TB
+  subgraph A["Platform & Control"]
+    IA["identityaccess (X)"]
+    TO["tenantorganization (X)"]
+    TC["tenantconfiguration (X)"]
+    RC["runtimecontrol (X)"]
+    AO["auditoutbox (P)"]
+    SC["supportcontrol (P)"]
+    OB["observability (X)"]
+  end
+  subgraph B["Intake & Evidence"]
+    CI["channelintake (P)"]
+    DE["documentevidence (X)"]
+    IQ["inquiry (X)"]
+    AA["aiadvisory (X)"]
+    DT["decisiontrace (X)"]
+    WM["workmanagement (P)"]
+  end
+  subgraph C["Commercial & O2C"]
+    CP["customerparty (X)"]
+    CAT["catalog (X)"]
+    INV["inventory (X)"]
+    POL["commercialpolicy (X)"]
+    Q["quote (P)"]
+    OM["ordermanagement (X)"]
+    FF["fulfillment (X)"]
+    BAR["billingar (OD)"]
+    PR["paymentreconciliation (X)"]
+    CC["claimscollections (D)"]
+  end
+  subgraph D["Integration & Delivery"]
+    IC["integrationcontrol (P)"]
+    CE["connectorexecution (X)"]
+    CD["communicationdelivery (X)"]
+    SD["securitydelivery (T2)"]
+    XP["customerprojection (X)"]
+    BI["commerceintelligence (P)"]
+    TI["tenantimplementation (X)"]
+  end
+
+  %% intake chain
+  CI --> IQ
+  CI --> DE
+  DE --> AA --> DT
+  IQ --> WM
+  DT --> WM
+  %% commercial chain
+  WM --> Q
+  WM --> OM
+  IQ --> CP
+  Q --> CAT
+  Q --> INV
+  Q --> POL
+  Q --> DT
+  OM --> Q
+  OM --> IC
+  FF --> OM
+  PR --> OM
+  CAT --> INV
+  POL --> CAT
+  POL --> CP
+  %% integration/delivery
+  IC --> CE
+  Q ==> CD
+  Q ==> AO
+  OM ==> AO
+  IC ==> AO
+  CE ==> AO
+  FF --> XP
+  BI -. reads .-> Q
+  BI -. reads .-> OM
+  BI -. reads .-> PR
+  XP -. reads .-> FF
+  %% platform cross-cuts (every module may append audit/outbox + resolve identity)
+  IA --- TO
+  SD --> IA
+  SC --> AO
+  OB -. reads .-> AO

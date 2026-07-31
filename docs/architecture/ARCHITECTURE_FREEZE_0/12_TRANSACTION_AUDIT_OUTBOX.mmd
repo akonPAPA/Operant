@@ -1,0 +1,26 @@
+%% VIEW 12 — TRANSACTION, AUDIT, OUTBOX, AND EVENT MODEL
+%% Scope: atomic boundary + external-effect separation. Source commit: c11f7e8.
+%% Legend: box=one local PostgreSQL transaction; ==>=durable external intent; -.->=separate relay (at-least-once).
+flowchart TB
+  REQ["command (server-resolved tenant+actor, Idempotency-Key)"] --> IDEM["IdempotencyService.claim (IdempotencyRecord)"]
+  IDEM --> TX
+
+  subgraph TX["ONE local PostgreSQL transaction (atomic)"]
+    BIZ["business mutation (owning module aggregate)"]
+    AUD["AuditEvent append (auditoutbox)"]
+    OBX["OutboxEvent PENDING (auditoutbox)"]
+    BIZ --- AUD --- OBX
+  end
+
+  TX -->|commit| OK["safe response DTO"]
+  TX -.->|rollback| DENY["deny — NO audit, NO outbox, NO effect"]
+
+  OBX -.->|relay worker| PUB{"external enabled?"}
+  PUB -->|no (today)| SKIP["SKIPPED_EXTERNAL_DISABLED / PUBLISHED_INTERNAL_ONLY"]
+  PUB -->|yes [T2]| EXT["PUBLISHED_EXTERNAL ==> provider (at-least-once + idempotent effect)"]
+  EXT --> FAILP{"fail?"}
+  FAILP -->|retry bounded| EXT
+  FAILP -->|exhausted| DLQ["FAILED -> reconciliation"]
+
+  %% RULE (quality gate): accepted audit can NEVER commit independently of a rolled-back business state.
+  %% Mechanism ladder: DB constraint/atomic conditional > @Version > pessimistic lock > CAS > serialized queue > lease+fencing > Saga(last resort).

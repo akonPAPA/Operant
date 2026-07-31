@@ -1,0 +1,34 @@
+%% VIEW 13 — ACCESS PLANES AND TRUST BOUNDARIES (4 independent planes)
+%% Source commit: c11f7e8. Evidence: ApiRouteSecurityPolicy.java (single route->permission source; /api/** default-deny).
+%% Legend: solid=allowed; classDef prohibited (red) only in the anti-pattern note.
+flowchart TB
+  subgraph P1["Plane 1: Tenant User"]
+    TU["OIDC session via BFF -> server-resolved actor + X-Tenant-Id"]
+    TUP["perms: ANALYTICS_*, REVIEW_*, QUOTE_*, ADMIN_SETTINGS_*, TRUST_*, CHANGE_REQUEST_*"]
+  end
+  subgraph P2["Plane 2: External Customer"]
+    XC["opaque expiring token in path (no tenant/actor header)"]
+    XCP["SECURE_TRACKING_LINK_PUBLIC_WITH_TOKEN, /api/v1/public/order-tracking (read-only)"]
+  end
+  subgraph P3["Plane 3: Service Account"]
+    SA["signed webhook / gateway HMAC / AI intake"]
+    SAP["WEBHOOK_PUBLIC_WITH_SIGNATURE_OR_TOKEN, AI_RESULT_INTAKE"]
+  end
+  subgraph P4["Plane 4: Operant Staff & Maintenance"]
+    ST["dedicated STAFF machine credential / staff SSO+MFA+JIT [NP]"]
+    STP["STAFF_* (control/support/incident/break-glass/data-repair) + DISJOINT CONTROL_EXECUTOR_*"]
+  end
+
+  TU --> CORE["Core API — /api/** default-deny, fail-closed"]
+  XC --> CORE
+  SA --> CORE
+  ST --> CORE
+
+  CORE --> BIZ["tenant business state"]
+  CORE --> PUB["token-scoped read model"]
+  CORE --> INTAKE["inbound envelope only"]
+  CORE --> CTRL["control/support plane (no business mutation except bounded PROCESSING_JOB_STATUS_REPAIR)"]
+
+  %% SEPARATION OF DUTIES (enforced in policy): requester != approver for grants/break-glass/data-repair/change-request.
+  %% PROHIBITED (anti-pattern, never in code): tenant plane receiving STAFF_*; service account owning business decisions; client-owned tenant/actor.
+  classDef prohibited stroke:#c00,stroke-width:2px,color:#c00;

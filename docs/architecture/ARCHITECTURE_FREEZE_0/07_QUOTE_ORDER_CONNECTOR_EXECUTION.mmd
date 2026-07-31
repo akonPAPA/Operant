@@ -1,0 +1,24 @@
+%% VIEW 07 — QUOTE/ORDER/ERP EXECUTION (flows F8,F9,F10)
+%% Scope: approval -> ChangeRequest -> outbox -> Connector Gateway -> execution -> external ref -> reconciliation. Source commit: c11f7e8.
+%% Legend: solid=sync; ==>=durable outbox/external effect; -.->=async. Distinct perms: CHANGE_REQUEST_CREATE/APPROVE/EXECUTE.
+flowchart TB
+  AQ["APPROVED Quote (quote)"] --> CONV["convert (ordermanagement)<br/>guard: exactly APPROVED"]
+  CONV --> ORD["Order CREATED"]
+  ORD --> CR["ChangeRequest PENDING_APPROVAL (integrationcontrol)"]
+  CR --> APP{"approve (approver != creator)"}
+  APP -->|reject| RJ["REJECTED (terminal)"]
+  APP -->|approve| CRA["APPROVED"]
+  CRA ==> OBX["outbox_event: ExternalSyncIntended (in-tx)"]
+  OBX -.->|relay, at-least-once| CE["connectorexecution: lease + fencing"]
+  CE ==> CG["Connector Gateway [T2:P1-F]"]:::t2
+  CG ==> ERP["ERP/1C (write DISABLED today)"]:::ext
+  CE --> RESLT{"result"}
+  RESLT -->|success| DONE["EXECUTED + external ref"]
+  RESLT -->|fail| COMP["CompensationPlan -> COMPENSATING/COMPENSATED"]
+  DONE -.-> REC["reconciliation (paymentreconciliation/integrationcontrol)"]
+  COMP -.-> REC
+
+  %% BUYER path (F8): Issued Quote -> external customer accept/reject/request-change via secure token (customerprojection/quote).
+  %% IDEMPOTENCY: tenant+changeRequestId + connector idem key. NO exactly-once claim: at-least-once + idempotent effect.
+  classDef t2 stroke-dasharray:5 4,stroke:#b36b00;
+  classDef ext fill:#eee,stroke:#999,stroke-dasharray:4 3;

@@ -1,0 +1,21 @@
+%% VIEW 08 — PAYMENT AND RECONCILIATION (flow F12)
+%% Scope: payment events -> matching -> atomic allocation -> exceptions. Source commit: c11f7e8.
+%% Legend: solid=sync; ==>=durable outbox; -.->=async job. classDef external=provider.
+flowchart TB
+  PP["Payment provider / bank statement"]:::ext ==>|signed webhook| PE["PaymentEvent RECEIVED (paymentreconciliation)"]
+  PE -.-> MAT["matching engine (job)"]
+  MAT --> M{"matched to obligation?"}
+  M -->|no| UNM["UNMATCHED -> reconciliation case"]
+  M -->|yes| ALLOC["atomic allocation TX:<br/>payment_allocation + payment_obligation (conditional update + version)"]
+  ALLOC --> OBS{"obligation state"}
+  OBS -->|partial| PART["PARTIALLY_ALLOCATED"]
+  OBS -->|full| SET["SETTLED"]
+  OBS -->|over| OVER["over-allocation -> reconciliation case"]
+  ALLOC ==> AO["auditoutbox: PaymentAllocated (PUBLISHED_INTERNAL_ONLY)"]
+  UNM -.-> RECON["reconciliation (ReconciliationStatus)"]
+  OVER -.-> RECON
+
+  %% INVARIANT: sum(allocations) <= obligation amount (DB constraint + conditional update). IDEMPOTENCY: tenant+obligationId+ext_payment_id.
+  %% NOT_PROVEN: real bank/PSP matching; ingest + obligation model exist, matching engine is target.
+  classDef external fill:#eee,stroke:#999,stroke-dasharray:4 3;
+  class PP external;

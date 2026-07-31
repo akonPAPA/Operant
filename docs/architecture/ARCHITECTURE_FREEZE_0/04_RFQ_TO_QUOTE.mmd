@@ -1,0 +1,24 @@
+%% VIEW 04 — RFQ/INQUIRY TO QUOTE (full business decision path)
+%% Scope: flows F1,F3,F4,F5,F6,F14. Source commit: c11f7e8.
+%% Legend: solid=sync command/query; -.->=in-process event/async; ==>=durable outbox. Canonical Product Law: AI suggests, rules validate, human approves, backend writes, audit records.
+flowchart TB
+  IN["Inquiry/RFQ opened (inquiry)"] --> RES["resolve customer/product<br/>(customerparty, catalog)"]
+  RES --> AAD["AI advisory (aiadvisory) -.-> typed result"]
+  AAD -.-> VAL["deterministic validation (decisiontrace + commercialpolicy)"]
+  VAL --> WC["WorkCase (workmanagement)"]
+  WC --> COR{"operator correction?"}
+  COR -->|yes| REVAL["FULL deterministic revalidation"] --> WC
+  COR -->|ready| ASM["assembleDraft (quote)"]
+  ASM --> ST{"open approval / blocking issue?"}
+  ST -->|blocking issue| BLK["409 blocked (no mutation)"]
+  ST -->|approval required| PA["PENDING_APPROVAL"]
+  ST -->|clean| DA["DRAFT_ASSEMBLED"]
+  DA --> APV["approve (APPROVE_QUOTE)"]
+  PA --> APV
+  APV --> APQ["APPROVED + immutable QuoteArtifact"]
+  APQ ==> OUT["auditoutbox: QuoteApproved (PUBLISHED_INTERNAL_ONLY today)"]
+  APQ --> DEL["-> View 07 (convert to Order) / View 09 (deliver)"]
+
+  %% AUTHORITY: tenant+actor server-resolved (RequestActorResolver, X-Tenant-Id). Body authority ignored (OP-CAP-31/35).
+  %% IDEMPOTENCY: tenant+quoteId(+Idempotency-Key). CONCURRENCY: pessimistic lock on draft; optimistic on approve.
+  %% NOT_PROVEN: header totals not recomputed at assembly (OP-CAP-36 note). Quote status is string (no DB CHECK) — CURRENT_PARTIAL.

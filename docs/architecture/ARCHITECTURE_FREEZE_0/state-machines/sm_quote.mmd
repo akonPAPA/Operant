@@ -1,0 +1,24 @@
+%% STATE MACHINE — Quote (owner: quote). Source commit: c11f7e8.
+%% Actor plane: Tenant User. Perms: QUOTE_ACTION / REVIEW_ACTION / APPROVE_QUOTE. Lock: pessimistic on draft, optimistic on approve.
+%% Idempotency: tenant+quoteId(+Idempotency-Key). STATUS: CURRENT_PARTIAL — string status, no DB CHECK (ADR-010 hardening target).
+stateDiagram-v2
+  [*] --> DRAFT
+  DRAFT --> DRAFT_ASSEMBLED: assembleDraft (no open approval) / audit QUOTE_DRAFT_ASSEMBLED
+  DRAFT --> PENDING_APPROVAL: assembleDraft (approval required)
+  DRAFT_ASSEMBLED --> PENDING_APPROVAL: escalate
+  DRAFT_ASSEMBLED --> WAITING_APPROVAL: mark-ready
+  WAITING_APPROVAL --> APPROVED: approve [APPROVE_QUOTE] / QuoteApproved + QuoteArtifact + outbox
+  PENDING_APPROVAL --> APPROVED: approve
+  DRAFT_ASSEMBLED --> APPROVED: approve
+  WAITING_APPROVAL --> REJECTED: reject
+  PENDING_APPROVAL --> REJECTED: reject
+  DRAFT --> CANCELLED: cancel
+  APPROVED --> [*]
+  REJECTED --> [*]
+  CANCELLED --> [*]
+  APPROVED --> EXPIRED: ttl
+  EXPIRED --> [*]
+  note right of APPROVED
+    Only APPROVED may convert to Order (View 07 guard).
+    FORBIDDEN: terminal->correct; non-APPROVED->convert; mutate QuoteArtifact.
+  end note

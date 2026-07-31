@@ -1,0 +1,42 @@
+%% VIEW 06 — CONNECTOR AND PROVIDER TAXONOMY (8 distinct categories with distinct authority)
+%% Source commit: c11f7e8. RULE: no single generic Connector interface — authority/protocol/delivery/tx/failure differ per category.
+%% Legend: solid=in-process call; ==>=external network/effect; classDef external=provider boundary.
+flowchart LR
+  subgraph CAT1["1. Inbound Channel Adapters"]
+    C1["Telegram/WhatsApp/Email/API/BuyerPortal/Upload/Agent-SFTP/Marketplace"]
+  end
+  subgraph CAT2["2. Outbound Business Communication"]
+    C2["email/Telegram/WhatsApp/SMS/push/webhook"]
+  end
+  subgraph CAT3["3. Security Delivery (SEPARATE pool)"]
+    C3["MFA email/SMS, password reset, device verify [T2]"]
+  end
+  subgraph CAT4["4. Identity Providers"]
+    C4["OIDC/OAuth2/enterprise SSO/tenant IdP/staff IdP"]
+  end
+  subgraph CAT5["5. Business-System Connectors (read != write)"]
+    C5["1C/ERP/CRM/accounting/SQL views/CSV-XLSX-SFTP/REST-OData"]
+  end
+  subgraph CAT6["6. AI & Document Providers (advisory)"]
+    C6["LLM/OCR/STT/parser/malware scan/embedding"]
+  end
+  subgraph CAT7["7. Payment Providers"]
+    C7["PSP/bank API/bank statement/payment-link"]
+  end
+  subgraph CAT8["8. Connector Execution Runtime"]
+    C8["Connector Gateway [T2:P1-F] + operant-agent [T2:P1-G]<br/>capability registry, credential refs, checkpoints, retry, revocation, reconciliation"]
+  end
+
+  C1 ==>|inbound envelope only| CORE["Core API"]
+  CORE --> C2 ==> P2[provider]:::ext
+  CORE --> C3 ==> P3[MFA provider]:::ext
+  CORE --> C4
+  C4 ==> P4[IdP]:::ext
+  CORE ==>|APPROVED ChangeRequest only| C8
+  C8 ==> C5 ==> P5[ERP/1C]:::ext
+  C8 ==> C7 ==> P7[bank/PSP]:::ext
+  CORE -.-> C6 ==> P6[AI/OCR]:::ext
+
+  classDef external fill:#eee,stroke:#999,stroke-dasharray:4 3;
+  class P2,P3,P4,P5,P6,P7 external;
+  %% CURRENT: cat5 default DRAFT+READ_ONLY (recordsWritten=0); only PROCESSING_JOB_STATUS_REPAIR executes. cat3/cat8 = NOT_PROVEN.

@@ -1,0 +1,25 @@
+%% STATE MACHINES — PaymentEvent / PaymentObligation / PaymentAllocation (owner: paymentreconciliation). Source commit: c11f7e8.
+%% Evidence: PaymentObligationStatus, PaymentAllocationStatus. Idempotency: tenant+obligationId+ext_payment_id. Invariant: sum(allocations) <= obligation.
+stateDiagram-v2
+  state "PaymentEvent" as PE {
+    [*] --> RECEIVED: signed provider webhook
+    RECEIVED --> MATCHED: matching engine
+    RECEIVED --> UNMATCHED: no obligation -> reconciliation
+    RECEIVED --> IGNORED
+    MATCHED --> [*]
+  }
+  state "PaymentObligation" as PO {
+    [*] --> OPEN
+    OPEN --> PARTIALLY_ALLOCATED: allocate (conditional update + version)
+    PARTIALLY_ALLOCATED --> SETTLED: full
+    OPEN --> SETTLED: full
+    OPEN --> WRITTEN_OFF
+    SETTLED --> [*]
+  }
+  state "PaymentAllocation" as PA {
+    [*] --> PENDING
+    PENDING --> ALLOCATED: atomic conditional (idempotent)
+    ALLOCATED --> REVERSED: correction
+    ALLOCATED --> [*]
+  }
+  %% FORBIDDEN: over-allocate beyond obligation; allocate without idempotency; claim exactly-once. NOT_PROVEN: real matching engine.
