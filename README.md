@@ -1,7 +1,6 @@
 # Operant Core
 
 Operant is intelligent o2c/e2e/intelligent e-commercesoftware
-The developers contributors: akonPAPA, Ayan2k6, almuhxmed,jobegamests-code
 
 ## License and proprietary notice
 
