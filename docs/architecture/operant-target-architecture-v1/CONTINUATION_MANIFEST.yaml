@@ -1,0 +1,45 @@
+package_version: v1-run1
+declared_scope: FULL_TARGET_ARCHITECTURE per OPERANT_TARGET_ARCHITECTURE_DESIGN_AND_ARCHITECTURE_FREEZE_MASTER_PROMPT_V3 (repo copy, sha256 a9ceebf7...)
+completed_passes:
+  - "Pass 0 — source, capability and current-state discovery (COMPLETE_FOR_DECLARED_SCOPE)"
+active_pass: "Pass 1 — product, stakeholders and quality attributes (NOT STARTED)"
+completed_files:
+  - 00_INDEX_AND_EXECUTIVE_VERDICT.md
+  - CAPABILITY_AND_COVERAGE_PREFLIGHT.md
+  - 01_SOURCE_RECONCILIATION_AND_EVIDENCE.md
+  - 02_CURRENT_ARCHITECTURE_AND_GAP_MAP.md   # PARTIAL
+  - 17_DECISION_RISK_ASSUMPTION_AND_NOT_PROVEN_REGISTERS.md   # seeded, live
+source_files_fully_read:
+  - OrderPilot-Core/OPERANT_PRODUCTION_EXECUTION_STATE.md (v12, sha 76a90774)
+  - OrderPilot-Core/docs/architecture/ARCHITECTURE_FREEZE_0/OPERANT_ARCHITECTURE_FREEZE_0_MASTER.md (sha ec48bf0a)
+  - OrderPilot-Core/docs/architecture/ARCHITECTURE_FREEZE_0/OPERANT_ARCHITECTURE_DECISIONS_REQUIRED.md (sha 4923d53d)
+  - OrderPilot-Core/CLAUDE.md
+  - /home/akm/OrderPilot/заметки для OPERANT.md (sha 622ee187)
+source_files_partial:
+  - "~/Downloads/OPERANT_ENTERPRISE_MODULAR_MONOLITH_ARCHITECTURE_FREEZE_V2.md (sha 8ad3039d): headings + §0 read; body TRUNCATED"
+  - "OrderPilot-Core/OPERANT_PRODUCTION_MASTER_PROMPT.md (139KB): NOT read this run"
+  - "~/Documents/OPERANT_ERP_SYNC_CONCURRENCY_DATA_LEAK_CONVERSATION.md (sha 1c97f988): NOT read; required before Pass 3/4"
+  - "~/Documents/OPERANT_CORE_API_MAIN_FULL_DEPTH_* (2026-07-29): NOT read; SHA-compatibility check required"
+  - "OrderPilot-Core/AGENTS.md: NOT read (process rules; CLAUDE.md equivalent read)"
+  - "OrderPilot-Core/docs/product/STAGE_STATUS_RECONCILIATION.md: NOT read"
+  - "owner-artifacts/OPERANT_WORLD_CLASS_FRONTEND_MASTER_PLAN_V1.md: NOT read (Pass 5 input)"
+  - "ARCHITECTURE_FREEZE_0 TSV catalogs, 16 .mmd views, 12 ADRs, OPERANT_ARCHITECTURE_VALIDATION_REPORT.md: NOT individually read; master summary used"
+repository_revision: "OrderPilot-Core main b2b7255d58d534cf3633ef138372f04c7e9b726e; outer repo 63ab043; remote akonPAPA/OrderPilot.git"
+repository_coverage_status: TARGETED_SOURCE_REVIEW (evidence/CURRENT_IMPLEMENTATION_COVERAGE.csv NOT produced)
+external_sources_reviewed: []
+decisions_proposed: []   # none beyond carrying S4 defaults into the OD register
+owner_decisions_required: [OD-01..OD-14 — see 17_*.md section A]
+open_conflicts: [CF-01, CF-02, CF-03, CF-06, CF-07 (carried as gap map), CF-08]
+open_findings: [G1..G7 in 02_*.md]
+not_proven: "see 17_*.md section D"
+next_exact_action: >
+  Run 2, Pass 1: (1) read OPERANT_PRODUCTION_MASTER_PROMPT.md fully to extract normative constraints
+  into 01/17; (2) read ENTERPRISE_FREEZE_V2 fully (module specs §5, trade-offs §28, slices §25) and
+  FREEZE_0 TSVs/ADRs to build the OD-01 reconciliation table; (3) draft
+  03_PRODUCT_BUSINESS_CAPABILITY_ARCHITECTURE.md and 04_STAKEHOLDERS_DRIVERS_AND_QUALITY_SCENARIOS.md
+  from V3 §10–12 + reconciled sources; (4) start evidence/CURRENT_IMPLEMENTATION_COVERAGE.csv seeded
+  from ~/Documents PER_FILE_REVIEW csv after SHA-compatibility check against b2b7255.
+cross_document_checks_pending:
+  - "V3 §32 machine cross-reference checks (run after Pass 6)"
+  - "S8 CSV baseline vs b2b7255 blame compatibility"
+  - "Stage2Dtos.java head-delta review (G7)"
