@@ -1,0 +1,28 @@
+%% STATE MACHINES — Order (ordermanagement) / Fulfillment (fulfillment) / DeliveryAttempt (communicationdelivery). Source commit: c11f7e8.
+%% Evidence: convertApprovedQuoteToInternalDraftOrder; MilestoneState; JourneyProjectionEventStatus; bot response drafts.
+stateDiagram-v2
+  state "Order" as O {
+    [*] --> DRAFT_ORDER: convert from APPROVED quote only
+    DRAFT_ORDER --> CREATED
+    CREATED --> CONFIRMED
+    CREATED --> CANCELLED
+    CONFIRMED --> [*]
+  }
+  state "Fulfillment (OrderJourney)" as F {
+    [*] --> CREATED
+    CREATED --> IN_PROGRESS
+    IN_PROGRESS --> MILESTONE_REACHED: signal (per-journey ordering by sequence)
+    MILESTONE_REACHED --> IN_PROGRESS
+    IN_PROGRESS --> RETURN_REQUESTED
+    IN_PROGRESS --> COMPLETED
+    COMPLETED --> [*]
+  }
+  state "DeliveryAttempt" as D {
+    [*] --> PENDING: from outbox intent
+    PENDING --> SENT
+    SENT --> DELIVERED
+    SENT --> FAILED: retry bounded
+    FAILED --> DEAD_LETTER
+    DELIVERED --> [*]
+  }
+  %% FORBIDDEN: Order from non-APPROVED quote; milestone out of sequence; security messages on business delivery pool.

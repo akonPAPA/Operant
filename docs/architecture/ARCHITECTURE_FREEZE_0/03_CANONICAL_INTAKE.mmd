@@ -1,0 +1,41 @@
+%% VIEW 03 — CANONICAL INTAKE PLATFORM
+%% Scope: all inbound adapters funnel into ONE canonical intake pipeline. Source commit: c11f7e8.
+%% Legend: solid=sync; -.->=async job; ==>=durable outbox. classDef external=provider boundary.
+%% CURRENT: ChannelWebhook/Webhook/BotTelegram/ChannelGateway controllers (duplicate D1) -> MERGE target below.
+%% RULE: adapters may ONLY emit a canonical inbound envelope. They MUST NOT create Quote/Order/PaymentAllocation/Approval/ChangeRequest.
+flowchart TB
+  TG["TelegramAdapter"]:::ext
+  WA["WhatsAppAdapter"]:::ext
+  EM["EmailAdapter"]:::ext
+  API["ApiAdapter"]:::ext
+  UP["UploadAdapter"]:::ext
+  AGT["Agent/SftpAdapter"]:::ext
+  BP["BuyerPortalAdapter"]:::ext
+  MK["MarketplaceWebhookAdapter"]:::ext
+
+  TG --> P1
+  WA --> P1
+  EM --> P1
+  API --> P1
+  UP --> P1
+  AGT --> P1
+  BP --> P1
+  MK --> P1
+
+  subgraph PIPE["Canonical Intake Pipeline (channelintake)"]
+    direction TB
+    P1["provider auth / signature validation"] --> P2["replay validation"] --> P3["server-owned connection resolution"]
+    P3 --> P4["server-owned tenant resolution"] --> P5["payload limits"] --> P6["rate / quota / admission"]
+    P6 --> P7["canonical inbound envelope"] --> P8["deduplication / idempotency"] --> P9["bounded evidence storage"]
+    P9 --> P10["fast acknowledgement"] --> P11["classification"] --> P12["workload routing"]
+  end
+
+  P12 --> RIN["Inquiry / RFQ (inquiry)"]
+  P12 --> RIM["Import (inventory)"]
+  P12 --> RPY["Payment (paymentreconciliation)"]
+  P12 --> RSP["Support (supportcontrol)"]
+  P12 --> RUN["Unknown -> quarantine review"]
+  P9 ==> AO["auditoutbox"]
+
+  classDef ext fill:#eee,stroke:#999,stroke-dasharray:4 3;
+  %% NOT_PROVEN: WhatsApp/marketplace/buyer-portal adapters (Telegram/email/API present today).

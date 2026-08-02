@@ -1,0 +1,31 @@
+%% VIEW 14 — HIGH-LOAD WORKLOAD AND BACKPRESSURE MODEL
+%% Source commit: c11f7e8. Legend: solid=fast sync path; -.->=async worker path; ==>=durable enqueue.
+flowchart TB
+  ING["Ingress"] --> FAST["FAST REQUEST PATH:<br/>verify -> tenant resolution -> bounds -> idempotency -> minimal durable persistence -> ACK"]
+  FAST ==> JOBS[("job tables / queues by TYPE")]
+
+  subgraph POOLS["Per-workload worker pools (isolation)"]
+    W1["doc parse / OCR"]
+    W2["AI advisory"]
+    W3["channel normalization"]
+    W4["connector sync"]
+    W5["communication delivery"]
+    W6["analytics projection"]
+    W7["reconciliation"]
+    W8["malware scan / large-file (isolated)"]
+  end
+  JOBS -.-> W1 & W2 & W3 & W4 & W5 & W6 & W7 & W8
+
+  subgraph FAIR["Fairness & backpressure"]
+    F1["per-tenant concurrency"]
+    F2["weighted tenant fairness"]
+    F3["priority classes"]
+    F4["global resource ceilings + provider limits"]
+    F5["backpressure -> degraded mode"]
+    F6["bounded retry -> DLQ / reconciliation"]
+  end
+  POOLS --> FAIR
+
+  %% ORDERING KEYS (only what invariant needs): tenant+inquiryId, tenant+quoteId, tenant+orderId, tenant+paymentObligationId, tenant+connectionId.
+  %% CURRENT: ProcessingJob + WorkerJobLeaseService (lease/fencing) exist. Per-tenant fairness/priority/degraded-mode = TARGET_STATE_2.
+  %% DB hot-path rules: no unbounded findAll; indexed tenant-scoped; cursor pagination; batching; no N+1; blobs in object storage; read models for dashboards.

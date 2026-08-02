@@ -1,0 +1,12 @@
+{
+  "auth": {
+    "type": "noauth"
+  },
+  "method": "GET",
+  "header": [],
+  "url": {
+    "raw": "{{baseUrl}}/health",
+    "host": ["{{baseUrl}}"],
+    "path": ["health"]
+  }
+}

@@ -1,0 +1,27 @@
+%% VIEW 15 — FUTURE STATE-3 EXTRACTION SEAMS (dashed = NOT current services)
+%% Source commit: c11f7e8. A module becomes a seam only when ALL 12 gate criteria hold (see master §18 / ADR-012).
+%% Legend: solid box=stays in monolith core; dashed box=candidate future service; -.->=eventual-consistency boundary.
+flowchart LR
+  subgraph CORE["Business core stays ONE monolith"]
+    Q["quote"]
+    OM["ordermanagement"]
+    PR["paymentreconciliation"]
+    IC["integrationcontrol"]
+    AO["auditoutbox (NEVER extract — atomic invariant)"]
+  end
+
+  subgraph CANDIDATES["Candidate seams [S3] — dashed, evidence below"]
+    CE["connectorexecution<br/>(already fronted by Connector Gateway P1-F boundary)"]:::seam
+    DE["documentevidence + AI/OCR worker<br/>(already a separate advisory runtime)"]:::seam
+    CD["communicationdelivery / securitydelivery<br/>(delivery workers, idempotent effect)"]:::seam
+  end
+
+  IC -.eventual, idempotent effect + reconciliation.-> CE
+  Q -.jobs.-> DE
+  Q -.outbox, at-least-once.-> CD
+
+  %% GATE (all required): 1 owner; 2 versioned contract; 3 independent scaling; 4 independent failure domain;
+  %% 5 independent deployment reason; 6 no shared ACID; 7 eventual-consistency model; 8 idempotency/duplicate behavior;
+  %% 9 reconciliation/compensation; 10 separate data ownership; 11 observability/SLO; 12 evidence extraction lowers total risk/cost.
+  %% NONE extracted in Freeze 0. Presented as SEAMS only.
+  classDef seam stroke-dasharray:6 4,stroke:#666,color:#444;

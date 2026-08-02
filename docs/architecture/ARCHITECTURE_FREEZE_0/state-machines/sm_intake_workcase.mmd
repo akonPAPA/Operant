@@ -1,0 +1,31 @@
+%% STATE MACHINES — Inquiry / Document / Import / WorkCase. Source commit: c11f7e8.
+%% Owners: inquiry, documentevidence, inventory, workmanagement. Evidence: ProcessingStatus, ValidationCaseStatus, intake-architecture.md.
+stateDiagram-v2
+  state "Document (documentevidence)" as DOC {
+    [*] --> RECEIVED
+    RECEIVED --> QUEUED: persisted
+    RECEIVED --> DUPLICATE: tenant+sha256 exists
+    QUEUED --> PROCESSING: job leased
+    PROCESSING --> PROCESSED
+    PROCESSING --> FAILED: scan/parse fail
+    PROCESSED --> [*]
+  }
+  state "Import (inventory)" as IMP {
+    [*] --> DRAFT
+    DRAFT --> STAGED: staging rows
+    STAGED --> VALIDATED: validation report
+    VALIDATED --> ACTIVATED: activation (atomic) -> mirror
+    STAGED --> REJECTED: validation fail (NO activation)
+    ACTIVATED --> [*]
+  }
+  state "WorkCase (workmanagement)" as WC {
+    [*] --> OPEN
+    OPEN --> NEEDS_REVIEW
+    NEEDS_REVIEW --> IN_PROGRESS: correction (pessimistic lock)
+    IN_PROGRESS --> NEEDS_REVIEW: full revalidation
+    NEEDS_REVIEW --> READY: mark-ready (passes validation)
+    READY --> ESCALATED
+    READY --> RESOLVED
+    RESOLVED --> [*]
+  }
+  %% FORBIDDEN: Document RECEIVED->PROCESSED skipping scan; Import STAGED->ACTIVATED skipping VALIDATED; WorkCase READY without validation.

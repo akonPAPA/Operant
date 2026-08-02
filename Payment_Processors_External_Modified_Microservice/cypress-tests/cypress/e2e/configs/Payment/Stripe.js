@@ -1,0 +1,2556 @@
+import {
+  cardRequiredField,
+  connectorDetails as commonConnectorDetails,
+  customerAcceptance,
+} from "./Commons";
+import { getCustomExchange } from "./Modifiers";
+
+const successfulNo3DSCardDetails = {
+  card_number: "378282246310005",
+  card_exp_month: "10",
+  card_exp_year: "50",
+  card_holder_name: "morino",
+  card_cvc: "737",
+};
+
+const successfulThreeDSTestCardDetails = {
+  card_number: "4000002500003155",
+  card_exp_month: "10",
+  card_exp_year: "50",
+  card_holder_name: "morino",
+  card_cvc: "737",
+};
+
+const externalThreeDSCardDetails = {
+  card_number: "4242424242424242",
+  card_exp_month: "12",
+  card_exp_year: "2030",
+  card_holder_name: "Test User",
+  card_cvc: "123",
+};
+
+const failedNo3DSCardDetails = {
+  card_number: "4000000000000002",
+  card_exp_month: "01",
+  card_exp_year: "35",
+  card_holder_name: "joseph Doe",
+  card_cvc: "123",
+};
+
+const singleUseMandateData = {
+  customer_acceptance: customerAcceptance,
+  mandate_type: {
+    single_use: {
+      amount: 8000,
+      currency: "USD",
+    },
+  },
+};
+
+const multiUseMandateData = {
+  customer_acceptance: customerAcceptance,
+  mandate_type: {
+    multi_use: {
+      amount: 8000,
+      currency: "USD",
+    },
+  },
+};
+
+const onlineCustomerAcceptance = {
+  ...customerAcceptance,
+  acceptance_type: "online",
+};
+
+const idealBaseRequest = {
+  payment_method: "bank_redirect",
+  payment_method_type: "ideal",
+  payment_method_data: {
+    bank_redirect: {
+      ideal: {
+        bank_name: "ing",
+      },
+    },
+  },
+  billing: {
+    address: {
+      line1: "1467",
+      line2: "Harrison Street",
+      line3: "Harrison Street",
+      city: "San Fransico",
+      state: "California",
+      zip: "94122",
+      country: "NL",
+      first_name: "joseph",
+      last_name: "Doe",
+    },
+    phone: {
+      number: "9123456789",
+      country_code: "+91",
+    },
+  },
+};
+
+const bancontactBaseRequest = {
+  payment_method: "bank_redirect",
+  payment_method_type: "bancontact_card",
+  payment_method_data: {
+    bank_redirect: {
+      bancontact_card: {},
+    },
+  },
+  billing: {
+    email: "joseph.Doe@example.com",
+    address: {
+      line1: "1467",
+      line2: "Harrison Street",
+      line3: "Harrison Street",
+      city: "San Fransico",
+      state: "California",
+      zip: "94122",
+      country: "BE",
+      first_name: "joseph",
+      last_name: "Doe",
+    },
+    phone: {
+      number: "9123456789",
+      country_code: "+91",
+    },
+  },
+};
+
+const mandateSingleUseFields = {
+  currency: "EUR",
+  customer_acceptance: customerAcceptance,
+  mandate_data: {
+    ...singleUseMandateData,
+    mandate_type: {
+      single_use: {
+        ...singleUseMandateData.mandate_type.single_use,
+        currency: "EUR",
+      },
+    },
+  },
+  setup_future_usage: "off_session",
+  payment_type: "new_mandate",
+};
+
+const connectorCredential = (connectorIndex) => ({
+  value: `connector_${connectorIndex}`,
+});
+
+const bankDebitCredentialIndex = {
+  Sepa: 5,
+  Ach: 1,
+  Becs: 4,
+  Bacs: 3,
+};
+
+const bankDebitConnectorCredential = (paymentMethodType) =>
+  connectorCredential(
+    bankDebitCredentialIndex[paymentMethodType] ?? bankDebitCredentialIndex.Sepa
+  );
+
+const payment_method_data_3ds = {
+  card: {
+    last4: "3155",
+    card_type: "CREDIT",
+    card_network: "Visa",
+    card_issuer: "INTL HDQTRS CENTER OWNED",
+    card_issuing_country: "UNITED STATES OF AMERICA",
+    card_isin: "400000",
+    card_extended_bin: null,
+    card_exp_month: "10",
+    card_exp_year: "50",
+    card_holder_name: "morino",
+    payment_checks: null,
+    authentication_data: null,
+    auth_code: null,
+  },
+  billing: null,
+};
+
+const payment_method_data_no3ds = {
+  card: {
+    last4: "0005",
+    card_type: "CREDIT",
+    card_network: "AmericanExpress",
+    card_issuer: "AMERICAN EXPRESS US CARS",
+    card_issuing_country: "UNITED STATES OF AMERICA",
+    card_isin: "378282",
+    card_extended_bin: null,
+    card_exp_month: "10",
+    card_exp_year: "50",
+    card_holder_name: "morino",
+    payment_checks: {
+      cvc_check: "pass",
+      address_line1_check: "pass",
+      address_postal_code_check: "pass",
+    },
+    authentication_data: null,
+    auth_code: null,
+  },
+  billing: null,
+};
+
+const requiredFields = {
+  payment_methods: [
+    {
+      payment_method: "card",
+      payment_method_types: [
+        {
+          payment_method_type: "credit",
+          card_networks: [
+            {
+              eligible_connectors: ["stripe"],
+            },
+          ],
+          required_fields: cardRequiredField,
+        },
+      ],
+    },
+  ],
+};
+
+export const connectorDetails = {
+  multi_credential_config: {
+    specName: ["connectorAgnosticNTID"],
+    value: "connector_2",
+  },
+  card_pm: {
+    PaymentIntent: {
+      Request: {
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+          setup_future_usage: "on_session",
+        },
+      },
+    },
+    PaymentIntentOffSession: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: {
+          specName: ["connectorAgnosticNTID"],
+          value: "connector_2",
+        },
+      },
+      Request: {
+        currency: "USD",
+        customer_acceptance: null,
+        amount: 6000,
+        authentication_type: "no_three_ds",
+        setup_future_usage: "off_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+          setup_future_usage: "off_session",
+        },
+      },
+    },
+    SessionToken: {
+      Response: {
+        status: 200,
+        body: {
+          session_token: [
+            {
+              wallet_name: "apple_pay",
+              connector: "stripe",
+            },
+            {
+              wallet_name: "google_pay",
+              connector: "stripe",
+            },
+          ],
+        },
+      },
+    },
+    PaymentIntentWithShippingCost: {
+      Request: {
+        currency: "USD",
+        shipping_cost: 50,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+          shipping_cost: 50,
+          amount: 6000,
+        },
+      },
+    },
+    PaymentConfirmWithShippingCost: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          shipping_cost: 50,
+          amount_received: 6050,
+          amount: 6000,
+          net_amount: 6050,
+        },
+      },
+    },
+    "3DSManualCapture": {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+          setup_future_usage: "on_session",
+          payment_method_data: payment_method_data_3ds,
+        },
+      },
+    },
+
+    "3DSAutoCapture": {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+          setup_future_usage: "on_session",
+          payment_method_data: payment_method_data_3ds,
+        },
+      },
+    },
+    No3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+          payment_method: "card",
+          attempt_count: 1,
+          payment_method_data: payment_method_data_no3ds,
+        },
+      },
+    },
+    No3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          payment_method: "card",
+          attempt_count: 1,
+          payment_method_data: payment_method_data_no3ds,
+        },
+      },
+    },
+    No3DSFailPayment: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: failedNo3DSCardDetails,
+        },
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "card_declined",
+          error_message:
+            "message - Your card was declined., decline_code - generic_decline",
+        },
+      },
+    },
+    Capture: {
+      Request: {
+        amount_to_capture: 6000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          amount: 6000,
+          amount_capturable: 0,
+          amount_received: 6000,
+        },
+      },
+    },
+    PartialCapture: {
+      Request: {
+        amount_to_capture: 2000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "partially_captured",
+          amount: 6000,
+          amount_capturable: 0,
+          amount_received: 2000,
+        },
+      },
+    },
+    Void: {
+      Request: {},
+      Response: {
+        status: 200,
+        body: {
+          status: "cancelled",
+        },
+      },
+    },
+    Refund: {
+      Request: {
+        amount: 6000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    manualPaymentRefund: {
+      Request: {
+        amount: 6000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    manualPaymentPartialRefund: {
+      Request: {
+        amount: 2000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    PartialRefund: {
+      Request: {
+        amount: 2000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    SyncRefund: {
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    SyncRefundScheduled: {
+      Response: {
+        status: 200,
+        body: {
+          status: "pending",
+        },
+      },
+    },
+    // IncrementalAuth: { // commenting out due to credentials issue
+    //   Request: {
+    //     amount: 8000,
+    //   },
+    //   Response: {
+    //     status: 200,
+    //     body: {
+    //       status: "requires_capture",
+    //       amount: 8000,
+    //       amount_capturable: 8000,
+    //       amount_received: null,
+    //       incremental_authorizations: [
+    //         {
+    //           amount: 8000,
+    //           previously_authorized_amount: 6000,
+    //           status: "requires_capture",
+    //         },
+    //       ],
+    //     },
+    //   },
+    // },
+    MandateSingleUse3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        mandate_data: singleUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    MandateSingleUse3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        mandate_data: singleUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    MandateSingleUseNo3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: singleUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    MandateSingleUseNo3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: singleUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    MandateMultiUseNo3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: multiUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    MandateMultiUseNo3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: multiUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    MandateMultiUse3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        mandate_data: multiUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    MandateMultiUse3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        mandate_data: multiUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    MITAutoCapture: getCustomExchange({
+      Configs: {
+        CONNECTOR_CREDENTIAL: {
+          specName: ["connectorAgnosticNTID"],
+          value: "connector_2",
+        },
+      },
+      ...commonConnectorDetails.card_pm.MITAutoCapture,
+    }),
+    MITManualCapture: {
+      Request: {},
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    ZeroAuthMandate: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: singleUseMandateData,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    ZeroAuthPaymentIntent: {
+      Request: {
+        amount: 0,
+        setup_future_usage: "off_session",
+        currency: "USD",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+          setup_future_usage: "off_session",
+        },
+      },
+    },
+    ZeroAuthConfirmPayment: {
+      Request: {
+        payment_type: "setup_mandate",
+        payment_method: "card",
+        payment_method_type: "credit",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        mandate_data: null,
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          setup_future_usage: "off_session",
+        },
+      },
+    },
+    SaveCardUseNo3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        setup_future_usage: "on_session",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    SaveCardUseNo3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        setup_future_usage: "on_session",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    PaymentMethodIdMandateNo3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: null,
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    SaveCardUseNo3DSAutoCaptureOffSession: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: {
+          specName: ["connectorAgnosticNTID"],
+          value: "connector_2",
+        },
+      },
+      Request: {
+        payment_method: "card",
+        payment_method_type: "debit",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        setup_future_usage: "off_session",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    SaveCardUse3DSAutoCaptureOffSession: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: {
+          specName: ["connectorAgnosticNTID"],
+          value: "connector_2",
+        },
+      },
+      Request: {
+        payment_method: "card",
+        payment_method_type: "debit",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        setup_future_usage: "off_session",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    SaveCardUseNo3DSManualCaptureOffSession: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        setup_future_usage: "off_session",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    SaveCardConfirmAutoCaptureOffSession: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: {
+          specName: ["connectorAgnosticNTID"],
+          value: "connector_2",
+        },
+      },
+      Request: {
+        setup_future_usage: "off_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    SaveCardConfirmManualCaptureOffSession: {
+      Request: {
+        setup_future_usage: "off_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    SaveCardConfirmAutoCaptureOffSessionWithoutBilling: {
+      Request: {
+        setup_future_usage: "off_session",
+        billing: null,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    PaymentMethodIdMandateNo3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        mandate_data: null,
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_capture",
+        },
+      },
+    },
+    PaymentMethodIdMandate3DSAutoCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        currency: "USD",
+        mandate_data: null,
+        authentication_type: "three_ds",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    PaymentMethodIdMandate3DSManualCapture: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulThreeDSTestCardDetails,
+        },
+        mandate_data: null,
+        authentication_type: "three_ds",
+        customer_acceptance: customerAcceptance,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    ManualRetryPaymentDisabled: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 400,
+        body: {
+          type: "invalid_request",
+          message:
+            "You cannot confirm this payment because it has status failed, you can enable `manual_retry` in profile to try this payment again",
+          code: "IR_16",
+        },
+      },
+    },
+    ManualRetryPaymentEnabled: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          payment_method: "card",
+          attempt_count: 2,
+        },
+      },
+    },
+    ManualRetryPaymentCutoffExpired: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: successfulNo3DSCardDetails,
+        },
+        currency: "USD",
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 400,
+        body: {
+          type: "invalid_request",
+          message:
+            "You cannot confirm this payment using `manual_retry` because the allowed duration has expired",
+          code: "IR_16",
+        },
+      },
+    },
+    PollConfig: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: {
+            card_number: "4000000000003220",
+            card_exp_month: "10",
+            card_exp_year: "27",
+            card_holder_name: "John Doe",
+            card_cvc: "737",
+          },
+        },
+        authentication_type: "three_ds",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+          authentication_type: "three_ds",
+        },
+      },
+    },
+    PollConfigNotFound: {
+      Response: {
+        status: 404,
+        body: {
+          error: {
+            type: "invalid_request",
+            message: "Poll does not exist in our records",
+            code: "HE_02",
+          },
+        },
+      },
+    },
+    PollConfigInvalidPollId: {
+      Response: {
+        status: 404,
+        body: {
+          error: {
+            type: "invalid_request",
+            message: "Poll does not exist in our records",
+            code: "HE_02",
+          },
+        },
+      },
+    },
+    PollConfigUnauthorized: {
+      Response: {
+        status: 401,
+        body: {
+          error: {
+            type: "invalid_request",
+            message: "API key not provided or invalid API key used",
+            code: "IR_01",
+          },
+        },
+      },
+    },
+    external_three_ds: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: {
+          card: externalThreeDSCardDetails,
+        },
+        authentication_type: "three_ds",
+        request_external_three_ds_authentication: true,
+        three_ds_data: {
+          authentication_cryptogram: {
+            cavv: {
+              authentication_cryptogram: "3q2+78r+ur7erb7vyv66vv////8=",
+            },
+          },
+          ds_trans_id: "c4e59ceb-a382-4d6a-bc87-385d591fa09d",
+          version: "2.1.0",
+          eci: "05",
+          transaction_status: "Y",
+          exemption_indicator: "low_value",
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          authentication_type: "three_ds",
+        },
+      },
+    },
+    PaymentIntentWithBillingDescriptor: {
+      Request: {
+        currency: "USD",
+        amount: 6540,
+        authentication_type: "no_three_ds",
+        capture_method: "automatic",
+        billing_descriptor: {
+          statement_descriptor: "QA-BillingDesc",
+          statement_descriptor_suffix: "SUFFIX1",
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+        },
+      },
+    },
+    PaymentConfirmWithBillingDescriptor: {
+      Request: {
+        payment_method: "card",
+        payment_method_data: { card: successfulNo3DSCardDetails },
+        customer_acceptance: null,
+        setup_future_usage: "on_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    },
+    ClientSessionInvalidConfirm:
+      commonConnectorDetails.card_pm.ClientSessionInvalidConfirm,
+  },
+  bank_transfer_pm: {
+    Ach: {
+      Request: {
+        amount: 333,
+        payment_method: "bank_transfer",
+        payment_method_type: "ach",
+        billing: {
+          address: {
+            zip: "560095",
+            country: "US",
+            first_name: "akshakaya N",
+            last_name: "sss",
+            line1: "Fasdf",
+            line2: "Fasdf",
+            city: "Fasdf",
+          },
+          email: "johndoe@mail.com",
+        },
+        payment_method_data: {
+          bank_transfer: {
+            ach_bank_transfer: {},
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+  },
+  bank_redirect_pm: {
+    Ideal: {
+      Request: {
+        ...idealBaseRequest,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      MandateSingleUseAutoCapture: {
+        Request: {
+          ...idealBaseRequest,
+          billing: {
+            ...idealBaseRequest.billing,
+            email: "joseph.Doe@example.com",
+          },
+          ...mandateSingleUseFields,
+        },
+        Response: {
+          status: 200,
+          body: {
+            status: "requires_customer_action",
+          },
+        },
+      },
+    },
+    Giropay: {
+      Request: {
+        payment_method: "bank_redirect",
+        payment_method_type: "giropay",
+        payment_method_data: {
+          bank_redirect: {
+            giropay: {},
+          },
+        },
+        billing: {
+          address: {
+            line1: "1467",
+            line2: "Harrison Street",
+            line3: "Harrison Street",
+            city: "San Fransico",
+            state: "California",
+            zip: "94122",
+            country: "DE",
+            first_name: "joseph",
+            last_name: "Doe",
+          },
+          phone: {
+            number: "9123456789",
+            country_code: "+91",
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "payment_method_not_available",
+          error_message:
+            "Giropay is deprecated and can no longer be used for payment acceptance. Please refer to https://docs.stripe.com/payments/giropay",
+        },
+      },
+    },
+    Eps: {
+      Request: {
+        payment_method: "bank_redirect",
+        payment_method_type: "eps",
+        payment_method_data: {
+          bank_redirect: {
+            eps: {
+              bank_name: "bank_austria",
+            },
+          },
+        },
+        billing: {
+          address: {
+            line1: "1467",
+            line2: "Harrison Street",
+            line3: "Harrison Street",
+            city: "San Fransico",
+            state: "California",
+            zip: "94122",
+            country: "AT",
+            first_name: "joseph",
+            last_name: "Doe",
+          },
+          phone: {
+            number: "9123456789",
+            country_code: "+91",
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    Blik: {
+      Request: {
+        payment_method: "bank_redirect",
+        payment_method_type: "blik",
+        payment_method_data: {
+          bank_redirect: {
+            blik: {
+              blik_code: "777987",
+            },
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    Przelewy24: {
+      Request: {
+        payment_method: "bank_redirect",
+        payment_method_type: "przelewy24",
+        payment_method_data: {
+          bank_redirect: {
+            przelewy24: {
+              bank_name: "citi",
+              billing_details: {
+                email: "guest@juspay.in",
+              },
+            },
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    BancontactCard: {
+      MandateSingleUse: {
+        Request: {
+          ...bancontactBaseRequest,
+          ...mandateSingleUseFields,
+        },
+        Response: {
+          status: 200,
+          body: {
+            status: "requires_customer_action",
+          },
+        },
+      },
+      MandateSingleUseAutoCapture: {
+        Request: {
+          ...bancontactBaseRequest,
+          ...mandateSingleUseFields,
+        },
+        Response: {
+          status: 200,
+          body: {
+            status: "requires_customer_action",
+          },
+        },
+      },
+    },
+  },
+  pay_later_pm: {
+    AutoCapture: getCustomExchange({
+      Request: {
+        currency: "USD",
+        capture_method: "automatic",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+        },
+      },
+    }),
+    ManualCapture: getCustomExchange({
+      Request: {
+        currency: "USD",
+        capture_method: "manual",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+        },
+      },
+    }),
+    Klarna: getCustomExchange({
+      Request: {
+        payment_method: "pay_later",
+        payment_method_type: "klarna",
+        payment_experience: "redirect_to_url",
+        payment_method_data: {
+          pay_later: {
+            klarna_redirect: {
+              billing_email: "customer@email.com",
+              billing_country: "US",
+            },
+          },
+        },
+        billing: {
+          email: "customer@email.com",
+          address: {
+            line1: "1467 Harrison Street",
+            city: "San Francisco",
+            state: "California",
+            zip: "94122",
+            country: "US",
+            first_name: "Mock",
+            last_name: "Mock",
+          },
+        },
+        order_details: [
+          {
+            product_name: "Test Product",
+            quantity: 1,
+            amount: 6000,
+          },
+        ],
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    }),
+    Affirm: getCustomExchange({
+      Request: {
+        payment_method: "pay_later",
+        payment_method_type: "affirm",
+        payment_experience: "redirect_to_url",
+        payment_method_data: {
+          pay_later: {
+            affirm_redirect: {},
+          },
+        },
+        billing: {
+          email: "customer@email.com",
+          address: {
+            line1: "1467 Harrison Street",
+            city: "San Francisco",
+            state: "California",
+            zip: "94122",
+            country: "US",
+            first_name: "Mock",
+            last_name: "Mock",
+          },
+        },
+        order_details: [
+          {
+            product_name: "Test Product",
+            quantity: 1,
+            amount: 6000,
+          },
+        ],
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    }),
+    Capture: getCustomExchange({
+      Request: {
+        amount_to_capture: 6000,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+        },
+      },
+    }),
+    ConfirmWithoutPmData: getCustomExchange({
+      Request: {
+        payment_method: undefined,
+        payment_method_type: undefined,
+        payment_experience: undefined,
+        payment_method_data: undefined,
+        order_details: undefined,
+      },
+      Response: {
+        status: 400,
+        body: {
+          error: {
+            type: "invalid_request",
+            code: "IR_06",
+          },
+        },
+      },
+    }),
+    AfterpayClearpayAutoCapture: getCustomExchange({
+      Request: {
+        currency: "USD",
+        capture_method: "automatic",
+        billing: {
+          address: {
+            line1: "1467 Harrison Street",
+            city: "San Francisco",
+            state: "California",
+            zip: "94122",
+            country: "US",
+            first_name: "Mock",
+            last_name: "Mock",
+          },
+          email: "customer@email.com",
+        },
+        shipping: {
+          address: {
+            line1: "1467 Harrison Street",
+            city: "San Francisco",
+            state: "California",
+            zip: "94122",
+            country: "US",
+            first_name: "Mock",
+            last_name: "Mock",
+          },
+        },
+        order_details: [
+          {
+            product_name: "Test Product",
+            quantity: 1,
+            amount: 6000,
+          },
+        ],
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_payment_method",
+        },
+      },
+    }),
+    AfterpayClearpay: getCustomExchange({
+      Request: {
+        payment_method: "pay_later",
+        payment_method_type: "afterpay_clearpay",
+        payment_experience: "redirect_to_url",
+        payment_method_data: {
+          pay_later: {
+            afterpay_clearpay_redirect: {},
+          },
+        },
+        currency: "USD",
+        billing: {
+          address: {
+            line1: "1467 Harrison Street",
+            city: "San Francisco",
+            state: "California",
+            zip: "94122",
+            country: "US",
+            first_name: "Mock",
+            last_name: "Mock",
+          },
+          email: "customer@email.com",
+        },
+        shipping: {
+          address: {
+            line1: "1467 Harrison Street",
+            city: "San Francisco",
+            state: "California",
+            zip: "94122",
+            country: "US",
+            first_name: "Mock",
+            last_name: "Mock",
+          },
+        },
+        order_details: [
+          {
+            product_name: "Test Product",
+            quantity: 1,
+            amount: 6000,
+          },
+        ],
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    }),
+  },
+  bank_debit_pm: {
+    PaymentIntent: (paymentMethodType) => {
+      const currencyMap = { Sepa: "EUR", Ach: "USD", Becs: "AUD", Bacs: "GBP" };
+      return {
+        Configs: {
+          CONNECTOR_CREDENTIAL: bankDebitConnectorCredential(paymentMethodType),
+          ...(paymentMethodType === "Bacs" ? { TRIGGER_SKIP: true } : {}),
+        },
+        Request: {
+          currency: currencyMap[paymentMethodType] || "USD",
+        },
+        Response: {
+          status: 200,
+          body: {
+            status: "requires_payment_method",
+          },
+        },
+      };
+    },
+    Sepa: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Sepa"),
+      },
+      Request: {
+        payment_method: "bank_debit",
+        payment_method_type: "sepa",
+        payment_method_data: {
+          bank_debit: {
+            sepa_bank_debit: {
+              iban: "DE89370400440532013000",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        billing: {
+          address: {
+            first_name: "Test",
+            last_name: "Account",
+            country: "FR",
+          },
+          email: "test@example.com",
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 1000,
+              currency: "EUR",
+              start_date: "2025-04-21T00:00:00Z",
+              end_date: "2028-05-21T00:00:00Z",
+              metadata: {
+                frequency: "13",
+              },
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    Becs: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Becs"),
+      },
+      Request: {
+        currency: "AUD",
+        payment_method: "bank_debit",
+        payment_method_type: "becs",
+        payment_method_data: {
+          bank_debit: {
+            becs_bank_debit: {
+              bsb_number: "000000",
+              account_number: "000123456",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        billing: {
+          address: {
+            first_name: "Test",
+            last_name: "Account",
+            country: "AU",
+            line1: "123 Test St",
+            zip: "2000",
+          },
+          email: "test@example.com",
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 1000,
+              currency: "AUD",
+              start_date: "2025-04-21T00:00:00Z",
+              end_date: "2028-05-21T00:00:00Z",
+              metadata: {
+                frequency: "13",
+              },
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    Ach: {
+      Configs: {
+        LOCAL_VAULT_REQUIRED: true,
+      },
+      Request: {
+        payment_method: "bank_debit",
+        payment_method_type: "ach",
+        payment_method_data: {
+          bank_debit: {
+            ach_bank_debit: {
+              account_number: "000123456789",
+              routing_number: "110000000",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        billing: {
+          address: {
+            country: "US",
+            first_name: "Test",
+            last_name: "Account",
+          },
+          email: "test@example.com",
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 6000,
+              currency: "USD",
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    Bacs: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Bacs"),
+      },
+      Request: {
+        payment_method: "bank_debit",
+        payment_method_type: "bacs",
+        payment_method_data: {
+          bank_debit: {
+            bacs_bank_debit: {
+              account_number: "00012345",
+              sort_code: "108800",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        billing: {
+          address: {
+            line1: "1 Oxford Street",
+            city: "London",
+            zip: "SW1A 1AA",
+            country: "GB",
+            first_name: "Test",
+            last_name: "Account",
+          },
+          email: "test@example.com",
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MandateSingleUseAch: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Ach"),
+        LOCAL_VAULT_REQUIRED: true,
+      },
+      Request: {
+        amount: 6540,
+        payment_method: "bank_debit",
+        payment_method_type: "ach",
+        currency: "USD",
+        payment_method_data: {
+          bank_debit: {
+            ach_bank_debit: {
+              account_number: "000123456789",
+              routing_number: "110000000",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 8000,
+              currency: "USD",
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+        billing: {
+          address: {
+            country: "US",
+            first_name: "Test",
+            last_name: "Account",
+          },
+          email: "test@example.com",
+        },
+        payment_type: "new_mandate",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+    },
+    MandateSingleUseBacs: {
+      Configs: {
+        TRIGGER_SKIP: true,
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Bacs"),
+      },
+      Request: {
+        amount: 6540,
+        payment_method: "bank_debit",
+        payment_method_type: "bacs",
+        currency: "GBP",
+        payment_method_data: {
+          bank_debit: {
+            bacs_bank_debit: {
+              account_number: "00012345",
+              sort_code: "108800",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 1000,
+              currency: "GBP",
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+        billing: {
+          address: {
+            line1: "1 Oxford Street",
+            city: "London",
+            zip: "SW1A 1AA",
+            country: "GB",
+            first_name: "Test",
+            last_name: "Account",
+          },
+          email: "test@example.com",
+        },
+        payment_type: "new_mandate",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MandateSingleUseSepa: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Sepa"),
+      },
+      Request: {
+        amount: 6540,
+        payment_method: "bank_debit",
+        payment_method_type: "sepa",
+        currency: "EUR",
+        payment_method_data: {
+          bank_debit: {
+            sepa_bank_debit: {
+              iban: "DE89370400440532013000",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 8000,
+              currency: "EUR",
+              start_date: "2025-04-21T00:00:00Z",
+              end_date: "2028-05-21T00:00:00Z",
+              metadata: {
+                frequency: "13",
+              },
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+        billing: {
+          address: {
+            first_name: "Test",
+            last_name: "Account",
+            country: "FR",
+          },
+          email: "test@example.com",
+        },
+        payment_type: "new_mandate",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MandateSingleUseBecs: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Becs"),
+      },
+      Request: {
+        amount: 6540,
+        payment_method: "bank_debit",
+        payment_method_type: "becs",
+        currency: "AUD",
+        payment_method_data: {
+          bank_debit: {
+            becs_bank_debit: {
+              bsb_number: "000000",
+              account_number: "000123456",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        mandate_data: {
+          customer_acceptance: onlineCustomerAcceptance,
+          mandate_type: {
+            multi_use: {
+              amount: 8000,
+              currency: "AUD",
+              start_date: "2025-04-21T00:00:00Z",
+              end_date: "2028-05-21T00:00:00Z",
+              metadata: {
+                frequency: "13",
+              },
+            },
+          },
+        },
+        setup_future_usage: "off_session",
+        billing: {
+          address: {
+            first_name: "Test",
+            last_name: "Account",
+            country: "AU",
+            line1: "123 Test St",
+            zip: "2000",
+          },
+          email: "test@example.com",
+        },
+        payment_type: "new_mandate",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MITAutoCaptureSepa: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Sepa"),
+      },
+      Request: {
+        amount: 6540,
+        off_session: true,
+        confirm: true,
+        currency: "EUR",
+        payment_method: "bank_debit",
+        payment_method_type: "sepa",
+        payment_method_data: {
+          bank_debit: {
+            sepa_bank_debit: {
+              iban: "DE89370400440532013000",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        billing: {
+          address: {
+            first_name: "Test",
+            last_name: "Account",
+            country: "FR",
+          },
+          email: "test@example.com",
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MITAutoCaptureBecs: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Becs"),
+      },
+      Request: {
+        amount: 6540,
+        off_session: true,
+        confirm: true,
+        currency: "AUD",
+        payment_method: "bank_debit",
+        payment_method_type: "becs",
+        payment_method_data: {
+          bank_debit: {
+            becs_bank_debit: {
+              bsb_number: "000000",
+              account_number: "000123456",
+              bank_account_holder_name: "Test Account",
+            },
+          },
+        },
+        billing: {
+          address: {
+            first_name: "Test",
+            last_name: "Account",
+            country: "AU",
+            line1: "123 Test St",
+            zip: "2000",
+          },
+          email: "test@example.com",
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MITAutoCaptureAch: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Ach"),
+      },
+      Request: {
+        amount: 6540,
+        off_session: true,
+        confirm: true,
+        currency: "USD",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+    MITAutoCaptureBacs: {
+      Configs: {
+        CONNECTOR_CREDENTIAL: bankDebitConnectorCredential("Bacs"),
+      },
+      Request: {
+        amount: 6540,
+        off_session: true,
+        confirm: true,
+        currency: "GBP",
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "processing",
+        },
+      },
+    },
+  },
+  auth_service_eligibility: {
+    // Storage flag does not affect authentication outcome — both enabled and
+    // disabled flows produce the same 3DS challenge. Distinction is only
+    // observable via Redis, which cannot be asserted through the API layer.
+    EligibilityStorageEnabled: getCustomExchange({
+      Request: {
+        payment_method: "card",
+        payment_method_data: { card: successfulThreeDSTestCardDetails },
+        currency: "USD",
+        amount: 6500,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+          authentication_type: "three_ds",
+        },
+      },
+    }),
+    // Storage flag does not affect authentication outcome — both enabled and
+    // disabled flows produce the same 3DS challenge. Distinction is only
+    // observable via Redis, which cannot be asserted through the API layer.
+    EligibilityStorageDisabled: getCustomExchange({
+      Request: {
+        payment_method: "card",
+        payment_method_data: { card: successfulThreeDSTestCardDetails },
+        currency: "USD",
+        amount: 6500,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+          authentication_type: "three_ds",
+        },
+      },
+    }),
+  },
+  vault_tokenization: {
+    // The should_disable_vault_tokenization flag is toggled via
+    // cy.setConfigs() in the spec's before hook — it is NOT part of the
+    // payment request body. Both disabled (flag=true) and enabled
+    // (flag=false) states produce the same API-observable outcome
+    // (status=succeeded, authentication_type=three_ds), so both test
+    // cases share a single exchange definition.
+    VaultTokenization: getCustomExchange({
+      Request: {
+        payment_method: "card",
+        payment_method_data: { card: externalThreeDSCardDetails },
+        currency: "USD",
+        amount: 6500,
+        authentication_type: "three_ds",
+        request_external_three_ds_authentication: true,
+        three_ds_data: {
+          authentication_cryptogram: {
+            cavv: {
+              authentication_cryptogram: "3q2+78r+ur7erb7vyv66vv////8=",
+            },
+          },
+          ds_trans_id: "c4e59ceb-a382-4d6a-bc87-385d591fa09d",
+          version: "2.1.0",
+          eci: "05",
+          transaction_status: "Y",
+          exemption_indicator: "low_value",
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "succeeded",
+          authentication_type: "three_ds",
+        },
+      },
+    }),
+  },
+  pm_list: {
+    PmListResponse: {
+      PmListNull: {
+        payment_methods: [],
+      },
+      pmListDynamicFieldWithoutBilling: requiredFields,
+      pmListDynamicFieldWithBilling: requiredFields,
+      pmListDynamicFieldWithNames: requiredFields,
+      pmListDynamicFieldWithEmail: requiredFields,
+    },
+  },
+  webhook: {
+    TransactionIdConfig: {
+      // Defines how to locate and parse the payment reference ID from connector-specific webhook payloads
+      path: "data.object.id",
+      // Type of payment reference ID
+      type: "string",
+    },
+    RefundIdConfig: {
+      // Stripe refund webhooks use data.object.id as the connector refund reference
+      path: "data.object.id",
+      type: "string",
+    },
+  },
+  wallet_pm: {
+    PaymentIntent: (walletType, overrideCurrency) => {
+      const currencyMap = {
+        AliPay: "USD",
+        AmazonPay: "USD",
+        Cashapp: "USD",
+        RevolutPay: "EUR",
+        WeChatPay: "USD",
+      };
+      return {
+        Request: {
+          currency: overrideCurrency || currencyMap[walletType] || "USD",
+          amount: 1000,
+        },
+        Response: {
+          status: 200,
+          body: {
+            status: "requires_payment_method",
+          },
+        },
+      };
+    },
+    PaymentIntentMandate: (walletType, overrideCurrency) => {
+      const currencyMap = {
+        AmazonPay: "USD",
+        Cashapp: "USD",
+        RevolutPay: "EUR",
+      };
+      return {
+        Request: {
+          currency: overrideCurrency || currencyMap[walletType] || "USD",
+          amount: 1000,
+          setup_future_usage: "off_session",
+        },
+        Response: {
+          status: 200,
+          body: {
+            status: "requires_payment_method",
+          },
+        },
+      };
+    },
+    AliPay: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "ali_pay",
+        payment_method_data: {
+          wallet: {
+            ali_pay_redirect: {},
+          },
+        },
+        billing: {
+          address: {
+            country: "CN",
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+      },
+    },
+    AmazonPay: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "amazon_pay",
+        payment_method_data: {
+          wallet: {
+            amazon_pay_redirect: {},
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+      },
+    },
+    AmazonPayMandate: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "amazon_pay",
+        payment_method_data: {
+          wallet: {
+            amazon_pay_redirect: {},
+          },
+        },
+        mandate_data: {
+          customer_acceptance: {
+            acceptance_type: "offline",
+            accepted_at: "1963-05-03T04:07:52.723Z",
+            online: {
+              ip_address: "in sit",
+              user_agent: "amet irure esse sunt",
+            },
+          },
+          mandate_type: {
+            single_use: {
+              amount: 1000,
+              currency: "USD",
+            },
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+      },
+    },
+    Cashapp: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "cashapp",
+        payment_method_data: {
+          wallet: {
+            cashapp_qr: {},
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+      },
+    },
+    CashappMandate: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "cashapp",
+        payment_method_data: {
+          wallet: {
+            cashapp_qr: {},
+          },
+        },
+        mandate_data: {
+          customer_acceptance: {
+            acceptance_type: "offline",
+            accepted_at: "1963-05-03T04:07:52.723Z",
+            online: {
+              ip_address: "in sit",
+              user_agent: "amet irure esse sunt",
+            },
+          },
+          mandate_type: {
+            single_use: {
+              amount: 1000,
+              currency: "USD",
+            },
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+      },
+    },
+    RevolutPay: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "revolut_pay",
+        payment_method_data: {
+          wallet: {
+            revolut_pay: {},
+          },
+        },
+        mandate_data: null,
+        setup_future_usage: null,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+        TRIGGER_SKIP: true,
+      },
+    },
+    RevolutPayMandate: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "revolut_pay",
+        payment_method_data: {
+          wallet: {
+            revolut_pay: {},
+          },
+        },
+        mandate_data: {
+          customer_acceptance: {
+            acceptance_type: "offline",
+            accepted_at: "1963-05-03T04:07:52.723Z",
+            online: {
+              ip_address: "in sit",
+              user_agent: "amet irure esse sunt",
+            },
+          },
+          mandate_type: {
+            single_use: {
+              amount: 1000,
+              currency: "EUR",
+            },
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+        TRIGGER_SKIP: true,
+      },
+    },
+    WeChatPay: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "we_chat_pay",
+        payment_method_data: {
+          wallet: {
+            we_chat_pay_qr: {},
+          },
+        },
+        mandate_data: null,
+        setup_future_usage: null,
+        billing: {
+          address: {
+            country: "CN",
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "requires_customer_action",
+        },
+      },
+      Configs: {
+        skipBillingAssertion: true,
+      },
+    },
+    AliPayInvalidCurrency: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "ali_pay",
+        payment_method_data: {
+          wallet: {
+            ali_pay_redirect: {},
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "payment_method_not_available",
+          error_message:
+            "AliPay is not available in the selected region/currency",
+        },
+      },
+    },
+    AmazonPayInvalidCurrency: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "amazon_pay",
+        payment_method_data: {
+          wallet: {
+            amazon_pay_redirect: {},
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "payment_method_not_available",
+          error_message:
+            "AmazonPay is not available in the selected region/currency",
+        },
+      },
+    },
+    CashappInvalidCurrency: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "cashapp",
+        payment_method_data: {
+          wallet: {
+            cashapp_qr: {},
+          },
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "payment_method_not_available",
+          error_message:
+            "Cashapp is not available in the selected region/currency",
+        },
+      },
+    },
+    RevolutPayInvalidCurrency: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "revolut_pay",
+        payment_method_data: {
+          wallet: {
+            revolut_pay: {},
+          },
+        },
+        mandate_data: null,
+        setup_future_usage: null,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "payment_method_not_available",
+          error_message:
+            "RevolutPay is not available in the selected region/currency",
+        },
+      },
+    },
+    WeChatPayInvalidCurrency: {
+      Request: {
+        payment_method: "wallet",
+        payment_method_type: "we_chat_pay",
+        payment_method_data: {
+          wallet: {
+            we_chat_pay_qr: {},
+          },
+        },
+        mandate_data: null,
+        setup_future_usage: null,
+      },
+      Response: {
+        status: 200,
+        body: {
+          status: "failed",
+          error_code: "payment_method_not_available",
+          error_message:
+            "WeChatPay is not available in the selected region/currency",
+        },
+      },
+    },
+  },
+  webhook_config: {
+    // WebhookConfig: webhook_username and webhook_password are masked
+    // placeholders — not real credentials. They are safe to use in any
+    // connector config as placeholder webhook auth data.
+    Create: getCustomExchange({
+      Request: {
+        webhook_details: {
+          webhook_version: "2024.01",
+          webhook_username: "<WEBHOOK_USERNAME>",
+          webhook_password: "<WEBHOOK_PASSWORD>",
+          webhook_url: "https://example.com/webhook",
+          payment_created_enabled: true,
+          payment_succeeded_enabled: true,
+          payment_failed_enabled: false,
+          refund_created_enabled: true,
+          refund_succeeded_enabled: true,
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          webhook_details: {
+            payment_failed_enabled: false,
+            payment_succeeded_enabled: true,
+            payment_created_enabled: true,
+            refund_created_enabled: true,
+            refund_succeeded_enabled: true,
+          },
+        },
+      },
+    }),
+    Update: getCustomExchange({
+      Request: {
+        webhook_details: {
+          webhook_version: "2024.01",
+          webhook_username: "<WEBHOOK_USERNAME_UPDATED>",
+          webhook_password: "<WEBHOOK_PASSWORD_UPDATED>",
+          webhook_url: "https://example.com/webhook_updated",
+          payment_created_enabled: true,
+          payment_succeeded_enabled: true,
+          payment_failed_enabled: true,
+          refund_created_enabled: true,
+          refund_succeeded_enabled: true,
+          dispute_created_enabled: true,
+        },
+      },
+      Response: {
+        status: 200,
+        body: {
+          webhook_details: {
+            payment_failed_enabled: true,
+            payment_succeeded_enabled: true,
+            payment_created_enabled: true,
+            refund_created_enabled: true,
+            refund_succeeded_enabled: true,
+            dispute_created_enabled: true,
+          },
+        },
+      },
+    }),
+  },
+};

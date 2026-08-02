@@ -1,0 +1,25 @@
+%% VIEW 11 — REDIS AND EPHEMERAL RUNTIME (partitioned by OPERATIONAL SEMANTICS, not business module)
+%% Source commit: c11f7e8. Legend: solid=uses; classDef store=redis. RULE: Redis is NEVER sole source of truth for business state.
+flowchart TB
+  subgraph RSESS["Redis role A: session + security (blast radius = auth)"]
+    S1["BFF session store (REDIS_REQUIRED)"]
+    S2["gateway replay admission (GatewayHeaderReplayAdmissionStore)"]
+    S3["control-plane replay namespace (separate)"]
+  end
+  subgraph RRUN["Redis role B: runtime + rate + cache (blast radius = throughput)"]
+    R1["rate limiting (RedisRateCounter / LettuceRedisRateCounter)"]
+    R2["runtime admission (RuntimeRateRedisConfiguration)"]
+    R3["short-lived cache / provider circuit state [T2]"]
+  end
+  BFF["Web BFF"] --> S1
+  CORE["Core API"] --> S2
+  CORE --> S3
+  CORE --> R1
+  CORE --> R2
+  CORE --> R3
+  S1 -.truth.-> PG[("PostgreSQL: identity, entitlement, audit")]:::store
+  R2 -.truth.-> PG
+
+  %% Physical split RSESS vs RRUN JUSTIFIED (availability/eviction/persistence/security/blast-radius differ) but NEEDS_OWNER_DECISION.
+  %% FORBIDDEN Redis-as-truth: tenant membership, quote, order, payment, inventory authority, approval, audit, entitlement, durable job ownership.
+  classDef store fill:#dfefff,stroke:#3b7;

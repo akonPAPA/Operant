@@ -1,0 +1,25 @@
+%% STATE MACHINES — ChangeRequest (integrationcontrol) + ConnectorExecution (connectorexecution). Source commit: c11f7e8.
+%% Evidence: ChangeRequestService, ApiRouteSecurityPolicy.changeRequestDecision (distinct CREATE/APPROVE/REJECT/EXECUTE perms).
+%% Separation of duties: approver != creator. Idempotency: tenant+changeRequestId (+ connector idem key). No exactly-once claim.
+stateDiagram-v2
+  state "ChangeRequest" as CR {
+    [*] --> PENDING_APPROVAL: create [CHANGE_REQUEST_CREATE]
+    PENDING_APPROVAL --> APPROVED: approve [CHANGE_REQUEST_APPROVE] (approver != creator)
+    PENDING_APPROVAL --> REJECTED: reject/cancel [CHANGE_REQUEST_REJECT]
+    APPROVED --> EXECUTION_DISABLED: external disabled (today)
+    APPROVED --> EXECUTED: execute [CHANGE_REQUEST_EXECUTE] / outbox ExternalSyncIntended
+    APPROVED --> FAILED: execute fail -> compensation
+    REJECTED --> [*]
+    EXECUTED --> [*]
+  }
+  state "ConnectorExecution" as CE {
+    [*] --> QUEUED: from APPROVED ChangeRequest only
+    QUEUED --> RUNNING: lease + fencing
+    RUNNING --> SUCCEEDED: idempotent effect
+    RUNNING --> FAILED: retry bounded
+    FAILED --> COMPENSATING: CompensationPlan
+    COMPENSATING --> COMPENSATED
+    SUCCEEDED --> [*]
+    COMPENSATED --> [*]
+  }
+  %% FORBIDDEN: execute without APPROVED; self-approve; connector executes read+write conflated.

@@ -1,0 +1,46 @@
+%% VIEW 00 — SYSTEM CONTEXT
+%% Scope: actors, access planes, external systems, Operant boundary.
+%% Source commit: c11f7e8 (akonPAPA/Operant, main). Status: current unless marked [T2]=TARGET_STATE_2 / [NP]=NOT_PROVEN.
+%% Legend: solid=sync request; ==>=durable/external-effect; -.->=event/async; classDef external=provider boundary.
+%% Assumptions: State-2 = completion of Phase-1 topology (P1-D..P1-G). NOT_PROVEN: staff SSO/MFA/JIT, external connector writes.
+flowchart TB
+  subgraph Actors
+    TU["Tenant User<br/>(operator/admin)"]
+    XC["External Customer<br/>(buyer, token link)"]
+    SA["Service Account<br/>(providers, AI worker)"]
+    ST["Operant Staff<br/>(support/maintenance) [NP: SSO/MFA/JIT]"]
+  end
+
+  subgraph Operant["OPERANT PLATFORM"]
+    BFF["Next.js Dashboard / BFF<br/>(OIDC browser auth)"]
+    CORE["Core API<br/>(modular monolith)"]
+    WK["AI / Document Worker<br/>(advisory only)"]
+    CG["Connector Gateway [T2:P1-F]"]
+    AG["operant-agent (outbound-only) [T2:P1-G]"]
+  end
+
+  subgraph External["EXTERNAL SYSTEMS"]
+    CH["Channels: Telegram/WhatsApp/Email/API"]
+    ERP["Business systems: 1C/ERP/CRM/Accounting"]
+    PSP["Payment providers / banks"]
+    IDP["Identity providers (OIDC/SSO)"]
+    AIP["AI/OCR/LLM providers"]
+    OBJ["Object storage"]
+  end
+
+  TU --> BFF --> CORE
+  XC -->|token-scoped read| CORE
+  SA -->|signed webhook / AI intake| CORE
+  ST -->|signed control API / operantctl| CORE
+  CORE -.-> WK
+  CORE ==>|approved external effect| CG
+  CG ==> ERP
+  CG ==> PSP
+  AG ==> ERP
+  CH ==>|inbound| CORE
+  BFF --> IDP
+  WK --> AIP
+  CORE --> OBJ
+
+  classDef external fill:#eee,stroke:#999,stroke-dasharray:4 3;
+  class CH,ERP,PSP,IDP,AIP,OBJ external;

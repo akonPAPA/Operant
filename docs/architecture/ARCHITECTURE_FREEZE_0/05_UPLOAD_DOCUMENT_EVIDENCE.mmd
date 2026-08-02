@@ -1,0 +1,22 @@
+%% VIEW 05 — UPLOAD AND DOCUMENT EVIDENCE (flow F2, and connector import F11)
+%% Scope: streaming upload -> quarantine -> object storage -> malware scan -> OCR/parse -> evidence -> downstream. Source commit: c11f7e8.
+%% Legend: solid=sync; -.->=async job; ==>=durable outbox/audit. classDef external=provider.
+%% CURRENT: ObjectStorageService owns blobs; ProcessingJob PENDING; scan/OCR are worker phases. NOT_PROVEN: real malware scanner integration.
+flowchart TB
+  U["UploadAdapter / ApiAdapter"] --> LIM["payload limits + auth"]
+  LIM --> OS["ObjectStorageService.put (object_storage_record)"]:::store
+  OS --> DOC["InboundDocument QUEUED + sha256 dedup"]
+  DOC --> DUP{"duplicate (tenant+sha256)?"}
+  DUP -->|yes| MARK["mark DUPLICATE (no job)"]
+  DUP -->|no| JOB["ProcessingJob PENDING"]
+  JOB -.-> QAR["quarantine + malware scan"]:::ext
+  QAR -.-> PARSE["OCR / parser (AI worker, advisory)"]:::ext
+  PARSE -.-> EV["Evidence + extraction_result (aiadvisory)"]
+  EV -.-> VAL["deterministic validation (decisiontrace)"]
+  VAL --> INQ["-> Inquiry / WorkCase (View 04)"]
+  DOC ==> AO["auditoutbox: DocumentQueued"]
+  JOB -.->|lease| WL["WorkerJobLeaseService (fencing)"]
+
+  %% Connector import variant (F11): BusinessSystemConnector(read) -> import_job -> staging -> validation -> activation (inventory/catalog).
+  classDef store fill:#dfefff,stroke:#3b7;
+  classDef ext fill:#eee,stroke:#999,stroke-dasharray:4 3;
