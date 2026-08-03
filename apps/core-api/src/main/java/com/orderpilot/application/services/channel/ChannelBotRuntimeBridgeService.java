@@ -120,10 +120,11 @@ public class ChannelBotRuntimeBridgeService {
    */
   @Transactional
   public ChannelBotBridgeResultResponse handleInbound(UUID connectionId, ChannelProviderType providerType, JsonNode payload, Map<String, String> headers) {
-    UUID tenantId = TenantContext.requireTenantId();
-    // Delegate trust decisions to the existing secure path:
-    // tenant ownership + provider match + ACTIVE status + verification + replay dedup + persistence.
+    // Delegate trust decisions to the existing secure path first:
+    // connection ownership + provider match + ACTIVE status + verification + replay dedup + persistence.
+    // Tenant context is established from the server-owned connection inside normalize().
     InboundChannelEvent event = normalizationService.normalize(connectionId, providerType, payload, headers);
+    UUID tenantId = TenantContext.requireTenantId();
     ChannelConnection connection = connectionRepository.findByIdAndTenantId(connectionId, tenantId)
         .orElseThrow(() -> new NotFoundException("Channel connection not found"));
 

@@ -11,11 +11,23 @@ import org.junit.jupiter.api.Test;
 
 class WebhookVerifierTest {
   @Test
-  void localDevelopmentModeIsExplicitAndAccepted() {
+  void localDevelopmentModeFailsClosedWithoutServerOwnedFixtureAuthority() {
     var connection = new ChannelConnection(UUID.randomUUID(), ChannelProviderType.TELEGRAM, "Telegram", null, null, null, Instant.now());
     connection.configureWebhookVerificationMode("DISABLED_FOR_LOCAL_DEV", Instant.now());
 
     VerificationResult result = new TelegramWebhookVerifier().verify(connection, Map.of(), "{}");
+
+    assertThat(result.accepted()).isFalse();
+    assertThat(result.status()).isEqualTo("REJECTED");
+  }
+
+  @Test
+  void localDevelopmentModeIsAcceptedOnlyWithServerOwnedFixtureAuthority() {
+    var connection = new ChannelConnection(UUID.randomUUID(), ChannelProviderType.TELEGRAM, "Telegram", null, null, null, Instant.now());
+    connection.configureWebhookVerificationMode("DISABLED_FOR_LOCAL_DEV", Instant.now());
+    var authority = WebhookVerificationAuthority.forTests(true, false);
+
+    VerificationResult result = new TelegramWebhookVerifier("", authority).verify(connection, Map.of(), "{}");
 
     assertThat(result.accepted()).isTrue();
     assertThat(result.status()).isEqualTo("SKIPPED_LOCAL_DEV");

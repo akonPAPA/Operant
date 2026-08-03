@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.orderpilot.application.services.LegacyWebhookIngressGuard;
 import com.orderpilot.application.services.bot.BotRuntimeService;
 import com.orderpilot.application.services.channel.TelegramSecretTokenVerifier;
+import com.orderpilot.application.services.channel.WebhookAuthenticationException;
 import com.orderpilot.application.services.channel.WebhookSignatureVerificationResult;
 import com.orderpilot.application.services.channel.WebhookVerificationMode;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
@@ -24,10 +26,12 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.TestPropertySource;
 
 @WebMvcTest(BotTelegramWebhookController.class)
+@ActiveProfiles("test")
 @Import({CoreConfiguration.class, GlobalExceptionHandler.class, ApiSecurityWebConfig.class, NoopApiPermissionTestConfig.class})
 @TestPropertySource(properties = "orderpilot.security.cors.allowed-origins=http://localhost:3000,http://127.0.0.1:3000")
 class BotTelegramWebhookControllerTest {
@@ -35,6 +39,7 @@ class BotTelegramWebhookControllerTest {
   @Autowired private ObjectMapper objectMapper;
   @MockBean private BotRuntimeService botRuntimeService;
   @MockBean private TelegramSecretTokenVerifier verifier;
+  @MockBean private LegacyWebhookIngressGuard legacyIngressGuard;
 
   @Test
   void localDashboardCorsPreflightSucceedsForTelegramWebhook() throws Exception {
@@ -98,9 +103,9 @@ class BotTelegramWebhookControllerTest {
     mockMvc.perform(post("/api/v1/bot/telegram/webhook")
             .contentType("application/json")
             .content("{\"message\":{\"chat\":{\"id\":\"chat-1\"},\"message_id\":1,\"text\":\"Need quote\"}}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-        .andExpect(jsonPath("$.message").value("Telegram webhook verification failed"));
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value(WebhookAuthenticationException.CODE))
+        .andExpect(jsonPath("$.message").value(WebhookAuthenticationException.SAFE_MESSAGE));
 
     verify(botRuntimeService, never()).handleTelegramUpdate(any(), any());
   }

@@ -91,7 +91,8 @@ public class ApiSecurityWebConfig implements WebMvcConfigurer {
       "/api/v1/webhooks/channels/meta-messenger/*",
       "/api/v1/webhooks/channels/viber/*",
       "/api/v1/webhooks/channels/wechat/*",
-      "/api/v1/channel-gateway/whatsapp/webhook"
+      "/api/v1/channel-gateway/whatsapp/webhook",
+      "/api/v1/channel-gateway/whatsapp/webhook/*"
   };
   private static final List<String> ALLOWED_METHODS =
       List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");

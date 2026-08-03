@@ -179,10 +179,13 @@ class WebhookStage10EEnforcementTest {
     for (AbuseCorpus.WebhookAbuseSample sample : AbuseCorpus.webhookSamples()) {
       var result = verifier.verify(sample.headers(), sample.rawBody(), ChannelType.WHATSAPP, UUID.randomUUID());
 
-      // Honest unconfigured boundary: it never claims production verification of a hostile payload.
+      // Missing secret fails closed — never claims production verification of a hostile payload.
+      assertThat(result.accepted())
+          .as("unconfigured verifier must fail closed for hostile webhook %s", sample.name())
+          .isFalse();
       assertThat(result.mode())
-          .as("unconfigured verifier must not falsely verify hostile webhook %s", sample.name())
-          .isEqualTo(WebhookVerificationMode.NOT_CONFIGURED_STAGE_10E);
+          .as("unconfigured verifier must report FAILED for hostile webhook %s", sample.name())
+          .isEqualTo(WebhookVerificationMode.FAILED);
       assertNoSensitiveLeak(result.status());
     }
   }
@@ -206,7 +209,7 @@ class WebhookStage10EEnforcementTest {
   @Test
   void verificationModeReflectsServerConfigurationNotClientHeaders() {
     assertThat(new WhatsAppSignatureVerifier().verificationMode())
-        .isEqualTo(WebhookVerificationMode.NOT_CONFIGURED_STAGE_10E);
+        .isEqualTo(WebhookVerificationMode.FAILED);
     assertThat(new WhatsAppSignatureVerifier(TEST_APP_SECRET).verificationMode())
         .isEqualTo(WebhookVerificationMode.CONFIGURED_VERIFY_ONLY);
   }

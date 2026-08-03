@@ -333,7 +333,7 @@ class AbuseCorpusFoundationTest {
       // verifier must report NOT_CONFIGURED (never a CONFIGURED/verified mode) for a hostile payload.
       assertThat(result.mode())
           .as("hostile webhook %s must not be reported as production-verified", sample.name())
-          .isEqualTo(WebhookVerificationMode.NOT_CONFIGURED_STAGE_10E);
+          .isEqualTo(WebhookVerificationMode.FAILED);
       assertNoSensitiveLeak(result.status());
     }
   }

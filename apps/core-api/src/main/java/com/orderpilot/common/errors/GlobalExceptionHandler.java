@@ -14,6 +14,7 @@ import com.orderpilot.application.services.support.ProcessingJobRepairException;
 import com.orderpilot.application.services.support.SupportAccessDeniedException;
 import com.orderpilot.application.services.workspace.DraftPreparationBlockedException;
 import com.orderpilot.application.services.workspace.QuoteLifecycleViolation;
+import com.orderpilot.application.services.channel.WebhookAuthenticationException;
 import com.orderpilot.security.ActorVerificationException;
 import com.orderpilot.security.policy.TenantPolicyException;
 import org.slf4j.Logger;
@@ -187,6 +188,18 @@ public class GlobalExceptionHandler {
     // OP-CAP-16K: signed actor verification failed (missing/invalid/stale signature). Stable 401; the
     // message never contains the expected signature or the signing secret.
     return build(HttpStatus.UNAUTHORIZED, "ACTOR_VERIFICATION_FAILED", ex.getMessage(), request, List.of());
+  }
+
+  @ExceptionHandler(WebhookAuthenticationException.class)
+  ResponseEntity<ApiErrorResponse> handleWebhookAuthentication(
+      WebhookAuthenticationException ex, HttpServletRequest request) {
+    // Public webhook auth / connection-authority denial. One stable 401; no connection/tenant/secret leak.
+    return build(
+        HttpStatus.UNAUTHORIZED,
+        WebhookAuthenticationException.CODE,
+        WebhookAuthenticationException.SAFE_MESSAGE,
+        request,
+        List.of());
   }
 
   @ExceptionHandler(Exception.class)

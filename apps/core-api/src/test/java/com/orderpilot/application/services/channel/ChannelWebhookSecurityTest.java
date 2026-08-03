@@ -25,7 +25,7 @@ import org.springframework.test.context.TestPropertySource;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @TestPropertySource(properties = {"spring.datasource.url=jdbc:h2:mem:stage13_webhook_security;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE DOMAIN IF NOT EXISTS JSONB AS JSON", "spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=create-drop"})
-@Import({ChannelConnectionService.class, ChannelEventNormalizationService.class, AuditEventService.class, LocalDevelopmentSecretVaultService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class, TelegramWebhookVerifier.class})
+@Import({ChannelConnectionService.class, ChannelEventNormalizationService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class, AuditEventService.class, LocalDevelopmentSecretVaultService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class, TelegramWebhookVerifier.class})
 class ChannelWebhookSecurityTest {
   @Autowired ChannelConnectionService connectionService;
   @Autowired ChannelEventNormalizationService normalizationService;
@@ -41,7 +41,7 @@ class ChannelWebhookSecurityTest {
     var connection = connectionService.createDraft(ChannelProviderType.TELEGRAM, "Telegram", null, null, null);
 
     assertThatThrownBy(() -> normalizationService.normalize(connection.getId(), ChannelProviderType.TELEGRAM, Map.of("message_id", "m1", "text", "hello")))
-        .hasMessageContaining("ACTIVE");
+        .isInstanceOf(WebhookAuthenticationException.class);
     assertThat(eventRepository.findAll()).isEmpty();
   }
 
@@ -51,7 +51,7 @@ class ChannelWebhookSecurityTest {
     connectionService.activate(connection.getId());
 
     assertThatThrownBy(() -> normalizationService.normalize(connection.getId(), ChannelProviderType.TELEGRAM, Map.of("message_id", "m2", "text", "hello"), Map.of()))
-        .hasMessageContaining("verification failed");
+        .isInstanceOf(WebhookAuthenticationException.class);
     assertThat(eventRepository.findAll()).isEmpty();
     assertThat(auditEventRepository.findAll()).extracting("action").contains("CHANNEL_WEBHOOK_VERIFICATION_FAILED");
   }

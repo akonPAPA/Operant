@@ -21,7 +21,7 @@ import org.springframework.test.context.TestPropertySource;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @TestPropertySource(properties = {"spring.datasource.url=jdbc:h2:mem:stage13_channel_diagnostics;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE DOMAIN IF NOT EXISTS JSONB AS JSON", "spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=create-drop"})
-@Import({ChannelConnectionService.class, AuditEventService.class, LocalDevelopmentSecretVaultService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class})
+@Import({ChannelConnectionService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class, AuditEventService.class, LocalDevelopmentSecretVaultService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class})
 class ChannelConnectionDiagnosticsTest {
   @Autowired ChannelConnectionService service;
 

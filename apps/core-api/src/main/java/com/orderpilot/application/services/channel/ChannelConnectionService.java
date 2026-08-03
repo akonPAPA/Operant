@@ -17,13 +17,21 @@ public class ChannelConnectionService {
   private final AuditEventService auditEventService;
   private final SecretVaultService secretVaultService;
   private final Map<ChannelProviderType, ChannelAdapter<?>> adapters;
+  private final WebhookVerificationAuthority webhookVerificationAuthority;
   private final Clock clock;
 
-  public ChannelConnectionService(ChannelConnectionRepository repository, AuditEventService auditEventService, SecretVaultService secretVaultService, List<ChannelAdapter<?>> adapters, Clock clock) {
+  public ChannelConnectionService(
+      ChannelConnectionRepository repository,
+      AuditEventService auditEventService,
+      SecretVaultService secretVaultService,
+      List<ChannelAdapter<?>> adapters,
+      WebhookVerificationAuthority webhookVerificationAuthority,
+      Clock clock) {
     this.repository = repository;
     this.auditEventService = auditEventService;
     this.secretVaultService = secretVaultService;
     this.adapters = adapters.stream().collect(Collectors.toMap(ChannelAdapter::providerType, Function.identity(), (a, b) -> a));
+    this.webhookVerificationAuthority = webhookVerificationAuthority;
     this.clock = clock;
   }
 
@@ -69,8 +77,25 @@ public class ChannelConnectionService {
     return new ConnectionHealthCheckResult(connection.getProviderType().name(), result.healthy(), statusCode, result.message(), connection.getLastHealthCheckAt(), diagnostics);
   }
 
-  private static void requireValidConfig(ChannelConnection connection) {
-    if (connection.getDisplayName() == null || connection.getDisplayName().isBlank()) throw new IllegalArgumentException("Channel connection displayName is required before activation");
+  private void requireValidConfig(ChannelConnection connection) {
+    if (connection.getDisplayName() == null || connection.getDisplayName().isBlank()) {
+      throw new IllegalArgumentException("Channel connection displayName is required before activation");
+    }
+    String mode = connection.getWebhookVerificationMode();
+    if ("DISABLED_FOR_LOCAL_DEV".equals(mode) && !webhookVerificationAuthority.allowsUnsignedFixtureIntake()) {
+      throw new IllegalArgumentException(
+          "Channel connection cannot activate with DISABLED_FOR_LOCAL_DEV unless server-owned fixture mode is enabled");
+    }
+    if ("SIGNATURE_HEADER".equals(mode)
+        || "PROVIDER_SPECIFIC".equals(mode)
+        || "SHARED_SECRET".equals(mode)) {
+      String secretRef =
+          connection.getSecretReferenceId() == null ? connection.getSecretRef() : connection.getSecretReferenceId();
+      if (secretRef == null || secretRef.isBlank()) {
+        throw new IllegalArgumentException(
+            "Channel connection verification secret must be configured before activation in enforcing mode");
+      }
+    }
   }
 
   private List<ConnectionDiagnostic> diagnosticsFor(ChannelConnection connection, ChannelHealthCheckResult adapterResult) {

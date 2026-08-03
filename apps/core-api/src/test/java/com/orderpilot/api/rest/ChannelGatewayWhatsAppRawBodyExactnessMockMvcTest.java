@@ -11,12 +11,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.orderpilot.application.services.LegacyWebhookIngressGuard;
 import com.orderpilot.application.services.channel.ChannelGatewayService;
+import com.orderpilot.application.services.channel.WebhookIntakeConnectionResolver;
+import com.orderpilot.application.services.channel.WebhookVerificationAuthority;
 import com.orderpilot.application.services.channel.WhatsAppInboundAdapter;
 import com.orderpilot.application.services.channel.WhatsAppSignatureVerifier;
 import com.orderpilot.common.errors.GlobalExceptionHandler;
 import com.orderpilot.common.tenant.TenantContextFilter;
+import com.orderpilot.domain.channel.ChannelConnection;
+import com.orderpilot.domain.channel.ChannelProviderType;
 import com.orderpilot.domain.intake.ChannelMessage;
+import java.util.UUID;
 import com.orderpilot.infrastructure.config.CoreConfiguration;
 import com.orderpilot.security.ApiSecurityWebConfig;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +35,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -55,6 +63,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * </ul>
  */
 @WebMvcTest(ChannelGatewayController.class)
+@ActiveProfiles("test")
 @Import({
     CoreConfiguration.class,
     GlobalExceptionHandler.class,
@@ -62,7 +71,9 @@ import org.springframework.test.web.servlet.MockMvc;
     NoopApiPermissionTestConfig.class,
     WhatsAppInboundAdapter.class,
     WhatsAppSignatureVerifier.class,
-    TenantContextFilter.class
+    TenantContextFilter.class,
+    WebhookVerificationAuthority.class,
+    LegacyWebhookIngressGuard.class
 })
 @TestPropertySource(properties = {
     "orderpilot.channel-gateway.whatsapp.app-secret=op-cap-42h-rawbody-deterministic-secret",
@@ -70,8 +81,9 @@ import org.springframework.test.web.servlet.MockMvc;
 })
 class ChannelGatewayWhatsAppRawBodyExactnessMockMvcTest {
   private static final String TEST_APP_SECRET = "op-cap-42h-rawbody-deterministic-secret";
-  private static final String WEBHOOK_PATH = "/api/v1/channel-gateway/whatsapp/webhook";
-  private static final String TENANT_ID = "11111111-1111-1111-1111-111111111111";
+  private static final UUID CONNECTION_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  private static final UUID OWNER_TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
+  private static final String WEBHOOK_PATH = "/api/v1/channel-gateway/whatsapp/webhook/" + CONNECTION_ID;
 
   // A semantically identical Meta envelope rendered two ways: compact (no spaces) and whitespaced/pretty.
   // The JSON is identical; only the raw bytes differ.
@@ -107,6 +119,17 @@ class ChannelGatewayWhatsAppRawBodyExactnessMockMvcTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @MockBean private ChannelGatewayService gatewayService;
+  @MockBean private WebhookIntakeConnectionResolver connectionResolver;
+
+  @BeforeEach
+  void stubConnection() {
+    ChannelConnection connection = Mockito.mock(ChannelConnection.class);
+    when(connection.getId()).thenReturn(CONNECTION_ID);
+    when(connection.getTenantId()).thenReturn(OWNER_TENANT);
+    when(connection.getProviderType()).thenReturn(ChannelProviderType.WHATSAPP);
+    when(connection.getStatus()).thenReturn("ACTIVE");
+    when(connectionResolver.resolveActiveConnection(CONNECTION_ID, ChannelProviderType.WHATSAPP)).thenReturn(connection);
+  }
 
   private void assertNoSensitiveLeak(String body) {
     for (String token : SENSITIVE_LEAK_TOKENS) {
@@ -125,8 +148,7 @@ class ChannelGatewayWhatsAppRawBodyExactnessMockMvcTest {
     when(gatewayService.accept(any(), any())).thenReturn(Mockito.mock(ChannelMessage.class));
 
     mockMvc.perform(post(WEBHOOK_PATH)
-            .header("X-Tenant-Id", TENANT_ID)
-            .header("X-Hub-Signature-256", signatureFor(COMPACT_BODY))
+             .header("X-Hub-Signature-256", signatureFor(COMPACT_BODY))
             .contentType(MediaType.APPLICATION_JSON)
             .content(COMPACT_BODY))
         .andExpect(status().isOk())
@@ -143,8 +165,7 @@ class ChannelGatewayWhatsAppRawBodyExactnessMockMvcTest {
     when(gatewayService.accept(any(), any())).thenReturn(Mockito.mock(ChannelMessage.class));
 
     mockMvc.perform(post(WEBHOOK_PATH)
-            .header("X-Tenant-Id", TENANT_ID)
-            .header("X-Hub-Signature-256", signatureFor(PRETTY_BODY))
+             .header("X-Hub-Signature-256", signatureFor(PRETTY_BODY))
             .contentType(MediaType.APPLICATION_JSON)
             .content(PRETTY_BODY))
         .andExpect(status().isOk())
@@ -162,15 +183,11 @@ class ChannelGatewayWhatsAppRawBodyExactnessMockMvcTest {
   @Test
   void prettyBodyWithCompactBodySignatureIsRejectedAndServiceNeverInvoked() throws Exception {
     String body = mockMvc.perform(post(WEBHOOK_PATH)
-            .header("X-Tenant-Id", TENANT_ID)
-            .header("X-Hub-Signature-256", signatureFor(COMPACT_BODY)) // signature over the OTHER byte form
+             .header("X-Hub-Signature-256", signatureFor(COMPACT_BODY)) // signature over the OTHER byte form
             .contentType(MediaType.APPLICATION_JSON)
             .content(PRETTY_BODY))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("REJECTED_SIGNATURE_VERIFICATION_FAILED"))
-        .andExpect(jsonPath("$.signatureVerified").value(false))
-        .andExpect(jsonPath("$.signatureMode").value("FAILED"))
-        .andExpect(jsonPath("$.acceptedCount").value(0))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
         .andReturn().getResponse().getContentAsString();
 
     verifyNoInteractions(gatewayService);
@@ -190,14 +207,11 @@ class ChannelGatewayWhatsAppRawBodyExactnessMockMvcTest {
     assertThat(reserialized).isNotEqualTo(PRETTY_BODY);
 
     String body = mockMvc.perform(post(WEBHOOK_PATH)
-            .header("X-Tenant-Id", TENANT_ID)
-            .header("X-Hub-Signature-256", "sha256=" + hmacSha256Hex(reserialized))
+             .header("X-Hub-Signature-256", "sha256=" + hmacSha256Hex(reserialized))
             .contentType(MediaType.APPLICATION_JSON)
             .content(PRETTY_BODY))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("REJECTED_SIGNATURE_VERIFICATION_FAILED"))
-        .andExpect(jsonPath("$.signatureVerified").value(false))
-        .andExpect(jsonPath("$.signatureMode").value("FAILED"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
         .andReturn().getResponse().getContentAsString();
 
     verify(gatewayService, never()).accept(any(), any());

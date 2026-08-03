@@ -13,6 +13,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.channel.ChannelEventNormalizationService;
+import com.orderpilot.application.services.channel.WebhookIntakeConnectionResolver;
+import com.orderpilot.application.services.channel.WebhookVerificationAuthority;
 import com.orderpilot.application.services.channel.MetaMessengerChannelAdapter;
 import com.orderpilot.application.services.channel.MetaMessengerWebhookVerifier;
 import com.orderpilot.application.services.channel.TelegramChannelAdapter;
@@ -41,6 +43,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -66,13 +69,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * </ul>
  */
 @WebMvcTest(ChannelWebhookController.class)
+@ActiveProfiles("test")
 @Import({
     CoreConfiguration.class,
     GlobalExceptionHandler.class,
     ApiSecurityWebConfig.class,
     NoopApiPermissionTestConfig.class,
     TenantContextFilter.class,
-    ChannelEventNormalizationService.class,
+    ChannelEventNormalizationService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class,
     TelegramWebhookVerifier.class,
     WhatsAppWebhookVerifier.class,
     ViberWebhookVerifier.class,
@@ -133,15 +137,15 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
   @Test
   void unknownConnectionReturnsStableRedactedRejectionAndPersistsNothing() throws Exception {
     UUID connectionId = UUID.randomUUID();
-    when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID)).thenReturn(Optional.empty());
+    when(connectionRepository.findById(connectionId)).thenReturn(Optional.empty());
 
     String body = mockMvc.perform(post(route("telegram", connectionId))
             .header("X-Tenant-Id", TENANT_ID)
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"message\":{\"message_id\":\"m1\",\"text\":\"hello\"}}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-        .andExpect(jsonPath("$.message").value("Channel connection not found"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
         .andReturn().getResponse().getContentAsString();
 
     verify(eventRepository, never()).save(any());
@@ -167,7 +171,7 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
       UUID connectionId = UUID.randomUUID();
       ChannelProviderType providerType = ChannelProviderType.valueOf(provider[1]);
       ChannelConnection connection = activeConnection(providerType, "SIGNATURE_HEADER");
-      when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+      when(connectionRepository.findById(connectionId))
           .thenReturn(Optional.of(connection));
 
       String body = mockMvc.perform(post(route(provider[0], connectionId))
@@ -175,9 +179,9 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
               .header("X-Hub-Signature-256", hostileSignature)
               .contentType(MediaType.APPLICATION_JSON)
               .content("{\"event\":\"message\",\"id\":\"evt-1\"}"))
-          .andExpect(status().isBadRequest())
-          .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-          .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+          .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
           .andReturn().getResponse().getContentAsString();
 
       assertThat(body).doesNotContain("deadbeef");
@@ -199,7 +203,7 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
   void sharedSecretModeFailsClosedWithPresentHostileSecretHeader() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.WHATSAPP, "SHARED_SECRET");
-    when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
 
     String body = mockMvc.perform(post(route("whatsapp", connectionId))
@@ -207,8 +211,9 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
             .header("x-orderpilot-webhook-secret", "forged-shared-secret")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"event\":\"message\"}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
         .andReturn().getResponse().getContentAsString();
 
     verify(eventRepository, never()).save(any());
@@ -221,16 +226,26 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
   // ============================================================================================
 
   @Test
-  void missingTenantHeaderReturnsStableRedactedTenantRequired() throws Exception {
-    String body = mockMvc.perform(post(route("telegram", UUID.randomUUID()))
+  void forgedTenantHeaderCannotSelectTenantOrBypassConnectionAuthority() throws Exception {
+    UUID connectionId = UUID.randomUUID();
+    UUID ownerTenant = TENANT_UUID;
+    UUID forgedTenant = UUID.fromString("22222222-2222-2222-2222-222222222222");
+    ChannelConnection connection = activeConnection(ChannelProviderType.TELEGRAM, "SIGNATURE_HEADER");
+    when(connection.getTenantId()).thenReturn(ownerTenant);
+    when(connectionRepository.findById(connectionId)).thenReturn(Optional.of(connection));
+
+    String body = mockMvc.perform(post(route("telegram", connectionId))
+            .header("X-Tenant-Id", forgedTenant.toString())
+            .header("X-Hub-Signature-256", "sha256=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"message\":{\"message_id\":\"m1\",\"text\":\"hello\"}}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("TENANT_REQUIRED"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
         .andReturn().getResponse().getContentAsString();
 
-    verifyNoInteractions(connectionRepository);
     verify(eventRepository, never()).save(any());
+    verify(connectionRepository).findById(connectionId);
+    assertThat(body).doesNotContain(forgedTenant.toString());
     assertNoSensitiveLeak(body);
   }
 
@@ -242,7 +257,7 @@ class ChannelWebhookControllerFailClosedMockMvcTest {
   void localDevModeIsAcceptedAsExplicitSkipNotAsVerifiedSignature() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.TELEGRAM, "DISABLED_FOR_LOCAL_DEV");
-    when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
     when(eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(any(), any(), any()))
         .thenReturn(Optional.empty());

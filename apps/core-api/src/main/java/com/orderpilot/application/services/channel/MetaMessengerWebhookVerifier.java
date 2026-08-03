@@ -56,7 +56,16 @@ public class MetaMessengerWebhookVerifier extends AbstractProviderWebhookVerifie
   private final String appSecret;
 
   public MetaMessengerWebhookVerifier() {
-    this("");
+    this("", WebhookVerificationAuthority.forTests(false, false));
+  }
+
+  public MetaMessengerWebhookVerifier(String appSecret) {
+    this(appSecret, WebhookVerificationAuthority.forTests(false, false));
+  }
+
+  public MetaMessengerWebhookVerifier(String appSecret, WebhookVerificationAuthority authority) {
+    super(authority);
+    this.appSecret = appSecret == null ? "" : appSecret;
   }
 
   // Explicitly mark the property constructor as the Spring-autowired one (same lesson as OP-CAP-42G's
@@ -64,8 +73,11 @@ public class MetaMessengerWebhookVerifier extends AbstractProviderWebhookVerifie
   // select the no-arg constructor and the server-configured secret would never be applied at runtime. The
   // no-arg constructor is retained for direct unit construction in tests.
   @Autowired
-  public MetaMessengerWebhookVerifier(@Value("${orderpilot.channel-gateway.meta-messenger.app-secret:}") String appSecret) {
-    this.appSecret = appSecret == null ? "" : appSecret;
+  public MetaMessengerWebhookVerifier(
+      @Value("${orderpilot.channel-gateway.meta-messenger.app-secret:}") String appSecret,
+      WebhookVerificationAuthority authority,
+      org.springframework.core.env.Environment environment) {
+    this(appSecret, authority);
   }
 
   @Override
@@ -117,17 +129,5 @@ public class MetaMessengerWebhookVerifier extends AbstractProviderWebhookVerifie
     } catch (Exception ex) {
       throw new IllegalStateException("Unable to compute webhook signature");
     }
-  }
-
-  private static String header(Map<String, String> headers, String name) {
-    if (headers == null) return null;
-    // HTTP header names are case-insensitive; the @RequestHeader map preserves the original case
-    // ("X-Hub-Signature-256"), so match case-insensitively rather than assuming a lowercased key.
-    for (Map.Entry<String, String> entry : headers.entrySet()) {
-      if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)) {
-        return entry.getValue();
-      }
-    }
-    return null;
   }
 }

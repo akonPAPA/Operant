@@ -53,9 +53,10 @@ import org.springframework.test.context.ActiveProfiles;
     com.orderpilot.application.services.bot.BotRuntimePolicyService.class,
     ChannelIdentityResolverService.class,
     ChannelRfqHandoffService.class,
-    ChannelEventNormalizationService.class,
+    ChannelEventNormalizationService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class,
     ChannelConnectionService.class,
     TelegramChannelAdapter.class,
+    TelegramWebhookVerifier.class,
     BotRuntimeService.class,
     BotResponseDraftService.class,
     BotReviewHandoffService.class,
@@ -152,7 +153,7 @@ class ChannelBotRuntimeBridgeServiceTest {
     connectionService.disable(connection.getId());
 
     assertThatThrownBy(() -> bridgeService.handleInbound(connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("300", "m3", "chat-3"), headers()))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(WebhookAuthenticationException.class);
     assertThat(conversationRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId)).isEmpty();
   }
 
@@ -160,18 +161,24 @@ class ChannelBotRuntimeBridgeServiceTest {
     UUID tenantId = seedTenant();
     TenantContext.setTenantId(tenantId);
     assertThatThrownBy(() -> bridgeService.handleInbound(UUID.randomUUID(), ChannelProviderType.TELEGRAM, rfqPayload("400", "m4", "chat-4"), headers()))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(WebhookAuthenticationException.class);
   }
 
-  @Test void tenantCannotBridgeAnotherTenantsConnection() throws Exception {
+  @Test void forgedTenantHeaderCannotBridgeUnderWrongTenant() throws Exception {
     UUID tenantA = seedTenant();
     TenantContext.setTenantId(tenantA);
     ChannelConnection connection = activeTelegramConnection(null);
 
     UUID tenantB = seedTenant();
     TenantContext.setTenantId(tenantB);
-    assertThatThrownBy(() -> bridgeService.handleInbound(connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("500", "m5", "chat-5"), headers()))
-        .isInstanceOf(IllegalArgumentException.class);
+    ChannelBotBridgeResultResponse result = bridgeService.handleInbound(
+        connection.getId(), ChannelProviderType.TELEGRAM, rfqPayload("500", "m5", "chat-5"), headers());
+
+    assertThat(result.eventId()).isNotNull();
+    assertThat(result.bridgeStatus()).isNotIn("BRIDGE_REJECTED", "BRIDGE_FAILED");
+    InboundChannelEvent persisted = eventRepository.findById(result.eventId()).orElseThrow();
+    assertThat(persisted.getTenantId()).isEqualTo(tenantA);
+    assertThat(eventRepository.findByTenantIdOrderByReceivedAtDesc(tenantB)).isEmpty();
   }
 
   @Test void malformedTelegramPayloadRoutesToReviewWithoutUncontrolledFailure() throws Exception {

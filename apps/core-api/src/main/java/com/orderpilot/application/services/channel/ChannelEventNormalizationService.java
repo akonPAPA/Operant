@@ -22,7 +22,7 @@ public class ChannelEventNormalizationService {
   /** Hard cap on the operator read window. A client-supplied limit can never exceed this. */
   static final int MAX_EVENT_LIMIT = 200;
 
-  private final ChannelConnectionRepository connectionRepository;
+  private final WebhookIntakeConnectionResolver connectionResolver;
   private final InboundChannelEventRepository eventRepository;
   private final AuditEventService auditEventService;
   private final Map<ChannelProviderType, ChannelAdapter<?>> adapters;
@@ -30,8 +30,15 @@ public class ChannelEventNormalizationService {
   private final ObjectMapper objectMapper;
   private final Clock clock;
 
-  public ChannelEventNormalizationService(ChannelConnectionRepository connectionRepository, InboundChannelEventRepository eventRepository, AuditEventService auditEventService, List<ChannelAdapter<?>> adapters, List<ChannelWebhookVerifier> verifiers, ObjectMapper objectMapper, Clock clock) {
-    this.connectionRepository = connectionRepository;
+  public ChannelEventNormalizationService(
+      WebhookIntakeConnectionResolver connectionResolver,
+      InboundChannelEventRepository eventRepository,
+      AuditEventService auditEventService,
+      List<ChannelAdapter<?>> adapters,
+      List<ChannelWebhookVerifier> verifiers,
+      ObjectMapper objectMapper,
+      Clock clock) {
+    this.connectionResolver = connectionResolver;
     this.eventRepository = eventRepository;
     this.auditEventService = auditEventService;
     this.adapters = adapters.stream().collect(Collectors.toMap(ChannelAdapter::providerType, Function.identity(), (a, b) -> a));
@@ -73,31 +80,68 @@ public class ChannelEventNormalizationService {
   }
 
   private InboundChannelEvent verifyThenPersist(UUID connectionId, ChannelProviderType providerType, Map<String, String> headers, String verificationBody, Supplier<Object> verifiedPayloadSupplier) {
-    UUID tenantId = TenantContext.requireTenantId();
-    ChannelConnection connection = connectionRepository.findByIdAndTenantId(connectionId, tenantId).orElseThrow(() -> new IllegalArgumentException("Channel connection not found"));
-    if (!connection.getProviderType().equals(providerType)) throw new IllegalArgumentException("Webhook provider does not match channel connection");
-    if (!"ACTIVE".equals(connection.getStatus())) throw new IllegalArgumentException("Channel connection must be ACTIVE to receive webhooks");
+    // Resolve server-owned connection first. Tenant is derived from the connection — never from a
+    // client X-Tenant-Id header that may already be present on the thread.
+    ChannelConnection connection = connectionResolver.resolveActiveConnection(connectionId, providerType);
+    TenantContext.setTenantId(connection.getTenantId());
+    UUID tenantId = connection.getTenantId();
     ChannelWebhookVerifier verifier = verifiers.get(providerType);
-    VerificationResult verification = verifier == null ? VerificationResult.skippedLocalDev("No provider verifier registered; local adapter-ready mode only") : verifier.verify(connection, headers, verificationBody);
+    VerificationResult verification =
+        verifier == null
+            ? VerificationResult.rejected("No provider verifier registered")
+            : verifier.verify(connection, headers, verificationBody);
     if (!verification.accepted()) {
-      auditEventService.record("CHANNEL_WEBHOOK_VERIFICATION_FAILED", "CHANNEL_CONNECTION", connection.getId().toString(), null, "{\"providerType\":\"" + providerType + "\",\"reason\":\"" + sanitize(verification.reason()) + "\"}");
-      throw new IllegalArgumentException("Webhook verification failed");
+      auditEventService.record(
+          "CHANNEL_WEBHOOK_VERIFICATION_FAILED",
+          "CHANNEL_CONNECTION",
+          connection.getId().toString(),
+          null,
+          "{\"providerType\":\"" + providerType + "\",\"reason\":\"" + sanitize(verification.reason()) + "\"}");
+      throw new WebhookAuthenticationException();
     }
     // Only past this point is the (now trusted) body parsed and an event prepared/persisted.
     Object payload = verifiedPayloadSupplier.get();
     ChannelAdapter<?> adapter = adapters.get(providerType);
-    if (adapter == null) throw new IllegalArgumentException("No channel adapter registered for " + providerType);
+    if (adapter == null) {
+      throw new IllegalArgumentException("No channel adapter registered for " + providerType);
+    }
     NormalizedChannelEvent normalized = adapter.normalizeInbound(payload, connection);
     String rawJson = normalized.rawPayloadJson() == null ? verificationBody : normalized.rawPayloadJson();
     String hash = sha256(rawJson);
     if (normalized.externalEventId() != null && !normalized.externalEventId().isBlank()) {
-      Optional<InboundChannelEvent> duplicate = eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(tenantId, providerType, normalized.externalEventId());
-      if (duplicate.isPresent()) return duplicate.get();
+      Optional<InboundChannelEvent> duplicate =
+          eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(
+              tenantId, providerType, normalized.externalEventId());
+      if (duplicate.isPresent()) {
+        return duplicate.get();
+      }
     }
-    Optional<InboundChannelEvent> duplicateByHash = eventRepository.findFirstByTenantIdAndChannelConnectionIdAndPayloadHash(tenantId, connectionId, hash);
-    if (duplicateByHash.isPresent()) return duplicateByHash.get();
-    InboundChannelEvent saved = eventRepository.save(new InboundChannelEvent(tenantId, connectionId, providerType, normalized.externalEventId(), normalized.sourceActorType(), normalized.sourceActorExternalId(), normalized.normalizedText(), hash, rawJson, verification.status(), verification.reason(), clock.instant()));
-    auditEventService.record("CHANNEL_WEBHOOK_ACCEPTED", "INBOUND_CHANNEL_EVENT", saved.getId().toString(), null, "{\"providerType\":\"" + providerType + "\",\"businessAction\":\"NONE\"}");
+    Optional<InboundChannelEvent> duplicateByHash =
+        eventRepository.findFirstByTenantIdAndChannelConnectionIdAndPayloadHash(tenantId, connectionId, hash);
+    if (duplicateByHash.isPresent()) {
+      return duplicateByHash.get();
+    }
+    InboundChannelEvent saved =
+        eventRepository.save(
+            new InboundChannelEvent(
+                tenantId,
+                connectionId,
+                providerType,
+                normalized.externalEventId(),
+                normalized.sourceActorType(),
+                normalized.sourceActorExternalId(),
+                normalized.normalizedText(),
+                hash,
+                rawJson,
+                verification.status(),
+                verification.reason(),
+                clock.instant()));
+    auditEventService.record(
+        "CHANNEL_WEBHOOK_ACCEPTED",
+        "INBOUND_CHANNEL_EVENT",
+        saved.getId().toString(),
+        null,
+        "{\"providerType\":\"" + providerType + "\",\"businessAction\":\"NONE\"}");
     return saved;
   }
 

@@ -36,6 +36,7 @@ class ApiRouteSecurityClassificationTest {
       "POST /api/v1/bot/telegram/webhook",
       "POST /api/v1/bot-runtime/telegram/webhook",
       "POST /api/v1/channel-gateway/whatsapp/webhook",
+            "POST /api/v1/channel-gateway/whatsapp/webhook/{connectionId}",
       "POST /api/v1/webhooks/channels/bot/telegram/{connectionId}",
       "POST /api/v1/webhooks/channels/meta-messenger/{connectionId}",
       "POST /api/v1/webhooks/channels/telegram/{connectionId}",

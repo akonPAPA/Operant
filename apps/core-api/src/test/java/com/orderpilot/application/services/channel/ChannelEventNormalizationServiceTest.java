@@ -19,7 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({ChannelConnectionService.class, ChannelEventNormalizationService.class, AuditEventService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class, WhatsAppChannelAdapter.class, WeChatChannelAdapter.class})
+@Import({ChannelConnectionService.class, ChannelEventNormalizationService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class, AuditEventService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class, WhatsAppChannelAdapter.class, WeChatChannelAdapter.class, TelegramWebhookVerifier.class, WhatsAppWebhookVerifier.class, WeChatWebhookVerifier.class})
 class ChannelEventNormalizationServiceTest {
   @Autowired ChannelConnectionService connectionService;
   @Autowired ChannelEventNormalizationService normalizationService;
@@ -44,18 +44,17 @@ class ChannelEventNormalizationServiceTest {
     assertThat(duplicate.getId()).isEqualTo(first.getId());
   }
 
-  @Test void tenantCannotNormalizeAgainstAnotherTenantsConnection() throws Exception {
-    TenantContext.setTenantId(UUID.randomUUID());
+  @Test void forgedTenantContextCannotOverrideConnectionOwnedTenant() throws Exception {
+    UUID ownerTenant = UUID.randomUUID();
+    TenantContext.setTenantId(ownerTenant);
     var tenantAConnection = serviceConnection(ChannelProviderType.TELEGRAM);
     var payload = new ObjectMapper().readTree(
         "{\"message\":{\"message_id\":\"cross-tenant\",\"chat\":{\"id\":\"cust-1\"},\"text\":\"Need filters\"}}");
 
     TenantContext.setTenantId(UUID.randomUUID());
 
-    assertThatThrownBy(() ->
-        normalizationService.normalize(tenantAConnection.getId(), ChannelProviderType.TELEGRAM, payload))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Channel connection not found");
+    var event = normalizationService.normalize(tenantAConnection.getId(), ChannelProviderType.TELEGRAM, payload);
+    assertThat(event.getTenantId()).isEqualTo(ownerTenant);
   }
 
   @Test void normalizesWeChatStubWithoutBusinessAction() throws Exception {

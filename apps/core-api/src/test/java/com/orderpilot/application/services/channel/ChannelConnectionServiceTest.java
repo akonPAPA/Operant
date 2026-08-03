@@ -20,7 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({ChannelConnectionService.class, AuditEventService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class})
+@Import({ChannelConnectionService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class, AuditEventService.class, CoreConfiguration.class, ObjectMapper.class, TelegramChannelAdapter.class})
 class ChannelConnectionServiceTest {
   @Autowired ChannelConnectionService service;
   @Autowired ChannelConnectionRepository repository;

@@ -98,7 +98,9 @@ class ApiNonMvcSecuritySurfaceCoverageTest {
       Map.entry("/api/v1/webhooks/channels/wechat/*",
           "WeChat channel webhook (connection): provider-facing, verified in controller"),
       Map.entry("/api/v1/channel-gateway/whatsapp/webhook",
-          "WhatsApp channel-gateway webhook: provider-facing, verified in controller"));
+          "WhatsApp channel-gateway webhook: provider-facing, verified in controller"),
+      Map.entry("/api/v1/channel-gateway/whatsapp/webhook/*",
+          "WhatsApp channel-gateway webhook (connection): provider-facing, verified in controller"));
 
   // No public route may fall under these protected/sensitive families. The webhook + health allowlist
   // above is deliberately disjoint from every one of these prefixes.

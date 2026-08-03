@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.orderpilot.application.services.AuditEventService;
 import com.orderpilot.application.services.channel.ChannelEventNormalizationService;
+import com.orderpilot.application.services.channel.WebhookIntakeConnectionResolver;
+import com.orderpilot.application.services.channel.WebhookVerificationAuthority;
 import com.orderpilot.application.services.channel.MetaMessengerChannelAdapter;
 import com.orderpilot.application.services.channel.MetaMessengerWebhookVerifier;
 import com.orderpilot.application.services.channel.TelegramChannelAdapter;
@@ -42,6 +44,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -69,13 +72,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * </ul>
  */
 @WebMvcTest(ChannelWebhookController.class)
+@ActiveProfiles("test")
 @Import({
     CoreConfiguration.class,
     GlobalExceptionHandler.class,
     ApiSecurityWebConfig.class,
     NoopApiPermissionTestConfig.class,
     TenantContextFilter.class,
-    ChannelEventNormalizationService.class,
+    ChannelEventNormalizationService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class,
     TelegramWebhookVerifier.class,
     WhatsAppWebhookVerifier.class,
     ViberWebhookVerifier.class,
@@ -163,7 +167,7 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   void validMetaSignatureIsAcceptedAndPersistedAsConfiguredVerifyOnly() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
     Mockito.when(eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(any(), any(), any()))
         .thenReturn(Optional.empty());
@@ -195,7 +199,7 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
     // bytes. Byte-exact verification accepts it — proving the controller verifies the raw wire body.
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
     Mockito.when(eventRepository.findFirstByTenantIdAndProviderTypeAndExternalEventId(any(), any(), any()))
         .thenReturn(Optional.empty());
@@ -233,7 +237,7 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   void semanticallyEqualButByteDifferentBodyWithOldSignatureIsRejectedBeforePersistence() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
 
     // Signature is valid for the compact META_BODY bytes, but the body actually sent has whitespace and a
@@ -247,9 +251,9 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
             .header("X-Hub-Signature-256", oldSignatureForCompactBody)
             .contentType(MediaType.APPLICATION_JSON)
             .content(byteDifferentBody))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-        .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
         .andReturn().getResponse().getContentAsString();
 
     verify(eventRepository, never()).save(any());
@@ -266,7 +270,7 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   void badMetaSignatureFailsClosedAndPersistsNothing() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
     String hostileSignature = "sha256=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
@@ -275,9 +279,9 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
             .header("X-Hub-Signature-256", hostileSignature)
             .contentType(MediaType.APPLICATION_JSON)
             .content(META_BODY))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-        .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
         .andReturn().getResponse().getContentAsString();
 
     verify(eventRepository, never()).save(any());
@@ -290,15 +294,16 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   void missingMetaSignatureFailsClosedAndPersistsNothing() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
 
     String body = mockMvc.perform(post(route("meta-messenger", connectionId))
             .header("X-Tenant-Id", TENANT_ID)
             .contentType(MediaType.APPLICATION_JSON)
             .content(META_BODY))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
         .andReturn().getResponse().getContentAsString();
 
     verify(eventRepository, never()).save(any());
@@ -313,7 +318,7 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   void validSignedReplayIsDedupedByExistingServiceGuardAndNotPersistedAgain() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.META_MESSENGER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
     // The same externalEventId is already stored → service returns the existing event before any save.
     InboundChannelEvent existing = Mockito.mock(InboundChannelEvent.class);
@@ -343,7 +348,7 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
   void viberStillFailsClosedWhileMetaIsConfigured() throws Exception {
     UUID connectionId = UUID.randomUUID();
     ChannelConnection connection = activeConnection(ChannelProviderType.VIBER, "SIGNATURE_HEADER");
-    Mockito.when(connectionRepository.findByIdAndTenantId(connectionId, TENANT_UUID))
+    Mockito.when(connectionRepository.findById(connectionId))
         .thenReturn(Optional.of(connection));
 
     String body = mockMvc.perform(post(route("viber", connectionId))
@@ -351,8 +356,9 @@ class ChannelWebhookControllerMetaVerifiedMockMvcTest {
             .header("X-Viber-Content-Signature", "forged-viber-signature")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"event\":\"message\",\"message_token\":\"v-1\"}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("Webhook verification failed"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("WEBHOOK_AUTHENTICATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("Webhook authentication failed"))
         .andReturn().getResponse().getContentAsString();
 
     verify(eventRepository, never()).save(any());

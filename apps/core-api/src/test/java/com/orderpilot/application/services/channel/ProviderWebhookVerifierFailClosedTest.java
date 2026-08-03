@@ -36,12 +36,13 @@ class ProviderWebhookVerifierFailClosedTest {
   };
 
   private static List<ChannelWebhookVerifier> verifiers() {
+    WebhookVerificationAuthority localDev = WebhookVerificationAuthority.forTests(true, false);
     return List.of(
-        new ViberWebhookVerifier(),
-        new WeChatWebhookVerifier(),
-        new MetaMessengerWebhookVerifier(),
-        new WhatsAppWebhookVerifier(),
-        new TelegramWebhookVerifier());
+        new ViberWebhookVerifier(localDev),
+        new WeChatWebhookVerifier(localDev),
+        new MetaMessengerWebhookVerifier("", localDev),
+        new WhatsAppWebhookVerifier("", localDev),
+        new TelegramWebhookVerifier("", localDev));
   }
 
   private static ChannelConnection connection(ChannelProviderType providerType, String mode, String secretRef) {

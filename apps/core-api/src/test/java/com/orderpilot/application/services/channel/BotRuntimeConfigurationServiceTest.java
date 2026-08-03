@@ -47,7 +47,7 @@ import org.springframework.test.context.ActiveProfiles;
     ChannelBotRuntimeBridgeService.class,
     ChannelRfqHandoffService.class,
     ChannelIdentityResolverService.class,
-    ChannelEventNormalizationService.class,
+    ChannelEventNormalizationService.class, WebhookIntakeConnectionResolver.class, WebhookVerificationAuthority.class,
     ChannelConnectionService.class,
     TelegramChannelAdapter.class,
     BotRuntimeService.class,

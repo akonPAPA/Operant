@@ -247,7 +247,8 @@ class MetaMessengerWebhookVerifierTest {
 
   @Test
   void localDevModeRemainsHonestSkipEvenWhenSecretConfigured() {
-    MetaMessengerWebhookVerifier verifier = new MetaMessengerWebhookVerifier(SECRET);
+    MetaMessengerWebhookVerifier verifier =
+        new MetaMessengerWebhookVerifier(SECRET, WebhookVerificationAuthority.forTests(true, false));
 
     VerificationResult result = verifier.verify(metaConnection("DISABLED_FOR_LOCAL_DEV"), Map.of(), "{}");
 

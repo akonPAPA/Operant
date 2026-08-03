@@ -7,20 +7,22 @@ import org.junit.jupiter.api.Test;
 
 class TelegramWebhookVerifierTest {
   @Test
-  void demoFixtureModeAllowsTelegramWebhookWithoutRealToken() {
+  void forgedFixtureHeaderDoesNotBypassTelegramSecretTokenVerifier() {
     TelegramSecretTokenVerifier verifier = new TelegramSecretTokenVerifier("");
 
-    WebhookSignatureVerificationResult result = verifier.verify(Map.of("X-OrderPilot-Fixture-Mode", "true"), "{}", ChannelType.TELEGRAM, null);
+    WebhookSignatureVerificationResult result =
+        verifier.verify(Map.of("X-OrderPilot-Fixture-Mode", "true"), "{}", ChannelType.TELEGRAM, null);
 
-    assertThat(result.accepted()).isTrue();
-    assertThat(result.mode()).isEqualTo(WebhookVerificationMode.DISABLED_FIXTURE_MODE);
+    assertThat(result.accepted()).isFalse();
+    assertThat(result.mode()).isEqualTo(WebhookVerificationMode.FAILED);
   }
 
   @Test
   void configuredSecretRejectsInvalidTelegramHeader() {
     TelegramSecretTokenVerifier verifier = new TelegramSecretTokenVerifier("configured-secret");
 
-    WebhookSignatureVerificationResult result = verifier.verify(Map.of("x-telegram-bot-api-secret-token", "wrong"), "{}", ChannelType.TELEGRAM, null);
+    WebhookSignatureVerificationResult result =
+        verifier.verify(Map.of("x-telegram-bot-api-secret-token", "wrong"), "{}", ChannelType.TELEGRAM, null);
 
     assertThat(result.accepted()).isFalse();
     assertThat(result.mode()).isEqualTo(WebhookVerificationMode.FAILED);
@@ -30,9 +32,24 @@ class TelegramWebhookVerifierTest {
   void configuredSecretAcceptsMatchingTelegramHeader() {
     TelegramSecretTokenVerifier verifier = new TelegramSecretTokenVerifier("configured-secret");
 
-    WebhookSignatureVerificationResult result = verifier.verify(Map.of("x-telegram-bot-api-secret-token", "configured-secret"), "{}", ChannelType.TELEGRAM, null);
+    WebhookSignatureVerificationResult result =
+        verifier.verify(
+            Map.of("x-telegram-bot-api-secret-token", "configured-secret"),
+            "{}",
+            ChannelType.TELEGRAM,
+            null);
 
     assertThat(result.accepted()).isTrue();
     assertThat(result.mode()).isEqualTo(WebhookVerificationMode.PROVIDER_SPECIFIC);
+  }
+
+  @Test
+  void missingSecretFailsClosed() {
+    TelegramSecretTokenVerifier verifier = new TelegramSecretTokenVerifier("");
+
+    WebhookSignatureVerificationResult result = verifier.verify(Map.of(), "{}", ChannelType.TELEGRAM, null);
+
+    assertThat(result.accepted()).isFalse();
+    assertThat(result.mode()).isEqualTo(WebhookVerificationMode.FAILED);
   }
 }
