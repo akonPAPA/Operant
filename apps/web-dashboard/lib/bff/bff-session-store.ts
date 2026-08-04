@@ -7,7 +7,7 @@
 import { createClient } from "redis";
 import type { OperatorSession } from "./bff-session.ts";
 import { newOpaqueSessionId } from "./bff-session.ts";
-import { sessionLifetimeWithinPolicy, sessionMaxAgeSecondsFromEnv } from "./bff-session-ttl-policy.ts";
+import { sessionMaxAgeSecondsFromEnv } from "./bff-session-ttl-policy.ts";
 import { isProductionLikeDeployment } from "./bff-deployment-profile.ts";
 import { registeredBffRoutes } from "./bff-route-registry.ts";
 import {

@@ -1,5 +1,5 @@
 import http from "k6/http";
-import { sleep, check } from "k6";
+import { check } from "k6";
 import { Counter } from "k6/metrics";
 import { setup_merchant_apikey } from "./helper/setup.js";
 import { random_string } from "./helper/misc.js";

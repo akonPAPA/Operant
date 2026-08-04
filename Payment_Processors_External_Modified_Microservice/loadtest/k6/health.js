@@ -1,5 +1,5 @@
 import http from "k6/http";
-import { sleep, check } from "k6";
+import { check } from "k6";
 import { Counter } from "k6/metrics";
 import { readBaseline, storeResult } from "./helper/compare-result.js";
 

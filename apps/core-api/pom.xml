@@ -1,99 +1,201 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="
+             http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
   <modelVersion>4.0.0</modelVersion>
+
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.5</version>
+    <version>3.3.13</version>
     <relativePath/>
   </parent>
+
   <groupId>com.orderpilot</groupId>
   <artifactId>core-api</artifactId>
   <version>0.1.0-SNAPSHOT</version>
-  <name>OrderPilot Core API</name>
+
+  <name>Operant Core API</name>
+
   <licenses>
     <license>
       <name>Proprietary</name>
       <distribution>repo</distribution>
     </license>
   </licenses>
+
   <properties>
     <java.version>21</java.version>
+
+    <!-- Compatible line for Spring Boot 3.3.x -->
+    <spring-modulith.version>1.2.13</spring-modulith.version>
+
+    <!-- Stable ArchUnit release -->
+    <archunit.version>1.4.2</archunit.version>
   </properties>
+
+  <dependencyManagement>
+    <dependencies>
+
+      <!--
+          Manages all Spring Modulith artifact versions consistently.
+          Do not specify versions on individual Modulith dependencies.
+      -->
+      <dependency>
+        <groupId>org.springframework.modulith</groupId>
+        <artifactId>spring-modulith-bom</artifactId>
+        <version>${spring-modulith.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
+
+    <!-- Production/runtime foundation -->
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>
     </dependency>
-    <!-- OP-CAP-16K: distributed runtime rate-limit counters only (Redis is NOT used for plans,
-         entitlements, quota, audit, or business state). The Redis connection + store beans are gated
-         behind orderpilot.runtime.rate.store=redis; RedisAutoConfiguration is excluded so no Redis
-         connection is attempted unless that store is explicitly selected. -->
+
+    <!--
+        Spring Modulith module API and runtime model.
+
+        Used for:
+        - application-module discovery;
+        - explicit module metadata;
+        - named interfaces;
+        - allowed dependency declarations;
+        - module structure verification.
+
+        Deliberately not using spring-modulith-starter-jpa here:
+        Operant already has its own authoritative audit/outbox mechanism.
+    -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-core</artifactId>
+    </dependency>
+
+    <!--
+        OP-CAP-16K:
+        Distributed runtime rate-limit counters only.
+
+        Redis is not authoritative for plans, entitlements,
+        quota, audit, idempotency results, or business state.
+    -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
+
+    <!-- Database migrations -->
+
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-core</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
+
+    <!-- Production database driver -->
+
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
+
+    <!-- Test foundation -->
+
     <dependency>
       <groupId>com.h2database</groupId>
       <artifactId>h2</artifactId>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
-    <!-- OP-CAP-29: real PostgreSQL via Testcontainers for the worker-claim concurrency proof
-         (FOR UPDATE SKIP LOCKED). Version managed by the Spring Boot parent's Testcontainers BOM.
-         Test scope only; the H2 fast-test profile is unchanged. -->
+
+    <!--
+        Spring Modulith module verification, module integration tests,
+        and architecture documentation generation.
+    -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+        Custom Operant architecture laws.
+
+        ArchUnit is a test library, not a separate runtime or service.
+    -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit</artifactId>
+      <version>1.4.2</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+        OP-CAP-29:
+        Real PostgreSQL concurrency and persistence verification.
+    -->
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>postgresql</artifactId>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
+
   <build>
     <plugins>
+
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
+
     </plugins>
   </build>
+
 </project>

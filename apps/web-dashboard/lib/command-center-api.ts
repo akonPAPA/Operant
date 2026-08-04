@@ -1,4 +1,4 @@
-import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable, usesBffTransport } from "./api-transport";
+import { clientTenantHeaders, dashboardCoreApiBaseUrl, isDashboardApiAuthorityAvailable } from "./api-transport";
 import { dashboardApiFetch } from "./dashboard-http";
 import { demoTenantId } from "./frontend-authority.mjs";
 
