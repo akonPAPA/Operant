@@ -15,6 +15,10 @@ public enum ApiPermission {
   QUOTE_ACTION,
   BOT_READ,
   BOT_ACTION,
+  // M18-01: tenant-operator bot draft/generation/preview permissions (exact, no wildcards).
+  BOT_CREATE,
+  BOT_EDIT_DRAFT,
+  BOT_PREVIEW,
   AUDIT_READ,
   ADMIN_SETTINGS_READ,
   ADMIN_SETTINGS_MANAGE,
