@@ -30,7 +30,7 @@
     <java.version>21</java.version>
 
     <!-- Compatible line for Spring Boot 3.3.x -->
-    <spring-modulith.version>1.2.13</spring-modulith.version>
+    <spring-modulith.version>2.1.0</spring-modulith.version>
 
     <!-- Stable ArchUnit release -->
     <archunit.version>1.4.2</archunit.version>
