@@ -1,0 +1,3012 @@
+ ▐▛███▜▌   Claude Code v2.1.212
+▝▜█████▛▘  Opus 4.8 · Claude Pro
+  ▘▘ ▝▝    ~/OrderPilot/OrderPilot-Core
+
+
+❯ /model                                                                        
+  ⎿  Set model to Opus 4.8 (1M context) and saved as your default for new
+     sessions
+
+❯ /effort                                                                       
+  ⎿  Set effort level to high (saved as your default for new sessions):
+     Comprehensive implementation with extensive testing and documentation
+
+❯ # OPERANT PR #318 — STRICT STABILIZATION CONTROLLER                           
+                                                                                
+  ## 0. Роль и режим работы                                                     
+                                                                                
+  Ты работаешь как coding-agent в репозитории:                                  
+                                                                                
+  ```text                                                                       
+  Project: Operant                                                              
+  Historical name: OrderPilot                                                   
+  Repository: https://github.com/akonPAPA/Operant                               
+  PR: #318                                                                      
+  Known reviewed baseline HEAD:                                                 
+  6ca60de42314aed7c73e3d2b33198a49262dfdeb                                      
+  Primary module:                                                               
+  M18 — aibot                                                                   
+  ```                                                                           
+                                                                                
+  Твоя задача — не добавлять новые функции и не переделывать архитектуру. Твоя  
+  задача — перепроверить и поочерёдно устранить известные дефекты PR #318, не   
+  создавая новых регрессий.                                                     
+                                                                                
+  Ты не должен доверять этому prompt как доказательству текущего состояния.     
+  Каждый finding необходимо сначала подтвердить на фактическом текущем HEAD.    
+                                                                                
+  Главный порядок authority:                                                    
+                                                                                
+  ```text                                                                       
+  текущий код                                                                   
+  → миграции и ограничения PostgreSQL                                           
+  → реальные тесты                                                              
+  → runtime/CI exact-head evidence                                              
+  → архитектурные документы                                                     
+  → этот prompt                                                                 
+  ```                                                                           
+                                                                                
+  Если finding уже исправлен, не реализуй второй параллельный механизм. Покажи  
+  существующий код и тест, которые закрывают инвариант.                         
+                                                                                
+  ---                                                                           
+                                                                                
+  # 1. Обязательные документы                                                   
+                                                                                
+  Перед изменением кода прочитай:                                               
+                                                                                
+  ```text                                                                       
+  Instuctions_For_Operant_Project.txt                                           
+  reverse-защита-и-инструкций-по-бизнес-логике-читать-всегда-перед-промптом.txt 
+  OPERANT_TOP_TIER_SECURITY_ARCHITECTURE_CONSTITUTION_V1(1).md                  
+  OPERANT_CANONICAL_TARGET_ARCHITECTURE_V1_1_CONSOLIDATED(1).md                 
+  02_STANDALONE_BUSINESS_AI_AND_CONNECTORS_V2(1).md                             
+  03_PRODUCTION_VERIFICATION_AND_RELEASE_V2(1).md                               
+  ```                                                                           
+                                                                                
+  Из документов извлеки только правила, относящиеся к:                          
+                                                                                
+  ```text                                                                       
+  M18 aibot;                                                                    
+  AI advisory boundary;                                                         
+  BotDefinitionVersion;                                                         
+  job state machine;                                                            
+  lease/fencing;                                                                
+  transactions;                                                                 
+  PostgreSQL concurrency;                                                       
+  idempotency;                                                                  
+  tenant isolation;                                                             
+  privacy/provider transfer;                                                    
+  public DTO;                                                                   
+  release image;                                                                
+  exact-head evidence.                                                          
+  ```                                                                           
+                                                                                
+  Не загружай в implementation scope другие продуктовые программы, M19, ERP,    
+  payment, messenger, Sites или support-plane.                                  
+                                                                                
+  ---                                                                           
+                                                                                
+  # 2. Неприкосновенные законы                                                  
+                                                                                
+  Во всех изменениях сохранить:                                                 
+                                                                                
+  ```text                                                                       
+  AI suggests.                                                                  
+  Rules validate.                                                               
+  Human approves when policy requires.                                          
+  Backend writes.                                                               
+  Audit records.                                                                
+  Outbox coordinates external effects.                                          
+  ```                                                                           
+                                                                                
+  Дополнительно:                                                                
+                                                                                
+  ```text                                                                       
+  1. Клиент отправляет intent и данные, но не authority.                        
+  2. Tenant, actor, permission и resource ownership определяет backend.         
+  3. AI/provider output является недоверенным входом.                           
+  4. AI не выбирает разрешённые capability, action или business transition.     
+  5. Provider call не выполняется внутри authoritative DB transaction.          
+  6. Denied или stale worker не изменяет job, audit, outbox или provider state. 
+  7. Один логический job/effect имеет одну idempot                              
+  ──── (1932 lines hidden) ──────────────────────────────────────────────────── 
+  nged:                                                                         
+  tests:                                                                        
+  remaining risk:                                                               
+                                                                                
+  Slice 7 — preview result retrieval:                                           
+  status:                                                                       
+  root cause confirmed:                                                         
+  files changed:                                                                
+  tests:                                                                        
+  remaining risk:                                                               
+                                                                                
+  Closed invariants preserved:                                                  
+  - PROVIDER_DISABLED:                                                          
+  - stale fencing:                                                              
+  - wrong owner:                                                                
+  - tenant isolation:                                                           
+  - zero provider call on denial:                                               
+  - no raw provider output:                                                     
+                                                                                
+  Business Logic & Visibility Boundary Gate:                                    
+                                                                                
+  Tenant User Access:                                                           
+  who may use:                                                                  
+  permission:                                                                   
+  tenant/resource scope:                                                        
+  client-provided data:                                                         
+  backend-owned authority:                                                      
+  denial proof:                                                                 
+                                                                                
+  External Customer Access:                                                     
+  expected denial:                                                              
+  no-mutation proof:                                                            
+                                                                                
+  Service Account Access:                                                       
+  allowed operations:                                                           
+  lease/fencing proof:                                                          
+  forbidden authority:                                                          
+                                                                                
+  Operant Support & Maintenance Access Plane:                                   
+  separation result:                                                            
+                                                                                
+  Transactions:                                                                 
+  authoritative transaction:                                                    
+  rollback behavior:                                                            
+  audit behavior:                                                               
+  outbox behavior:                                                              
+  external-call boundary:                                                       
+                                                                                
+  Idempotency and concurrency:                                                  
+  database invariant:                                                           
+  mechanism:                                                                    
+  PostgreSQL proof:                                                             
+  remaining race risk:                                                          
+                                                                                
+  Privacy and provider transfer:                                                
+  classification owner:                                                         
+  synthetic proof:                                                              
+  redaction/log result:                                                         
+  remaining privacy risk:                                                       
+                                                                                
+  Tests:                                                                        
+  1.                                                                            
+  working directory:                                                            
+  command:                                                                      
+  exit code:                                                                    
+  tested SHA:                                                                   
+  what it proves:                                                               
+                                                                                
+  2.                                                                            
+  working directory:                                                            
+  command:                                                                      
+  exit code:                                                                    
+  tested SHA:                                                                   
+  what it proves:                                                               
+                                                                                
+  CI/security evidence:                                                         
+  backend:                                                                      
+  frontend:                                                                     
+  Docker image:                                                                 
+  Semgrep:                                                                      
+  Snyk/dependency:                                                              
+  CodeQL:                                                                       
+  tested SHA:                                                                   
+                                                                                
+  Files changed:                                                                
+  production:                                                                   
+  tests:                                                                        
+  migrations:                                                                   
+  docs:                                                                         
+  generated:                                                                    
+  unrelated:                                                                    
+                                                                                
+  Diff:                                                                         
+  git diff --stat:                                                              
+  git diff --check:                                                             
+  git status --short:                                                           
+                                                                                
+  NOT_PROVEN:                                                                   
+                                                                                
+  Stop conditions triggered:                                                    
+                                                                                
+  Verdict:                                                                      
+  APPROVED                                                                      
+  APPROVED_WITH_EXPLICIT_RESIDUAL_RISK                                          
+  CHANGES_REQUIRED                                                              
+  BLOCKED                                                                       
+  NOT_PROVEN                                                                    
+                                                                                
+  Historical Stage 29:                                                          
+  CLOSED / UNCHANGED                                                            
+                                                                                
+  Implementation stages closed:                                                 
+  NONE unless exact implementation and evidence justify a named closure.        
+                                                                                
+  Next bounded action:                                                          
+                                                                                
+  Movement toward target:                                                       
+  YES / PARTIAL / NO                                                            
+                                                                                
+  Reason:                                                                       
+  ```                                                                           
+                                                                                
+  ---                                                                           
+                                                                                
+  # 21. Главный критерий завершения                                             
+                                                                                
+  Работа считается успешной не тогда, когда код компилируется, а когда доказаны 
+  следующие инварианты:                                                         
+                                                                                
+  ```text                                                                       
+  release image действительно строится;                                         
+  terminal failure действительно committed;                                     
+  expired lease действительно recoverable;                                      
+  active lease не перехватывается;                                              
+  stale worker действительно fenced;                                            
+  каждый claim использует актуальное время;                                     
+  AI не расширяет bot capabilities;                                             
+  synthetic classification принадлежит backend;                                 
+  concurrent duplicate создаёт один logical job;                                
+  preview result доступен через tenant-safe bounded contract;                   
+  denied/failure paths не создают business mutation или external effect.        
+  ```                                                                           
+                                                                                
+  Если хотя бы один обязательный инвариант не имеет подходящего proof, он       
+  остаётся `NOT_PROVEN`.                                                        
+                                                                                
+
+● Login expired · Please run /login
+
+✻ Cogitated for 0s
+
+❯ /login 
+  ⎿  Login successful
+
+● I'll start with the mandatory repository entry protocol to establish facts
+  before touching anything. The prompt is explicit that I must verify current
+  HEAD state first, and the git status already shows a dirty worktree (a
+  modified AiJobProcessingService.java) that I need to explain before
+  proceeding.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  4 skills available
+
+● HEAD is 7eabe6d9, which differs from the prompt's stated baseline 6ca60de4....
+  Per the prompt that's not itself a blocker, but the dirty worktree must be
+  explained before I proceed. Let me inspect the uncommitted change and check
+  whether the stated baseline even exists here.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The picture is now clear. The dirty worktree is explained: the only tracked
+  change is a set of orientation comments the user added to
+  AiJobProcessingService.java (in Russian/mixed) marking the Slice 1 spot — no
+  production logic changed — and .serena/ is just the Serena tool's local cache.
+  One of those comments is a direct question to me about the Slice 1 fix
+  approach (outbox vs. monitoring). So this is not a BLOCKED condition.
+
+  Two facts to record:
+  - The prompt's baseline SHA 6ca60de4… does not exist in this repo. Current
+  HEAD is 7eabe6d9. Per the prompt, I must re-verify each finding on actual HEAD
+  before changing code.
+  - Worktree changes = user's own notes; safe to proceed.
+
+  Let me ground Slices 0 and 1 by reading the required checkpoint, the
+  .dockerignore, and the full service file (which the user annotated).
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Slice 0 finding is confirmed at the file level: .dockerignore:35 has **/out/,
+  which matches any directory named out at any depth — including Java source
+  package application/port/out. Let me verify those source packages actually
+  exist (the root-cause condition) and map the aibot module before touching
+  anything.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Confirmed on actual HEAD. The source directory
+  apps/core-api/src/main/java/com/orderpilot/aibot/application/port/out/ exists
+  and contains the outbound port interfaces (AiProviderPort, AibotAuditPort,
+  AiJobRepositoryPort, BotDefinitionRepositoryPort,
+  BotDefinitionVersionRepositoryPort, PublicIdGenerator). The prompt's finding
+  names were approximate; the real names differ but the defect is real: **/out/
+  will strip these from any Docker copy context.
+
+  Let me read the Dockerfile and its build context to design the precise fix
+  (Slice 0 §8.4).
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Now the root cause is fully confirmed and is worse/cleaner than the prompt
+  described:
+
+  - The Dockerfile's verify stage does COPY apps/core-api/src apps/core-api/src
+  then mvn -q -B test. With **/out/ active,
+  apps/core-api/src/main/java/com/orderpilot/aibot/application/port/out/ is
+  stripped from the build context → the 6 port interfaces vanish → in-image mvn 
+  test fails to compile the whole aibot module.
+  - find . -type d -name out proves there is no legitimate out/ directory the
+  pattern needs to catch: the only two are the Java source package (must keep)
+  and target/classes/... (already covered by **/target/). The Next.js
+  static-export out/ would live under apps/web-dashboard/, which is already 
+  fully excluded at line 57.
+
+  So **/out/ delivers zero benefit and one critical harm. The precise fix:
+  replace the depth-agnostic **/out/ with the frontend-scoped
+  apps/web-dashboard/out/ (preserves the documented "frontend build output"
+  intent, can never match a Java port/out package).
+
+● Update(.dockerignore)
+  ⎿  Added 5 lines, removed 1 line
+      30  **/target/
+      31  
+      32  # Node / frontend build outputs
+      33 +# NOTE: do NOT use a depth-agnostic `**/out/` here — it also ma
+         +tches the Java                                                 
+      34 +# source package `apps/core-api/.../application/port/out/`, str
+         +ipping the aibot                                               
+      35 +# outbound port interfaces from the Docker build context and br
+         +eaking the                                                     
+      36 +# in-image Maven compile. Scope the Next.js static export outpu
+         +t to the frontend.                                             
+      37  **/node_modules/
+      38  **/.next/
+      35 -**/out/                                                        
+      39 +apps/web-dashboard/out/                                        
+      40  **/dist/
+      41  **/build/
+      42  **/coverage/
+
+● Adjacent-risk check (same bug class): do **/build/, **/dist/, or **/coverage/
+  also match any Java source package that the Docker context needs? Let me
+  verify before considering Slice 0's fix complete.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  1 skill available
+
+● Another instance of the same bug class:
+  apps/core-api/src/test/java/com/orderpilot/build/ is a Java test package, and
+  the Dockerfile verify stage runs mvn test (compiles test sources). **/build/
+  would strip it from the context too. Let me confirm its contents.
+
+  Listed 1 directory (ctrl+o to expand)
+
+● The build package contains exactly one file:
+  CoreApiReleaseDockerfileContractTest.java — a test evidently written to guard
+  this very Dockerfile/.dockerignore contract, which **/build/ would itself
+  strip from the image context. Let me read it; it likely encodes the Slice 0
+  contract and may already be the regression test I need.
+  Read 1 file (ctrl+o to expand)
+
+● Critical secondary finding, same bug class: **/build/ matches the Java test
+  package com/orderpilot/build/ (which holds the Dockerfile contract test
+  itself). The Docker context copies only apps/core-api/{pom.xml,src}, docs,
+  shared, scripts — among those the only out/build directories are Java source
+  packages, so both depth-agnostic patterns are purely harmful here. Let me
+  scope both to the frontend path where they're legitimately generated.
+
+● Update(.dockerignore)
+  ⎿  Added 7 lines, removed 5 lines
+      30  **/target/
+      31  
+      32  # Node / frontend build outputs
+      33 -# NOTE: do NOT use a depth-agnostic `**/out/` here — it also ma
+         -tches the Java                                                 
+      34 -# source package `apps/core-api/.../application/port/out/`, str
+         -ipping the aibot                                               
+      35 -# outbound port interfaces from the Docker build context and br
+         -eaking the                                                     
+      36 -# in-image Maven compile. Scope the Next.js static export outpu
+         -t to the frontend.                                             
+      33 +# NOTE: do NOT use depth-agnostic `**/out/` or `**/build/` here
+         + — they also match                                             
+      34 +# Java source packages copied into the release image:          
+      35 +#   `**/out/`   -> apps/core-api/.../application/port/out/ (mai
+         +n: aibot outbound ports)                                       
+      36 +#   `**/build/` -> apps/core-api/src/test/.../com/orderpilot/bu
+         +ild/ (Dockerfile contract test)                                
+      37 +# Stripping either breaks the in-image `mvn test` verify stage.
+         + Scope the Next.js                                             
+      38 +# static-export / build output to the frontend, where it is act
+         +ually generated.                                               
+      39  **/node_modules/
+      40  **/.next/
+      41  apps/web-dashboard/out/
+      42 +apps/web-dashboard/build/                                      
+      43  **/dist/
+      41 -**/build/                                                      
+      44  **/coverage/
+      45  
+      46  # Python build/cache outputs
+
+● Now let me check whether a Docker daemon is available to actually prove the
+  build (Slice 0 acceptance requires exit code 0), and strengthen the existing
+  contract test with a deterministic .dockerignore regression guard that doesn't
+  need a daemon.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Docker daemon is not accessible (permission denied on the socket) — so per
+  §8.6 the actual image build stays NOT_PROVEN; I will not claim the release
+  blocker closed. But I can lock the invariant deterministically (daemon-free)
+  by extending the existing contract test to assert .dockerignore never uses the
+  depth-agnostic patterns that strip Java source packages.
+
+● Update(apps/core-api/src/test/java/com/orderpilot/build/CoreApiReleaseDockerfi
+        leContractTest.java)
+  ⎿  Added 44 lines
+      27      assertThat(skipTestsPackage).isGreaterThan(packageStage);
+      28    }
+      29  
+      30 +  @Test                                                        
+      31 +  void dockerignoreDoesNotStripJavaSourcePackagesFromReleaseCon
+         +text() throws IOException {                                    
+      32 +    Path dockerignore = resolveRepoRoot().resolve(".dockerignor
+         +e");                                                           
+      33 +    assertThat(Files.exists(dockerignore)).as(".dockerignore pr
+         +esent at repo root").isTrue();                                 
+      34 +                                                               
+      35 +    // Read only the non-comment, non-blank ignore patterns.   
+      36 +    var patterns =                                             
+      37 +        Files.readAllLines(dockerignore).stream()              
+      38 +            .map(String::trim)                                 
+      39 +            .filter(line -> !line.isEmpty() && !line.startsWith
+         +("#"))                                                         
+      40 +            .toList();                                         
+      41 +                                                               
+      42 +    // Depth-agnostic `**/out/` and `**/build/` also match Java
+         + source packages                                               
+      43 +    // (application/port/out, com/orderpilot/build) that the re
+         +lease image's verify                                           
+      44 +    // stage compiles via `mvn test`. They must never appear in
+         + that form.                                                    
+      45 +    assertThat(patterns)                                       
+      46 +        .as("no depth-agnostic pattern may strip a Java source 
+         +package from the Docker context")                              
+      47 +        .doesNotContain("**/out/", "**/out", "**/build/", "**/b
+         +uild");                                                        
+      48 +                                                               
+      49 +    // The outbound port package that broke the in-image compil
+         +e must exist as source                                         
+      50 +    // and must not be excluded by any surviving pattern's leaf
+         + name.                                                         
+      51 +    Path portOut =                                             
+      52 +        resolveRepoRoot()                                      
+      53 +            .resolve("apps/core-api/src/main/java/com/orderpilo
+         +t/aibot/application/port/out");                                
+      54 +    assertThat(Files.isDirectory(portOut)).as("aibot outbound p
+         +ort/out source package present").isTrue();                     
+      55 +  }                                                            
+      56 +                                                               
+      57    private static Path resolveDockerfile() {
+      58      Path cwd = Path.of("").toAbsolutePath();
+      59  
+     ...
+      69  
+      70      throw new IllegalStateException("Unable to locate apps/core
+          -api/Dockerfile from " + cwd);
+      71    }
+      72 +                                                               
+      73 +  private static Path resolveRepoRoot() {                      
+      74 +    Path cwd = Path.of("").toAbsolutePath();                   
+      75 +    // Tests run from apps/core-api (Maven module dir) or the r
+         +epo root.                                                      
+      76 +    if (Files.exists(cwd.resolve(".dockerignore"))) {          
+      77 +      return cwd;                                              
+      78 +    }                                                          
+      79 +    Path parent = cwd.getParent();                             
+      80 +    if (parent != null && Files.exists(parent.resolve(".dockeri
+         +gnore"))) {                                                    
+      81 +      return parent;                                           
+      82 +    }                                                          
+      83 +    Path grandparent = parent != null ? parent.getParent() : nu
+         +ll;                                                            
+      84 +    if (grandparent != null && Files.exists(grandparent.resolve
+         +(".dockerignore"))) {                                          
+      85 +      return grandparent;                                      
+      86 +    }                                                          
+      87 +    throw new IllegalStateException("Unable to locate repo-root
+         + .dockerignore from " + cwd);                                  
+      88 +  }                                                            
+      89  }
+      90   No newline at end of file
+
+● Now run the Slice 0 contract test to prove the regression guard passes.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The system mvn is on a JDK older than 21. Let me locate a Java 21 JDK and
+  point Maven at it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Only JDK 25 is installed (no JDK 21), yet JDK 25's javac does support
+  --release 21. The error is suspicious — let me see what JDK Maven itself runs
+  on and whether a toolchain/enforcer is involved.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● javac isn't on the PATH. Maven found the Java 25 runtime but compilation needs
+  javac. Let me locate the actual javac binary and its release support.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Found the project's bundled JDK 21 at .tools/jdk-21.0.11+10. Let me use it as
+  JAVA_HOME and re-run the Slice 0 contract test.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● -q suppressed the summary. Let me re-run showing the test result explicitly.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 0 — VERIFIED (daemon-limited). Tests run: 2, Failures: 0 on JDK 21. Root
+  cause fixed (**/out/ and the adjacent **/build/), locked by a daemon-free
+  regression guard. The actual docker build stays NOT_PROVEN (the Docker socket
+  is permission-denied here), so I am not declaring the release blocker itself
+  closed.
+
+  Now Slice 1 — the file you annotated, and where you left me a direct question.
+  Let me read the full current method before answering and fixing.
+
+  Read 1 file (ctrl+o to expand)
+
+● This fully confirms Slice 1's root cause. In completeWithProviderResult
+  (invoked inside a REQUIRES_NEW executeWithoutResult), the catch block writes
+  the terminal state (markInvalid/fail → save) and then throw ex; at line 193.
+  The throw escapes the transaction callback, so TransactionTemplate rolls the
+  whole transaction back — including the terminal save and the
+  markOutputReceived — leaving the durable job stuck in RUNNING with lease
+  fields still set. That is exactly the §9.3 defect.
+
+  Let me read the AiJob domain + status enum to design the fix against the real
+  domain methods (not invent new codes).
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Now I have the domain contract. Note markInvalid → INVALID (clears lease) and
+  fail → FAILED (clears lease); both are followed by throw ex → the whole
+  REQUIRES_NEW transaction rolls back, so neither persists. Let me pull the
+  remaining pieces needed to design a correct, minimal fix: the status enum (is
+  INVALID terminal?), the validator's exception contract, the drain-service
+  caller (does it depend on the throw?), and existing tests.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+● INVALID and FAILED are both terminal. Now the validator's exception contract,
+  the drain caller, and the existing test.
+
+  Read 2 files (ctrl+o to expand)
+
+● Now I have the complete mechanism. The decisive evidence is in
+  AiJobDrainService.drainOnce() (lines 63–93): after processClaimedJob, the
+  drain re-reads the durable job status and counts INVALID→invalid,
+  terminal→failed. So the orchestration does not need the thrown exception — it
+  reads committed state. The throw ex in completeWithProviderResult is pure
+  harm: it rolls back the REQUIRES_NEW transaction, reverting the
+  markInvalid/markOutputReceived writes, leaving the durable job stuck in
+  RUNNING, and then lands in drain's catch→failed++ while the DB says RUNNING.
+  Exactly §9.3.
+
+  Let me confirm the audit port contract and that markInvalid has no other
+  callers before implementing.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● AiJob.markInvalid is called only from the line I'm fixing — safe to harden.
+  Audit port is free-form. Let me read the existing test to match its harness
+  style before implementing.
+
+  Read 1 file (ctrl+o to expand)
+
+● This is the smoking gun for the whole slice. The existing unit test wires a
+  SynchronousNoOpTransactionManager whose doCommit/doRollback are no-ops —
+  exactly what your annotation called out ("the doCommit() and doRollback()
+  doing nothing need to change"). With no-op rollback, the current tests cannot
+  observe the bug: the throw never actually reverts anything in the mocks. §9.2
+  explicitly says a Noop TM proves nothing about commit/rollback.
+
+  I'll answer your embedded question and then implement.
+
+  Your question (outbox vs. monitoring): Neither. This finding is not an outbox
+  problem. Outbox exists to atomically coordinate an external side‑effect
+  (connector/messenger/ERP) with a DB commit — but a terminal validation failure
+  produces no external effect (the invariant forbids outbox/connector/mutation
+  on a denied output). So there's no broker, no outbox. The correct handling is:
+  the failure is a durable business terminal state that must be committed to
+  Postgres (status INVALID, a bounded failureClass, lease cleared) plus an audit
+  row, plus an optional post‑commit log/metric for monitoring. The bug is
+  purely that the code throws after writing that terminal state inside the same
+  REQUIRES_NEW callback, so Spring rolls it back. Fix = apply the terminal
+  transition, persist job/version/audit, and return a typed outcome instead of 
+  throwing; let only genuine persistence/programming faults propagate (those
+  should roll back).
+
+  Now implementing. Imports first:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingService.java)
+  ⎿  Added 3 lines
+      19  import java.time.Clock;
+      20  import java.time.Instant;
+      21  import java.util.Arrays;
+      22 +import java.util.Locale;                                       
+      23  import java.util.UUID;
+      24 +import org.slf4j.Logger;                                       
+      25 +import org.slf4j.LoggerFactory;                                
+      26  import org.springframework.stereotype.Service;
+      27  import org.springframework.transaction.PlatformTransactionManag
+          er;
+      28  import org.springframework.transaction.TransactionDefinition;
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingService.java)
+  ⎿  Added 8 lines, removed 1 line
+      28  import org.springframework.transaction.TransactionDefinition;
+      29  import org.springframework.transaction.support.TransactionTempl
+          ate;
+      30  
+      31 -//обычный сервис то есть создается business logic              
+      31  @Service
+      32  public class AiJobProcessingService {
+      33 +  private static final Logger log = LoggerFactory.getLogger(AiJ
+         +obProcessingService.class);                                    
+      34 +                                                               
+      35    /** Explicit machine actor for background AI job audit; never
+           null. */
+      36    static final UUID AIBOT_WORKER_ACTOR_ID = UUID.fromString("00
+          000000-0000-4000-8000-0000000000a1");
+      37  
+      38 +  /** Typed result of completing a claimed job's provider outpu
+         +t within one transaction. */                                   
+      39 +  enum ProcessingOutcome {                                     
+      40 +    SUGGESTION_READY,                                          
+      41 +    TERMINAL_VALIDATION_FAILURE                                
+      42 +  }                                                            
+      43 +                                                               
+      44    private final AiJobRepositoryPort aiJobRepository;
+      45    private final BotDefinitionVersionRepositoryPort versionRepos
+          itory;
+      46    private final AiProviderPort aiProviderPort;
+
+● Now the processClaimedJob transaction call and the completeWithProviderResult
+  signature:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingService.java)
+  ⎿  Added 9 lines, removed 5 lines
+      125        throw ex;
+      126      }
+      127  
+      128 -    transactionTemplate.executeWithoutResult(                 
+      129 -        status -> completeWithProviderResult(claim, providerRe
+          -sult));                                                       
+      128 +    ProcessingOutcome outcome =                               
+      129 +        transactionTemplate.execute(status -> completeWithProv
+          +iderResult(claim, providerResult));                           
+      130 +    if (outcome == ProcessingOutcome.TERMINAL_VALIDATION_FAILU
+          +RE) {                                                         
+      131 +      // Terminal validation failure is a COMMITTED business o
+          +utcome, not a transaction                                     
+      132 +      // fault: surface it for monitoring after commit — never
+          + as a rollback-triggering throw.                              
+      133 +      log.info("aibot_output_validation_rejected jobPublicId={
+          +}", running.publicId());                                      
+      134 +    }                                                         
+      135    }
+      131 -//start from there the fix for this method AiJobProcessingServ
+          -ice.completeWithProviderResult()                              
+      132 -//the doCommit() and doRollback() doing nothing need to change
+      133 -  private void completeWithProviderResult(                    
+      136 +                                                              
+      137 +  private ProcessingOutcome completeWithProviderResult(       
+      138        ClaimedAiJob claim, AiProviderPort.ProviderResult provid
+           erResult) {
+      139      UUID tenantId = claim.job().tenantId();
+      140      String jobPublicId = claim.job().publicId();
+
+● Now the core body — restructure so validation failure commits (returns) and
+  persistence faults propagate (rollback):
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingService.java)
+  ⎿  Added 108 lines, removed 60 lines
+      150          versionRepository
+      151              .findByIdAndTenantId(job.botDefinitionVersionId(),
+            tenantId)
+      152              .orElseThrow(() -> new IllegalStateException("bot_
+           version_missing"));
+      153 +    String outputHash = AiRequestFingerprint.sha256Hex(provide
+          +rResult.normalizedResponseText());                            
+      154 +    job.markOutputReceived(outputHash, clock.instant());      
+      155 +                                                              
+      156 +    // Validate provider output in isolation. A validation ver
+          +dict (malformed JSON,                                         
+      157 +    // unknown schema, forbidden intent/field, oversized outpu
+          +t, out-of-range confidence,                                   
+      158 +    // …) is raised by the validator as IllegalArgumentExcepti
+          +on and is a NORMAL terminal                                   
+      159 +    // business outcome that MUST commit. Every other failure 
+          +(persistence, optimistic                                      
+      160 +    // lock, programming, transport) is NOT caught here, so it
+          + propagates and rolls the                                     
+      161 +    // whole authoritative transaction back — no partial termi
+          +nal state is committed.                                       
+      162 +    ValidatedOutput validated;                                
+      163      try {
+      154 -      String outputHash = AiRequestFingerprint.sha256Hex(provi
+          -derResult.normalizedResponseText());                          
+      155 -      job.markOutputReceived(outputHash, clock.instant());//ту
+          -т уже tring to validate and делает rate limiting              
+      156 -      if (job.purpose() == AiJobPurpose.BOT_DEFINITION_GENERAT
+          -ION) {                                                        
+      157 -        BotDefinitionConfiguration configuration =            
+      158 -            outputValidator.parseBotDefinition(providerResult.
+          -normalizedResponseText());                                    
+      159 -        ObjectNode validation = objectMapper.createObjectNode(
+          -);                                                            
+      160 -        validation.put("validationSummary", "validated");     
+      161 -        validation.putArray("findings");                      
+      162 -        ObjectNode provenance = objectMapper.createObjectNode(
+          -);                                                            
+      163 -        provenance.put("provider", providerResult.provider());
+      164 -        provenance.put("model", providerResult.model());      
+      165 -        provenance.put("schemaVersion", BotDefinitionConfigura
+          -tion.SCHEMA_V1);                                              
+      166 -        version.applyValidatedConfiguration(                  
+      167 -            configuration, validation.toString(), provenance.t
+          -oString(), clock.instant());                                  
+      168 -        versionRepository.save(version);                      
+      169 -        ObjectNode result = objectMapper.createObjectNode();  
+      170 -        result.put("validationSummary", "validated");         
+      171 -        job.markSuggestionReady(                              
+      172 -            result.toString(), BotDefinitionConfiguration.SCHE
+          -MA_V1, clock.instant());                                      
+      173 -      } else {                                                
+      174 -        AiOutputValidator.IntentClassification classification 
+          -=                                                             
+      175 -            outputValidator.parseIntentClassification(provider
+          -Result.normalizedResponseText());                             
+      176 -        ObjectNode result = objectMapper.createObjectNode();  
+      177 -        result.put("validationSummary", "validated");         
+      178 -        result.put("intentKey", classification.intentKey());  
+      179 -        result.put("confidence", classification.confidence());
+      180 -        result.put("responseDraft", classification.responseDra
+          -ft());                                                        
+      181 -        result.put("handoffSuggested", classification.handoffS
+          -uggested());                                                  
+      182 -        job.markSuggestionReady(result.toString(), AiOutputVal
+          -idator.INTENT_SCHEMA_V1, clock.instant());                    
+      183 -      }                                                       
+      184 -      aiJobRepository.save(job);                              
+      185 -      auditPort.record(                                       
+      186 -          tenantId,                                           
+      187 -          AIBOT_WORKER_ACTOR_ID,                              
+      188 -          "AIBOT_AI_JOB_READY",                               
+      189 -          "AIBOT_AI_JOB",                                     
+      190 -          job.publicId(),                                     
+      191 -          "{\"status\":\"SUGGESTION_READY\",\"actorClass\":\"M
+          -ACHINE_WORKER\"}");                                           
+      192 -    } catch (RuntimeException ex) {                           
+      193 -      String failure = mapFailure(ex);                        
+      194 -      if ("OUTPUT_SCHEMA_INVALID".equals(failure) || "OUTPUT_P
+          -OLICY_REJECTED".equals(failure)) {                            
+      195 -        job.markInvalid(failure, clock.instant());            
+      196 -      } else {                                                
+      197 -        job.fail(failure, clock.instant());                   
+      198 -      }                                                       
+      199 -      aiJobRepository.save(job);                              
+      200 -      try {                                                   
+      201 -        version.restoreDraft(clock.instant());                
+      202 -        versionRepository.save(version);                      
+      203 -      } catch (RuntimeException ignored) {                    
+      204 -        // leave as-is if already recoverable                 
+      205 -        //тут логика поломалась надо исправть,былайша айтканда
+          - катч пустой и коммит уже ыстелып койганго                    
+      206 -      }                                                       
+      207 -      throw ex;                                               
+      164 +      validated = validateProviderOutput(job.purpose(), provid
+          +erResult.normalizedResponseText());                           
+      165 +    } catch (IllegalArgumentException validationFailure) {    
+      166 +      return terminalValidationFailure(tenantId, job, version,
+          + validationFailure);                                          
+      167      }
+      168 +                                                              
+      169 +    // Accepted advisory result. Persistence failures below in
+          +tentionally roll back.                                        
+      170 +    if (job.purpose() == AiJobPurpose.BOT_DEFINITION_GENERATIO
+          +N) {                                                          
+      171 +      BotDefinitionConfiguration configuration = validated.con
+          +figuration();                                                 
+      172 +      ObjectNode validation = objectMapper.createObjectNode();
+      173 +      validation.put("validationSummary", "validated");       
+      174 +      validation.putArray("findings");                        
+      175 +      ObjectNode provenance = objectMapper.createObjectNode();
+      176 +      provenance.put("provider", providerResult.provider());  
+      177 +      provenance.put("model", providerResult.model());        
+      178 +      provenance.put("schemaVersion", BotDefinitionConfigurati
+          +on.SCHEMA_V1);                                                
+      179 +      version.applyValidatedConfiguration(                    
+      180 +          configuration, validation.toString(), provenance.toS
+          +tring(), clock.instant());                                    
+      181 +      versionRepository.save(version);                        
+      182 +      ObjectNode result = objectMapper.createObjectNode();    
+      183 +      result.put("validationSummary", "validated");           
+      184 +      job.markSuggestionReady(                                
+      185 +          result.toString(), BotDefinitionConfiguration.SCHEMA
+          +_V1, clock.instant());                                        
+      186 +    } else {                                                  
+      187 +      AiOutputValidator.IntentClassification classification = 
+          +validated.classification();                                   
+      188 +      ObjectNode result = objectMapper.createObjectNode();    
+      189 +      result.put("validationSummary", "validated");           
+      190 +      result.put("intentKey", classification.intentKey());    
+      191 +      result.put("confidence", classification.confidence());  
+      192 +      result.put("responseDraft", classification.responseDraft
+          +());                                                          
+      193 +      result.put("handoffSuggested", classification.handoffSug
+          +gested());                                                    
+      194 +      job.markSuggestionReady(result.toString(), AiOutputValid
+          +ator.INTENT_SCHEMA_V1, clock.instant());                      
+      195 +    }                                                         
+      196 +    aiJobRepository.save(job);                                
+      197 +    auditPort.record(                                         
+      198 +        tenantId,                                             
+      199 +        AIBOT_WORKER_ACTOR_ID,                                
+      200 +        "AIBOT_AI_JOB_READY",                                 
+      201 +        "AIBOT_AI_JOB",                                       
+      202 +        job.publicId(),                                       
+      203 +        "{\"status\":\"SUGGESTION_READY\",\"actorClass\":\"MAC
+          +HINE_WORKER\"}");                                             
+      204 +    return ProcessingOutcome.SUGGESTION_READY;                
+      205    }
+      210 -  /*                                                          
+      211 -  в первой проблеме пишут что надо было сделать outbox паттерн
+          - когда                                                        
+      212 -  failed request сохроняется в outbox database и после запрос 
+          -идет в ,message broker или еще куда то                        
+      213 -  или я хз если рекуест в бизнес логике в контексте операнта (
+          -ии бота) должен просто уйти в monitoring                      
+      214 -  тул для статистики и все наверное? Или он должен отвечать ка
+          -к то ?как считаешь про эту проблему                           
+      206 +                                                              
+      207 +  /**                                                         
+      208 +   * Parses/validates provider output for the job purpose. Thr
+          +ows {@link IllegalArgumentException}                          
+      209 +   * — and only that — on a validation verdict; never persists
+          +.                                                             
+      210     */
+      211 +  private ValidatedOutput validateProviderOutput(AiJobPurpose 
+          +purpose, String normalizedResponseText) {                     
+      212 +    if (purpose == AiJobPurpose.BOT_DEFINITION_GENERATION) {  
+      213 +      return new ValidatedOutput(outputValidator.parseBotDefin
+          +ition(normalizedResponseText), null);                         
+      214 +    }                                                         
+      215 +    return new ValidatedOutput(null, outputValidator.parseInte
+          +ntClassification(normalizedResponseText));                    
+      216 +  }                                                           
+      217  
+      217 -//stop cuz method ended                                       
+      218 +  /**                                                         
+      219 +   * Commits the terminal INVALID transition for a validation 
+          +failure. Runs inside the                                      
+      220 +   * caller's authoritative transaction and RETURNS normally (
+          +no throw) so the terminal job                                 
+      221 +   * state, the draft restore, and the audit record all commit
+          + together. Throwing here would                                
+      222 +   * roll the transaction back and strand the durable job in R
+          +UNNING — the defect this method                               
+      223 +   * exists to prevent. Persistence failures inside this metho
+          +d are NOT swallowed (except the                               
+      224 +   * documented already-recoverable draft restore) and will st
+          +ill roll the transaction back.                                
+      225 +   */                                                         
+      226 +  private ProcessingOutcome terminalValidationFailure(        
+      227 +      UUID tenantId,                                          
+      228 +      AiJob job,                                              
+      229 +      BotDefinitionVersion version,                           
+      230 +      IllegalArgumentException validationFailure) {           
+      231 +    String failure = classifyValidationFailure(validationFailu
+          +re);                                                          
+      232 +    job.markInvalid(failure, clock.instant());                
+      233 +    aiJobRepository.save(job);                                
+      234 +    try {                                                     
+      235 +      version.restoreDraft(clock.instant());                  
+      236 +      versionRepository.save(version);                        
+      237 +    } catch (IllegalStateException alreadyRecoverable) {      
+      238 +      // Version already in a recoverable/draft state — the IN
+          +VALID job outcome stands.                                     
+      239 +    }                                                         
+      240 +    auditPort.record(                                         
+      241 +        tenantId,                                             
+      242 +        AIBOT_WORKER_ACTOR_ID,                                
+      243 +        "AIBOT_AI_JOB_INVALID",                               
+      244 +        "AIBOT_AI_JOB",                                       
+      245 +        job.publicId(),                                       
+      246 +        "{\"status\":\"INVALID\",\"failureClass\":\"" + failur
+          +e + "\",\"actorClass\":\"MACHINE_WORKER\"}");                 
+      247 +    return ProcessingOutcome.TERMINAL_VALIDATION_FAILURE;     
+      248 +  }                                                           
+      249 +                                                              
+      250 +  /** Maps a validation exception to one of the two terminal I
+          +NVALID failure codes. */                                      
+      251 +  private static String classifyValidationFailure(IllegalArgum
+          +entException ex) {                                            
+      252 +    String message = ex.getMessage() == null ? "" : ex.getMess
+          +age().toLowerCase(Locale.ROOT);                               
+      253 +    if (message.contains("policy")                            
+      254 +        || message.contains("security_lint")                  
+      255 +        || message.contains("authority")                      
+      256 +        || message.contains("forbidden")) {                   
+      257 +      return "OUTPUT_POLICY_REJECTED";                        
+      258 +    }                                                         
+      259 +    return "OUTPUT_SCHEMA_INVALID";                           
+      260 +  }                                                           
+      261 +                                                              
+      262 +  private record ValidatedOutput(                             
+      263 +      BotDefinitionConfiguration configuration,               
+      264 +      AiOutputValidator.IntentClassification classification) {
+          +}                                                             
+      265 +                                                              
+      266    private void handleProviderFailure(ClaimedAiJob claim, Strin
+           g failureClass) {
+      267      transactionTemplate.executeWithoutResult(
+      268          status -> {
+
+● Now harden the domain markInvalid to clear nextAttemptAt (terminal state
+  carries no pending retry — matching failClaimed), since this service is its
+  only caller:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/domain/aijob/AiJob.jav
+        a)
+  ⎿  Added 1 line
+      168      this.status = AiJobStatus.INVALID;
+      169      this.failureClass = boundedFailure(failureClass);
+      170      this.completedAt = now;
+      171 +    this.nextAttemptAt = null;                                
+      172      clearLease();
+      173    }
+      174  
+
+● Let me compile and run the existing test class to confirm the production
+  changes compile and the closed PROVIDER_DISABLED invariants still pass.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Existing 5 closed-invariant tests pass and production compiles. Now I'll write
+  the transaction-boundary tests. I need the shapes of BotDefinitionVersion
+  (its restoreDraft/applyValidatedConfiguration and whether it's final) and
+  AiProviderPort.ProviderResult.
+
+  Read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+● I now have everything. Let me write the transaction-boundary test that
+  actually proves commit-vs-rollback — the exact mechanism the no-op TM hides.
+  It uses a recording AbstractPlatformTransactionManager (counts real
+  doCommit/doRollback calls), which deterministically proves the control flow
+  reaches commit on validation failure and rollback on persistence failure —
+  without needing Docker/Postgres.
+
+● Write(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/AiJ
+       obProcessingServiceTransactionBoundaryTest.java)
+  ⎿  Wrote 308 lines to apps/core-api/src/test/java/com/orderpilot/aibot/ap
+     plication/service/AiJobProcessingServiceTransactionBoundaryTest.java
+       1 package com.orderpilot.aibot.application.service;
+       2 
+       3 import static org.assertj.core.api.Assertions.assertThat;
+       4 import static org.assertj.core.api.Assertions.assertThatThrownBy
+         ;
+       6 import static org.mockito.ArgumentMatchers.eq;
+       7 import static org.mockito.Mockito.atLeastOnce;
+       8 import static org.mockito.Mockito.never;
+       9 import static org.mockito.Mockito.verify;
+      10 import static org.mockito.Mockito.when;
+     … +374 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 9 pass (4 new boundary tests + 5 preserved closed-invariant tests). Let me
+  run the broader aibot module test suite to confirm no adjacent regressions.
+  Ran 1 shell command (ctrl+o to expand)
+
+● Full aibot module: 44 tests, 0 failures (1 skipped = network-gated Gemini
+  smoke). No adjacent regressions. Let me capture the final diff state for the
+  two completed slices.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The CoreApiReleaseDockerfileContractTest.java edit isn't showing in the diff —
+  let me check its git state; it must be tracked and show as modified.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Important discovery: the com/orderpilot/build/ test package is gitignored
+  (.gitignore:94: build/) — so CoreApiReleaseDockerfileContractTest.java is
+  untracked and never reaches CI. This is the same bug class as Slice 0, but in 
+  .gitignore. I must check the critical case: is the aibot port/out main source
+  package also gitignored/untracked?
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Clarified: the critical port/out main source is properly tracked (.gitignore
+  has no bare/** out/, only graphify-out/). But .gitignore has build/
+  (duplicated, lines 83 & 94), which does ignore the Java test package
+  com/orderpilot/build/ — so the release-Dockerfile contract test (and my
+  regression addition) is untracked and absent from CI. That's the same bug
+  class as Slice 0, at the git layer, and it directly undermines the durability
+  of Slice 0's guard. Let me see the .gitignore context to fix it precisely.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The .gitignore has bare build/ in both the frontend and backend sections —
+  each matches any build/ at any depth, including the Java source test package.
+  The backend one is pure harm (this is Maven → target/, no Gradle output).
+  Fixing this is required for Slice 0's own regression guard to be
+  tracked/CI-visible, so it belongs to Slice 0. Applying the same
+  precise-scoping fix:
+
+● Update(.gitignore)
+  ⎿  Added 1 line, removed 1 line
+      80  node_modules/
+      81  .next/
+      82  dist/
+      83 -build/                                                         
+      83 +apps/web-dashboard/build/                                      
+      84  coverage/
+      85  *.tsbuildinfo
+      86  npm-debug.log*
+
+● Update(.gitignore)
+  ⎿  Added 4 lines, removed 1 line
+       91  # ===== Java / backend =====
+       92  target/
+       93  .gradle/
+       94 -build/                                                        
+       94 +# NOTE: no bare `build/` here. This is a Maven project (build 
+          +output is target/, above);                                    
+       95 +# a depth-agnostic `build/` also ignores the Java source packa
+          +ge                                                            
+       96 +# apps/core-api/src/test/.../com/orderpilot/build/ (the releas
+          +e Dockerfile contract test),                                  
+       97 +# which then never gets committed or run in CI.               
+       98  *.class
+       99  *.jar
+      100  *.war
+
+● Now verify the un-ignore surfaces exactly the intended contract-test package
+  and nothing harmful, and that the port/out remains tracked:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Un-ignoring surfaced a root-level build/ directory that was previously hidden
+  — I need to see what's in it before deciding whether my .gitignore change is
+  too broad.
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Critical — the root build/ holds local secrets (tls.key, tls.crt,
+  compose.env). My removal of bare build/ un-ignored those. I must keep the root
+  dir ignored while still tracking the nested Java test package. The correct
+  tool is a root-anchored /build/ (matches only <root>/build/, not nested
+  build/):
+
+● Update(.gitignore)
+  ⎿  Added 5 lines, removed 3 lines
+       91  # ===== Java / backend =====
+       92  target/
+       93  .gradle/
+       94 -# NOTE: no bare `build/` here. This is a Maven project (build 
+          -output is target/, above);                                    
+       95 -# a depth-agnostic `build/` also ignores the Java source packa
+          -ge                                                            
+       94 +# Root-anchored: ignore the repo-root ./build/ scratch/artifac
+          +ts dir (may hold local                                        
+       95 +# secrets, e.g. build/p1d-compose/tls.key) WITHOUT ignoring th
+          +e nested Java source package                                  
+       96  # apps/core-api/src/test/.../com/orderpilot/build/ (the releas
+           e Dockerfile contract test),
+       97 -# which then never gets committed or run in CI.               
+       97 +# which a depth-agnostic `build/` would strip from git and CI.
+          + This is a Maven project;                                     
+       98 +# module build output is target/ (above).                     
+       99 +/build/                                                       
+      100  *.class
+      101  *.jar
+      102  *.war
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now everything is correct and safe:
+  - Root build/ (with tls.key/compose.env secrets) is re-ignored via
+  root-anchored /build/.
+  - The Java contract-test package is now trackable (untracked, ready to commit)
+  — so Slice 0's guard will actually reach git/CI.
+  - No stray build dirs, no secret exposure.
+
+  Let me run one final adversarial-review sweep: recompile the whole test scope
+  for the two touched slices together to confirm nothing else broke.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both slices are green (20/20). Here is the honest checkpoint. I've completed
+  the first two slices in strict order; the rest depend on a decision given a
+  hard environment limit I hit.
+
+  Repository identity
+
+  - root: /home/akm/OrderPilot/OrderPilot-Core · branch: feat/aibot-module18
+  - task start / head SHA: 7eabe6d9 (unchanged — no commits made, per your
+  rules)
+  - prompt baseline 6ca60de4…: does not exist in this repo; I verified every
+  finding against actual HEAD instead.
+  - worktree explained: the pre-existing dirty file was just your orientation
+  comments in AiJobProcessingService.java (incl. the outbox question) — no
+  logic. .serena/ is the Serena tool cache (not mine).
+
+  Slice 0 — Docker release build context ✅ VERIFIED (image build NOT_PROVEN)
+
+  - Root cause confirmed: .dockerignore **/out/ strips the tracked main source
+  package apps/core-api/.../application/port/out/ (the aibot outbound ports)
+  from the COPY apps/core-api/src context → in-image mvn test fails to compile.
+  Adjacent finding: **/build/ strips the Java test package com/orderpilot/build/
+  (the release Dockerfile contract test) too.
+  - Fix: scoped both to apps/web-dashboard/{out,build}/ (frontend, where they're
+  actually generated).
+  - Second-order finding + fix: .gitignore had bare build/ (×2) that gitignored
+  the contract-test package — so that test was untracked and absent from CI,
+  which would have made my guard non-durable. Replaced with root-anchored
+  /build/ (keeps the root build/ scratch dir — which holds tls.key/compose.env
+  secrets — ignored) while un-ignoring the nested Java test package.
+  - Tests: added a daemon-free regression guard to
+  CoreApiReleaseDockerfileContractTest asserting .dockerignore never uses
+  depth-agnostic **/out//**/build/ and the port/out source exists → 2/2 pass.
+  - Remaining risk / NOT_PROVEN: the actual docker build exit-0 — Docker socket
+  is permission-denied here, so I do not declare the release blocker itself
+  closed.
+
+  Slice 1 — terminal validation failure must not roll back ✅ VERIFIED at tx 
+  boundary (durable PG rollback NOT_PROVEN)
+
+  - Root cause confirmed: in completeWithProviderResult (a REQUIRES_NEW
+  callback) the catch wrote the terminal state then throw ex → Spring rolls the
+  whole tx back → durable job stranded in RUNNING. The drain service already
+  re-reads durable status, so the throw was pure harm. (Your no-op TM in the old
+  test is exactly why the bug was invisible — its doCommit/doRollback do
+  nothing.)
+  - Fix: validation is now isolated; a validation verdict applies the terminal
+  INVALID transition, persists job/version/audit, and returns a typed 
+  ProcessingOutcome (no throw → commits). Only genuine persistence/programming
+  faults propagate → roll back (per §9.7). Distinct failure codes preserved
+  (OUTPUT_SCHEMA_INVALID / OUTPUT_POLICY_REJECTED); hardened AiJob.markInvalid
+  to also null nextAttemptAt.
+  - Tests: new AiJobProcessingServiceTransactionBoundaryTest with a recording
+  transaction manager (counts real commit/rollback):
+  invalid→commit+INVALID+lease cleared+no rollback;
+  policy→OUTPUT_POLICY_REJECTED; valid→SUGGESTION_READY+commit; persistence 
+  fault→rollback+propagate. 4/4 pass; 5 PROVIDER_DISABLED closed-invariant tests
+  preserved; full aibot module 44/44 (1 network-skip).
+  - Remaining risk / NOT_PROVEN: physical PG row-revert on rollback — needs
+  Testcontainers Postgres, unavailable here.
+
+  Environment limits found: only a JRE was on PATH; I'm using the repo's bundled
+  JDK 21 (.tools/jdk-21.0.11+10). No Docker daemon (socket permission denied) →
+  no docker build, and no Testcontainers Postgres. This directly caps the
+  acceptance bar for Slice 2 (expired-lease recovery) and Slice 6 (idempotency
+  race), whose acceptance the prompt says requires real concurrent PostgreSQL 
+  proof (§10.6/§14.8) — I can implement the fix + write the integration tests,
+  but cannot run them to closure here.
+
+  Given that, how would you like me to proceed?
+
+● User answered Claude's questions:
+  ⎿  · Slices 0 and 1 are done and verified to the limit this environment 
+     allows. How should I proceed through Slices 2–7, given no Docker daemon / 
+     Testcontainers Postgres here? → Pause for review
+
+● Pausing here for your review. No commits, pushes, or branch changes were made.
+  Summary for review:
+
+  Changed files (Slices 0 + 1)
+
+  Modified (tracked):
+  - .dockerignore — scope **/out/+**/build/ → apps/web-dashboard/{out,build}/
+  (stops stripping Java port/out main source and the build/ test package from
+  the release image context).
+  - .gitignore — frontend build/ → apps/web-dashboard/build/; backend bare
+  build/ → root-anchored /build/ (keeps root secrets ignored, un-ignores the
+  Java contract-test package).
+  - apps/core-api/.../aibot/application/service/AiJobProcessingService.java —
+  validation failure now commits a terminal outcome instead of throwing/rolling
+  back; typed ProcessingOutcome; persistence faults still roll back; removed the
+  stray annotation comments.
+  - apps/core-api/.../aibot/domain/aijob/AiJob.java — markInvalid also clears
+  nextAttemptAt (terminal ⇒ no pending retry).
+
+  New / newly-trackable (untracked — you decide whether to git add):
+  - apps/core-api/src/test/.../application/service/AiJobProcessingServiceTransac
+  tionBoundaryTest.java — the commit-vs-rollback proof (4 tests).
+  - apps/core-api/src/test/java/com/orderpilot/build/ — the pre-existing release
+  Dockerfile contract test plus my .dockerignore regression guard, now
+  un-gitignored so it reaches CI.
+
+  Not mine: .serena/ (Serena tool cache) — pre-existing, untouched.
+
+  Tests run (JDK 21 via .tools/jdk-21.0.11+10)
+
+  - CoreApiReleaseDockerfileContractTest 2/2 ·
+  AiJobProcessingServiceTransactionBoundaryTest 4/4 · AiJobProcessingServiceTest
+  5/5 (closed PROVIDER_DISABLED invariants preserved) · full aibot module 44/44
+  (1 network-skip). Combined Slice 0+1 set: 20/20, BUILD SUCCESS.
+
+  Tests NOT run / NOT_PROVEN
+
+  - Actual docker build exit-0 (no Docker daemon here) — Slice 0 release blocker
+  not declared closed.
+  - Physical PostgreSQL rollback durability for Slice 1 (no Testcontainers) —
+  proven only at the Spring transaction boundary.
+
+  Risks / blockers
+
+  - Environment has no JDK on PATH (only JRE 25; I used the repo's bundled
+  JDK 21), no Docker daemon, no Testcontainers Postgres. This caps the
+  acceptance bar for the remaining PG-dependent slices (2 & 6) and the Slice 0
+  image build.
+
+  Next recommended step
+
+  Review the diff (git diff for the 4 modified files; inspect the 2 untracked
+  test paths). When ready, tell me which of the earlier options to take — my
+  recommendation is enable Docker + a Postgres/Testcontainers path before Slices
+  2 & 6 so their mandated concurrency proofs can actually pass, while Slices
+  3/4/5/7 can proceed anytime.
+
+  Stop condition
+
+  Paused at your request after Slices 0 & 1; awaiting your go-ahead before
+  starting Slice 2 (or a reprioritized slice). No further edits until you
+  decide.
+
+✻ Brewed for 19m 57s
+
+❯ /login                                                                          ⎿  Login interrupted
+
+❯ /caveman:caveman-help                                                         
+
+❯ /compact                                                                      
+
+● CAVEMAN HELP. one-shot card. no mode change.
+
+  MODES
+
+  ┌──────────────┬───────────────────┬──────────────────────────────────────┐
+  │     Mode     │      Trigger      │                Change                │
+  ├──────────────┼───────────────────┼──────────────────────────────────────┤
+  │ Lite         │ /caveman lite     │ Drop filler. Keep sentences.         │
+  ├──────────────┼───────────────────┼──────────────────────────────────────┤
+  │ Full         │ /caveman          │ Drop articles, filler, hedging.      │
+  │              │                   │ Fragments OK. Default.               │
+  ├──────────────┼───────────────────┼──────────────────────────────────────┤
+  │ Ultra        │ /caveman ultra    │ Max compress. Bare fragments. Tables │
+  │              │                   │  > prose.                            │
+  ├──────────────┼───────────────────┼──────────────────────────────────────┤
+  │ Wenyan-Lite  │ /caveman          │ 文言文, light.                       │
+  │              │ wenyan-lite       │                                      │
+  ├──────────────┼───────────────────┼──────────────────────────────────────┤
+  │ Wenyan-Full  │ /caveman wenyan   │ Full 文言文. Max terse.              │
+  ├──────────────┼───────────────────┼──────────────────────────────────────┤
+  │ Wenyan-Ultra │ /caveman          │ Extreme. Scholar on budget.          │
+  │              │ wenyan-ultra      │                                      │
+  └──────────────┴───────────────────┴──────────────────────────────────────┘
+
+  Mode stick til changed or session end.
+
+  SKILLS
+
+  ┌──────────────────┬──────────────────────┬───────────────────────────────┐
+  │      Skill       │       Trigger        │            Do what            │
+  ├──────────────────┼──────────────────────┼───────────────────────────────┤
+  │ caveman-commit   │ /caveman-commit      │ Terse commit. Conventional    │
+  │                  │                      │ Commits. ≤50 char subject.    │
+  ├──────────────────┼──────────────────────┼───────────────────────────────┤
+  │ caveman-review   │ /caveman-review      │ One-line PR notes: L42: bug:  │
+  │                  │                      │ user null. Add guard.         │
+  ├──────────────────┼──────────────────────┼───────────────────────────────┤
+  │ caveman-compress │ /caveman-compress    │ Squash .md file. Save ~46%    │
+  │                  │ <file>               │ tokens.                       │
+  ├──────────────────┼──────────────────────┼───────────────────────────────┤
+  │ caveman-help     │ /caveman-help        │ This card.                    │
+  └──────────────────┴──────────────────────┴───────────────────────────────┘
+
+  STOP
+
+  Say "stop caveman" or "normal mode". Come back with /caveman.
+
+  LANGUAGE
+
+  Keep your tongue. Compress style, not language. Code, commands, error strings
+  stay verbatim.
+
+  DEFAULT MODE
+
+  Order: env var > config file > full.
+  - env: export CAVEMAN_DEFAULT_MODE=ultra
+  - config: ~/.config/caveman/config.json → { "defaultMode": "lite" }
+  - "off" = no auto-start.
+
+  Docs: https://github.com/JuliusBrussee/caveman
+
+  ---Card shown. No mode turned on — you still in normal mode. Slice 0 + 1 work
+  still paused for your review, untouched. Want caveman on? Say /caveman.
+
+✻ Cooked for 11s
+
+❯ /compact                                                                      
+  ⎿  Compacted (ctrl+o to see full summary)
+  ⎿  Read .gitignore (133 lines)
+  ⎿  Referenced file apps/core-api/src/test/java/com/orderpilot/aibot/applicatio
+     n/service/AiJobProcessingServiceTransactionBoundaryTest.java
+  ⎿  Read apps/core-api/src/main/java/com/orderpilot/aibot/domain/botdefinition/
+     BotDefinitionVersion.java (196 lines)
+  ⎿  Referenced file 
+     apps/core-api/src/main/java/com/orderpilot/aibot/domain/aijob/AiJob.java
+  ⎿  Referenced file apps/core-api/src/main/java/com/orderpilot/aibot/applicatio
+     n/service/AiJobProcessingService.java
+
+❯ /update-config                                                                
+
+● You ran /update-config but
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ /update-config                                                                
+
+● You've loaded the update-config skill, but haven't told me what to change.
+  What config do you want to update?
+
+  Common things I can do:
+
+  - Permissions — allow commands without prompting (e.g. Bash(mvn *), Bash(git 
+  *))
+  - Environment variables — e.g. persist JAVA_HOME/PATH so Maven runs don't need
+  the manual export each time
+  - Hooks — run something automatically on an event (e.g. run targeted tests
+  after edits, format on write)
+  - Model / effort / theme / editorMode — simple prefs (better via /config)
+  - Attribution — customize or hide commit/PR trailers
+
+  And a scope: user (~/.claude/settings.json, all projects), project
+  (.claude/settings.json, committed/team-wide), or local
+  (.claude/settings.local.json, this project only, gitignored).
+
+  Note: .claude/ is gitignored in this repo (line 24), so project-scoped
+  settings wouldn't be tracked unless you force-add.
+
+  Tell me what + which scope and I'll make the edit. (Separately: the Slice 0 +
+  1 aibot work is still paused for your review — untouched.)
+
+✻ Sautéed for 10s
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/akm/OrderPilot/OrderPilot-Core/2026-08-07-1
+     51743-local-command-caveatcaveat-the-messages-below.txt
+
+※ recap: You're remediating 8 defects in the aibot module (PR #318); Slices 0 and 1 are done, verified, and paused for your review. Next: tell me whether to start Slice 2 or hold. (disable recaps in /config)
+
+❯ which fixes are fully done?                                                   
+
+● Two of the eight slices are done. The other six are untouched.
+
+  Fully implemented + verified (to this environment's limit)
+
+  Slice 0 — Docker release build context
+  - .dockerignore: replaced depth-agnostic **/out/ + **/build/ (which were
+  stripping tracked main source aibot/application/port/out/ and the
+  com/orderpilot/build/ test package from the COPY apps/core-api/src) with
+  dashboard-scoped apps/web-dashboard/out/ + apps/web-dashboard/build/.
+  - .gitignore: fixed the durability leak — bare build/ was gitignoring the Java
+  contract-test package so it never reached CI. Now root-anchored /build/
+  (keeps repo-root ./build/ secrets — tls.key/compose.env — ignored) while the
+  nested Java test package is trackable.
+  - Regression guard: CoreApiReleaseDockerfileContractTest asserts the patterns
+  can't reappear.
+  - Tests: 2/2 pass.
+
+  Slice 1 — terminal validation failure must not rollback
+  - AiJobProcessingService: validation now runs isolated inside the tx; a
+  validation verdict (IllegalArgumentException) → terminalValidationFailure(...)
+  which commits the durable INVALID state + audit + restores draft, and logs
+  post-commit. Persistence/programming faults are NOT caught → still propagate →
+  rollback (invariant preserved).
+  - AiJob.markInvalid: added nextAttemptAt = null (terminal ⇒ no pending retry).
+  - Tests: 4/4 (AiJobProcessingServiceTransactionBoundaryTest) using a recording
+  tx manager that counts real commit/rollback.
+
+  Combined verification: 20/20 pass. aibot module: 44/44 (1 network-gated smoke
+  test skipped). PROVIDER_DISABLED invariants preserved.
+
+  NOT_PROVEN (blocked by environment, not by code)
+
+  - Slice 0: actual docker build of the release image — no Docker daemon here.
+  - Slice 1: physical PostgreSQL rollback durability — no Testcontainers/PG.
+  Proven at the control-flow level (commit vs rollback counts), not against a
+  real DB.
+
+  Not started
+
+  Slices 2–7: expired-lease recovery, fresh per-claim timestamp, AI-output
+  capability guard, backend-owned SYNTHETIC classification, concurrency-safe
+  idempotency, preview-result retrieval.
+
+  You paused after 0 & 1 to review the diff before I invest in the rest. Still
+  paused — say the word to continue (strict order → Slice 2), or reorder.
+
+✻ Crunched for 15s
+
+❯ okay so you can continue to fix those slices and ask me for something if u    
+  dont understand                                                               
+
+● Continuing in strict order. Starting Slice 2 (recover expired LEASED/RUNNING
+  jobs). Let me verify the finding on the current HEAD before changing anything.
+
+  Searched for 1 pattern, read 4 files, ran 1 shell command (ctrl+o to expand)
+
+● Both Slice 2 (claim predicate) and Slice 3 (per-iteration now) live in this
+  area. I can already see the Slice 3 defect: now is computed once at line 48
+  and reused for every iteration of the batch loop. Let me confirm Slice 2 by
+  reading the state machine, the claim mechanics, and existing test patterns.
+
+  Read 3 files (ctrl+o to expand)
+
+● Slice 2 defect confirmed. The real claim path is
+  AiJobRepositoryAdapter.claimNext → repository.lockNextClaimable(now) →
+  entity.applyClaim(...). The SQL predicate gates recovery. Trace for a crashed
+  worker:
+
+  - Job claimed → applyClaim sets status=LEASED, lease_until=now+lease,
+  next_attempt_at=null.
+  - Worker dies (job stuck in LEASED or RUNNING), lease expires (lease_until <= 
+  now), next_attempt_at still null.
+  - Re-evaluate lockNextClaimable: first clause needs status='REQUESTED' (false)
+  OR next_attempt_at <= now (null → false) ⇒ whole WHERE false ⇒ row never 
+  re-selected. Orphaned forever.
+
+  The fix is a predicate change in the native query. Let me check the existing
+  Postgres integration-test infra so I can write the real acceptance proof
+  following repo conventions.
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Testcontainers is available and there's a DatabaseIntegrationTestBase +
+  Docker-gated pattern that SKIPs cleanly without Docker. Let me read the base
+  class and the aibot migration to see FK constraints and seeding helpers before
+  writing the Slice 2 acceptance proof.
+
+  Read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+● Slice 2 fix is a minimal predicate change. Let me read the parent-table
+  columns so my Postgres acceptance test can seed valid FK rows.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Now applying the Slice 2 root-cause fix — add an expired-lease recovery clause
+  to the claim predicate.
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/infrastructure/persist
+        ence/SpringDataAiJobRepository.java)
+  ⎿  Added 5 lines
+      23            WHERE (
+      24                j.status = 'REQUESTED'
+      25                OR (j.next_attempt_at IS NOT NULL AND j.next_atte
+          mpt_at <= :now)
+      26 +              -- Recover jobs whose worker died mid-flight: any
+         + non-terminal row still holding an                             
+      27 +              -- expired lease (LEASED/RUNNING/OUTPUT_RECEIVED/
+         +...) becomes claimable again. Without                          
+      28 +              -- this an orphaned lease with a null next_attemp
+         +t_at is never re-selected and the job                          
+      29 +              -- is stuck forever. The `lease_until <= :now` cl
+         +ause below still protects active leases.                       
+      30 +              OR (j.lease_until IS NOT NULL AND j.lease_until <
+         += :now)                                                        
+      31              )
+      32              AND (j.lease_until IS NULL OR j.lease_until <= :now
+          )
+      33              AND j.status NOT IN ('SUGGESTION_READY','INVALID','
+          FAILED','REJECTED','CANCELLED','STALE')
+
+● Let me confirm the CLEAN seed truncates the aibot tables (so each test starts
+  clean).
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● clean.sql truncates tenant ... CASCADE, which cascades through the aibot FK
+  chain — so each test starts with empty aibot tables plus reseeded tenants. Now
+  writing the Slice 2 acceptance proof (Postgres, Docker-gated so it SKIPs
+  cleanly here).
+
+● Write(apps/core-api/src/test/java/com/orderpilot/integration/testdb/AiJobClaim
+       RecoveryPostgresIntegrationTest.java)
+  ⎿  Wrote 209 lines to apps/core-api/src/test/java/com/orderpilot/integrat
+     ion/testdb/AiJobClaimRecoveryPostgresIntegrationTest.java
+       1 package com.orderpilot.integration.testdb;
+       2 
+         ;
+       4 import static org.assertj.core.api.Assertions.assertThat;
+       5 
+         Port;
+       7 import com.orderpilot.aibot.application.port.out.AiJobRepository
+         Port.ClaimedAiJob;
+       9 import com.orderpilot.support.DatabaseIntegrationTestBase;
+      10 import com.orderpilot.support.RequiresPostgresIntegration;
+     … +259 lines (ctrl+o to expand)
+
+● Now let me set up JDK 21 and verify everything compiles (the Postgres test
+  will SKIP here — no Docker/opt-in — but must compile), plus run the existing
+  aibot unit tests to confirm no regression.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Compile passed cleanly. Let me confirm the build result explicitly and run the
+  relevant existing unit tests to check for regressions.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● All green. Let me get the explicit test counts for the report.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 2 complete: 15/15 unit tests pass; new Postgres proof compiles
+  (Docker-gated, skips here). Let me review the production diff.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Slice 2 diff is clean (1 predicate line + explanatory comment).
+
+  Now Slice 3 — the drain loop computes now once (line 48) and reuses it for
+  every claim in the batch, so the lease deadline now.plus(lease) is anchored to
+  batch-start instead of claim-time. This is a pure logic fix, unit-testable
+  with no DB. Let me check OperantAiProperties to build the test.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now applying the Slice 3 fix — move now inside the loop so each claim uses a
+  fresh timestamp and lease window.
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobDrainService.java)
+  ⎿  Added 4 lines, removed 1 line
+      44      int leaseConflicts = 0;
+      45      int batchSize = aiProperties.getWorkerBatchSize();
+      46      Duration lease = aiProperties.getWorkerLeaseDuration();
+      47 -    Instant now = clock.instant();                             
+      47  
+      48      for (int i = 0; i < batchSize; i++) {
+      49 +      // Fresh per-claim timestamp: draining a batch can take r
+         +eal wall-clock time (each job may do                           
+      50 +      // provider I/O), so a single batch-start `now` would anc
+         +hor every lease deadline to the start                          
+      51 +      // and hand later claims a lease window that is already p
+         +artly — or fully — elapsed.                                    
+      52 +      Instant now = clock.instant();                           
+      53        Optional<ClaimedAiJob> claim;
+      54        try {
+      55          claim = aiJobRepository.claimNext(workerId, now, now.pl
+          us(lease));
+
+● Now the Slice 3 unit test. Let me mirror the existing mock setup conventions.
+
+  Ran 1 shell command (ctrl+o to expand)
+● Existing tests use the explicit SUBCLASS mock maker (no global config). I'll
+  mirror that for the Slice 3 test.
+
+● Write(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/AiJ
+       obDrainServiceTest.java)
+  ⎿  Wrote 121 lines to apps/core-api/src/test/java/com/orderpilot/aibot/ap
+     plication/service/AiJobDrainServiceTest.java
+       1 package com.orderpilot.aibot.application.service;
+       2 
+       3 import static org.assertj.core.api.Assertions.assertThat;
+       5 import static org.mockito.Mockito.times;
+       6 import static org.mockito.Mockito.verify;
+       7 import static org.mockito.Mockito.when;
+       8 
+         Port;
+      10 import com.orderpilot.aibot.application.port.out.AiJobRepository
+         Port.ClaimedAiJob;
+     … +136 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 3 passes. Let me prove the test genuinely guards the fix — temporarily
+  revert to the batch-start now and confirm the test fails (negative evidence),
+  then restore.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobDrainService.java)
+  ⎿  Added 1 line, removed 4 lines
+      44      int leaseConflicts = 0;
+      45      int batchSize = aiProperties.getWorkerBatchSize();
+      46      Duration lease = aiProperties.getWorkerLeaseDuration();
+      47 +    Instant now = clock.instant();                             
+      48  
+      49      for (int i = 0; i < batchSize; i++) {
+      49 -      // Fresh per-claim timestamp: draining a batch can take r
+         -eal wall-clock time (each job may do                           
+      50 -      // provider I/O), so a single batch-start `now` would anc
+         -hor every lease deadline to the start                          
+      51 -      // and hand later claims a lease window that is already p
+         -artly — or fully — elapsed.                                    
+      52 -      Instant now = clock.instant();                           
+      50        Optional<ClaimedAiJob> claim;
+      51        try {
+      52          claim = aiJobRepository.claimNext(workerId, now, now.pl
+          us(lease));
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Negative evidence confirmed — the test fails under the buggy (batch-start now)
+  code. Restoring the fix.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Fix restored. Let me re-run Slice 3 plus the full aibot unit set to confirm
+  green after restore.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slices 2 & 3 done and verified (16/16 unit tests; Slice 2's Postgres proof is
+  Docker-gated). Both had clean negative evidence. Moving to Slice 4 (AI output
+  cannot expand bot capability). Let me investigate the validation path.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Slice 4 hypothesis forming: parseIntentClassification only checks the intent
+  key is globally known (BotIntentKey.isKnown), not that it belongs to this 
+  bot's configured intents — so AI could classify into an intent the bot was
+  never configured for, expanding capability. Let me read the processing service
+  to confirm what's available at validation time.
+
+  Read 1 file (ctrl+o to expand)
+
+● Slice 4 confirmed. In completeWithProviderResult, the BotDefinitionVersion 
+  version is loaded (line 149) and available, but intent validation
+  (validateProviderOutput → parseIntentClassification) only checks the key is
+  globally known (BotIntentKey.isKnown) — never that it's one of this bot's
+  configured intents. So AI can classify into an intent the bot was never
+  configured for = capability expansion.
+
+  Let me check how existing tests construct the intent-classification success
+  path, so my fix doesn't break a legitimate case.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Key finding: the intent-path success test
+  (validOutput_marksSuggestionReadyAndCommits, line 141) uses generatingVersion
+  which has an empty intents config, yet classifies into PRICE_INQUIRY. Under my
+  fix that becomes a capability expansion → the test would (correctly) need a
+  version that actually declares PRICE_INQUIRY. Let me read the domain types to
+  build a valid configured-intent version fixture.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Critical detail: BotIntentKey only defines HELP_REQUEST, ORDER_STATUS_REQUEST,
+  HUMAN_HANDOFF_REQUEST, UNSUPPORTED — but the test mocks
+  parseIntentClassification to return "PRICE_INQUIRY", bypassing the real global
+  check entirely. That's exactly why a per-bot capability gate is needed.
+  BotIntentDefinition accepts any intentKey string, and rehydrate bypasses
+  transition validation, so I can build a configured-intent version fixture. Let
+  me read the test header + the two generation tests to edit precisely.
+
+  Read 1 file (ctrl+o to expand)
+
+● Slice 4 fix — thread the loaded version into validation and reject intents
+  outside the bot's configured capability. Two production edits:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingService.java)
+  ⎿  Added 1 line, removed 1 line
+      161      // whole authoritative transaction back — no partial termi
+           nal state is committed.
+      162      ValidatedOutput validated;
+      163      try {
+      164 -      validated = validateProviderOutput(job.purpose(), provid
+          -erResult.normalizedResponseText());                           
+      164 +      validated = validateProviderOutput(job.purpose(), provid
+          +erResult.normalizedResponseText(), version);                  
+      165      } catch (IllegalArgumentException validationFailure) {
+      166        return terminalValidationFailure(tenantId, job, version,
+            validationFailure);
+      167      }
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingService.java)
+  ⎿  Added 12 lines, removed 2 lines
+      208     * Parses/validates provider output for the job purpose. Thr
+           ows {@link IllegalArgumentException}
+      209     * — and only that — on a validation verdict; never persists
+           .
+      210     */
+      211 -  private ValidatedOutput validateProviderOutput(AiJobPurpose 
+          -purpose, String normalizedResponseText) {                     
+      211 +  private ValidatedOutput validateProviderOutput(             
+      212 +      AiJobPurpose purpose, String normalizedResponseText, Bot
+          +DefinitionVersion version) {                                  
+      213      if (purpose == AiJobPurpose.BOT_DEFINITION_GENERATION) {
+      214        return new ValidatedOutput(outputValidator.parseBotDefin
+           ition(normalizedResponseText), null);
+      215      }
+      215 -    return new ValidatedOutput(null, outputValidator.parseInte
+          -ntClassification(normalizedResponseText));                    
+      216 +    AiOutputValidator.IntentClassification classification =   
+      217 +        outputValidator.parseIntentClassification(normalizedRe
+          +sponseText);                                                  
+      218 +    // Capability containment: the classified intent must be o
+          +ne THIS exact bot version was                                 
+      219 +    // configured (and approved) to handle. A globally-known i
+          +ntent the bot does not declare would                          
+      220 +    // silently expand the bot's capability beyond its BotDefi
+          +nitionVersion, so reject it as a                              
+      221 +    // policy verdict (commits terminal INVALID, never a raw p
+          +rovider passthrough).                                         
+      222 +    if (version.findIntent(classification.intentKey()).isEmpty
+          +()) {                                                         
+      223 +      throw new IllegalArgumentException("intent_forbidden_by_
+          +bot_capability");                                             
+      224 +    }                                                         
+      225 +    return new ValidatedOutput(null, classification);         
+      226    }
+      227  
+      228    /**
+● Now update the test file: add a configured-intent version fixture, point the
+  two intent tests at it, and add the Slice 4 negative test.
+
+● Update(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingServiceTransactionBoundaryTest.java)
+  ⎿  Added 31 lines
+      265      return version;
+      266    }
+      267  
+      268 +  /** A VALIDATED bot version that declares exactly the given 
+          +intent keys as its capability. */                             
+      269 +  private static BotDefinitionVersion intentCapableVersion(AiJ
+          +ob job, String... intentKeys) {                               
+      270 +    java.util.List<BotIntentDefinition> intents = new java.uti
+          +l.ArrayList<>();                                              
+      271 +    for (String key : intentKeys) {                           
+      272 +      intents.add(                                            
+      273 +          new BotIntentDefinition(                            
+      274 +              key, key, new BigDecimal("0.50"), "ANSWER", "SAF
+          +E_PLAIN_TEXT", true));                                        
+      275 +    }                                                         
+      276 +    BotDefinitionConfiguration configuration =                
+      277 +        new BotDefinitionConfiguration(                       
+      278 +            BotDefinitionConfiguration.SCHEMA_V1, "summary", i
+          +ntents, BotHandoffPolicy.defaults());                         
+      279 +    BotDefinitionVersion version =                            
+      280 +        new BotDefinitionVersion(                             
+      281 +            "bdv_" + UUID.randomUUID().toString().substring(0,
+          + 8),                                                          
+      282 +            job.tenantId(),                                   
+      283 +            UUID.randomUUID(),                                
+      284 +            1,                                                
+      285 +            NOW.minusSeconds(120));                           
+      286 +    // Persistence-only restore straight to VALIDATED with the
+          + configured capability — no transitions.                      
+      287 +    version.rehydrate(                                        
+      288 +        BotDefinitionVersionState.VALIDATED,                  
+      289 +        BotDefinitionConfiguration.SCHEMA_V1,                 
+      290 +        configuration,                                        
+      291 +        "{}",                                                 
+      292 +        "{}",                                                 
+      293 +        NOW.minusSeconds(30),                                 
+      294 +        job.botDefinitionVersionId(),                         
+      295 +        0L);                                                  
+      296 +    return version;                                           
+      297 +  }                                                           
+      298 +                                                              
+      299    private static OperantAiProperties enabledProps() {
+      300      OperantAiProperties props = new OperantAiProperties();
+      301      props.setEnabled(true);
+
+● Now point the two intent tests at the capable version and add imports:
+
+● Update(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingServiceTransactionBoundaryTest.java)
+  ⎿  Added 1 line, removed 1 line
+      146          .thenReturn(Optional.of(durableJob));
+      147      when(aiJobRepository.save(any())).thenReturn(durableJob);
+      148      when(versionRepository.findByIdAndTenantId(any(), any()))
+      149 -        .thenReturn(Optional.of(generatingVersion(durableJob))
+          -);                                                            
+      149 +        .thenReturn(Optional.of(intentCapableVersion(durableJo
+          +b, "PRICE_INQUIRY")));                                        
+      150      when(aiProviderPort.generateStructured(any())).thenReturn(
+           providerResult("{\"ok\":true}"));
+      151      when(outputValidator.parseIntentClassification(any()))
+      152          .thenReturn(
+
+● Update(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingServiceTransactionBoundaryTest.java)
+  ⎿  Added 1 line, removed 1 line
+      172      when(aiJobRepository.findByPublicIdAndTenantId(durableJob.
+           publicId(), durableJob.tenantId()))
+      173          .thenReturn(Optional.of(durableJob));
+      174      when(versionRepository.findByIdAndTenantId(any(), any()))
+      175 -        .thenReturn(Optional.of(generatingVersion(durableJob))
+          -);                                                            
+      175 +        .thenReturn(Optional.of(intentCapableVersion(durableJo
+          +b, "PRICE_INQUIRY")));                                        
+      176      when(aiProviderPort.generateStructured(any())).thenReturn(
+           providerResult("{\"ok\":true}"));
+      177      when(outputValidator.parseIntentClassification(any()))
+      178          .thenReturn(
+
+● Add the domain imports and the Slice 4 negative test:
+
+● Update(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingServiceTransactionBoundaryTest.java)
+  ⎿  Added 3 lines
+      18  import com.orderpilot.aibot.domain.aijob.AiJob;
+      19  import com.orderpilot.aibot.domain.aijob.AiJobPurpose;
+      20  import com.orderpilot.aibot.domain.aijob.AiJobStatus;
+      21 +import com.orderpilot.aibot.domain.botdefinition.BotDefinitionC
+         +onfiguration;                                                  
+      22  import com.orderpilot.aibot.domain.botdefinition.BotDefinitionV
+          ersion;
+      23  import com.orderpilot.aibot.domain.botdefinition.BotDefinitionV
+          ersionState;
+      24 +import com.orderpilot.aibot.domain.botdefinition.BotHandoffPoli
+         +cy;                                                            
+      25 +import com.orderpilot.aibot.domain.botdefinition.BotIntentDefin
+         +ition;                                                         
+      26  import com.orderpilot.aibot.infrastructure.configuration.Operan
+          tAiProperties;
+      27  import java.math.BigDecimal;
+      28  import java.time.Clock;
+
+● Update(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Ai
+        JobProcessingServiceTransactionBoundaryTest.java)
+  ⎿  Added 33 lines
+      165      verify(auditPort).record(any(), any(), eq("AIBOT_AI_JOB_RE
+           ADY"), any(), any(), any());
+      166    }
+      167  
+      168 +  // ── Slice 4: an intent the bot was NOT configured for cann
+          +ot expand its capability ────────────                         
+      169 +                                                              
+      170 +  @Test                                                       
+      171 +  void intentOutsideBotCapability_marksInvalidAndCommits() {  
+      172 +    AiJob durableJob = leasedIntentJob();                     
+      173 +    ClaimedAiJob claim = new ClaimedAiJob(durableJob, WORKER_A
+          +, FENCING_TOKEN);                                             
+      174 +                                                              
+      175 +    when(aiJobRepository.findByPublicIdAndTenantId(durableJob.
+          +publicId(), durableJob.tenantId()))                           
+      176 +        .thenReturn(Optional.of(durableJob));                 
+      177 +    when(aiJobRepository.save(any())).thenReturn(durableJob); 
+      178 +    // Bot declares only HELP_REQUEST as its capability...    
+      179 +    when(versionRepository.findByIdAndTenantId(any(), any())) 
+      180 +        .thenReturn(Optional.of(intentCapableVersion(durableJo
+          +b, "HELP_REQUEST")));                                         
+      181 +    when(aiProviderPort.generateStructured(any())).thenReturn(
+          +providerResult("{\"ok\":true}"));                             
+      182 +    // ...but the provider classifies the message into an inte
+          +nt the bot never declared.                                    
+      183 +    when(outputValidator.parseIntentClassification(any()))    
+      184 +        .thenReturn(                                          
+      185 +            new AiOutputValidator.IntentClassification(       
+      186 +                "ORDER_STATUS_REQUEST", new BigDecimal("0.95")
+          +, Map.of(), "hi", false, java.util.List.of()));               
+      187 +                                                              
+      188 +    buildService(enabledProps()).processClaimedJob(claim); // 
+          +must NOT throw                                                
+      189 +                                                              
+      190 +    // Capability expansion is rejected as a committed termina
+          +l policy verdict — no raw passthrough.                        
+      191 +    assertThat(durableJob.status()).isEqualTo(AiJobStatus.INVA
+          +LID);                                                         
+      192 +    assertThat(durableJob.failureClass()).isEqualTo("OUTPUT_PO
+          +LICY_REJECTED");                                              
+      193 +    assertThat(durableJob.leaseOwner()).isNull();             
+      194 +    assertThat(txManager.rollbackCount()).as("capability rejec
+          +tion commits, never rolls back").isZero();                    
+      195 +    assertThat(txManager.commitCount()).isEqualTo(2);         
+      196 +    verify(auditPort, atLeastOnce())                          
+      197 +        .record(eq(durableJob.tenantId()), any(), eq("AIBOT_AI
+          +_JOB_INVALID"), any(), any(), any());                         
+      198 +    verify(auditPort, never()).record(any(), any(), eq("AIBOT_
+          +AI_JOB_READY"), any(), any(), any());                         
+      199 +  }                                                           
+      200 +                                                              
+      201    // ── Regression test: a persistence failure DOES roll back 
+           and propagate (not silently committed)
+      202  
+      203    @Test
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 4 done (13/13). Let me review the Slice 4 production diff.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 4 diff clean (~7 production lines). Now Slice 5 — preview SYNTHETIC
+  classification must be backend-owned, not client-assertable. Let me locate the
+  preview path.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Slice 5 needs precise scoping. Both call sites hardcode "SYNTHETIC" in the
+  backend already. Let me look at the request model and BotManagementService
+  context to pin down exactly what "must be backend-owned (fixture-based)" means
+  here.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both call sites already hardcode "SYNTHETIC" in the backend, but the preview
+  path applies that label to arbitrary operator free-text (request.message())
+  before sending it to the external provider under a SYNTHETIC_ONLY data policy.
+  The Slice 5 fix hinges on a scope decision. Let me check whether any
+  synthetic-fixture concept already exists and what the checkpoint says about
+  preview scope, so I ask you a well-informed question.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● I've hit a genuine scope decision on Slice 5 that's yours to make. Here's what
+  I found:
+
+  The defect is real. BotPreviewService.preview (line 153) takes arbitrary
+  operator free-text (request.message()), stamps it
+  inputClassification="SYNTHETIC", and sends it to Gemini. The SYNTHETIC_ONLY
+  data policy is only checked once at adapter construction
+  (GeminiFlashLiteAdapter:49) as a deployment-config guard — nothing ever 
+  verifies the actual input is synthetic. So an operator can paste real customer
+  PII into preview and the backend mislabels it SYNTHETIC and ships it to the
+  external provider.
+
+  The task says the SYNTHETIC classification "must be backend-owned
+  (fixture-based)." There's no existing fixture catalogue in the codebase, and
+  the fix approach has very different scope + frontend (Slice 7) impact, so I
+  want your call before I build it.
+
+  Progress so far this session: Slices 2, 3, 4 are done and verified (Slice 2
+  predicate + Postgres proof; Slice 3 per-claim timestamp with negative
+  evidence; Slice 4 capability-containment guard). Details below the question.
+
+● User answered Claude's questions:
+  ⎿  · How should Slice 5 make the preview SYNTHETIC classification trustworthy?
+     → Narrow backend guard
+
+● Understood — narrow backend guard: only input matching a backend-owned
+  synthetic fixture is labeled SYNTHETIC and sent; anything else is rejected 4xx
+  with no provider call. Let me check the existing rejection exception + its
+  HTTP mapping so I stay consistent.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● BotPreviewInputRejectedException → HTTP 400, consistent with the ask. Now let
+  me check the existing preview tests to see what messages they exercise — my
+  fixture catalogue must keep legitimate existing tests valid.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Existing preview tests use the message "Order status?" and expect it to pass
+  admission (reach the bot lookup / 503). So my fixture catalogue must include
+  that canonical scenario, and the synthetic guard must sit after the 503
+  runtime check but before bot lookup/job creation (so non-synthetic input is
+  rejected with zero provider path). Creating the backend-owned fixture
+  catalogue:
+● Write(apps/core-api/src/main/java/com/orderpilot/aibot/domain/preview/Syntheti
+       cPreviewFixtures.java)
+  ⎿  Wrote 43 lines to apps/core-api/src/main/java/com/orderpilot/aibot/dom
+     ain/preview/SyntheticPreviewFixtures.java
+       1 package com.orderpilot.aibot.domain.preview;
+       2 
+       3 import java.text.Normalizer;
+       4 import java.util.Locale;
+       5 import java.util.Set;
+       7 /**
+       8  * Backend-owned catalogue of synthetic preview messages.
+       9  *
+      10  * <p>The bot preview flow labels its input {@code SYNTHETIC} an
+         d sends it to the external AI provider
+     … +43 lines (ctrl+o to expand)
+
+● Now wire the guard into BotPreviewService — after the 503 runtime check,
+  before any bot lookup / job creation:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tPreviewService.java)
+  ⎿  Added 7 lines
+       91        throw new ResponseStatusException(
+       92            HttpStatus.SERVICE_UNAVAILABLE, "AI_RUNTIME_UNAVAILA
+           BLE");
+       93      }
+       94 +    // The SYNTHETIC classification below is backend-owned, no
+          +t caller-asserted: only messages the                          
+       95 +    // backend recognises as synthetic fixtures may be labelle
+          +d SYNTHETIC and forwarded to the                              
+       96 +    // provider under the SYNTHETIC_ONLY data policy. Reject a
+          +rbitrary input here — before any job is                       
+       97 +    // created — so unverified (potentially real/PII) content 
+          +never reaches the external provider.                          
+       98 +    if (!SyntheticPreviewFixtures.isSynthetic(normalized)) {  
+       99 +      throw new BotPreviewInputRejectedException("preview_non_
+          +synthetic");                                                  
+      100 +    }                                                         
+      101  
+      102      var bot =
+      103          botDefinitionRepository
+
+● Add the import for the fixture class:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tPreviewService.java)
+  ⎿  Added 1 line
+      17  import com.orderpilot.aibot.domain.exception.BotDefinitionNotFo
+          undException;
+      18  import com.orderpilot.aibot.domain.exception.BotDefinitionNotPr
+          eviewableException;
+      19  import com.orderpilot.aibot.domain.exception.BotPreviewInputRej
+          ectedException;
+      20 +import com.orderpilot.aibot.domain.preview.SyntheticPreviewFixt
+         +ures;                                                          
+      21  import com.orderpilot.aibot.infrastructure.configuration.BotRun
+          timeProperties;
+      22  import com.orderpilot.aibot.infrastructure.configuration.Operan
+          tAiProperties;
+      23  import java.nio.charset.StandardCharsets;
+
+● Now the Slice 5 test — positive (fixture passes guard), negative (arbitrary
+  input rejected, zero downstream interactions), plus direct fixture-catalogue
+  unit checks:
+
+● Write(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Bot
+       PreviewSyntheticGuardTest.java)
+  ⎿  Wrote 117 lines to apps/core-api/src/test/java/com/orderpilot/aibot/ap
+     plication/service/BotPreviewSyntheticGuardTest.java
+       1 package com.orderpilot.aibot.application.service;
+       2 
+       3 import static org.assertj.core.api.Assertions.assertThat;
+       4 import static org.assertj.core.api.Assertions.assertThatThrownBy
+         ;
+       6 import static org.mockito.Mockito.verifyNoInteractions;
+       7 import static org.mockito.Mockito.when;
+       8 
+       9 import com.fasterxml.jackson.databind.ObjectMapper;
+      10 import com.orderpilot.aibot.api.model.PreviewBotMessageRequest;
+     … +137 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 5 done (14/14). Now Slice 6 — concurrency-safe idempotency. The
+  read-then-insert on (tenant_id, purpose, idempotency_key) races: two
+  concurrent first-time requests both read empty, both insert, and the unique
+  constraint makes the loser throw an unhandled DataIntegrityViolationException
+  (→ 500) instead of returning the winning row. Let me read the full generate
+  path to scope the fix correctly (preview is simpler; generate also mutates the
+  version).
+
+  Read 1 file (ctrl+o to expand)
+
+● Confirmed: both paths race, and generate additionally guards via the version's
+  @Version optimistic lock. I'll add a reusable ON CONFLICT DO NOTHING upsert
+  used by both services (conditional audit on genuine insert, fingerprint
+  mismatch → 409), with a PG concurrent proof for the clean preview case. First
+  let me find which existing tests drive these success paths (they stub
+  aiJobRepository.save).
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● No existing aibot test drives generate/preview to a successful save, so
+  swapping to an upsert method won't break unit tests. Let me confirm there's no
+  H2/JPA integration test exercising the adapter's native SQL directly.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● No H2/JPA test touches the adapter's real SQL — safe to add a native upsert.
+  Implementing Slice 6.
+
+  1) Port — add the idempotent-insert method:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/port/out/A
+        iJobRepositoryPort.java)
+  ⎿  Added 12 lines
+       9  public interface AiJobRepositoryPort {
+      10    AiJob save(AiJob job);
+      11  
+      12 +  /**                                                          
+      13 +   * Concurrency-safe idempotent insert of a brand-new job keye
+         +d by (tenant, purpose,                                         
+      14 +   * idempotencyKey). Uses a single atomic {@code INSERT ... ON
+         + CONFLICT DO NOTHING} so a lost race                           
+      15 +   * against a concurrent writer is NOT an error: the persisted
+         + row (ours or the winner's) is always                          
+      16 +   * returned, with {@code inserted} true only when this call a
+         +ctually created it. Callers use                                
+      17 +   * {@code inserted} to run create-only side effects (audit) e
+         +xactly once and compare the returned                           
+      18 +   * fingerprint to detect a same-key/different-request conflic
+         +t.                                                             
+      19 +   */                                                          
+      20 +  IdempotentSave saveNewIdempotent(AiJob job);                 
+      21 +                                                               
+      22 +  record IdempotentSave(AiJob job, boolean inserted) {}        
+      23 +                                                               
+      24    Optional<AiJob> findByPublicIdAndTenantId(String publicId, UU
+          ID tenantId);
+      25  
+      26    Optional<AiJob> findByTenantIdAndPurposeAndIdempotencyKey(
+
+● 2) Repository — native INSERT … ON CONFLICT DO NOTHING:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/infrastructure/persist
+        ence/SpringDataAiJobRepository.java)
+  ⎿  Added 1 line
+       5  import java.util.Optional;
+       6  import java.util.UUID;
+       7  import org.springframework.data.jpa.repository.JpaRepository;
+       8 +import org.springframework.data.jpa.repository.Modifying;      
+       9  import org.springframework.data.jpa.repository.Query;
+      10  import org.springframework.data.repository.query.Param;
+      11  
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/infrastructure/persist
+        ence/SpringDataAiJobRepository.java)
+  ⎿  Added 36 lines
+      38            """,
+      39        nativeQuery = true)
+      40    List<AiJobJpaEntity> lockNextClaimable(@Param("now") Instant 
+          now);
+      41 +                                                               
+      42 +  /**                                                          
+      43 +   * Atomic idempotent insert of a new REQUESTED job. {@code ON
+         + CONFLICT DO NOTHING} makes a                                  
+      44 +   * concurrent duplicate a no-op (returns 0 rows) instead of r
+         +aising a unique-constraint violation,                          
+      45 +   * so the caller can read back the winning row without poison
+         +ing the transaction. Columns not                               
+      46 +   * listed keep their schema defaults (provider_key/model_key=
+         +'none', result_json='{}',                                      
+      47 +   * attempt_count/fencing_token/row_version=0).               
+      48 +   */                                                          
+      49 +  @Modifying                                                   
+      50 +  @Query(                                                      
+      51 +      value =                                                  
+      52 +          """                                                  
+      53 +          INSERT INTO aibot_ai_job                             
+      54 +            (public_id, tenant_id, purpose, bot_definition_vers
+         +ion_id, status,                                                
+      55 +             request_schema_version, request_json, request_fing
+         +erprint, input_hash,                                           
+      56 +             input_classification, idempotency_key, created_at)
+      57 +          VALUES                                               
+      58 +            (:publicId, :tenantId, :purpose, :versionId, :statu
+         +s,                                                             
+      59 +             :requestSchemaVersion, CAST(:requestJson AS jsonb)
+         +, :requestFingerprint, :inputHash,                             
+      60 +             :inputClassification, :idempotencyKey, :createdAt)
+      61 +          ON CONFLICT (tenant_id, purpose, idempotency_key) DO 
+         +NOTHING                                                        
+      62 +          """,                                                 
+      63 +      nativeQuery = true)                                      
+      64 +  int insertIfAbsent(                                          
+      65 +      @Param("publicId") String publicId,                      
+      66 +      @Param("tenantId") UUID tenantId,                        
+      67 +      @Param("purpose") String purpose,                        
+      68 +      @Param("versionId") UUID versionId,                      
+      69 +      @Param("status") String status,                          
+      70 +      @Param("requestSchemaVersion") String requestSchemaVersio
+         +n,                                                             
+      71 +      @Param("requestJson") String requestJson,                
+      72 +      @Param("requestFingerprint") String requestFingerprint,  
+      73 +      @Param("inputHash") String inputHash,                    
+      74 +      @Param("inputClassification") String inputClassification,
+      75 +      @Param("idempotencyKey") String idempotencyKey,          
+      76 +      @Param("createdAt") Instant createdAt);                  
+      77  }
+
+● 3) Adapter — implement saveNewIdempotent:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/infrastructure/persist
+        ence/AiJobRepositoryAdapter.java)
+  ⎿  Added 29 lines
+       70    }
+       71  
+       72    @Override
+       73 +  @Transactional                                              
+       74 +  public IdempotentSave saveNewIdempotent(AiJob job) {        
+       75 +    if (job.id() != null) {                                   
+       76 +      throw new IllegalStateException("saveNewIdempotent_requi
+          +res_new_job");                                                
+       77 +    }                                                         
+       78 +    int inserted =                                            
+       79 +        repository.insertIfAbsent(                            
+       80 +            job.publicId(),                                   
+       81 +            job.tenantId(),                                   
+       82 +            job.purpose().name(),                             
+       83 +            job.botDefinitionVersionId(),                     
+       84 +            job.status().name(),                              
+       85 +            job.requestSchemaVersion(),                       
+       86 +            job.requestJson(),                                
+       87 +            job.requestFingerprint(),                         
+       88 +            job.inputHash(),                                  
+       89 +            job.inputClassification(),                        
+       90 +            job.idempotencyKey(),                             
+       91 +            job.createdAt());                                 
+       92 +    AiJob stored =                                            
+       93 +        repository                                            
+       94 +            .findByTenantIdAndPurposeAndIdempotencyKey(       
+       95 +                job.tenantId(), job.purpose().name(), job.idem
+          +potencyKey())                                                 
+       96 +            .map(this::toDomain)                              
+       97 +            .orElseThrow(() -> new IllegalStateException("ai_j
+          +ob_upsert_row_missing"));                                     
+       98 +    return new IdempotentSave(stored, inserted == 1);         
+       99 +  }                                                           
+      100 +                                                              
+      101 +  @Override                                                   
+      102    @Transactional(readOnly = true)
+      103    public Optional<AiJob> findByPublicIdAndTenantId(String publ
+           icId, UUID tenantId) {
+      104      return repository.findByPublicIdAndTenantId(publicId, tena
+           ntId).map(this::toDomain);
+
+● 4) Wire the upsert into both services. Preview first:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tPreviewService.java)
+  ⎿  Added 16 lines, removed 8 lines
+      159      pending.putPOJO("approvedIntents", approvedIntents);
+      160      pending.putPOJO("approvedActions", approvedActions);
+      161      created.attachRequestEnvelope(pending.toString(), fingerpr
+           int, "SYNTHETIC");
+      162 -    AiJob saved = aiJobRepository.save(created);              
+      163 -    auditPort.record(                                         
+      164 -        tenantId,                                             
+      165 -        actorId,                                              
+      166 -        "AIBOT_PREVIEW_REQUESTED",                            
+      167 -        "AIBOT_AI_JOB",                                       
+      168 -        saved.publicId(),                                     
+      169 -        "{\"botPublicId\":\"" + bot.publicId() + "\",\"version
+          -\":" + versionNumber + "}");                                  
+      162 +    // Concurrency-safe idempotent insert: a lost race returns
+          + the winner's row instead of a                                
+      163 +    // unique-constraint 500. Audit only when THIS call actual
+          +ly created the job.                                           
+      164 +    AiJobRepositoryPort.IdempotentSave result = aiJobRepositor
+          +y.saveNewIdempotent(created);                                 
+      165 +    AiJob saved = result.job();                               
+      166 +    if (!fingerprint.equals(saved.requestFingerprint())) {    
+      167 +      throw new ResponseStatusException(HttpStatus.CONFLICT, "
+          +IDEMPOTENCY_CONFLICT");                                       
+      168 +    }                                                         
+      169 +    if (result.inserted()) {                                  
+      170 +      auditPort.record(                                       
+      171 +          tenantId,                                           
+      172 +          actorId,                                            
+      173 +          "AIBOT_PREVIEW_REQUESTED",                          
+      174 +          "AIBOT_AI_JOB",                                     
+      175 +          saved.publicId(),                                   
+      176 +          "{\"botPublicId\":\"" + bot.publicId() + "\",\"versi
+          +on\":" + versionNumber + "}");                                
+      177 +    }                                                         
+      178      return new AiJobAcceptedResponse(saved.publicId(), saved.s
+           tatus().name());
+      179    }
+      180  
+
+● Now generate — confirm the port import then apply the same pattern:
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tManagementService.java)
+  ⎿  Added 17 lines, removed 8 lines
+      188      String envelope =
+      189          objectMapper.createObjectNode().put("pendingInput", mi
+           nimized).toString();
+      190      job.attachRequestEnvelope(envelope, fingerprint, "SYNTHETI
+           C");
+      191 -    AiJob savedJob = aiJobRepository.save(job);               
+      192 -    auditPort.record(                                         
+      193 -        tenantId,                                             
+      194 -        actorId,                                              
+      195 -        "AIBOT_GENERATION_REQUESTED",                         
+      196 -        "AIBOT_AI_JOB",                                       
+      197 -        savedJob.publicId(),                                  
+      198 -        "{\"botPublicId\":\"" + bot.publicId() + "\",\"version
+          -\":" + versionNumber + "}");                                  
+      191 +    // Concurrency-safe idempotent insert: a lost race returns
+          + the winner's row instead of a                                
+      192 +    // unique-constraint 500. Audit only when THIS call actual
+          +ly created the job. (The version                              
+      193 +    // GENERATING transition above is additionally guarded by 
+          +the version's optimistic row_version.)                        
+      194 +    AiJobRepositoryPort.IdempotentSave result = aiJobRepositor
+          +y.saveNewIdempotent(job);                                     
+      195 +    AiJob savedJob = result.job();                            
+      196 +    if (!fingerprint.equals(savedJob.requestFingerprint())) { 
+      197 +      throw new ResponseStatusException(HttpStatus.CONFLICT, "
+          +IDEMPOTENCY_CONFLICT");                                       
+      198 +    }                                                         
+      199 +    if (result.inserted()) {                                  
+      200 +      auditPort.record(                                       
+      201 +          tenantId,                                           
+      202 +          actorId,                                            
+      203 +          "AIBOT_GENERATION_REQUESTED",                       
+      204 +          "AIBOT_AI_JOB",                                     
+      205 +          savedJob.publicId(),                                
+      206 +          "{\"botPublicId\":\"" + bot.publicId() + "\",\"versi
+          +on\":" + versionNumber + "}");                                
+      207 +    }                                                         
+      208      return new AiJobAcceptedResponse(savedJob.publicId(), save
+           dJob.status().name());
+      209    }
+      210  
+
+● Now compile to catch any errors before writing the concurrency proof:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Compiles. For the concurrency proof, the cleanest honest test is at the
+  adapter level — driving saveNewIdempotent from many threads with the same key
+  against real Postgres (a full @SpringBootTest preview would require enabling
+  the Gemini provider). This directly proves the ON CONFLICT upsert is
+  race-safe.
+
+● Write(apps/core-api/src/test/java/com/orderpilot/integration/testdb/AiJobIdemp
+       otencyConcurrencyPostgresIntegrationTest.java)
+  ⎿  Wrote 166 lines to apps/core-api/src/test/java/com/orderpilot/integrat
+     ion/testdb/AiJobIdempotencyConcurrencyPostgresIntegrationTest.java
+       1 package com.orderpilot.integration.testdb;
+       2 
+         ;
+       4 import static org.assertj.core.api.Assertions.assertThat;
+       5 
+         Port;
+       7 import com.orderpilot.aibot.application.port.out.AiJobRepository
+         Port.IdempotentSave;
+       9 import com.orderpilot.aibot.domain.aijob.AiJobPurpose;
+      10 import com.orderpilot.support.DatabaseIntegrationTestBase;
+     … +189 lines (ctrl+o to expand)
+
+● The Docker-gated PG test won't run here, so I need a runnable unit test for
+  the service-level idempotency logic (conditional audit + 409). Let me check
+  what makes a version "previewable" to build the mock.
+
+  Searched for 1 pattern, ran 2 shell commands (ctrl+o to expand)
+
+● DRAFT/VALIDATED are previewable. Now a runnable service-level unit test for
+  the idempotency branching (audit only on genuine insert; fingerprint mismatch
+  → 409):
+
+● Write(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Bot
+       PreviewIdempotencyTest.java)
+  ⎿  Wrote 136 lines to apps/core-api/src/test/java/com/orderpilot/aibot/ap
+     plication/service/BotPreviewIdempotencyTest.java
+      1 package com.orderpilot.aibot.application.service;
+      2 
+      3 import static org.assertj.core.api.Assertions.assertThat;
+      4 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+      5 import static org.mockito.ArgumentMatchers.any;
+      6 import static org.mockito.ArgumentMatchers.eq;
+      7 import static org.mockito.Mockito.never;
+      8 import static org.mockito.Mockito.verify;
+      9 import static org.mockito.Mockito.when;
+     … +160 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 6 done (17/17 relevant tests; PG concurrency proof Docker-gated). Now
+  Slice 7 — preview result retrieval (read endpoint + safe DTO + frontend
+  polling). Let me see what retrieval exists today.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● There's already a GET /api/v1/ai-jobs/{jobPublicId} returning status only (no
+  result payload). Let me read getAiJob mapping to see exactly what's exposed
+  and what the preview result needs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Backend already exposes status via GET /ai-jobs/{id} but not the actual
+  preview result (classified intent / responseDraft). Slice 7 adds safe result
+  retrieval + frontend polling. Let me scope the frontend and check existing
+  controller tests.
+
+  Searched for 2 patterns, read 1 file, ran 4 shell commands (ctrl+o to expand)
+
+● Route security already covers GET /api/v1/ai-jobs/* with BOT_READ, so a
+  /result sub-path needs no policy change. Note: there is no aibot frontend in
+  web-dashboard at all — so "frontend polling" would mean building a new page
+  from scratch, which is out of scope for a stabilization PR (and CLAUDE.md
+  forbids speculative UI). I'll deliver the backend retrieval (safe DTO +
+  endpoint) that a frontend polls, fully tested, and flag the UI in the report.
+  Let me read the API interface to extend it.
+
+  Read 1 file (ctrl+o to expand)
+
+● Route GET /api/v1/ai-jobs/*/result is already BOT_READ-protected. Implementing
+  the backend retrieval — safe result DTO first:
+
+● Write(apps/core-api/src/main/java/com/orderpilot/aibot/api/model/AiJobResultRe
+       sponse.java)
+  ⎿  Wrote 26 lines to apps/core-api/src/main/java/com/orderpilot/aibot/api
+     /model/AiJobResultResponse.java
+       1 package com.orderpilot.aibot.api.model;
+       2 
+       4 import java.time.Instant;
+       5 
+       6 /**
+         result retrieval.
+       8  *
+       9  * <p>Deliberately safe by construction: it carries ONLY the ope
+      10  * lifecycle metadata. It must never expose the prompt, raw prov
+         ider payload, request envelope, lease
+     … +20 lines (ctrl+o to expand)
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/api/BotManagementApi.j
+        ava)
+  ⎿  Added 1 line
+      1  package com.orderpilot.aibot.api;
+      2  
+      3  import com.orderpilot.aibot.api.model.AiJobAcceptedResponse;
+      4 +import com.orderpilot.aibot.api.model.AiJobResultResponse;      
+      5  import com.orderpilot.aibot.api.model.AiJobStatusResponse;
+      6  import com.orderpilot.aibot.api.model.BotDefinitionVersionRespon
+         se;
+      7  import com.orderpilot.aibot.api.model.BotDraftResponse;
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/api/BotManagementApi.j
+        ava)
+  ⎿  Added 2 lines
+      18    BotDefinitionVersionResponse getVersion(UUID tenantId, String
+           botPublicId, int version);
+      19  
+      20    AiJobStatusResponse getAiJob(UUID tenantId, String jobPublicI
+          d);
+      21 +                                                               
+      22 +  AiJobResultResponse getAiJobResult(UUID tenantId, String jobP
+         +ublicId);                                                      
+      23  }
+
+● Now implement getAiJobResult in the service. Let me check current imports
+  first.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tManagementService.java)
+  ⎿  Added 1 line
+       4  import com.fasterxml.jackson.databind.ObjectMapper;
+       5  import com.orderpilot.aibot.api.BotManagementApi;
+       6  import com.orderpilot.aibot.api.model.AiJobAcceptedResponse;
+       7 +import com.orderpilot.aibot.api.model.AiJobResultResponse;     
+       8  import com.orderpilot.aibot.api.model.AiJobStatusResponse;
+       9  import com.orderpilot.aibot.api.model.BotDefinitionVersionRespo
+          nse;
+      10  import com.orderpilot.aibot.api.model.BotDraftResponse;
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tManagementService.java)
+  ⎿  Added 1 line
+      16  import com.orderpilot.aibot.application.port.out.BotDefinitionV
+          ersionRepositoryPort;
+      17  import com.orderpilot.aibot.application.port.out.PublicIdGenera
+          tor;
+      18  import com.orderpilot.aibot.domain.aijob.AiJob;
+      19 +import com.orderpilot.aibot.domain.aijob.AiJobStatus;          
+      20  import com.orderpilot.aibot.domain.aijob.AiJobPurpose;
+      21  import com.orderpilot.aibot.domain.botdefinition.BotDefinition;
+      22  import com.orderpilot.aibot.domain.botdefinition.BotDefinitionC
+          onfiguration;
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tManagementService.java)
+  ⎿  Added 1 line
+      24  import com.orderpilot.aibot.domain.botdefinition.BotIntentKey;
+      25  import com.orderpilot.aibot.domain.exception.BotDefinitionNotFo
+          undException;
+      26  import com.orderpilot.aibot.infrastructure.configuration.Operan
+          tAiProperties;
+      27 +import java.math.BigDecimal;                                   
+      28  import java.time.Clock;
+      29  import java.util.ArrayList;
+      30  import java.util.HashSet;
+
+● Now add the getAiJobResult method after getAiJob:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/application/service/Bo
+        tManagementService.java)
+  ⎿  Added 52 lines
+      255          job.failureClass());
+      256    }
+      257  
+      258 +  @Override                                                   
+      259 +  @Transactional(readOnly = true)                             
+      260 +  public AiJobResultResponse getAiJobResult(UUID tenantId, Str
+          +ing jobPublicId) {                                            
+      261 +    AiJob job =                                               
+      262 +        aiJobRepository                                       
+      263 +            .findByPublicIdAndTenantId(jobPublicId, tenantId) 
+      264 +            .orElseThrow(() -> new BotDefinitionNotFoundExcept
+          +ion("ai_job_not_found"));                                     
+      265 +    String intentKey = null;                                  
+      266 +    BigDecimal confidence = null;                             
+      267 +    String responseDraft = null;                              
+      268 +    Boolean handoffSuggested = null;                          
+      269 +    String validationSummary = "none";                        
+      270 +    // Only surface the advisory outcome once the job reaches 
+          +its terminal READY result, and read it                        
+      271 +    // exclusively from the persisted, already-validated resul
+          +t document — never the request envelope                       
+      272 +    // or raw provider payload. Parsing is defensive so a malf
+          +ormed result cannot leak internals.                           
+      273 +    if (job.status() == AiJobStatus.SUGGESTION_READY) {       
+      274 +      try {                                                   
+      275 +        JsonNode node = objectMapper.readTree(job.resultJson()
+          + == null ? "{}" : job.resultJson());                          
+      276 +        validationSummary = node.path("validationSummary").asT
+          +ext("validated");                                             
+      277 +        if (node.hasNonNull("intentKey")) {                   
+      278 +          intentKey = node.path("intentKey").asText(null);    
+      279 +        }                                                     
+      280 +        if (node.hasNonNull("confidence")) {                  
+      281 +          confidence = node.path("confidence").decimalValue();
+      282 +        }                                                     
+      283 +        if (node.hasNonNull("responseDraft")) {               
+      284 +          responseDraft = node.path("responseDraft").asText(nu
+          +ll);                                                          
+      285 +        }                                                     
+      286 +        if (node.hasNonNull("handoffSuggested")) {            
+      287 +          handoffSuggested = node.path("handoffSuggested").asB
+          +oolean();                                                     
+      288 +        }                                                     
+      289 +      } catch (Exception ignored) {                           
+      290 +        validationSummary = "unavailable";                    
+      291 +      }                                                       
+      292 +    } else if (job.failureClass() != null) {                  
+      293 +      validationSummary = "failed";                           
+      294 +    }                                                         
+      295 +    return new AiJobResultResponse(                           
+      296 +        job.publicId(),                                       
+      297 +        job.purpose().name(),                                 
+      298 +        job.status().name(),                                  
+      299 +        job.status().isTerminal(),                            
+      300 +        intentKey,                                            
+      301 +        confidence,                                           
+      302 +        responseDraft,                                        
+      303 +        handoffSuggested,                                     
+      304 +        validationSummary,                                    
+      305 +        job.failureClass(),                                   
+      306 +        job.createdAt(),                                      
+      307 +        job.completedAt());                                   
+      308 +  }                                                           
+      309 +                                                              
+      310    private List<String> normalizeIntentKeys(List<String> raw) {
+      311      if (raw == null || raw.isEmpty()) {
+      312        throw new IllegalArgumentException("allowed_intent_keys_
+           required");
+
+● Now the controller endpoint:
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/infrastructure/web/AiJ
+        obController.java)
+  ⎿  Added 1 line
+      1  package com.orderpilot.aibot.infrastructure.web;
+      2  
+      3  import com.orderpilot.aibot.api.BotManagementApi;
+      4 +import com.orderpilot.aibot.api.model.AiJobResultResponse;      
+      5  import com.orderpilot.aibot.api.model.AiJobStatusResponse;
+      6  import com.orderpilot.aibot.domain.exception.BotDefinitionNotFou
+         ndException;
+      7  import com.orderpilot.common.errors.NotFoundException;
+
+● Update(apps/core-api/src/main/java/com/orderpilot/aibot/infrastructure/web/AiJ
+        obController.java)
+  ⎿  Added 10 lines
+      28        throw new NotFoundException("ai_job_not_found");
+      29      }
+      30    }
+      31 +                                                               
+      32 +  /** Advisory result retrieval for preview/generation polling.
+         + Returns a safe, leak-free view. */                            
+      33 +  @GetMapping("/{jobPublicId}/result")                         
+      34 +  public AiJobResultResponse getResult(@PathVariable String job
+         +PublicId) {                                                    
+      35 +    try {                                                      
+      36 +      return botManagementApi.getAiJobResult(TenantContext.requ
+         +ireTenantId(), jobPublicId);                                   
+      37 +    } catch (BotDefinitionNotFoundException ex) {              
+      38 +      throw new NotFoundException("ai_job_not_found");         
+      39 +    }                                                          
+      40 +  }                                                            
+      41  }
+
+● Compile then write Slice 7 tests:
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Update(apps/core-api/src/test/java/com/orderpilot/aibot/infrastructure/web/Aib
+        otRouteSecurityPolicyTest.java)
+  ⎿  Added 3 lines
+      33          .contains(ApiPermission.BOT_READ);
+      34      assertThat(policy.requiredPermissionFor("GET", "/api/v1/ai-
+          jobs/job_x"))
+      35          .contains(ApiPermission.BOT_READ);
+      36 +    // Slice 7: preview result retrieval is a read, protected b
+         +y the same BOT_READ permission.                                
+      37 +    assertThat(policy.requiredPermissionFor("GET", "/api/v1/ai-
+         +jobs/job_x/result"))                                           
+      38 +        .contains(ApiPermission.BOT_READ);                     
+      39    }
+      40  
+      41    @Test
+
+● Now the service + DTO-safety test:
+
+● Write(apps/core-api/src/test/java/com/orderpilot/aibot/application/service/Bot
+       AiJobResultTest.java)
+  ⎿  Wrote 166 lines to apps/core-api/src/test/java/com/orderpilot/aibot/ap
+     plication/service/BotAiJobResultTest.java
+       1 package com.orderpilot.aibot.application.service;
+       2 
+       3 import static org.assertj.core.api.Assertions.assertThat;
+         ;
+       5 import static org.mockito.Mockito.when;
+       6 
+       7 import com.fasterxml.jackson.databind.ObjectMapper;
+       9 import com.orderpilot.aibot.application.port.out.AiJobRepository
+         Port;
+      10 import com.orderpilot.aibot.application.port.out.AibotAuditPort;
+     … +187 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Slice 7 backend done (10/10). Now a consolidated regression run across
+  everything I touched — the full aibot module plus the Slice 0 build-contract
+  test (this PR is cross-cutting/security/state-machine, so a broader run is
+  warranted).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All green: 59 run, 0 failures, 1 skipped (network-gated Gemini smoke test).
+  Let me review the full production diff to confirm line budgets and
+  correctness.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All six slices are within the per-slice diff budget (~280 production lines
+  total across Slices 2–7; largest single slice ~107). Full aibot suite + build
+  contract green. Let me capture the final file inventory for the report.
+
+  Ran 1 shell command (ctrl+o to expand)
+● All eight slices are now addressed. Final report.
+
+  PR #318 — Slices 2–7 complete (0 & 1 done earlier)
+
+  Assumptions
+
+  - Slice 5 uses the narrow backend guard you chose: only backend-owned
+  synthetic fixtures are labeled SYNTHETIC and sent; arbitrary input → 400 with
+  no provider call.
+  - Slice 7's "frontend polling" is scoped to the backend retrieval contract:
+  there is no aibot UI in web-dashboard today, so building a Next.js preview
+  page is a new feature, out of scope for a stabilization PR and disallowed by
+  CLAUDE.md (no speculative UI). The safe read endpoint a frontend would poll is
+  delivered and tested.
+  - Postgres/Docker unavailable here, so the two concurrency proofs are
+  Docker-gated (skip cleanly).
+
+  What each slice does (root-cause + evidence)
+
+  Slice: 2 Expired-lease recovery
+  Root cause fixed: lockNextClaimable predicate never re-selected a crashed job
+  whose lease expired with null next_attempt_at (orphaned forever). Added OR 
+  (lease_until IS NOT NULL AND lease_until  <= :now); active leases still
+  protected.
+  Positive/negative evidence: PG proof: expired LEASED/RUNNING recovered, active
+
+  lease not stolen, terminals never resurrected, REQUESTED path intact.
+  ────────────────────────────────────────
+  Slice: 3 Fresh per-claim timestamp
+  Root cause fixed: now computed once before the batch loop → later claims got a
+
+  lease window anchored to batch-start. Moved clock.instant() inside the loop.
+  Positive/negative evidence: Unit test with stepping clock; verified it fails 
+  under the reverted code then passes restored.
+  ────────────────────────────────────────
+  Slice: 4 AI can't expand capability
+  Root cause fixed: Intent validation only checked the global BotIntentKey,
+  never
+  this bot's configured intents. Added version.findIntent(...) containment →
+  terminal OUTPUT_POLICY_REJECTED (commits, no rollback).
+  Positive/negative evidence: In-capability → READY; out-of-capability → INVALID
+
+  committed, no rollback, no READY audit.
+  ────────────────────────────────────────
+  Slice: 5 SYNTHETIC lie
+  Root cause fixed: Preview stamped arbitrary operator free-text SYNTHETIC and
+  shipped it to Gemini. Added backend fixture catalogue; non-fixture input
+  rejected before any job/provider path.
+  Positive/negative evidence: Arbitrary input → 400 + verifyNoInteractions (zero
+
+  downstream); fixture passes; catalogue contract.
+  ────────────────────────────────────────
+  Slice: 6 Idempotency race
+  Root cause fixed: Read-then-insert → concurrent duplicate hit the unique
+  constraint → unhandled 500. Added INSERT … ON CONFLICT DO  NOTHING upsert
+  (saveNewIdempotent); audit only on genuine insert; fingerprint mismatch →
+  409. Applied to preview + generate.
+  Positive/negative evidence: PG proof: 6 concurrent same-key inserts → exactly
+  1
+  winner, 1 row, all return winner. Service branch unit tests (audit-once /
+  silent hit / 409).
+  ────────────────────────────────────────
+  Slice: 7 Preview result retrieval
+  Root cause fixed: No way to read the advisory result; status DTO omitted it.
+  Added GET /ai-jobs/{id}/result + AiJobResultResponse (advisory-only).
+  Positive/negative evidence: Ready→result populated; in-flight→nulls;
+  INVALID→failureClass; missing→404; reflection  no-leak contract; route =
+  BOT_READ.
+
+  Tests run (JDK 21 via .tools/jdk-21.0.11+10)
+
+  - Full aibot module + build contract: 59 run, 0 failures, 1 skipped
+  (network-gated GeminiFlashLiteSmokeTest).
+  - Slice 3 negative evidence confirmed (test fails on reverted code, passes
+  restored).
+
+  Tests NOT run (environment-blocked — NOT_PROVEN here)
+
+  - AiJobClaimRecoveryPostgresIntegrationTest (Slice 2) and
+  AiJobIdempotencyConcurrencyPostgresIntegrationTest (Slice 6): compile,
+  Docker-gated → skip. Real concurrent-Postgres proof requires
+  Docker/Testcontainers or -Dorderpilot.postgres.integration.enabled=true.
+  - Slice 0 docker image build; Slice 1 physical PG rollback (unchanged from
+  before).
+
+  Invariants preserved
+
+  PROVIDER_DISABLED, stale-fencing (recovery bumps fencing token),
+  terminal-not-recoverable, zero-provider-call-on-denial,
+  no-raw-provider-output, tenant isolation. Diff budget respected (~280
+  production lines total across 2–7; largest slice ~107).
+
+  Risks / blockers
+
+  - Two concurrency claims are NOT_PROVEN in this environment — run them in CI
+  with Docker to close Slices 2 & 6 to the task's "real concurrent PostgreSQL"
+  bar.
+  - Slice 5 fixtures are a minimal seed catalogue (includes "Order status?");
+  product may want to expand/curate them.
+  - Slice 7 frontend polling is not built (no existing aibot UI) — decision
+  needed.
+
+  Next recommended step
+
+  Run the two *PostgresIntegrationTest classes under Docker/CI to close Slices 2
+  & 6. Then decide Slice 7 frontend: I can build a preview page + polling hook
+  against GET /ai-jobs/{id}/result if you want it in this PR.
+
+  Stop condition
+
+  All 8 slices implemented; Slices 2–7 verified to this environment's limit
+  (59/59 runnable green). Paused for your review before committing and before
+  any frontend build. No commit/branch/push made (HEAD still 7eabe6d9).
+
+✻ Brewed for 31m 26s
+
+❯ /graphify                                                                     
+
+● I'll run the graphify pipeline on the current directory
+  (/home/akm/OrderPilot/OrderPilot-Core). Note: graphify-out/ is already
+  gitignored here, so outputs won't touch version control. Starting with the
+  install check.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● graphify is installed and there's a large existing graph.json (52 MB, from Aug
+  5). A bare /graphify means a fresh build, so let me detect the corpus first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Corpus: 2,326 files · ~966K words (code: 1,986 · docs: 340)
+
+  That's well over the 500-file threshold, so per the skill I shouldn't blindly
+  graph the whole monorepo. Let me compute the largest subfolders so you can
+  pick a focused scope.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● This is a large monorepo (2,326 files), so the skill asks me to narrow scope
+  rather than graph everything. Two things to flag before you pick:
+
+  - Subagents: graphify's semantic extraction on docs dispatches parallel
+  subagents. Your project CLAUDE.md says "no subagents unless the prompt
+  explicitly says SUBAGENTS_ALLOWED." A code-only scope (e.g. the aibot module)
+  uses AST extraction only — no subagents, no LLM cost. Doc-heavy scopes would
+  need subagents.
+  - There's already a 52 MB graph.json from Aug 5; graphify won't let a smaller
+  rebuild overwrite a larger one (shrink-guard), so a narrow scope will refuse
+  to clobber it unless I point it at a fresh output dir.
+
+● User answered Claude's questions:
+  ⎿  · Which scope should I graph? (2,326 files total is too large to graph 
+     whole.) → aibot module only
+
+● You picked the aibot module — code-only, AST extraction, no subagents. To
+  avoid the shrink-guard and preserve your existing Aug-5 whole-repo graph, I'll
+  back that one up first, then build the focused graph into the standard
+  location.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Backed up. Now re-detect scoped to the aibot module.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 73 files, all Java code → AST-only extraction, no subagents, no LLM cost.
+  Running structural extraction + the code-only fast path.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 583 nodes, 1,720 edges. Now building the graph, clustering, and generating
+  outputs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 16 communities. Now the health check (Step 4.5):
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Health check: 0 missing/self-loop edges; the 226 "dangling" and ~122
+  "collapsed" are expected for a single-module scope (references to out-of-scope
+  JDK/Spring types, and multi-line references collapsing to one edge) — not
+  corruption. I'll note it in the summary.
+
+  Now labeling the 16 communities — let me inspect their members.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Let me derive clean per-community summaries directly from graph.json (more
+  reliable structure).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Clear module structure. Assigning plain-language names to all 16 communities
+  and regenerating the report.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the HTML visualization (Step 6):
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now saving the manifest, updating the cost tracker, and cleaning up temp
+  files.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the report sections. Let me pull God Nodes, Surprising Connections, and
+  Suggested Questions from the report.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Graph complete. Outputs in /home/akm/OrderPilot/OrderPilot-Core/graphify-out/
+
+    graph.html        - interactive graph, open in browser
+    GRAPH_REPORT.md   - audit report
+    graph.json        - raw graph data (583 nodes, 1,409 edges, 16 communities)
+
+  Scope: the aibot module (73 Java files) · AST-only, 0 LLM tokens, no 
+  subagents. Your prior whole-repo graph is preserved under
+  graphify-out/_backup_repo-2026-08-05/.
+
+  ⚠️ Graph health note: 226 "dangling" and ~122 "collapsed" edges — these are
+  expected for a single-module scope (references to out-of-scope JDK/Spring
+  types, and multi-line references to the same target collapsing to one edge). 0
+  missing-endpoint and 0 self-loop edges — no corruption.
+
+  God Nodes (most connected — your core abstractions)
+
+  1. AiJob — 64 edges
+  2. BotDefinitionVersion — 40 · 3. AiJobJpaEntity — 40 · 4. OperantAiProperties
+  — 38
+  3. AiJobProcessingService — 26 · 6. BotDefinition — 24 · 7.
+  BotDefinitionVersionJpaEntity — 23
+  4. AiJobStatus — 22 · 9. BotDefinitionConfiguration — 21 · 10.
+  BotCapabilityKey — 20
+
+  Surprising Connections
+
+  - BotManagementService → implements → BotManagementApi [EXTRACTED]
+  - BotPreviewService → implements → BotPreviewApi [EXTRACTED]
+  - AiJobController / BotManagementController → reference → BotManagementApi
+  - BotPreviewController → references → BotPreviewApi
+
+  Suggested Questions
+
+  - Why does AiJob bridge Lease Lifecycle ↔ Services & Ports ↔ Status State 
+  Machine ↔ Persistence & Claim Queries? (betweenness 0.178 — the module's
+  central bridge)
+  - Why does OperantAiProperties bridge Services ↔ Scheduled Drain ↔ Prompt 
+  Builders? (0.132)
+  - What connects BotPreviewResponse, SUGGESTION_READY, 
+  TERMINAL_VALIDATION_FAILURE to the rest? (30 weakly-connected nodes)
+  - Should AI Job Services & Ports be split? (cohesion 0.051 — weakly
+  interconnected)
+
+  Notably, the two nodes we changed most this session — AiJob (Slices 2–3) and
+  BotDefinitionVersion/capability path (Slice 4) — are the graph's top
+  structural bridges, which is why those slices rippled across the state
+  machine, persistence, and services.
+
+  The most interesting question this graph can answer: Why does AiJob connect 
+  four separate communities — Lease Lifecycle, Services & Ports, Status State 
+  Machine, and Persistence & Claim Queries? Want me to trace it?
+
+✻ Crunched for 4m 44s
+
+❯ yes, trace it                                                                 
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The query returned the BFS neighborhood (the CLI dumped the raw traversal
+  rather than a synthesized answer). Here's the trace, grounded in the graph's
+  nodes and their community tags:
+
+  Why AiJob bridges four communities
+
+  AiJob (domain/aijob/AiJob.java) is the aggregate root of the worker pipeline.
+  Each of the four communities is a different facet of the same object, and
+  nothing else in the module spans all of them — so every cross-layer path
+  routes through AiJob. That's the 0.178 betweenness.
+
+  1 → Status State Machine (C10). AiJob's status field is an AiJobStatus
+  (domain/aijob/AiJobStatus.java:7). Every lifecycle method — claim,
+  markRunning, markInvalid, markSuggestionReady, failClaimed — reads and
+  rewrites that enum. The enum lives in its own community, but only AiJob
+  mutates it, so AiJob is the sole edge into C10.
+
+  2 → Persistence & Claim Queries (C6). AiJobJpaEntity
+  (infrastructure/persistence/AiJobJpaEntity.java) mirrors AiJob's fields;
+  AiJobRepositoryAdapter.toDomain() (AiJobRepositoryAdapter.java:139) rehydrates
+  a domain AiJob from a row, and .claimNext() (:122) +
+  SpringDataAiJobRepository produce AiJob instances. The entity↔domain boundary
+  is entirely AiJob-shaped.
+
+  3 → AI Job Services & Ports (C0). AiJobProcessingService,
+  BotManagementService, BotPreviewService all construct or advance an AiJob
+  through AiJobRepositoryPort. They sit in C0 with the ports/config; their only
+  tie to the domain is the AiJob they orchestrate.
+
+  4 → AiJob Domain & Lease Lifecycle (C1). This community is AiJob's own method
+  surface (.status() :326, .publicId() :322, .purpose() :324,
+  assertLeaseOwnership, …) plus the adapter/service methods that drive it —
+  .processClaimedJob() (AiJobProcessingService.java:77),
+  .completeWithProviderResult() (:137), .saveNewIdempotent()
+  (AiJobRepositoryAdapter.java:72).
+
+  The shape: state (C10) + stored form (C6) + orchestrators (C0) + behavior (C1)
+  are four projections of one aggregate. Clean hexagonal layering forces this —
+  the domain object is deliberately the only thing crossing
+  enum↔entity↔service↔port boundaries.
+
+  Notably, this is exactly why the three slices I did this session that touch
+  persistence↔services (Slice 2 claimNext predicate in C6, Slice 3 drain
+  timestamp in C0, Slice 6 saveNewIdempotent spanning C1/C6) all pivoted on
+  AiJob — you can't change how the pipeline claims or persists a job without
+  moving through this bridge.
+
+  ---This connects to OperantAiProperties — the module's second bridge (0.132),
+  which ties the services to the scheduled drain and prompt builders (the config
+  that gates whether AiJob even runs). Want to trace that one next, or dig into
+  the weakly-connected cluster (BotPreviewResponse, SUGGESTION_READY,
+  TERMINAL_VALIDATION_FAILURE) the report flagged as a possible gap?
+
+✻ Churned for 43s
+
+❯ /export                                                                       
+  ⎿  Conversation copied to clipboard

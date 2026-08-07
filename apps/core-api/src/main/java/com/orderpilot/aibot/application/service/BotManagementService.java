@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderpilot.aibot.api.BotManagementApi;
 import com.orderpilot.aibot.api.model.AiJobAcceptedResponse;
+import com.orderpilot.aibot.api.model.AiJobResultResponse;
 import com.orderpilot.aibot.api.model.AiJobStatusResponse;
 import com.orderpilot.aibot.api.model.BotDefinitionVersionResponse;
 import com.orderpilot.aibot.api.model.BotDraftResponse;
@@ -15,6 +16,7 @@ import com.orderpilot.aibot.application.port.out.BotDefinitionRepositoryPort;
 import com.orderpilot.aibot.application.port.out.BotDefinitionVersionRepositoryPort;
 import com.orderpilot.aibot.application.port.out.PublicIdGenerator;
 import com.orderpilot.aibot.domain.aijob.AiJob;
+import com.orderpilot.aibot.domain.aijob.AiJobStatus;
 import com.orderpilot.aibot.domain.aijob.AiJobPurpose;
 import com.orderpilot.aibot.domain.botdefinition.BotDefinition;
 import com.orderpilot.aibot.domain.botdefinition.BotDefinitionConfiguration;
@@ -22,6 +24,7 @@ import com.orderpilot.aibot.domain.botdefinition.BotDefinitionVersion;
 import com.orderpilot.aibot.domain.botdefinition.BotIntentKey;
 import com.orderpilot.aibot.domain.exception.BotDefinitionNotFoundException;
 import com.orderpilot.aibot.infrastructure.configuration.OperantAiProperties;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -188,14 +191,23 @@ public class BotManagementService implements BotManagementApi {
     String envelope =
         objectMapper.createObjectNode().put("pendingInput", minimized).toString();
     job.attachRequestEnvelope(envelope, fingerprint, "SYNTHETIC");
-    AiJob savedJob = aiJobRepository.save(job);
-    auditPort.record(
-        tenantId,
-        actorId,
-        "AIBOT_GENERATION_REQUESTED",
-        "AIBOT_AI_JOB",
-        savedJob.publicId(),
-        "{\"botPublicId\":\"" + bot.publicId() + "\",\"version\":" + versionNumber + "}");
+    // Concurrency-safe idempotent insert: a lost race returns the winner's row instead of a
+    // unique-constraint 500. Audit only when THIS call actually created the job. (The version
+    // GENERATING transition above is additionally guarded by the version's optimistic row_version.)
+    AiJobRepositoryPort.IdempotentSave result = aiJobRepository.saveNewIdempotent(job);
+    AiJob savedJob = result.job();
+    if (!fingerprint.equals(savedJob.requestFingerprint())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT");
+    }
+    if (result.inserted()) {
+      auditPort.record(
+          tenantId,
+          actorId,
+          "AIBOT_GENERATION_REQUESTED",
+          "AIBOT_AI_JOB",
+          savedJob.publicId(),
+          "{\"botPublicId\":\"" + bot.publicId() + "\",\"version\":" + versionNumber + "}");
+    }
     return new AiJobAcceptedResponse(savedJob.publicId(), savedJob.status().name());
   }
 
@@ -241,6 +253,58 @@ public class BotManagementService implements BotManagementApi {
         job.completedAt(),
         summary,
         job.failureClass());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public AiJobResultResponse getAiJobResult(UUID tenantId, String jobPublicId) {
+    AiJob job =
+        aiJobRepository
+            .findByPublicIdAndTenantId(jobPublicId, tenantId)
+            .orElseThrow(() -> new BotDefinitionNotFoundException("ai_job_not_found"));
+    String intentKey = null;
+    BigDecimal confidence = null;
+    String responseDraft = null;
+    Boolean handoffSuggested = null;
+    String validationSummary = "none";
+    // Only surface the advisory outcome once the job reaches its terminal READY result, and read it
+    // exclusively from the persisted, already-validated result document — never the request envelope
+    // or raw provider payload. Parsing is defensive so a malformed result cannot leak internals.
+    if (job.status() == AiJobStatus.SUGGESTION_READY) {
+      try {
+        JsonNode node = objectMapper.readTree(job.resultJson() == null ? "{}" : job.resultJson());
+        validationSummary = node.path("validationSummary").asText("validated");
+        if (node.hasNonNull("intentKey")) {
+          intentKey = node.path("intentKey").asText(null);
+        }
+        if (node.hasNonNull("confidence")) {
+          confidence = node.path("confidence").decimalValue();
+        }
+        if (node.hasNonNull("responseDraft")) {
+          responseDraft = node.path("responseDraft").asText(null);
+        }
+        if (node.hasNonNull("handoffSuggested")) {
+          handoffSuggested = node.path("handoffSuggested").asBoolean();
+        }
+      } catch (Exception ignored) {
+        validationSummary = "unavailable";
+      }
+    } else if (job.failureClass() != null) {
+      validationSummary = "failed";
+    }
+    return new AiJobResultResponse(
+        job.publicId(),
+        job.purpose().name(),
+        job.status().name(),
+        job.status().isTerminal(),
+        intentKey,
+        confidence,
+        responseDraft,
+        handoffSuggested,
+        validationSummary,
+        job.failureClass(),
+        job.createdAt(),
+        job.completedAt());
   }
 
   private List<String> normalizeIntentKeys(List<String> raw) {

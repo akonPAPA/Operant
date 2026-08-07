@@ -70,6 +70,35 @@ public class AiJobRepositoryAdapter implements AiJobRepositoryPort {
   }
 
   @Override
+  @Transactional
+  public IdempotentSave saveNewIdempotent(AiJob job) {
+    if (job.id() != null) {
+      throw new IllegalStateException("saveNewIdempotent_requires_new_job");
+    }
+    int inserted =
+        repository.insertIfAbsent(
+            job.publicId(),
+            job.tenantId(),
+            job.purpose().name(),
+            job.botDefinitionVersionId(),
+            job.status().name(),
+            job.requestSchemaVersion(),
+            job.requestJson(),
+            job.requestFingerprint(),
+            job.inputHash(),
+            job.inputClassification(),
+            job.idempotencyKey(),
+            job.createdAt());
+    AiJob stored =
+        repository
+            .findByTenantIdAndPurposeAndIdempotencyKey(
+                job.tenantId(), job.purpose().name(), job.idempotencyKey())
+            .map(this::toDomain)
+            .orElseThrow(() -> new IllegalStateException("ai_job_upsert_row_missing"));
+    return new IdempotentSave(stored, inserted == 1);
+  }
+
+  @Override
   @Transactional(readOnly = true)
   public Optional<AiJob> findByPublicIdAndTenantId(String publicId, UUID tenantId) {
     return repository.findByPublicIdAndTenantId(publicId, tenantId).map(this::toDomain);

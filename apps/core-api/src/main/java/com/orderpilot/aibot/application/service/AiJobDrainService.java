@@ -44,9 +44,12 @@ public class AiJobDrainService {
     int leaseConflicts = 0;
     int batchSize = aiProperties.getWorkerBatchSize();
     Duration lease = aiProperties.getWorkerLeaseDuration();
-    Instant now = clock.instant();
 
     for (int i = 0; i < batchSize; i++) {
+      // Fresh per-claim timestamp: draining a batch can take real wall-clock time (each job may do
+      // provider I/O), so a single batch-start `now` would anchor every lease deadline to the start
+      // and hand later claims a lease window that is already partly — or fully — elapsed.
+      Instant now = clock.instant();
       Optional<ClaimedAiJob> claim;
       try {
         claim = aiJobRepository.claimNext(workerId, now, now.plus(lease));

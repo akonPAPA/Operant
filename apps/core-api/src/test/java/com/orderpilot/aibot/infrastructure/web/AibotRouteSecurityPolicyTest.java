@@ -33,6 +33,9 @@ class AibotRouteSecurityPolicyTest {
         .contains(ApiPermission.BOT_READ);
     assertThat(policy.requiredPermissionFor("GET", "/api/v1/ai-jobs/job_x"))
         .contains(ApiPermission.BOT_READ);
+    // Slice 7: preview result retrieval is a read, protected by the same BOT_READ permission.
+    assertThat(policy.requiredPermissionFor("GET", "/api/v1/ai-jobs/job_x/result"))
+        .contains(ApiPermission.BOT_READ);
   }
 
   @Test

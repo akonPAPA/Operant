@@ -17,6 +17,7 @@ import com.orderpilot.aibot.domain.botruntime.BotRuntimePolicy;
 import com.orderpilot.aibot.domain.exception.BotDefinitionNotFoundException;
 import com.orderpilot.aibot.domain.exception.BotDefinitionNotPreviewableException;
 import com.orderpilot.aibot.domain.exception.BotPreviewInputRejectedException;
+import com.orderpilot.aibot.domain.preview.SyntheticPreviewFixtures;
 import com.orderpilot.aibot.infrastructure.configuration.BotRuntimeProperties;
 import com.orderpilot.aibot.infrastructure.configuration.OperantAiProperties;
 import java.nio.charset.StandardCharsets;
@@ -91,6 +92,13 @@ public class BotPreviewService implements BotPreviewApi {
       throw new ResponseStatusException(
           HttpStatus.SERVICE_UNAVAILABLE, "AI_RUNTIME_UNAVAILABLE");
     }
+    // The SYNTHETIC classification below is backend-owned, not caller-asserted: only messages the
+    // backend recognises as synthetic fixtures may be labelled SYNTHETIC and forwarded to the
+    // provider under the SYNTHETIC_ONLY data policy. Reject arbitrary input here — before any job is
+    // created — so unverified (potentially real/PII) content never reaches the external provider.
+    if (!SyntheticPreviewFixtures.isSynthetic(normalized)) {
+      throw new BotPreviewInputRejectedException("preview_non_synthetic");
+    }
 
     var bot =
         botDefinitionRepository
@@ -151,14 +159,22 @@ public class BotPreviewService implements BotPreviewApi {
     pending.putPOJO("approvedIntents", approvedIntents);
     pending.putPOJO("approvedActions", approvedActions);
     created.attachRequestEnvelope(pending.toString(), fingerprint, "SYNTHETIC");
-    AiJob saved = aiJobRepository.save(created);
-    auditPort.record(
-        tenantId,
-        actorId,
-        "AIBOT_PREVIEW_REQUESTED",
-        "AIBOT_AI_JOB",
-        saved.publicId(),
-        "{\"botPublicId\":\"" + bot.publicId() + "\",\"version\":" + versionNumber + "}");
+    // Concurrency-safe idempotent insert: a lost race returns the winner's row instead of a
+    // unique-constraint 500. Audit only when THIS call actually created the job.
+    AiJobRepositoryPort.IdempotentSave result = aiJobRepository.saveNewIdempotent(created);
+    AiJob saved = result.job();
+    if (!fingerprint.equals(saved.requestFingerprint())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT");
+    }
+    if (result.inserted()) {
+      auditPort.record(
+          tenantId,
+          actorId,
+          "AIBOT_PREVIEW_REQUESTED",
+          "AIBOT_AI_JOB",
+          saved.publicId(),
+          "{\"botPublicId\":\"" + bot.publicId() + "\",\"version\":" + versionNumber + "}");
+    }
     return new AiJobAcceptedResponse(saved.publicId(), saved.status().name());
   }
 

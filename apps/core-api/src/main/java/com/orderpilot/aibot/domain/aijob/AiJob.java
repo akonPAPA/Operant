@@ -168,6 +168,7 @@ public final class AiJob {
     this.status = AiJobStatus.INVALID;
     this.failureClass = boundedFailure(failureClass);
     this.completedAt = now;
+    this.nextAttemptAt = null;
     clearLease();
   }
 

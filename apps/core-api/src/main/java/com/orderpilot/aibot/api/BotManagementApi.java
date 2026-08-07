@@ -1,6 +1,7 @@
 package com.orderpilot.aibot.api;
 
 import com.orderpilot.aibot.api.model.AiJobAcceptedResponse;
+import com.orderpilot.aibot.api.model.AiJobResultResponse;
 import com.orderpilot.aibot.api.model.AiJobStatusResponse;
 import com.orderpilot.aibot.api.model.BotDefinitionVersionResponse;
 import com.orderpilot.aibot.api.model.BotDraftResponse;
@@ -17,4 +18,6 @@ public interface BotManagementApi {
   BotDefinitionVersionResponse getVersion(UUID tenantId, String botPublicId, int version);
 
   AiJobStatusResponse getAiJob(UUID tenantId, String jobPublicId);
+
+  AiJobResultResponse getAiJobResult(UUID tenantId, String jobPublicId);
 }

@@ -82,7 +82,7 @@ docs/product/private/
 node_modules/
 .next/
 dist/
-build/
+apps/web-dashboard/build/
 coverage/
 *.tsbuildinfo
 npm-debug.log*
@@ -93,7 +93,12 @@ pnpm-debug.log*
 # ===== Java / backend =====
 target/
 .gradle/
-build/
+# Root-anchored: ignore the repo-root ./build/ scratch/artifacts dir (may hold local
+# secrets, e.g. build/p1d-compose/tls.key) WITHOUT ignoring the nested Java source package
+# apps/core-api/src/test/.../com/orderpilot/build/ (the release Dockerfile contract test),
+# which a depth-agnostic `build/` would strip from git and CI. This is a Maven project;
+# module build output is target/ (above).
+/build/
 *.class
 *.jar
 *.war
