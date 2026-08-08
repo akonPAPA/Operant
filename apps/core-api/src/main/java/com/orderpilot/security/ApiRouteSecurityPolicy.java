@@ -218,11 +218,42 @@ public class ApiRouteSecurityPolicy {
     if (path.startsWith("/api/v1/trust/risk-decisions") && !HttpMethod.GET.matches(method)) {
       return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.TRUST_RISK_EVALUATE);
     }
+    Optional<RouteDecision> aibot = aibotDecision(method, path);
+    if (aibot.isPresent()) {
+      return aibot;
+    }
 
     return PREFIX_RULES.stream()
         .filter(rule -> path.startsWith(rule.prefix()))
         .findFirst()
         .map(rule -> rule.decision(method));
+  }
+
+
+  // M18-01: exact bot draft/generation/preview/ai-job routes. No BOT_* wildcards.
+  private Optional<RouteDecision> aibotDecision(String method, String path) {
+    if (path.equals("/api/v1/ai-jobs") || path.startsWith("/api/v1/ai-jobs/")) {
+      if (HttpMethod.GET.matches(method)) {
+        return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.BOT_READ);
+      }
+      return Optional.empty();
+    }
+    if (!(path.equals("/api/v1/bots") || path.startsWith("/api/v1/bots/"))) {
+      return Optional.empty();
+    }
+    if (HttpMethod.GET.matches(method)) {
+      return protectedRoute(SecurityClassification.PROTECTED_READ, ApiPermission.BOT_READ);
+    }
+    if (HttpMethod.POST.matches(method) && path.equals("/api/v1/bots")) {
+      return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.BOT_CREATE);
+    }
+    if (HttpMethod.POST.matches(method) && matches(path, "/api/v1/bots/*/versions/*/generate")) {
+      return protectedRoute(SecurityClassification.PROTECTED_UPDATE, ApiPermission.BOT_EDIT_DRAFT);
+    }
+    if (HttpMethod.POST.matches(method) && matches(path, "/api/v1/bots/*/versions/*/preview")) {
+      return protectedRoute(SecurityClassification.PROTECTED_CREATE, ApiPermission.BOT_PREVIEW);
+    }
+    return Optional.empty();
   }
 
   // OP-CAP-51: the internal owner-company support/maintenance surface. Every route is protected by a
