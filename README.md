@@ -24,6 +24,10 @@ This repository is intentionally scoped to platform foundation only:
 
 AI, frontend, chatbot, and connector components must never directly write trusted business data. Future mutations must go through typed core-api command services, authentication, authorization, tenant policy, deterministic validation, approval gates, transactions, audit events, and outbox events.
 
+# The Demo Version
+
+![Demo](docs/Screenshot2026-09-05154735.png)
+
 # The Architecture
 ### The Full Architecture was so big to implement for one person in 2 months so I just paused full project because of my assessments at University and preparing for certificates which I wanted to pass
 ### P.S: I passed sc-200 and still preparing for OSAI certificate. Right now Im leearning about AI Red Teaming and I think I will improve and end this project as soon as possible after work and study hours.
