@@ -26,7 +26,7 @@ AI, frontend, chatbot, and connector components must never directly write truste
 
 # The Demo Version
 
-![Demo](docs/Screenshot2026-09-05154735.png)
+![Demo](Screenshot2026-09-05154735.png)
 
 # The Architecture
 ### The Full Architecture was so big to implement for one person in 2 months so I just paused full project because of my assessments at University and preparing for certificates which I wanted to pass
