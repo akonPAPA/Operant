@@ -38,16 +38,16 @@ AI, frontend, chatbot, and connector components must never directly write truste
 
 ### Here is also architecture of Source-to-Pay Engine
 
-![Source Arch](docs/image (1).svg)
+![Source Arch](docs/image(1).svg)
 
 ### Here is Order-to-Cash Architecture flow
 
-![Order Arch](docs/image (2).svg)
+![Order Arch](docs/image(2).svg)
 
 ### Here is value validation engines flow
 
-![Value Arch](docs/image (3).svg)
+![Value Arch](docs/image(3).svg)
 
 ### Here is flow why customers paying as it is the Enterprise platform like Esker but with imlemented tools and more convinient Order-Controling flow 
 
-![Why Should Pay](docs/image (4).svg)
+![Why Should Pay](docs/image(4).svg)
