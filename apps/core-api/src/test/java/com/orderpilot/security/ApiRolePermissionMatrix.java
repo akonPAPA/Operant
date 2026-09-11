@@ -127,6 +127,9 @@ final class ApiRolePermissionMatrix {
         ApiPermission.REVIEW_ACTION,
         ApiPermission.QUOTE_READ,
         ApiPermission.BOT_READ,
+        ApiPermission.BOT_CREATE,
+        ApiPermission.BOT_EDIT_DRAFT,
+        ApiPermission.BOT_PREVIEW,
         ApiPermission.ANALYTICS_READ));
 
     matrix.put(RoleProfile.INTEGRATION_ADMIN, EnumSet.of(
@@ -135,6 +138,9 @@ final class ApiRolePermissionMatrix {
         ApiPermission.CHANNEL_IDENTITY_ACTION,
         ApiPermission.BOT_READ,
         ApiPermission.BOT_ACTION,
+        ApiPermission.BOT_CREATE,
+        ApiPermission.BOT_EDIT_DRAFT,
+        ApiPermission.BOT_PREVIEW,
         ApiPermission.RUNTIME_ENTITLEMENT_READ,
         ApiPermission.RUNTIME_ENTITLEMENT_MANAGE,
         ApiPermission.CHANGE_REQUEST_READ,
