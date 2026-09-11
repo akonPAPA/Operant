@@ -136,3 +136,32 @@ orderpilot:
         key-prefix: "${ORDERPILOT_RUNTIME_RATE_REDIS_KEY_PREFIX:orderpilot:runtime-rate}"
         # fail-closed by default: if Redis is unavailable, deny (429) rather than allow unmetered.
         fail-open: "${ORDERPILOT_RUNTIME_RATE_REDIS_FAIL_OPEN:false}"
+
+# M18-01 AI bot provider — disabled by default; Gemini is DEVELOPMENT_ONLY.
+operant:
+  ai:
+    enabled: false
+    provider: gemini
+    data-policy: SYNTHETIC_ONLY
+    maximum-attempts: 3
+    maximum-input-chars: 8000
+    maximum-output-tokens: 1024
+    worker:
+      enabled: false
+      fixed-delay-ms: 5000
+      batch-size: 5
+      lease-duration: 30s
+      retry-base-delay: 5s
+    gemini:
+      base-url: https://generativelanguage.googleapis.com
+      model: gemini-2.5-flash-lite
+      api-key: ${GEMINI_API_KEY:}
+      connect-timeout: 2s
+      read-timeout: 15s
+  aibot:
+    runtime:
+      preview-enabled: true
+      minimum-default-confidence: 0.70
+      maximum-intents-per-definition: 20
+      maximum-response-length: 1000
+      handoff-on-provider-failure: true
