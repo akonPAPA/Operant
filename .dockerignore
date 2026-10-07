@@ -30,11 +30,17 @@ temp/
 **/target/
 
 # Node / frontend build outputs
+# NOTE: do NOT use depth-agnostic `**/out/` or `**/build/` here — they also match
+# Java source packages copied into the release image:
+#   `**/out/`   -> apps/core-api/.../application/port/out/ (main: aibot outbound ports)
+#   `**/build/` -> apps/core-api/src/test/.../com/orderpilot/build/ (Dockerfile contract test)
+# Stripping either breaks the in-image `mvn test` verify stage. Scope the Next.js
+# static-export / build output to the frontend, where it is actually generated.
 **/node_modules/
 **/.next/
-**/out/
+apps/web-dashboard/out/
+apps/web-dashboard/build/
 **/dist/
-**/build/
 **/coverage/
 
 # Python build/cache outputs
