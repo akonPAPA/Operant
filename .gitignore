@@ -21,6 +21,7 @@ secrets.*
 *.sqlite
 *.db
 *AGENTS.md
+*.serena/*
 .claude/
 *CLAUDE.md
 apps/.vscode/
